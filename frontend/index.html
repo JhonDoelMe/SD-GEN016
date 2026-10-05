@@ -34,7 +34,8 @@
           <label>Пароль</label>
           <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="••••••••">
         </div>
-        <button type="submit" class="btn-primary" style="padding: 1rem; font-size: 1.1rem; margin-top: 1rem;">Увійти в систему</button>
+        <div id="loginError" style="display: none; color: #f87171; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 0.5rem; padding: 0.75rem; margin-top: 1rem; font-size: 0.875rem; text-align: left; line-height: 1.4;"></div>
+        <button type="submit" id="loginSubmitBtn" class="btn-primary" style="padding: 1rem; font-size: 1.1rem; margin-top: 1rem; width: 100%;">Увійти в систему</button>
       </form>
     </div>
   </div>

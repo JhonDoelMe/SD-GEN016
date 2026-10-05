@@ -1,10 +1,13 @@
-from sqlalchemy import select
+import logging
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.config import settings
 from backend.app.core.security import get_password_hash
 from backend.app.models.user import User, Role, Permission
 from backend.app.models.fuel import FuelStock
 from backend.app.models.facility import Facility
+
+logger = logging.getLogger("init_service")
 
 ALL_PERMISSIONS = [
     # Generator
@@ -102,13 +105,14 @@ async def seed_initial_data(db: AsyncSession) -> None:
         db.add(default_fac)
         await db.flush()
 
-    # 4. Seed Initial SuperAdmin if no users exist
-    users_res = await db.execute(select(User))
-    user_count = len(users_res.scalars().all())
+    # 4. Seed or update Initial SuperAdmin
+    admin_login = settings.INITIAL_ADMIN_LOGIN.strip()
+    admin_pass = settings.INITIAL_ADMIN_PASSWORD
 
-    if user_count == 0:
-        admin_login = settings.INITIAL_ADMIN_LOGIN.strip()
-        admin_pass = settings.INITIAL_ADMIN_PASSWORD
+    admin_res = await db.execute(select(User).where(func.lower(User.login) == func.lower(admin_login)))
+    superadmin_user = admin_res.scalars().first()
+
+    if not superadmin_user:
         superadmin_user = User(
             login=admin_login,
             email=settings.INITIAL_ADMIN_EMAIL,
@@ -122,6 +126,17 @@ async def seed_initial_data(db: AsyncSession) -> None:
             superadmin_user.roles.append(existing_roles["superadmin"])
         db.add(superadmin_user)
         await db.flush()
+        logger.info(f"Initialized new SuperAdmin user: '{admin_login}'")
+    else:
+        # Guarantee superadmin has updated password hash from settings.INITIAL_ADMIN_PASSWORD,
+        # is active, and has superadmin role
+        superadmin_user.password_hash = get_password_hash(admin_pass)
+        superadmin_user.is_active = True
+        superadmin_user.is_superadmin = True
+        if "superadmin" in existing_roles and existing_roles["superadmin"] not in superadmin_user.roles:
+            superadmin_user.roles.append(existing_roles["superadmin"])
+        await db.flush()
+        logger.info(f"Synchronized SuperAdmin user '{admin_login}' with current settings/env password")
 
     # 5. Seed Default FuelStock if none exists
     stock_res = await db.execute(select(FuelStock))

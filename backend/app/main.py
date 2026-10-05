@@ -61,8 +61,13 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(ensure_schema_updates)
 
     # 2. Seed initial permissions, roles, superadmin, fuel stock
-    async with AsyncSessionLocal() as session:
-        await seed_initial_data(session)
+    try:
+        async with AsyncSessionLocal() as session:
+            await seed_initial_data(session)
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] Failed to seed initial data: {e}")
+        traceback.print_exc()
 
     # 3. Ensure uploads directory exists
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

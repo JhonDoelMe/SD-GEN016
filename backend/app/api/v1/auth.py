@@ -1,5 +1,6 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
@@ -9,6 +10,7 @@ from backend.app.schemas.auth import LoginRequest, TokenResponse, UserSummary
 from backend.app.api.deps import get_current_user, get_client_ip
 from backend.app.services.audit_service import log_audit
 
+logger = logging.getLogger("auth")
 router = APIRouter(prefix="/auth", tags=["Автентифікація"])
 
 
@@ -22,7 +24,7 @@ async def login(
     ip = get_client_ip(request)
     login_clean = login_data.login.strip()
 
-    res = await db.execute(select(User).where(User.login == login_clean))
+    res = await db.execute(select(User).where(func.lower(User.login) == func.lower(login_clean)))
     user = res.scalars().first()
 
     if not user or not verify_password(login_data.password, user.password_hash):

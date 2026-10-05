@@ -16,13 +16,20 @@ async function api(endpoint, options = {}) {
 
   try {
     const res = await fetch(`/api/v1${endpoint}`, { ...options, headers });
-    if (res.status === 401) {
-      token = null;
-      localStorage.removeItem('sd_token');
-      showAuthScreen();
-      throw new Error('Потрібна авторизація');
-    }
     const data = await res.json().catch(() => null);
+
+    if (res.status === 401) {
+      if (endpoint !== '/auth/login') {
+        token = null;
+        localStorage.removeItem('sd_token');
+        showAuthScreen();
+        throw new Error('Сесія закінчилась. Будь ласка, увійдіть знову');
+      } else {
+        const msg = data && data.detail ? data.detail : 'Невірний логін або пароль';
+        throw new Error(msg);
+      }
+    }
+
     if (!res.ok) {
       const msg = data && data.detail ? data.detail : `Помилка сервера (${res.status})`;
       throw new Error(msg);
@@ -159,8 +166,20 @@ async function checkAuth() {
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const loginInput = document.getElementById('loginUsername').value;
+  const loginInput = document.getElementById('loginUsername').value.trim();
   const passInput = document.getElementById('loginPassword').value;
+  const loginBtn = document.getElementById('loginSubmitBtn');
+  const errorBox = document.getElementById('loginError');
+
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.innerText = '';
+  }
+
+  if (loginBtn) {
+    loginBtn.disabled = true;
+    loginBtn.innerText = 'Вхід...';
+  }
 
   try {
     const res = await api('/auth/login', {
@@ -174,7 +193,17 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     hideAuthScreen();
     showToast(`Вітаємо, ${currentUser.full_name}!`, 'success');
     loadAllData();
-  } catch (_) {}
+  } catch (err) {
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.innerText = `❌ ${err.message || 'Невірний логін або пароль'}`;
+    }
+  } finally {
+    if (loginBtn) {
+      loginBtn.disabled = false;
+      loginBtn.innerText = 'Увійти в систему';
+    }
+  }
 });
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {
