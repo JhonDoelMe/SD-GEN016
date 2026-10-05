@@ -2,8 +2,8 @@ const CACHE_NAME = 'sd-gen016-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
-  '/frontend/styles.css',
-  '/frontend/app.js',
+  '/frontend/styles.css?v=2.0',
+  '/frontend/app.js?v=2.0',
   '/frontend/icons/icon-192.png',
   '/frontend/icons/icon-512.png',
   '/frontend/favicon.ico'

@@ -134,7 +134,10 @@ if FRONTEND_DIR.exists():
     async def serve_index():
         index_path = FRONTEND_DIR / "index.html"
         if index_path.exists():
-            return FileResponse(index_path)
+            return FileResponse(
+                index_path,
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+            )
         return {"message": "Service Desk API is running. Frontend index.html not found."}
 
 

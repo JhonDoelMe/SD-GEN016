@@ -1047,6 +1047,8 @@ document.getElementById('wizardForm').addEventListener('submit', async (e) => {
     showToast('Параметри генератора успішно налаштовані через майстер!', 'success');
     loadAllData();
   } catch (_) {}
+});
+
 // Generator Deletion Handlers
 window.openDeleteGeneratorModal = function() {
   if (!currentGenerator) {
