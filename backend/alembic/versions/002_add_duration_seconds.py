@@ -15,14 +15,18 @@ depends_on = None
 
 
 def upgrade() -> None:
-    try:
-        op.add_column('generator_runs', sa.Column('duration_seconds', sa.Integer(), nullable=True))
-    except Exception:
-        pass
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    cols = [c['name'] for c in insp.get_columns('generator_runs')]
+    if 'duration_seconds' not in cols:
+        with op.batch_alter_table('generator_runs') as batch_op:
+            batch_op.add_column(sa.Column('duration_seconds', sa.Integer(), nullable=True))
 
 
 def downgrade() -> None:
-    try:
-        op.drop_column('generator_runs', 'duration_seconds')
-    except Exception:
-        pass
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    cols = [c['name'] for c in insp.get_columns('generator_runs')]
+    if 'duration_seconds' in cols:
+        with op.batch_alter_table('generator_runs') as batch_op:
+            batch_op.drop_column('duration_seconds')

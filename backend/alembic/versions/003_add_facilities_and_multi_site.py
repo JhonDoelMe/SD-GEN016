@@ -15,8 +15,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    tables = insp.get_table_names()
+
     # 1. Create facilities table
-    try:
+    if 'facilities' not in tables:
         op.create_table(
             'facilities',
             sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
@@ -27,27 +31,40 @@ def upgrade() -> None:
             sa.Column('created_at', sa.DateTime(), server_default=sa.func.now(), nullable=False),
             sa.Column('updated_at', sa.DateTime(), server_default=sa.func.now(), nullable=False)
         )
-    except Exception:
-        pass
 
     # 2. Add facility_id to related tables
     for table_name in ['generators', 'fuel_stocks', 'fuel_receipts', 'fuel_transfers', 'users']:
-        try:
-            op.add_column(
-                table_name,
-                sa.Column('facility_id', sa.Integer(), sa.ForeignKey('facilities.id', ondelete='SET NULL'), nullable=True)
-            )
-        except Exception:
-            pass
+        if table_name in tables:
+            cols = [c['name'] for c in insp.get_columns(table_name)]
+            if 'facility_id' not in cols:
+                with op.batch_alter_table(table_name) as batch_op:
+                    batch_op.add_column(
+                        sa.Column('facility_id', sa.Integer(), nullable=True)
+                    )
+                    batch_op.create_foreign_key(
+                        f'fk_{table_name}_facilities',
+                        'facilities',
+                        ['facility_id'],
+                        ['id'],
+                        ondelete='SET NULL'
+                    )
 
 
 def downgrade() -> None:
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    tables = insp.get_table_names()
+
     for table_name in ['users', 'fuel_transfers', 'fuel_receipts', 'fuel_stocks', 'generators']:
-        try:
-            op.drop_column(table_name, 'facility_id')
-        except Exception:
-            pass
-    try:
+        if table_name in tables:
+            cols = [c['name'] for c in insp.get_columns(table_name)]
+            if 'facility_id' in cols:
+                with op.batch_alter_table(table_name) as batch_op:
+                    try:
+                        batch_op.drop_constraint(f'fk_{table_name}_facilities', type_='foreignkey')
+                    except Exception:
+                        pass
+                    batch_op.drop_column('facility_id')
+
+    if 'facilities' in tables:
         op.drop_table('facilities')
-    except Exception:
-        pass
