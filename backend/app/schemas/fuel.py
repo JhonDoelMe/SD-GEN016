@@ -3,8 +3,17 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+class FuelStockCreate(BaseModel):
+    facility_id: int = Field(..., description="ID об'єкта, до якого належить склад")
+    name: str = Field(..., min_length=2, max_length=100, description="Назва складу ГСМ")
+    fuel_type: str = Field(default="А-95", max_length=50)
+    initial_balance_l: float = Field(default=0.0, ge=0, description="Початковий залишок (л)")
+
+
 class FuelStockOut(BaseModel):
     id: int
+    facility_id: Optional[int] = None
+    facility_name: Optional[str] = None
     name: str
     fuel_type: str
     current_balance_l: float
@@ -14,6 +23,7 @@ class FuelStockOut(BaseModel):
 
 
 class FuelReceiptCreate(BaseModel):
+    facility_id: Optional[int] = None
     stock_id: Optional[int] = None
     fuel_type: str = Field(default="А-95")
     liters: float = Field(..., gt=0, description="Кількість літрів за чеком")
@@ -25,7 +35,10 @@ class FuelReceiptCreate(BaseModel):
 
 class FuelReceiptOut(BaseModel):
     id: int
+    facility_id: Optional[int] = None
+    facility_name: Optional[str] = None
     stock_id: int
+    stock_name: Optional[str] = None
     user_id: int
     user_name: Optional[str] = None
     fuel_type: str
@@ -41,6 +54,7 @@ class FuelReceiptOut(BaseModel):
 
 
 class FuelTransferCreate(BaseModel):
+    facility_id: Optional[int] = None
     stock_id: Optional[int] = None
     generator_id: Optional[int] = None
     liters: float = Field(..., gt=0, description="Кількість літрів для заправки бака")
@@ -49,8 +63,12 @@ class FuelTransferCreate(BaseModel):
 
 class FuelTransferOut(BaseModel):
     id: int
+    facility_id: Optional[int] = None
+    facility_name: Optional[str] = None
     stock_id: int
+    stock_name: Optional[str] = None
     generator_id: int
+    generator_name: Optional[str] = None
     user_id: int
     user_name: Optional[str] = None
     liters: float

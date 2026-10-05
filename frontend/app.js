@@ -56,6 +56,9 @@ function showToast(message, type = 'info') {
 window.openModal = function (id) {
   const modal = document.getElementById(id);
   if (modal) modal.style.display = 'flex';
+  if (id === 'modalReceipt') setupReceiptModal();
+  if (id === 'modalTransfer') setupTransferModal();
+  if (id === 'modalNewStock') setupNewStockModal();
 };
 
 window.closeModal = function (id) {
@@ -479,6 +482,87 @@ document.getElementById('stopGenForm').addEventListener('submit', async (e) => {
 });
 
 // 2. Fuel Management
+async function setupReceiptModal() {
+  try {
+    const facilities = await api('/facilities');
+    const facSel = document.getElementById('recFacility');
+    if (facSel && facilities && facilities.length > 0) {
+      facSel.innerHTML = facilities.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+      if (currentFacilityId && facilities.some(f => f.id === currentFacilityId)) {
+        facSel.value = currentFacilityId;
+      }
+    }
+    await updateReceiptStocks();
+  } catch (err) {
+    console.warn('setupReceiptModal error:', err);
+  }
+}
+
+async function updateReceiptStocks() {
+  const facSel = document.getElementById('recFacility');
+  const stockSel = document.getElementById('recStock');
+  if (!facSel || !stockSel) return;
+  const facId = facSel.value;
+  try {
+    const stocks = await api(`/fuel/stocks?facility_id=${facId}`);
+    if (!stocks || stocks.length === 0) {
+      stockSel.innerHTML = '<option value="">(Немає складів — створіть новий склад)</option>';
+    } else {
+      stockSel.innerHTML = stocks.map(s => `<option value="${s.id}">${s.name} (залишок: ${s.current_balance_l.toFixed(1)} л)</option>`).join('');
+    }
+  } catch (_) {
+    stockSel.innerHTML = '<option value="">(Помилка завантаження)</option>';
+  }
+}
+
+document.getElementById('recFacility')?.addEventListener('change', updateReceiptStocks);
+
+async function setupNewStockModal() {
+  try {
+    const facilities = await api('/facilities');
+    const facSel = document.getElementById('newStockFacility');
+    if (facSel && facilities && facilities.length > 0) {
+      facSel.innerHTML = facilities.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+      if (currentFacilityId && facilities.some(f => f.id === currentFacilityId)) {
+        facSel.value = currentFacilityId;
+      }
+    }
+  } catch (err) {
+    console.warn('setupNewStockModal error:', err);
+  }
+}
+
+async function setupTransferModal() {
+  try {
+    const stockSel = document.getElementById('transStock');
+    const genSel = document.getElementById('transGenerator');
+    const qFac = currentFacilityId ? `?facility_id=${currentFacilityId}` : '';
+
+    const stocks = await api(`/fuel/stocks${qFac}`);
+    if (stockSel) {
+      if (!stocks || stocks.length === 0) {
+        stockSel.innerHTML = '<option value="">(Немає доступних складів)</option>';
+      } else {
+        stockSel.innerHTML = stocks.map(s => `<option value="${s.id}">${s.name} (${s.current_balance_l.toFixed(1)} л)</option>`).join('');
+      }
+    }
+
+    const gens = await api(`/generator/list${qFac}`);
+    if (genSel) {
+      if (!gens || gens.length === 0) {
+        genSel.innerHTML = '<option value="">(Немає генераторів)</option>';
+      } else {
+        genSel.innerHTML = gens.map(g => `<option value="${g.id}">${g.name} (${g.model}, в баку: ${g.fuel_tank_level_l.toFixed(1)} л)</option>`).join('');
+        if (currentGeneratorId && gens.some(g => g.id === currentGeneratorId)) {
+          genSel.value = currentGeneratorId;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('setupTransferModal error:', err);
+  }
+}
+
 async function loadFuelSummary() {
   try {
     const params = [];
@@ -499,39 +583,74 @@ async function loadFuelSummary() {
 async function loadFuelData() {
   await loadFuelSummary();
   try {
-    const receipts = await api('/fuel/receipts');
-    const rTbody = document.querySelector('#fuelReceiptsTable tbody');
-    rTbody.innerHTML = receipts.map((r) => `
-      <tr>
-        <td>${formatDateTime(r.created_at)}</td>
-        <td><b>${r.liters.toFixed(1)} л</b></td>
-        <td>${r.cost_total.toFixed(2)}</td>
-        <td>${r.price_per_liter.toFixed(2)}</td>
-        <td>${r.driver_name}</td>
-        <td>${r.receipt_number}</td>
-        <td>${r.user_name || '-'}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="7" style="text-align:center; color:var(--text-muted)">Надходжень не зареєстровано</td></tr>';
+    const qFac = currentFacilityId ? `?facility_id=${currentFacilityId}` : '';
 
-    const transfers = await api('/fuel/transfers');
+    // Stocks Table
+    const stocks = await api(`/fuel/stocks${qFac}`);
+    const sTbody = document.querySelector('#fuelStocksTable tbody');
+    if (sTbody) {
+      sTbody.innerHTML = stocks.map((s) => `
+        <tr>
+          <td>#${s.id}</td>
+          <td><b>${s.name}</b></td>
+          <td>${s.facility_name || '-'}</td>
+          <td><span class="badge badge-stopped">${s.fuel_type}</span></td>
+          <td><b style="color:#38bdf8;">${s.current_balance_l.toFixed(1)} л</b></td>
+          <td>${formatDateTime(s.updated_at)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Складів ГСМ не знайдено</td></tr>';
+    }
+
+    // Receipts Table
+    const receipts = await api(`/fuel/receipts${qFac}`);
+    const rTbody = document.querySelector('#fuelReceiptsTable tbody');
+    if (rTbody) {
+      rTbody.innerHTML = receipts.map((r) => `
+        <tr>
+          <td>${formatDateTime(r.created_at)}</td>
+          <td>${r.facility_name || '-'}</td>
+          <td><b>${r.stock_name || '-'}</b></td>
+          <td><b>${r.liters.toFixed(1)} л</b></td>
+          <td>${r.cost_total.toFixed(2)}</td>
+          <td>${r.price_per_liter.toFixed(2)}</td>
+          <td>${r.driver_name}</td>
+          <td>${r.receipt_number}</td>
+          <td>${r.user_name || '-'}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="9" style="text-align:center; color:var(--text-muted)">Надходжень не зареєстровано</td></tr>';
+    }
+
+    // Transfers Table
+    const transfers = await api(`/fuel/transfers${qFac}`);
     const tTbody = document.querySelector('#fuelTransfersTable tbody');
-    tTbody.innerHTML = transfers.map((t) => `
-      <tr>
-        <td>${formatDateTime(t.created_at)}</td>
-        <td><b style="color:#38bdf8;">+${t.liters.toFixed(1)} л</b></td>
-        <td>${t.source_balance_before.toFixed(1)} → ${t.source_balance_after.toFixed(1)} л</td>
-        <td>${t.tank_balance_before.toFixed(1)} → ${t.tank_balance_after.toFixed(1)} л</td>
-        <td>${t.comment || '-'}</td>
-        <td>${t.user_name || '-'}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Заправок не зареєстровано</td></tr>';
+    if (tTbody) {
+      tTbody.innerHTML = transfers.map((t) => `
+        <tr>
+          <td>${formatDateTime(t.created_at)}</td>
+          <td>${t.stock_name || '-'}</td>
+          <td><b>${t.generator_name || '-'}</b></td>
+          <td><b style="color:#38bdf8;">+${t.liters.toFixed(1)} л</b></td>
+          <td>${t.source_balance_before.toFixed(1)} → ${t.source_balance_after.toFixed(1)} л</td>
+          <td>${t.tank_balance_before.toFixed(1)} → ${t.tank_balance_after.toFixed(1)} л</td>
+          <td>${t.comment || '-'}</td>
+          <td>${t.user_name || '-'}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="8" style="text-align:center; color:var(--text-muted)">Заправок не зареєстровано</td></tr>';
+    }
   } catch (_) {}
 }
 
 // Receipt Form Submit
 document.getElementById('receiptForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const stockVal = document.getElementById('recStock').value;
+  if (!stockVal) {
+    showToast('Будь ласка, оберіть склад ГСМ або створіть його', 'error');
+    return;
+  }
   const body = {
+    facility_id: parseInt(document.getElementById('recFacility').value),
+    stock_id: parseInt(stockVal),
     liters: parseFloat(document.getElementById('recLiters').value),
     cost_total: parseFloat(document.getElementById('recCostTotal').value),
     driver_name: document.getElementById('recDriver').value,
@@ -549,11 +668,50 @@ document.getElementById('receiptForm').addEventListener('submit', async (e) => {
   } catch (_) {}
 });
 
+// Create New Fuel Stock Form Submit
+document.getElementById('newStockForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const facilityId = parseInt(document.getElementById('newStockFacility').value) || currentFacilityId || 1;
+  const name = document.getElementById('newStockName').value.trim();
+  const fuelType = document.getElementById('newStockFuelType').value;
+  const initBal = parseFloat(document.getElementById('newStockInitialBalance').value) || 0.0;
+
+  try {
+    const created = await api('/fuel/stock/new', {
+      method: 'POST',
+      body: JSON.stringify({
+        facility_id: facilityId,
+        name: name,
+        fuel_type: fuelType,
+        initial_balance_l: initBal
+      })
+    });
+    closeModal('modalNewStock');
+    showToast(`Склад ГСМ "${created.name}" успішно створено!`, 'success');
+    document.getElementById('newStockName').value = '';
+    document.getElementById('newStockInitialBalance').value = '0.0';
+    loadFuelData();
+    loadFuelSummary();
+  } catch (_) {}
+});
+
 // Transfer Form Submit
 document.getElementById('transferForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const stockVal = document.getElementById('transStock').value;
+  const genVal = document.getElementById('transGenerator').value;
+  if (!stockVal) {
+    showToast('Будь ласка, оберіть склад ГСМ', 'error');
+    return;
+  }
+  if (!genVal) {
+    showToast('Будь ласка, оберіть генератор', 'error');
+    return;
+  }
   const body = {
-    generator_id: currentGeneratorId,
+    generator_id: parseInt(genVal),
+    stock_id: parseInt(stockVal),
+    facility_id: currentFacilityId || null,
     liters: parseFloat(document.getElementById('transLiters').value),
     comment: document.getElementById('transComment').value
   };
@@ -563,13 +721,24 @@ document.getElementById('transferForm').addEventListener('submit', async (e) => 
     closeModal('modalTransfer');
     showToast('Бак генератора успішно заправлено!', 'success');
     loadAllData();
+    loadFuelData();
   } catch (_) {}
 });
 
 // 3. Maintenance (ТО)
 async function loadMaintenanceSummary() {
   try {
-    const q = currentGeneratorId ? `?generator_id=${currentGeneratorId}` : '';
+    if (!currentGeneratorId) {
+      document.getElementById('cardMaintRem').innerHTML = `0.0 <small style="font-size:0.9rem;">год</small>`;
+      document.getElementById('cardMaintSub').innerText = `генератор не вибрано`;
+      document.getElementById('maintInterval').innerText = `-`;
+      document.getElementById('maintLast').innerText = `-`;
+      document.getElementById('maintNext').innerText = `-`;
+      document.getElementById('maintRemaining').innerText = `-`;
+      document.getElementById('maintProgress').style.width = `0%`;
+      return;
+    }
+    const q = `?generator_id=${currentGeneratorId}`;
     const m = await api(`/maintenance/schedule${q}`);
     document.getElementById('cardMaintRem').innerHTML = `${m.hours_remaining.toFixed(1)} <small style="font-size:0.9rem;">год</small>`;
     document.getElementById('cardMaintSub').innerText = `план: ${m.next_due_hours.toFixed(0)} год`;

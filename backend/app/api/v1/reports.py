@@ -14,6 +14,18 @@ from backend.app.services.report_service import (
 router = APIRouter(prefix="/reports", tags=["Звітність"])
 
 
+def parse_report_dt(dt_str: Optional[str], is_end: bool = False) -> Optional[datetime.datetime]:
+    if not dt_str:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(dt_str)
+    except ValueError:
+        return None
+    if is_end and len(dt_str) <= 10:
+        dt = dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return dt
+
+
 @router.get("/summary", response_model=OperationalReportOut)
 async def get_report_summary(
     generator_id: Optional[int] = None,
@@ -23,8 +35,8 @@ async def get_report_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("reports:view"))
 ):
-    start_dt = datetime.datetime.fromisoformat(start_date) if start_date else None
-    end_dt = datetime.datetime.fromisoformat(end_date) if end_date else None
+    start_dt = parse_report_dt(start_date, is_end=False)
+    end_dt = parse_report_dt(end_date, is_end=True)
 
     return await generate_operational_report(
         db=db,
@@ -44,8 +56,8 @@ async def export_report(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("reports:export"))
 ):
-    start_dt = datetime.datetime.fromisoformat(start_date) if start_date else None
-    end_dt = datetime.datetime.fromisoformat(end_date) if end_date else None
+    start_dt = parse_report_dt(start_date, is_end=False)
+    end_dt = parse_report_dt(end_date, is_end=True)
 
     report = await generate_operational_report(
         db=db,
@@ -78,8 +90,8 @@ async def export_excel_report(
     current_user: User = Depends(require_permission("reports:export"))
 ):
     """Експорт детального багатосторінкового звіту в Excel (.xlsx)"""
-    start_dt = datetime.datetime.fromisoformat(start_date) if start_date else None
-    end_dt = datetime.datetime.fromisoformat(end_date) if end_date else None
+    start_dt = parse_report_dt(start_date, is_end=False)
+    end_dt = parse_report_dt(end_date, is_end=True)
 
     excel_bytes = await generate_excel_report(
         db=db,

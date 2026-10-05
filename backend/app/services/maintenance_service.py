@@ -15,6 +15,11 @@ async def get_maintenance_schedule_status(db: AsyncSession, generator_id: Option
         gen_query = gen_query.where(Generator.id == generator_id)
     gen_res = await db.execute(gen_query)
     generator = gen_res.scalars().first()
+    if not generator and generator_id:
+        # Fallback to any existing generator to avoid 404 on deleted/stale generator IDs
+        gen_res = await db.execute(select(Generator))
+        generator = gen_res.scalars().first()
+
     if not generator:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
 

@@ -2,7 +2,7 @@ import io
 import csv
 import datetime
 from typing import Optional, List
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_, and_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 import openpyxl
@@ -140,6 +140,14 @@ async def generate_operational_report(
         FuelReceipt.created_at >= start_date,
         FuelReceipt.created_at <= end_date
     )
+    if facility_id:
+        rec_q = rec_q.outerjoin(FuelStock, FuelReceipt.stock_id == FuelStock.id).where(
+            or_(
+                FuelReceipt.facility_id == facility_id,
+                FuelStock.facility_id == facility_id,
+                and_(facility_id == 1, FuelReceipt.facility_id.is_(None), FuelStock.facility_id.is_(None))
+            )
+        )
     rec_res = await db.execute(rec_q)
     fuel_rec_l, fuel_rec_cost = rec_res.first()
     avg_price = round(fuel_rec_cost / fuel_rec_l, 2) if fuel_rec_l > 0 else 0.0
@@ -153,16 +161,18 @@ async def generate_operational_report(
     )
     if generator:
         tr_q = tr_q.where(FuelTransfer.generator_id == generator.id)
+    elif facility_id:
+        tr_q = tr_q.where(FuelTransfer.facility_id == facility_id)
     tr_res = await db.execute(tr_q)
     fuel_transferred_l = tr_res.scalar_one()
 
     # Stock & tank
-    stock_q = select(FuelStock)
     if facility_id:
-        stock_q = stock_q.where(FuelStock.facility_id == facility_id)
-    stock_res = await db.execute(stock_q)
-    stock = stock_res.scalars().first()
-    stock_bal = stock.current_balance_l if stock else 0.0
+        stock_bal_q = select(func.coalesce(func.sum(FuelStock.current_balance_l), 0.0)).where(FuelStock.facility_id == facility_id)
+        stock_bal = (await db.execute(stock_bal_q)).scalar_one()
+    else:
+        stock_bal_q = select(func.coalesce(func.sum(FuelStock.current_balance_l), 0.0))
+        stock_bal = (await db.execute(stock_bal_q)).scalar_one()
     tank_bal = generator.fuel_tank_level_l if generator else 0.0
 
     # 4. Maintenance aggregate
@@ -326,23 +336,34 @@ async def generate_excel_report(
     )
     if generator:
         runs_q = runs_q.where(GeneratorRun.generator_id == generator.id)
+    elif facility:
+        runs_q = runs_q.join(Generator).where(Generator.facility_id == facility.id)
     runs_q = runs_q.order_by(GeneratorRun.start_time.asc())
     runs = (await db.execute(runs_q)).scalars().all()
 
     # 5. Fetch Fuel Receipts
-    rec_q = select(FuelReceipt).options(selectinload(FuelReceipt.user), selectinload(FuelReceipt.stock)).where(
+    rec_q = select(FuelReceipt).options(
+        selectinload(FuelReceipt.user),
+        selectinload(FuelReceipt.stock).selectinload(FuelStock.facility)
+    ).where(
         FuelReceipt.created_at >= start_date,
         FuelReceipt.created_at <= end_date
     )
     if facility:
-        rec_q = rec_q.join(FuelStock).where(FuelStock.facility_id == facility.id)
+        rec_q = rec_q.outerjoin(FuelStock, FuelReceipt.stock_id == FuelStock.id).where(
+            or_(
+                FuelReceipt.facility_id == facility.id,
+                FuelStock.facility_id == facility.id,
+                and_(facility.id == 1, FuelReceipt.facility_id.is_(None), FuelStock.facility_id.is_(None))
+            )
+        )
     rec_q = rec_q.order_by(FuelReceipt.created_at.asc())
     receipts = (await db.execute(rec_q)).scalars().all()
 
     # 6. Fetch Fuel Transfers
     tr_q = select(FuelTransfer).options(
         selectinload(FuelTransfer.user),
-        selectinload(FuelTransfer.stock),
+        selectinload(FuelTransfer.stock).selectinload(FuelStock.facility),
         selectinload(FuelTransfer.generator)
     ).where(
         FuelTransfer.created_at >= start_date,
@@ -350,10 +371,23 @@ async def generate_excel_report(
     )
     if generator:
         tr_q = tr_q.where(FuelTransfer.generator_id == generator.id)
+    elif facility:
+        tr_q = tr_q.outerjoin(Generator, FuelTransfer.generator_id == Generator.id).where(
+            or_(
+                FuelTransfer.facility_id == facility.id,
+                Generator.facility_id == facility.id
+            )
+        )
     tr_q = tr_q.order_by(FuelTransfer.created_at.asc())
     transfers = (await db.execute(tr_q)).scalars().all()
 
-    # 7. Fetch Maintenance Records
+    # 7. Fetch All Fuel Stocks
+    stocks_q = select(FuelStock).options(selectinload(FuelStock.facility))
+    if facility:
+        stocks_q = stocks_q.where(FuelStock.facility_id == facility.id)
+    stocks_list = (await db.execute(stocks_q.order_by(FuelStock.id.asc()))).scalars().all()
+
+    # 8. Fetch Maintenance Records
     m_q = select(MaintenanceRecord).options(
         selectinload(MaintenanceRecord.user),
         selectinload(MaintenanceRecord.generator)
@@ -363,24 +397,28 @@ async def generate_excel_report(
     )
     if generator:
         m_q = m_q.where(MaintenanceRecord.generator_id == generator.id)
+    elif facility:
+        m_q = m_q.join(Generator).where(Generator.facility_id == facility.id)
     m_q = m_q.order_by(MaintenanceRecord.created_at.asc())
     maint_records = (await db.execute(m_q)).scalars().all()
 
-    # 8. Fetch Faults
-    f_q = select(Fault).options(selectinload(Fault.user)).where(
+    # 9. Fetch Faults
+    f_q = select(Fault).options(selectinload(Fault.user), selectinload(Fault.generator)).where(
         Fault.created_at >= start_date,
         Fault.created_at <= end_date
     )
     if generator:
         f_q = f_q.where(Fault.generator_id == generator.id)
+    elif facility:
+        f_q = f_q.join(Generator).where(Generator.facility_id == facility.id)
     f_q = f_q.order_by(Fault.created_at.asc())
     faults = (await db.execute(f_q)).scalars().all()
 
-    # 9. Fetch Audit Logs
+    # 10. Fetch Audit Logs
     audit_q = select(AuditLog).options(selectinload(AuditLog.user)).where(
         AuditLog.created_at >= start_date,
         AuditLog.created_at <= end_date
-    ).order_by(AuditLog.created_at.desc()).limit(200)
+    ).order_by(AuditLog.created_at.desc()).limit(1000)
     audit_logs = (await db.execute(audit_q)).scalars().all()
 
     # Create Workbook
@@ -499,7 +537,7 @@ async def generate_excel_report(
     auto_adjust_column_widths(ws1, min_width=15)
 
     # -------------------------------------------------------------
-    # ВКЛАДКА 2: ЗВІТ ПО ДНЯХ (РОБОЧІ ЦИКЛИ)
+    # ВКЛАДКА 2: ЗВІТ ПО ДНЯХ (РОБОЧІ ЦИКЛИ ТА ОПЕРАЦІЇ)
     # -------------------------------------------------------------
     ws2 = wb.create_sheet(title="Звіт по днях")
     ws2.views.sheetView[0].showGridLines = True
@@ -509,8 +547,8 @@ async def generate_excel_report(
         "№", "Дата (РРРР-ММ-ДД)", "Час старту", "Час зупинки",
         "Тривалість (год)", "Тривалість (ГГ:ХХ:СС)",
         "Початкові мотогодини", "Кінцеві мотогодини",
-        "Початкове паливо (л)", "Кінцеве паливо (л)",
-        "Витрата палива (л)", "Заправка в бак (л)",
+        "Початкове паливо в баку (л)", "Кінцеве паливо в баку (л)",
+        "Витрата палива (л)", "Заправка в бак (л)", "Приход на склад (л)",
         "Оператор", "Статус", "Примітки"
     ]
     ws2.row_dimensions[1].height = 26
@@ -521,69 +559,117 @@ async def generate_excel_report(
         cell.alignment = ALIGN_CENTER
         cell.border = CELL_BORDER
 
-    # Map daily transfers to runs if occurred that day
+    # Map daily transfers and receipts by date
     transfers_by_date = {}
     for tr in transfers:
         d_str = to_facility_time(tr.created_at).strftime("%Y-%m-%d")
         transfers_by_date[d_str] = transfers_by_date.get(d_str, 0.0) + tr.liters
 
+    receipts_by_date = {}
+    for rc in receipts:
+        d_str = to_facility_time(rc.created_at).strftime("%Y-%m-%d")
+        receipts_by_date[d_str] = receipts_by_date.get(d_str, 0.0) + rc.liters
+
     tot_dur_hours = 0.0
     tot_cons_l = 0.0
     tot_fuel_added = 0.0
+    tot_fuel_received = 0.0
 
-    for idx, r in enumerate(runs, start=1):
-        r_row = idx + 1
+    daily_rows = []
+    seen_dates = set()
+
+    for r in runs:
         date_str = fmt_date(r.start_time)
+        seen_dates.add(date_str)
         start_t = fmt_time(r.start_time)
         end_t = fmt_time(r.end_time) if r.end_time else "-"
         dur_h = round(r.duration_hours or 0.0, 2)
         dur_str = r.duration_formatted or fmt_duration(r.duration_seconds, r.duration_hours)
         consumption = round(r.calculated_consumption_l or 0.0, 2)
-        fuel_added = round(transfers_by_date.get(date_str, 0.0), 2)
+        fuel_added = round(transfers_by_date.pop(date_str, 0.0), 2)
+        fuel_rec = round(receipts_by_date.pop(date_str, 0.0), 2)
         op_name = r.user.full_name if r.user else "Оператор"
 
         tot_dur_hours += dur_h
         tot_cons_l += consumption
         tot_fuel_added += fuel_added
+        tot_fuel_received += fuel_rec
 
-        values = [
-            idx,
+        daily_rows.append([
             date_str,
             start_t,
             end_t,
             dur_h,
             dur_str,
             r.start_hours,
-            r.end_hours or "-",
+            r.end_hours if r.end_hours is not None else "-",
             r.start_fuel_level_l if r.start_fuel_level_l is not None else "-",
             r.end_fuel_level_l if r.end_fuel_level_l is not None else "-",
             consumption,
             fuel_added if fuel_added > 0 else "-",
+            fuel_rec if fuel_rec > 0 else "-",
             op_name,
             r.status,
             r.note or ""
-        ]
+        ])
 
+    # Add any dates that had fuel movements (receipts or transfers) but no generator runs
+    extra_dates = sorted(list(set(transfers_by_date.keys()) | set(receipts_by_date.keys())))
+    for d_str in extra_dates:
+        fuel_added = round(transfers_by_date.get(d_str, 0.0), 2)
+        fuel_rec = round(receipts_by_date.get(d_str, 0.0), 2)
+        tot_fuel_added += fuel_added
+        tot_fuel_received += fuel_rec
+
+        daily_rows.append([
+            d_str,
+            "-",
+            "-",
+            0.0,
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            0.0,
+            fuel_added if fuel_added > 0 else "-",
+            fuel_rec if fuel_rec > 0 else "-",
+            "Склад ГСМ",
+            "Рух палива",
+            "Оприбуткування / заправка без пуску генератора"
+        ])
+
+    for idx, vals in enumerate(daily_rows, start=1):
+        r_row = idx + 1
         ws2.row_dimensions[r_row].height = 20
         fill = ZEBRA_FILL if idx % 2 == 0 else PatternFill(fill_type=None)
-        for c_idx, val in enumerate(values, start=1):
-            cell = ws2.cell(row=r_row, column=c_idx, value=val)
+
+        # №
+        c_num = ws2.cell(row=r_row, column=1, value=idx)
+        c_num.font = REGULAR_FONT
+        c_num.border = CELL_BORDER
+        c_num.alignment = ALIGN_CENTER
+        if fill.fill_type:
+            c_num.fill = fill
+
+        for c_offset, val in enumerate(vals, start=2):
+            cell = ws2.cell(row=r_row, column=c_offset, value=val)
             cell.font = REGULAR_FONT
             cell.border = CELL_BORDER
             if fill.fill_type:
                 cell.fill = fill
 
-            if c_idx in [1, 2, 3, 4, 6, 14]:
+            if c_offset in [2, 3, 4, 6, 15]:
                 cell.alignment = ALIGN_CENTER
-            elif c_idx in [5, 7, 8, 9, 10, 11, 12]:
+            elif c_offset in [5, 7, 8, 9, 10, 11, 12, 13]:
                 cell.alignment = ALIGN_RIGHT
-                if isinstance(val, float):
+                if isinstance(val, (int, float)):
                     cell.number_format = "#,##0.00"
             else:
                 cell.alignment = ALIGN_LEFT
 
     # Total row for Sheet 2
-    last_r = len(runs) + 2
+    last_r = len(daily_rows) + 2
     ws2.row_dimensions[last_r].height = 22
     for c_idx in range(1, len(headers2) + 1):
         cell = ws2.cell(row=last_r, column=c_idx)
@@ -608,6 +694,11 @@ async def generate_excel_report(
         c_tot_add.alignment = ALIGN_RIGHT
         c_tot_add.number_format = "#,##0.00"
 
+    if tot_fuel_received > 0:
+        c_tot_rec = ws2.cell(row=last_r, column=13, value=round(tot_fuel_received, 2))
+        c_tot_rec.alignment = ALIGN_RIGHT
+        c_tot_rec.number_format = "#,##0.00"
+
     ws2.auto_filter.ref = f"A1:{get_column_letter(len(headers2))}{last_r - 1}"
     auto_adjust_column_widths(ws2, min_width=12)
 
@@ -619,7 +710,7 @@ async def generate_excel_report(
     ws3.freeze_panes = "A3"
 
     # Section 1: Receipts
-    ws3.merge_cells("A1:K1")
+    ws3.merge_cells("A1:L1")
     s1_title = ws3["A1"]
     s1_title.value = "1. Оприбуткування палива на склад ГСМ (закупівля / чеки)"
     s1_title.font = SECTION_FONT
@@ -628,7 +719,7 @@ async def generate_excel_report(
     ws3.row_dimensions[1].height = 24
 
     headers3_rec = [
-        "№", "Дата / Час", "Склад ГСМ", "Чек / Накладна №",
+        "№", "Дата / Час", "Об'єкт (локація)", "Склад ГСМ", "Чек / Накладна №",
         "Водій / Постачальник", "Тип палива", "Об'єм (л)",
         "Сума (грн)", "Ціна за літр (грн/л)", "Хто прийняв", "Коментар"
     ]
@@ -646,11 +737,13 @@ async def generate_excel_report(
     for idx, rc in enumerate(receipts, start=1):
         tot_rec_l += rc.liters
         tot_rec_uah += rc.cost_total
+        fac_rec_name = rc.stock.facility.name if rc.stock and rc.stock.facility else facility_name
         stock_name = rc.stock.name if rc.stock else "Склад ГСМ"
         rec_user = rc.user.full_name if rc.user else "Користувач"
         vals = [
             idx,
             fmt_dt(rc.created_at),
+            fac_rec_name,
             stock_name,
             rc.receipt_number,
             rc.driver_name,
@@ -669,9 +762,9 @@ async def generate_excel_report(
             cell.border = CELL_BORDER
             if fill.fill_type:
                 cell.fill = fill
-            if c_idx in [1, 2, 4, 6]:
+            if c_idx in [1, 2, 5, 7]:
                 cell.alignment = ALIGN_CENTER
-            elif c_idx in [7, 8, 9]:
+            elif c_idx in [8, 9, 10]:
                 cell.alignment = ALIGN_RIGHT
                 if isinstance(val, (int, float)):
                     cell.number_format = "#,##0.00"
@@ -687,20 +780,20 @@ async def generate_excel_report(
         cell.border = TOTAL_BORDER
         cell.font = TOTAL_FONT
     ws3.cell(row=row_cur, column=1, value="РАЗОМ").alignment = ALIGN_CENTER
-    c_tot_l = ws3.cell(row=row_cur, column=7, value=round(tot_rec_l, 2))
+    c_tot_l = ws3.cell(row=row_cur, column=8, value=round(tot_rec_l, 2))
     c_tot_l.alignment = ALIGN_RIGHT
     c_tot_l.number_format = "#,##0.00"
-    c_tot_u = ws3.cell(row=row_cur, column=8, value=round(tot_rec_uah, 2))
+    c_tot_u = ws3.cell(row=row_cur, column=9, value=round(tot_rec_uah, 2))
     c_tot_u.alignment = ALIGN_RIGHT
     c_tot_u.number_format = "#,##0.00"
     if tot_rec_l > 0:
-        c_avg = ws3.cell(row=row_cur, column=9, value=round(tot_rec_uah / tot_rec_l, 2))
+        c_avg = ws3.cell(row=row_cur, column=10, value=round(tot_rec_uah / tot_rec_l, 2))
         c_avg.alignment = ALIGN_RIGHT
         c_avg.number_format = "#,##0.00"
     row_cur += 3
 
     # Section 2: Transfers to Tank
-    ws3.merge_cells(start_row=row_cur, start_column=1, end_row=row_cur, end_column=10)
+    ws3.merge_cells(start_row=row_cur, start_column=1, end_row=row_cur, end_column=12)
     s2_title = ws3.cell(row=row_cur, column=1, value="2. Заправки зі складу ГСМ у бак генератора")
     s2_title.font = SECTION_FONT
     s2_title.fill = PRIMARY_FILL
@@ -709,9 +802,9 @@ async def generate_excel_report(
     row_cur += 1
 
     headers3_tr = [
-        "№", "Дата / Час", "Звідки (Склад ГСМ)", "Куди (Генератор)",
+        "№", "Дата / Час", "Об'єкт (локація)", "Звідки (Склад ГСМ)", "Куди (Генератор)",
         "Заправлено (л)", "Склад до (л)", "Склад після (л)",
-        "Бак до (л)", "Бак після (л)", "Оператор"
+        "Бак до (л)", "Бак після (л)", "Оператор", "Коментар"
     ]
     ws3.row_dimensions[row_cur].height = 24
     for c_idx, h in enumerate(headers3_tr, start=1):
@@ -725,12 +818,14 @@ async def generate_excel_report(
     tot_tr_l = 0.0
     for idx, tr in enumerate(transfers, start=1):
         tot_tr_l += tr.liters
+        fac_tr_name = tr.stock.facility.name if tr.stock and tr.stock.facility else facility_name
         stock_name = tr.stock.name if tr.stock else "Склад ГСМ"
         gen_tr_name = tr.generator.name if tr.generator else generator_name
         tr_user = tr.user.full_name if tr.user else "Оператор"
         vals = [
             idx,
             fmt_dt(tr.created_at),
+            fac_tr_name,
             stock_name,
             gen_tr_name,
             tr.liters,
@@ -738,7 +833,8 @@ async def generate_excel_report(
             tr.source_balance_after,
             tr.tank_balance_before,
             tr.tank_balance_after,
-            tr_user
+            tr_user,
+            tr.comment or ""
         ]
         ws3.row_dimensions[row_cur].height = 20
         fill = ZEBRA_FILL if idx % 2 == 0 else PatternFill(fill_type=None)
@@ -750,7 +846,7 @@ async def generate_excel_report(
                 cell.fill = fill
             if c_idx in [1, 2]:
                 cell.alignment = ALIGN_CENTER
-            elif c_idx in [5, 6, 7, 8, 9]:
+            elif c_idx in [6, 7, 8, 9, 10]:
                 cell.alignment = ALIGN_RIGHT
                 if isinstance(val, (int, float)):
                     cell.number_format = "#,##0.00"
@@ -766,9 +862,74 @@ async def generate_excel_report(
         cell.border = TOTAL_BORDER
         cell.font = TOTAL_FONT
     ws3.cell(row=row_cur, column=1, value="РАЗОМ").alignment = ALIGN_CENTER
-    c_tot_trl = ws3.cell(row=row_cur, column=5, value=round(tot_tr_l, 2))
+    c_tot_trl = ws3.cell(row=row_cur, column=6, value=round(tot_tr_l, 2))
     c_tot_trl.alignment = ALIGN_RIGHT
     c_tot_trl.number_format = "#,##0.00"
+    row_cur += 3
+
+    # Section 3: Current Balances of all Fuel Stocks
+    ws3.merge_cells(start_row=row_cur, start_column=1, end_row=row_cur, end_column=6)
+    s3_title = ws3.cell(row=row_cur, column=1, value="3. Поточні залишки на складах ГСМ")
+    s3_title.font = SECTION_FONT
+    s3_title.fill = PRIMARY_FILL
+    s3_title.alignment = ALIGN_LEFT
+    ws3.row_dimensions[row_cur].height = 24
+    row_cur += 1
+
+    headers3_stk = [
+        "№", "Назва складу ГСМ", "Об'єкт (локація)", "Тип палива",
+        "Поточний залишок (л)", "Дата останнього оновлення"
+    ]
+    ws3.row_dimensions[row_cur].height = 24
+    for c_idx, h in enumerate(headers3_stk, start=1):
+        cell = ws3.cell(row=row_cur, column=c_idx, value=h)
+        cell.fill = SECONDARY_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = ALIGN_CENTER
+        cell.border = CELL_BORDER
+    row_cur += 1
+
+    tot_stk_l = 0.0
+    for idx, stk in enumerate(stocks_list, start=1):
+        tot_stk_l += stk.current_balance_l
+        stk_fac = stk.facility.name if stk.facility else facility_name
+        vals = [
+            idx,
+            stk.name,
+            stk_fac,
+            stk.fuel_type,
+            stk.current_balance_l,
+            fmt_dt(stk.updated_at)
+        ]
+        ws3.row_dimensions[row_cur].height = 20
+        fill = ZEBRA_FILL if idx % 2 == 0 else PatternFill(fill_type=None)
+        for c_idx, val in enumerate(vals, start=1):
+            cell = ws3.cell(row=row_cur, column=c_idx, value=val)
+            cell.font = REGULAR_FONT
+            cell.border = CELL_BORDER
+            if fill.fill_type:
+                cell.fill = fill
+            if c_idx in [1, 4, 6]:
+                cell.alignment = ALIGN_CENTER
+            elif c_idx == 5:
+                cell.alignment = ALIGN_RIGHT
+                if isinstance(val, (int, float)):
+                    cell.number_format = "#,##0.00"
+            else:
+                cell.alignment = ALIGN_LEFT
+        row_cur += 1
+
+    # Stocks Total Row
+    ws3.row_dimensions[row_cur].height = 22
+    for c_idx in range(1, len(headers3_stk) + 1):
+        cell = ws3.cell(row=row_cur, column=c_idx)
+        cell.fill = TOTAL_FILL
+        cell.border = TOTAL_BORDER
+        cell.font = TOTAL_FONT
+    ws3.cell(row=row_cur, column=1, value="РАЗОМ НА СКЛАДАХ").alignment = ALIGN_CENTER
+    c_tot_stk = ws3.cell(row=row_cur, column=5, value=round(tot_stk_l, 2))
+    c_tot_stk.alignment = ALIGN_RIGHT
+    c_tot_stk.number_format = "#,##0.00"
 
     auto_adjust_column_widths(ws3, min_width=12)
 
@@ -853,7 +1014,7 @@ async def generate_excel_report(
     ws5.freeze_panes = "A3"
 
     # Section 1: Faults
-    ws5.merge_cells("A1:H1")
+    ws5.merge_cells("A1:I1")
     f_title = ws5["A1"]
     f_title.value = "1. Журнал несправностей та інцидентів"
     f_title.font = SECTION_FONT
@@ -862,7 +1023,7 @@ async def generate_excel_report(
     ws5.row_dimensions[1].height = 24
 
     headers5_f = [
-        "№", "Дата / Час", "Статус", "Вплив на роботу",
+        "№", "Дата / Час", "Генератор", "Статус", "Вплив на роботу",
         "Опис несправності", "Дії з усунення", "Хто зафіксував", "Вирішено"
     ]
     ws5.row_dimensions[2].height = 24
@@ -876,10 +1037,12 @@ async def generate_excel_report(
     row_f = 3
     for idx, fl in enumerate(faults, start=1):
         f_user = fl.user.full_name if fl.user else "Користувач"
+        f_gen = fl.generator.name if fl.generator else generator_name
         resolved_t = fmt_dt(fl.resolved_at) if fl.resolved_at else "Не усунено"
         vals = [
             idx,
             fmt_dt(fl.created_at),
+            f_gen,
             fl.status,
             fl.operational_impact,
             fl.description,
@@ -895,7 +1058,7 @@ async def generate_excel_report(
             cell.border = CELL_BORDER
             if fill.fill_type:
                 cell.fill = fill
-            if c_idx in [1, 2, 3, 4, 8]:
+            if c_idx in [1, 2, 4, 5, 9]:
                 cell.alignment = ALIGN_CENTER
             else:
                 cell.alignment = ALIGN_LEFT

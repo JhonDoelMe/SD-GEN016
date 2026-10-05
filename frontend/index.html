@@ -188,10 +188,11 @@
     <section id="tab-fuel" class="tab-pane" style="display: none;">
       <div class="panel">
         <div class="panel-header">
-          <h3>Управління паливом (Склад ГСМ ↔ Бак генератора)</h3>
-          <div style="display: flex; gap: 0.5rem;">
+          <h3>Управління паливом (Склади ГСМ ↔ Баки генераторів)</h3>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
             <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalReceipt')">+ Оприбуткувати (Бензовоз)</button>
             <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalTransfer')">⛽ Заправити бак</button>
+            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalNewStock')">📦 + Додати склад ГСМ</button>
           </div>
         </div>
 
@@ -215,12 +216,31 @@
           </div>
         </div>
 
+        <h4 style="margin: 1.5rem 0 0.5rem;">Склади ГСМ об'єкта</h4>
+        <div class="table-wrapper" style="margin-bottom: 1.5rem;">
+          <table id="fuelStocksTable">
+            <thead>
+              <tr>
+                <th>№</th>
+                <th>Назва складу</th>
+                <th>Об'єкт</th>
+                <th>Тип палива</th>
+                <th>Залишок (л)</th>
+                <th>Останнє оновлення</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
         <h4 style="margin: 1.5rem 0 0.5rem;">Надходження палива на склад (Чеки / Накладні)</h4>
         <div class="table-wrapper">
           <table id="fuelReceiptsTable">
             <thead>
               <tr>
                 <th>Дата</th>
+                <th>Об'єкт</th>
+                <th>Склад ГСМ</th>
                 <th>Літри</th>
                 <th>Сума (грн)</th>
                 <th>Ціна/л</th>
@@ -239,6 +259,8 @@
             <thead>
               <tr>
                 <th>Дата</th>
+                <th>Зі складу</th>
+                <th>Генератор</th>
                 <th>Заправлено</th>
                 <th>Склад (до → після)</th>
                 <th>Бак (до → після)</th>
@@ -527,6 +549,14 @@
       </div>
       <form id="receiptForm">
         <div class="form-group">
+          <label>Об'єкт (локація)</label>
+          <select id="recFacility" required></select>
+        </div>
+        <div class="form-group">
+          <label>Склад ГСМ</label>
+          <select id="recStock" required></select>
+        </div>
+        <div class="form-group">
           <label>Кількість літрів</label>
           <input type="number" step="0.1" id="recLiters" required placeholder="напр. 100.0">
         </div>
@@ -559,6 +589,39 @@
     </div>
   </div>
 
+  <!-- Modal: Create New Fuel Stock -->
+  <div id="modalNewStock" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Створити новий склад ГСМ</h3>
+        <button class="close-btn" onclick="closeModal('modalNewStock')">&times;</button>
+      </div>
+      <form id="newStockForm">
+        <div class="form-group">
+          <label>Об'єкт (локація)</label>
+          <select id="newStockFacility" required></select>
+        </div>
+        <div class="form-group">
+          <label>Назва складу ГСМ</label>
+          <input type="text" id="newStockName" required placeholder="напр. Резервний склад №2">
+        </div>
+        <div class="form-group">
+          <label>Тип палива</label>
+          <select id="newStockFuelType">
+            <option value="А-95" selected>А-95</option>
+            <option value="А-92">А-92</option>
+            <option value="ДП">ДП</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Початковий запас (л)</label>
+          <input type="number" step="0.1" id="newStockInitialBalance" value="0.0" min="0">
+        </div>
+        <button type="submit" class="btn-primary">Створити склад</button>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal: Transfer Fuel to Tank -->
   <div id="modalTransfer" class="modal-overlay">
     <div class="modal-content">
@@ -570,6 +633,14 @@
         <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
           Переміщення палива: Склад ГСМ → Бак генератора
         </p>
+        <div class="form-group">
+          <label>Зі складу ГСМ</label>
+          <select id="transStock" required></select>
+        </div>
+        <div class="form-group">
+          <label>Генератор (куди заправити)</label>
+          <select id="transGenerator" required></select>
+        </div>
         <div class="form-group">
           <label>Кількість літрів для заправки</label>
           <input type="number" step="0.1" id="transLiters" required placeholder="напр. 20.0">
@@ -907,7 +978,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=2.0"></script>
+  <script src="/frontend/app.js?v=2.1"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

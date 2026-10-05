@@ -52,6 +52,27 @@ def ensure_schema_updates(sync_conn):
             "OR (last_performed_hours = 235.0 AND next_due_hours > 300.0)"
         ))
 
+    # 5. Synchronize sequences for PostgreSQL to avoid duplicate key errors on auto-incrementing IDs
+    if sync_conn.dialect.name == "postgresql":
+        serial_tables = [
+            "facilities", "generators", "fuel_stocks", "fuel_receipts",
+            "fuel_transfers", "users", "roles", "permissions",
+            "maintenance_schedules", "maintenance_records",
+            "generator_runs", "generator_faults", "audit_logs"
+        ]
+        for tbl in serial_tables:
+            if tbl in tables:
+                try:
+                    sync_conn.execute(text(f"""
+                        SELECT setval(
+                            pg_get_serial_sequence('{tbl}', 'id'),
+                            COALESCE((SELECT MAX(id) FROM {tbl}), 1),
+                            (SELECT MAX(id) IS NOT NULL FROM {tbl})
+                        ) WHERE pg_get_serial_sequence('{tbl}', 'id') IS NOT NULL;
+                    """))
+                except Exception as ex:
+                    print(f"[DB] Sequence sync notice for {tbl}: {ex}", flush=True)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
