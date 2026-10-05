@@ -13,11 +13,24 @@ from backend.app.services.init_service import seed_initial_data
 from backend.app.api.v1 import api_v1_router
 
 
+from sqlalchemy import inspect, text
+
+
+def ensure_schema_updates(sync_conn):
+    inspector = inspect(sync_conn)
+    tables = inspector.get_table_names()
+    if "generator_runs" in tables:
+        columns = [c["name"] for c in inspector.get_columns("generator_runs")]
+        if "duration_seconds" not in columns:
+            sync_conn.execute(text("ALTER TABLE generator_runs ADD COLUMN duration_seconds INTEGER"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1. Create DB schema if needed
+    # 1. Create DB schema if needed and apply missing columns to existing DBs
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(ensure_schema_updates)
 
     # 2. Seed initial permissions, roles, superadmin, fuel stock
     async with AsyncSessionLocal() as session:
