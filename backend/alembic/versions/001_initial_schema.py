@@ -23,8 +23,8 @@ def upgrade() -> None:
         sa.Column('email', sa.String(length=255), nullable=True),
         sa.Column('password_hash', sa.String(length=255), nullable=False),
         sa.Column('full_name', sa.String(length=255), nullable=False),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('1')),
-        sa.Column('is_superadmin', sa.Boolean(), nullable=False, server_default=sa.text('0')),
+        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('true')),
+        sa.Column('is_superadmin', sa.Boolean(), nullable=False, server_default=sa.text('false')),
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.Column('updated_at', sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint('id')
@@ -85,7 +85,7 @@ def upgrade() -> None:
         sa.Column('current_operating_hours', sa.Float(), nullable=False, server_default='0.0'),
         sa.Column('fuel_tank_level_l', sa.Float(), nullable=False, server_default='0.0'),
         sa.Column('status', sa.String(length=50), nullable=False, server_default='STOPPED'),
-        sa.Column('is_configured', sa.Boolean(), nullable=False, server_default=sa.text('0')),
+        sa.Column('is_configured', sa.Boolean(), nullable=False, server_default=sa.text('false')),
         sa.Column('timezone', sa.String(length=50), nullable=False, server_default='Europe/Kyiv'),
         sa.Column('extra_params_json', sa.Text(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=False),
@@ -102,7 +102,7 @@ def upgrade() -> None:
         sa.Column('start_time', sa.String(length=10), nullable=False, server_default='08:00'),
         sa.Column('end_time', sa.String(length=10), nullable=False, server_default='20:00'),
         sa.Column('timezone', sa.String(length=50), nullable=False, server_default='Europe/Kyiv'),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('1')),
+        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('true')),
         sa.ForeignKeyConstraint(['generator_id'], ['generators.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
@@ -190,7 +190,7 @@ def upgrade() -> None:
         sa.Column('interval_hours', sa.Float(), nullable=False, server_default='300.0'),
         sa.Column('last_performed_hours', sa.Float(), nullable=False, server_default='0.0'),
         sa.Column('next_due_hours', sa.Float(), nullable=False, server_default='300.0'),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('1')),
+        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('true')),
         sa.ForeignKeyConstraint(['generator_id'], ['generators.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
