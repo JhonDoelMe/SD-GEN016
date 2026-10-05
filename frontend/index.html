@@ -86,8 +86,8 @@
         </button>
 
         <!-- Live Running Timer (if active) -->
-        <div id="activeRunBanner" style="display: none; background: rgba(34, 197, 94, 0.1); border: 1px dashed #22c55e; border-radius: 0.5rem; padding: 0.75rem; font-size: 0.9rem; text-align: center;">
-          Триває робочий цикл. Початок: <b id="activeRunStart">-</b> | Початкові години: <b id="activeRunHours">-</b>
+        <div id="activeRunBanner" style="display: none; background: rgba(34, 197, 94, 0.1); border: 1px dashed #22c55e; border-radius: 0.5rem; padding: 0.75rem; font-size: 0.95rem; text-align: center;">
+          ⚡ Триває робочий цикл. Початок: <b id="activeRunStart">-</b> | Початкові години: <b id="activeRunHours">-</b> | Фактичний час: <b id="activeRunDuration" style="font-family: monospace; color: #4ade80;">00:00:00</b>
         </div>
       </div>
 
@@ -449,10 +449,24 @@
         <button class="close-btn" onclick="closeModal('modalStopGen')">&times;</button>
       </div>
       <form id="stopGenForm">
+        <div style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 0.5rem; padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.35rem;">
+            <span style="color: var(--text-muted);">Початок роботи:</span>
+            <b id="stopStartTimeDisplay">-</b>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.35rem; align-items: center;">
+            <span style="color: var(--text-muted);">Тривалість циклу:</span>
+            <b id="stopDurationDisplay" style="color: #38bdf8; font-size: 1.25rem; font-family: monospace;">00:00:00</b>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Розрахунковий розхід:</span>
+            <b id="stopEstFuelDisplay" style="color: #4ade80;">0.000 л</b>
+          </div>
+        </div>
         <div class="form-group">
-          <label>Кінцеві мотогодини на лічильнику</label>
-          <input type="number" step="0.1" id="stopEndHours" required placeholder="напр. 104.5">
-          <small style="color: var(--text-muted);">Повинні бути більшими або рівними за початкові</small>
+          <label>Кінцеві мотогодини на лічильнику (необов'язково)</label>
+          <input type="number" step="any" id="stopEndHours" placeholder="Залиште пустим для авто-розрахунку">
+          <small style="color: var(--text-muted);">Якщо лічильник не змінився, значення буде розраховано за секундоміром</small>
         </div>
         <div class="form-group">
           <label>Фактичний рівень палива в баку (л, необов'язково)</label>
@@ -682,6 +696,10 @@
           <div class="form-group">
             <label>Інтервал ТО (мотогодин)</label>
             <input type="number" step="1" id="wizMaintInterval" required value="300">
+          </div>
+          <div class="form-group">
+            <label>Останнє виконане ТО (мотогодин)</label>
+            <input type="number" step="0.1" id="wizLastMaintHours" placeholder="За замовчуванням: 0 або кратно інтервалу">
           </div>
           <div class="form-group">
             <label>Початок графіка роботи</label>

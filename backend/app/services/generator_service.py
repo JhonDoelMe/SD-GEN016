@@ -86,6 +86,18 @@ async def setup_generator_wizard(
     db.add(new_schedule)
 
     # Configure maintenance schedule
+    interval = setup_data.maintenance_interval_hours
+    init_hours = setup_data.initial_operating_hours
+    if setup_data.last_maintenance_performed_hours is not None:
+        last_performed = setup_data.last_maintenance_performed_hours
+        next_due = last_performed + interval
+        while next_due <= init_hours:
+            next_due += interval
+    else:
+        cycle = int(init_hours // interval)
+        last_performed = float(cycle * interval)
+        next_due = float((cycle + 1) * interval)
+
     m_schedules_res = await db.execute(
         select(MaintenanceSchedule).where(MaintenanceSchedule.generator_id == generator.id)
     )
@@ -93,16 +105,16 @@ async def setup_generator_wizard(
     if not m_schedule:
         m_schedule = MaintenanceSchedule(
             generator_id=generator.id,
-            interval_hours=setup_data.maintenance_interval_hours,
-            last_performed_hours=setup_data.initial_operating_hours,
-            next_due_hours=setup_data.initial_operating_hours + setup_data.maintenance_interval_hours,
+            interval_hours=interval,
+            last_performed_hours=last_performed,
+            next_due_hours=next_due,
             is_active=True
         )
         db.add(m_schedule)
     else:
-        m_schedule.interval_hours = setup_data.maintenance_interval_hours
-        m_schedule.last_performed_hours = setup_data.initial_operating_hours
-        m_schedule.next_due_hours = setup_data.initial_operating_hours + setup_data.maintenance_interval_hours
+        m_schedule.interval_hours = interval
+        m_schedule.last_performed_hours = last_performed
+        m_schedule.next_due_hours = next_due
 
     await db.flush()
 
@@ -263,26 +275,45 @@ async def stop_generator(
         db.add(run)
         await db.flush()
 
-    # Invariant: cumulative hours cannot decrease
-    if stop_data.end_hours < run.start_hours:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Кінцеві мотогодини ({stop_data.end_hours}) не можуть бути меншими за початкові ({run.start_hours})"
-        )
-
     end_time = utc_now()
-    duration_hours = round(stop_data.end_hours - run.start_hours, 2)
-    calculated_consumption = round(duration_hours * generator.nominal_consumption_l_per_h, 2)
+    elapsed_seconds = max(1, int((end_time - run.start_time).total_seconds()))
+
+    if stop_data.end_hours is not None:
+        if stop_data.end_hours < run.start_hours:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Кінцеві мотогодини ({stop_data.end_hours}) не можуть бути меншими за початкові ({run.start_hours})"
+            )
+        if stop_data.end_hours > run.start_hours:
+            # Operator entered advanced counter value
+            end_hours = stop_data.end_hours
+            duration_hours = round(end_hours - run.start_hours, 2)
+            duration_seconds = max(elapsed_seconds, int(round(duration_hours * 3600)))
+            calculated_consumption = round(duration_hours * generator.nominal_consumption_l_per_h, 2)
+        else:
+            # Operator entered same counter value (very short run)
+            duration_seconds = elapsed_seconds
+            duration_hours = round(duration_seconds / 3600.0, 4)
+            end_hours = round(run.start_hours + duration_hours, 3)
+            calculated_consumption = round((duration_seconds / 3600.0) * generator.nominal_consumption_l_per_h, 3)
+    else:
+        # Automatic calculation from elapsed wall-clock seconds
+        duration_seconds = elapsed_seconds
+        duration_hours = round(duration_seconds / 3600.0, 4)
+        end_hours = round(run.start_hours + duration_hours, 3)
+        calculated_consumption = round((duration_seconds / 3600.0) * generator.nominal_consumption_l_per_h, 3)
 
     run.end_time = end_time
-    run.end_hours = stop_data.end_hours
+    run.end_hours = end_hours
+    run.duration_seconds = duration_seconds
     run.duration_hours = duration_hours
     run.calculated_consumption_l = calculated_consumption
     run.status = "COMPLETED"
     run.note = stop_data.note
 
     # Update generator metrics
-    generator.current_operating_hours = stop_data.end_hours
+    generator.current_operating_hours = end_hours
+    generator.updated_at = end_time
 
     if stop_data.end_fuel_level_l is not None:
         generator.fuel_tank_level_l = max(0.0, min(stop_data.end_fuel_level_l, generator.tank_capacity_l))
@@ -290,7 +321,7 @@ async def stop_generator(
     else:
         # Deduct calculated consumption from tank level
         new_level = max(0.0, generator.fuel_tank_level_l - calculated_consumption)
-        generator.fuel_tank_level_l = round(new_level, 2)
+        generator.fuel_tank_level_l = round(new_level, 3)
         run.end_fuel_level_l = generator.fuel_tank_level_l
 
     # Check maintenance status
@@ -305,6 +336,11 @@ async def stop_generator(
 
     await db.flush()
 
+    h = duration_seconds // 3600
+    m = (duration_seconds % 3600) // 60
+    s = duration_seconds % 60
+    duration_formatted = f"{h:02d}:{m:02d}:{s:02d}"
+
     await log_audit(
         db=db,
         action="GENERATOR_STOP",
@@ -313,6 +349,8 @@ async def stop_generator(
         user_id=user_id,
         details={
             "end_hours": run.end_hours,
+            "duration_seconds": duration_seconds,
+            "duration_formatted": duration_formatted,
             "duration_hours": duration_hours,
             "calculated_consumption_l": calculated_consumption,
             "end_fuel_level_l": generator.fuel_tank_level_l,

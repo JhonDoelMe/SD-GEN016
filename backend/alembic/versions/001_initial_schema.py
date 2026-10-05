@@ -118,6 +118,7 @@ def upgrade() -> None:
         sa.Column('start_hours', sa.Float(), nullable=False),
         sa.Column('end_hours', sa.Float(), nullable=True),
         sa.Column('duration_hours', sa.Float(), nullable=True),
+        sa.Column('duration_seconds', sa.Integer(), nullable=True),
         sa.Column('start_fuel_level_l', sa.Float(), nullable=True),
         sa.Column('end_fuel_level_l', sa.Float(), nullable=True),
         sa.Column('calculated_consumption_l', sa.Float(), nullable=True),

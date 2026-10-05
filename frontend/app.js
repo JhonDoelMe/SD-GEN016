@@ -71,6 +71,66 @@ function startClock() {
   }, 1000);
 }
 
+// Universal UTC & Kyiv Date/Time Formatters
+function parseUTCDate(val) {
+  if (!val) return null;
+  if (typeof val === 'string') {
+    // If backend returns ISO string without timezone indicator (e.g. 2026-10-05T11:22:25),
+    // append 'Z' so JavaScript treats it as UTC rather than local time.
+    if (!val.endsWith('Z') && !val.includes('+') && !val.match(/[0-9]{2}:[0-9]{2}-[0-9]{2}/)) {
+      val = val + 'Z';
+    }
+  }
+  return new Date(val);
+}
+
+function formatDateTime(val) {
+  const d = parseUTCDate(val);
+  if (!d || isNaN(d.getTime())) return '-';
+  return new Intl.DateTimeFormat('uk-UA', {
+    timeZone: 'Europe/Kyiv',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(d);
+}
+
+function formatDateOnly(val) {
+  const d = parseUTCDate(val);
+  if (!d || isNaN(d.getTime())) return '-';
+  return new Intl.DateTimeFormat('uk-UA', {
+    timeZone: 'Europe/Kyiv',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }).format(d);
+}
+
+function formatTime(val) {
+  const d = parseUTCDate(val);
+  if (!d || isNaN(d.getTime())) return '-';
+  return new Intl.DateTimeFormat('uk-UA', {
+    timeZone: 'Europe/Kyiv',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(d);
+}
+
+function formatDuration(totalSeconds) {
+  if (totalSeconds == null || isNaN(totalSeconds) || totalSeconds < 0) return '00:00:00';
+  const sec = Math.floor(totalSeconds);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 // Auth Lifecycle
 function showAuthScreen() {
   document.getElementById('authOverlay').style.display = 'flex';
@@ -204,13 +264,50 @@ async function loadGeneratorData() {
     activeRun = await api('/generator/active-run');
     if (activeRun) {
       banner.style.display = 'block';
-      const dt = new Date(activeRun.start_time);
-      document.getElementById('activeRunStart').innerText = dt.toLocaleTimeString('uk-UA');
+      document.getElementById('activeRunStart').innerText = formatTime(activeRun.start_time);
       document.getElementById('activeRunHours').innerText = activeRun.start_hours.toFixed(1);
+      startRunStopwatch();
     } else {
       banner.style.display = 'none';
+      stopRunStopwatch();
     }
   } catch (_) {}
+}
+
+let runTimerInterval = null;
+
+function updateRunStopwatchDisplay() {
+  if (!activeRun || !activeRun.start_time) return;
+  const startDt = parseUTCDate(activeRun.start_time);
+  if (!startDt) return;
+  const now = new Date();
+  const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - startDt.getTime()) / 1000));
+  const durFormatted = formatDuration(elapsedSeconds);
+
+  const bannerDur = document.getElementById('activeRunDuration');
+  if (bannerDur) bannerDur.innerText = durFormatted;
+
+  const modalDur = document.getElementById('stopDurationDisplay');
+  if (modalDur) modalDur.innerText = durFormatted;
+
+  const modalEstFuel = document.getElementById('stopEstFuelDisplay');
+  if (modalEstFuel && currentGenerator) {
+    const estLiters = (elapsedSeconds / 3600.0) * (currentGenerator.nominal_consumption_l_per_h || 2.2);
+    modalEstFuel.innerText = (estLiters < 0.1 && estLiters > 0 ? estLiters.toFixed(3) : estLiters.toFixed(2)) + ' л';
+  }
+}
+
+function startRunStopwatch() {
+  if (runTimerInterval) clearInterval(runTimerInterval);
+  updateRunStopwatchDisplay();
+  runTimerInterval = setInterval(updateRunStopwatchDisplay, 1000);
+}
+
+function stopRunStopwatch() {
+  if (runTimerInterval) {
+    clearInterval(runTimerInterval);
+    runTimerInterval = null;
+  }
 }
 
 // Start / Stop Main Button Handler
@@ -220,8 +317,17 @@ document.getElementById('mainActionBtn').addEventListener('click', async () => {
   if (currentGenerator.status === 'RUNNING') {
     // Open Stop Modal
     const endHoursInput = document.getElementById('stopEndHours');
-    endHoursInput.value = (currentGenerator.current_operating_hours + 0.5).toFixed(1);
+    endHoursInput.value = '';
     endHoursInput.min = currentGenerator.current_operating_hours;
+
+    if (activeRun && activeRun.start_time) {
+      document.getElementById('stopStartTimeDisplay').innerText = formatDateTime(activeRun.start_time);
+      updateRunStopwatchDisplay();
+    } else {
+      document.getElementById('stopStartTimeDisplay').innerText = '-';
+      document.getElementById('stopDurationDisplay').innerText = '00:00:00';
+      document.getElementById('stopEstFuelDisplay').innerText = '0.000 л';
+    }
     openModal('modalStopGen');
   } else {
     // Start Generator directly
@@ -239,9 +345,10 @@ document.getElementById('mainActionBtn').addEventListener('click', async () => {
 // Stop Form Submit
 document.getElementById('stopGenForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const endHours = parseFloat(document.getElementById('stopEndHours').value);
+  const endHoursVal = document.getElementById('stopEndHours').value;
+  const endHours = endHoursVal !== '' && !isNaN(parseFloat(endHoursVal)) ? parseFloat(endHoursVal) : null;
   const endFuelVal = document.getElementById('stopEndFuel').value;
-  const endFuel = endFuelVal ? parseFloat(endFuelVal) : null;
+  const endFuel = endFuelVal !== '' && !isNaN(parseFloat(endFuelVal)) ? parseFloat(endFuelVal) : null;
   const note = document.getElementById('stopNote').value;
 
   try {
@@ -250,7 +357,10 @@ document.getElementById('stopGenForm').addEventListener('submit', async (e) => {
       body: JSON.stringify({ end_hours: endHours, end_fuel_level_l: endFuel, note: note })
     });
     closeModal('modalStopGen');
-    showToast(`Генератор зупинено. Відпрацьовано: ${res.duration_hours} год, розхід: ${res.calculated_consumption_l} л`, 'success');
+    stopRunStopwatch();
+    const durText = res.duration_formatted || formatDuration(res.duration_seconds) || `${res.duration_hours} год`;
+    const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l} л` : '-';
+    showToast(`Генератор зупинено! Відпрацьовано: ${durText}, розхід: ${fuelText}`, 'success');
     loadAllData();
   } catch (_) {}
 });
@@ -275,7 +385,7 @@ async function loadFuelData() {
     const rTbody = document.querySelector('#fuelReceiptsTable tbody');
     rTbody.innerHTML = receipts.map((r) => `
       <tr>
-        <td>${new Date(r.created_at).toLocaleString('uk-UA')}</td>
+        <td>${formatDateTime(r.created_at)}</td>
         <td><b>${r.liters.toFixed(1)} л</b></td>
         <td>${r.cost_total.toFixed(2)}</td>
         <td>${r.price_per_liter.toFixed(2)}</td>
@@ -289,7 +399,7 @@ async function loadFuelData() {
     const tTbody = document.querySelector('#fuelTransfersTable tbody');
     tTbody.innerHTML = transfers.map((t) => `
       <tr>
-        <td>${new Date(t.created_at).toLocaleString('uk-UA')}</td>
+        <td>${formatDateTime(t.created_at)}</td>
         <td><b style="color:#38bdf8;">+${t.liters.toFixed(1)} л</b></td>
         <td>${t.source_balance_before.toFixed(1)} → ${t.source_balance_after.toFixed(1)} л</td>
         <td>${t.tank_balance_before.toFixed(1)} → ${t.tank_balance_after.toFixed(1)} л</td>
@@ -372,7 +482,7 @@ async function loadMaintenanceData() {
     const tbody = document.querySelector('#maintenanceHistoryTable tbody');
     tbody.innerHTML = records.map((r) => `
       <tr>
-        <td>${new Date(r.created_at).toLocaleString('uk-UA')}</td>
+        <td>${formatDateTime(r.created_at)}</td>
         <td><span class="badge ${r.maintenance_type === 'SCHEDULED' ? 'badge-running' : 'badge-stopped'}">${r.maintenance_type === 'SCHEDULED' ? 'Регламентне' : 'Проміжне'}</span></td>
         <td><b>${r.operating_hours.toFixed(1)} год</b></td>
         <td>${r.work_description}</td>
@@ -415,7 +525,7 @@ async function loadFaultsData() {
         <td><b>${f.title}</b></td>
         <td>${f.description}</td>
         <td>${f.operating_hours.toFixed(1)} год</td>
-        <td>${new Date(f.created_at).toLocaleDateString('uk-UA')}</td>
+        <td>${formatDateOnly(f.created_at)}</td>
         <td>
           ${f.status !== 'RESOLVED' && f.status !== 'CLOSED' ? `
             <button onclick="resolveFault(${f.id})" style="background:#22c55e; border:none; color:white; border-radius:4px; padding:0.25rem 0.5rem; cursor:pointer; font-size:0.75rem;">Усунути</button>
@@ -462,16 +572,20 @@ async function loadRecentRuns() {
   try {
     const runs = await api('/generator/runs?limit=5');
     const tbody = document.querySelector('#recentRunsTable tbody');
-    tbody.innerHTML = runs.map((r) => `
-      <tr>
-        <td>${new Date(r.start_time).toLocaleString('uk-UA')}</td>
-        <td>${r.start_hours.toFixed(1)} год</td>
-        <td>${r.end_hours ? r.end_hours.toFixed(1) + ' год' : '<i>працює...</i>'}</td>
-        <td>${r.duration_hours ? r.duration_hours.toFixed(1) + ' год' : '-'}</td>
-        <td>${r.calculated_consumption_l ? r.calculated_consumption_l.toFixed(1) + ' л' : '-'}</td>
-        <td>${r.user_name || '-'}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Циклів не знайдено</td></tr>';
+    tbody.innerHTML = runs.map((r) => {
+      const durText = r.duration_formatted || (r.duration_seconds != null ? formatDuration(r.duration_seconds) : (r.duration_hours ? r.duration_hours.toFixed(2) + ' год' : '-'));
+      const consText = r.calculated_consumption_l != null ? (r.calculated_consumption_l < 0.1 && r.calculated_consumption_l > 0 ? r.calculated_consumption_l.toFixed(3) : r.calculated_consumption_l.toFixed(2)) + ' л' : '-';
+      return `
+        <tr>
+          <td>${formatDateTime(r.start_time)}</td>
+          <td>${r.start_hours.toFixed(1)} год</td>
+          <td>${r.end_hours != null ? r.end_hours.toFixed(1) + ' год' : '<i>працює...</i>'}</td>
+          <td><b style="color: #38bdf8; font-family: monospace;">${durText}</b></td>
+          <td>${consText}</td>
+          <td>${r.user_name || '-'}</td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Циклів не знайдено</td></tr>';
   } catch (_) {}
 }
 
@@ -479,20 +593,24 @@ async function loadRunsData() {
   try {
     const runs = await api('/generator/runs?limit=50');
     const tbody = document.querySelector('#allRunsTable tbody');
-    tbody.innerHTML = runs.map((r) => `
-      <tr>
-        <td>#${r.id}</td>
-        <td>${new Date(r.start_time).toLocaleString('uk-UA')}</td>
-        <td>${r.end_time ? new Date(r.end_time).toLocaleString('uk-UA') : '<i>в процесі...</i>'}</td>
-        <td>${r.start_hours.toFixed(1)}</td>
-        <td>${r.end_hours ? r.end_hours.toFixed(1) : '-'}</td>
-        <td>${r.duration_hours ? r.duration_hours.toFixed(1) + ' год' : '-'}</td>
-        <td>${r.calculated_consumption_l ? r.calculated_consumption_l.toFixed(1) + ' л' : '-'}</td>
-        <td>${r.start_fuel_level_l ?? '-'} → ${r.end_fuel_level_l ?? '-'} л</td>
-        <td>${r.user_name || '-'}</td>
-        <td>${r.note || '-'}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="10" style="text-align:center; color:var(--text-muted)">Записів не знайдено</td></tr>';
+    tbody.innerHTML = runs.map((r) => {
+      const durText = r.duration_formatted || (r.duration_seconds != null ? formatDuration(r.duration_seconds) : (r.duration_hours ? r.duration_hours.toFixed(2) + ' год' : '-'));
+      const consText = r.calculated_consumption_l != null ? (r.calculated_consumption_l < 0.1 && r.calculated_consumption_l > 0 ? r.calculated_consumption_l.toFixed(3) : r.calculated_consumption_l.toFixed(2)) + ' л' : '-';
+      return `
+        <tr>
+          <td>#${r.id}</td>
+          <td>${formatDateTime(r.start_time)}</td>
+          <td>${r.end_time ? formatDateTime(r.end_time) : '<i>в процесі...</i>'}</td>
+          <td>${r.start_hours.toFixed(1)}</td>
+          <td>${r.end_hours != null ? r.end_hours.toFixed(1) : '-'}</td>
+          <td><b style="color: #38bdf8; font-family: monospace;">${durText}</b></td>
+          <td>${consText}</td>
+          <td>${r.start_fuel_level_l ?? '-'} → ${r.end_fuel_level_l ?? '-'} л</td>
+          <td>${r.user_name || '-'}</td>
+          <td>${r.note || '-'}</td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="10" style="text-align:center; color:var(--text-muted)">Записів не знайдено</td></tr>';
   } catch (_) {}
 }
 
@@ -503,7 +621,7 @@ async function loadAuditData() {
     const tbody = document.querySelector('#auditTable tbody');
     tbody.innerHTML = logs.map((l) => `
       <tr>
-        <td>${new Date(l.created_at).toLocaleString('uk-UA')}</td>
+        <td>${formatDateTime(l.created_at)}</td>
         <td>${l.user_name || 'Система'}</td>
         <td><b>${l.action}</b></td>
         <td>${l.entity_type} #${l.entity_id || ''}</td>
@@ -516,7 +634,7 @@ async function loadAuditData() {
     const adjTbody = document.querySelector('#adjustmentsTable tbody');
     adjTbody.innerHTML = adjustments.map((a) => `
       <tr>
-        <td>${new Date(a.created_at).toLocaleString('uk-UA')}</td>
+        <td>${formatDateTime(a.created_at)}</td>
         <td>${a.user_name || '-'}</td>
         <td>${a.entity_type}</td>
         <td>${a.field_name}</td>
@@ -716,6 +834,7 @@ document.getElementById('wizardForm').addEventListener('submit', async (e) => {
     initial_operating_hours: parseFloat(document.getElementById('wizInitHours').value),
     initial_fuel_tank_level_l: parseFloat(document.getElementById('wizInitFuel').value),
     maintenance_interval_hours: parseFloat(document.getElementById('wizMaintInterval').value),
+    last_maintenance_performed_hours: document.getElementById('wizLastMaintHours').value ? parseFloat(document.getElementById('wizLastMaintHours').value) : null,
     work_schedule_start: document.getElementById('wizSchedStart').value,
     work_schedule_end: document.getElementById('wizSchedEnd').value,
     fuel_type: 'А-95',

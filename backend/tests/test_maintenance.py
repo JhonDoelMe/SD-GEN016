@@ -96,3 +96,51 @@ async def test_maintenance_scheduled_vs_intermediate(client, superadmin_auth, op
     # Generator status restored from MAINTENANCE_REQUIRED to STOPPED
     gen_final = await client.get("/api/v1/generator", headers=operator_auth)
     assert gen_final.json()["status"] == "STOPPED"
+
+
+@pytest.mark.asyncio
+async def test_maintenance_interval_alignment_and_seconds_duration(client, superadmin_auth, operator_auth):
+    # User requirement: If we have 235 hours and maintenance norm is 300 hours, remaining should be 65 hours (next due 300)
+    wizard_res = await client.post(
+        "/api/v1/generator/wizard",
+        headers=superadmin_auth,
+        json={
+            "name": "Генератор Тест 235г",
+            "model": "PG-6500",
+            "manufacturer": "PowerGen",
+            "serial_number": "SN-235",
+            "rated_power_kw": 5.0,
+            "tank_capacity_l": 25.0,
+            "fuel_type": "А-95",
+            "nominal_consumption_l_per_h": 2.2,
+            "initial_operating_hours": 235.0,
+            "initial_fuel_tank_level_l": 20.0,
+            "work_schedule_start": "00:00",
+            "work_schedule_end": "23:59",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv"
+        }
+    )
+    assert wizard_res.status_code == 200
+
+    sched_res = await client.get("/api/v1/maintenance/schedule", headers=operator_auth)
+    assert sched_res.status_code == 200
+    s_data = sched_res.json()
+    assert s_data["current_operating_hours"] == 235.0
+    assert s_data["next_due_hours"] == 300.0
+    assert s_data["hours_remaining"] == 65.0  # Exactly 65 hours remaining!
+
+    # Start generator
+    start_res = await client.post("/api/v1/generator/start", headers=operator_auth, json={})
+    assert start_res.status_code == 200
+
+    # Stop without end_hours (simulating short run stopped by timer)
+    stop_res = await client.post("/api/v1/generator/stop", headers=operator_auth, json={})
+    assert stop_res.status_code == 200
+    run_out = stop_res.json()
+    assert run_out["duration_seconds"] is not None
+    assert run_out["duration_seconds"] >= 1
+    assert run_out["duration_formatted"] is not None
+    assert run_out["calculated_consumption_l"] is not None
+    # End hours should be approx 235.0 + small fraction
+    assert run_out["end_hours"] >= 235.0

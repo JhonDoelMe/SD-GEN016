@@ -16,6 +16,40 @@ from backend.app.services.generator_service import (
     start_generator, stop_generator
 )
 
+def format_seconds(seconds: Optional[int]) -> Optional[str]:
+    if seconds is None:
+        return None
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def run_to_out(run: GeneratorRun, user_name: Optional[str] = None) -> GeneratorRunOut:
+    dur_sec = run.duration_seconds
+    if dur_sec is None and run.start_time and run.end_time:
+        dur_sec = max(0, int((run.end_time - run.start_time).total_seconds()))
+
+    return GeneratorRunOut(
+        id=run.id,
+        generator_id=run.generator_id,
+        user_id=run.user_id,
+        user_name=user_name or (run.user.full_name if run.user else None),
+        start_time=run.start_time,
+        end_time=run.end_time,
+        start_hours=run.start_hours,
+        end_hours=run.end_hours,
+        duration_hours=run.duration_hours,
+        duration_seconds=dur_sec,
+        duration_formatted=format_seconds(dur_sec),
+        start_fuel_level_l=run.start_fuel_level_l,
+        end_fuel_level_l=run.end_fuel_level_l,
+        calculated_consumption_l=run.calculated_consumption_l,
+        status=run.status,
+        note=run.note
+    )
+
+
 router = APIRouter(prefix="/generator", tags=["Генератор"])
 
 
@@ -59,22 +93,7 @@ async def api_start_generator(
         fuel_level_l=data.fuel_level_l,
         ip_address=get_client_ip(request)
     )
-    return GeneratorRunOut(
-        id=run.id,
-        generator_id=run.generator_id,
-        user_id=run.user_id,
-        user_name=current_user.full_name,
-        start_time=run.start_time,
-        end_time=run.end_time,
-        start_hours=run.start_hours,
-        end_hours=run.end_hours,
-        duration_hours=run.duration_hours,
-        start_fuel_level_l=run.start_fuel_level_l,
-        end_fuel_level_l=run.end_fuel_level_l,
-        calculated_consumption_l=run.calculated_consumption_l,
-        status=run.status,
-        note=run.note
-    )
+    return run_to_out(run, user_name=current_user.full_name)
 
 
 @router.post("/stop", response_model=GeneratorRunOut)
@@ -92,22 +111,7 @@ async def api_stop_generator(
         stop_data=data,
         ip_address=get_client_ip(request)
     )
-    return GeneratorRunOut(
-        id=run.id,
-        generator_id=run.generator_id,
-        user_id=run.user_id,
-        user_name=current_user.full_name,
-        start_time=run.start_time,
-        end_time=run.end_time,
-        start_hours=run.start_hours,
-        end_hours=run.end_hours,
-        duration_hours=run.duration_hours,
-        start_fuel_level_l=run.start_fuel_level_l,
-        end_fuel_level_l=run.end_fuel_level_l,
-        calculated_consumption_l=run.calculated_consumption_l,
-        status=run.status,
-        note=run.note
-    )
+    return run_to_out(run, user_name=current_user.full_name)
 
 
 @router.get("/active-run", response_model=Optional[GeneratorRunOut])
@@ -123,22 +127,7 @@ async def get_active_run(
     run = res.scalars().first()
     if not run:
         return None
-    return GeneratorRunOut(
-        id=run.id,
-        generator_id=run.generator_id,
-        user_id=run.user_id,
-        user_name=run.user.full_name if run.user else None,
-        start_time=run.start_time,
-        end_time=run.end_time,
-        start_hours=run.start_hours,
-        end_hours=run.end_hours,
-        duration_hours=run.duration_hours,
-        start_fuel_level_l=run.start_fuel_level_l,
-        end_fuel_level_l=run.end_fuel_level_l,
-        calculated_consumption_l=run.calculated_consumption_l,
-        status=run.status,
-        note=run.note
-    )
+    return run_to_out(run)
 
 
 @router.get("/runs", response_model=List[GeneratorRunOut])
@@ -153,22 +142,4 @@ async def list_runs(
         .limit(limit)
     )
     runs = res.scalars().all()
-    return [
-        GeneratorRunOut(
-            id=r.id,
-            generator_id=r.generator_id,
-            user_id=r.user_id,
-            user_name=r.user.full_name if r.user else None,
-            start_time=r.start_time,
-            end_time=r.end_time,
-            start_hours=r.start_hours,
-            end_hours=r.end_hours,
-            duration_hours=r.duration_hours,
-            start_fuel_level_l=r.start_fuel_level_l,
-            end_fuel_level_l=r.end_fuel_level_l,
-            calculated_consumption_l=r.calculated_consumption_l,
-            status=r.status,
-            note=r.note
-        )
-        for r in runs
-    ]
+    return [run_to_out(r) for r in runs]

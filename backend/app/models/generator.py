@@ -70,6 +70,7 @@ class GeneratorRun(Base):
     start_hours = Column(Float, nullable=False)
     end_hours = Column(Float, nullable=True)
     duration_hours = Column(Float, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
 
     start_fuel_level_l = Column(Float, nullable=True)
     end_fuel_level_l = Column(Float, nullable=True)

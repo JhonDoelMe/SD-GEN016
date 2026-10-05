@@ -35,6 +35,7 @@ class GeneratorWizardSetup(BaseModel):
     work_schedule_start: str = Field(default="08:00")
     work_schedule_end: str = Field(default="20:00")
     maintenance_interval_hours: float = Field(default=300.0, gt=0)
+    last_maintenance_performed_hours: Optional[float] = None
     timezone: str = Field(default="Europe/Kyiv")
 
 
@@ -77,7 +78,7 @@ class GeneratorStartRequest(BaseModel):
 
 
 class GeneratorStopRequest(BaseModel):
-    end_hours: float = Field(..., description="Показання лічильника мотогодин при зупинці")
+    end_hours: Optional[float] = Field(None, description="Показання лічильника мотогодин при зупинці (якщо не вказано, розраховується автоматично)")
     end_fuel_level_l: Optional[float] = None
     note: Optional[str] = None
 
@@ -92,6 +93,8 @@ class GeneratorRunOut(BaseModel):
     start_hours: float
     end_hours: Optional[float] = None
     duration_hours: Optional[float] = None
+    duration_seconds: Optional[int] = None
+    duration_formatted: Optional[str] = None
     start_fuel_level_l: Optional[float] = None
     end_fuel_level_l: Optional[float] = None
     calculated_consumption_l: Optional[float] = None
