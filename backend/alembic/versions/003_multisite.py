@@ -1,6 +1,6 @@
 """Add facilities table and multi-site support
 
-Revision ID: 003_add_facilities_and_multi_site
+Revision ID: 003_multisite
 Revises: 002_add_duration_seconds
 Create Date: 2026-10-05 15:20:00.000000
 
@@ -8,7 +8,7 @@ Create Date: 2026-10-05 15:20:00.000000
 from alembic import op
 import sqlalchemy as sa
 
-revision = '003_add_facilities_and_multi_site'
+revision = '003_multisite'
 down_revision = '002_add_duration_seconds'
 branch_labels = None
 depends_on = None

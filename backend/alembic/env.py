@@ -42,6 +42,17 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
+    try:
+        connection.execute(
+            sa.text(
+                "UPDATE alembic_version SET version_num = '003_multisite' "
+                "WHERE version_num = '003_add_facilities_and_multi_site'"
+            )
+        )
+        connection.commit()
+    except Exception:
+        pass
+
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
