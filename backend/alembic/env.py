@@ -17,8 +17,19 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def get_database_url() -> str:
+    x_args = context.get_x_argument(as_dictionary=True)
+    if "db_url" in x_args:
+        url = x_args["db_url"]
+    else:
+        url = settings.DATABASE_URL
+    if url.startswith("sqlite://"):
+        url = url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+    return url
+
+
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url") or settings.DATABASE_URL
+    url = get_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -39,7 +50,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     configuration = config.get_section(config.config_ini_section, {})
-    url = config.get_main_option("sqlalchemy.url") or settings.DATABASE_URL
+    url = get_database_url()
     configuration["sqlalchemy.url"] = url
     connectable = async_engine_from_config(
         configuration,
