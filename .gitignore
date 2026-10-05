@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases & uploads
+*.db
+*.sqlite3
+service_desk.db
+uploads/*
+!uploads/.gitkeep
+backups/*.tar.gz
+
+# Environment variables
+.env
+
+# OS
+.DS_Store
+Thumbs.db

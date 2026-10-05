@@ -1,0 +1,24 @@
+{
+  "name": "Service Desk Генератора | SD-GEN016",
+  "short_name": "Генератор",
+  "description": "Експлуатаційний сервіс деск бензинового генератора на об'єкті",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#1e293b",
+  "icons": [
+    {
+      "src": "/frontend/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/frontend/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Service Desk Генератора | SD-GEN016</title>
+  
+  <!-- PWA Meta -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#1e293b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Генератор">
+  <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
+  <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
+
+  <link rel="stylesheet" href="/frontend/styles.css">
+</head>
+<body>
+
+  <!-- Auth Screen (Shown when logged out) -->
+  <div id="authOverlay" class="modal-overlay" style="display: flex;">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+      <div style="font-size: 3rem; margin-bottom: 0.5rem;">⚡</div>
+      <h2 style="margin-bottom: 0.25rem;">Service Desk Генератора</h2>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;">Вхід в систему експлуатації</p>
+      
+      <form id="loginForm">
+        <div class="form-group" style="text-align: left;">
+          <label>Логін користувача</label>
+          <input type="text" id="loginUsername" required autocomplete="username" placeholder="напр. superadmin">
+        </div>
+        <div class="form-group" style="text-align: left;">
+          <label>Пароль</label>
+          <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="••••••••">
+        </div>
+        <button type="submit" class="btn-primary" style="padding: 1rem; font-size: 1.1rem; margin-top: 1rem;">Увійти в систему</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="brand-title">
+      <span>⚡</span>
+      <span>SD-GEN016</span>
+    </div>
+    <div style="font-size: 0.8rem; color: #38bdf8;" id="clockKyiv">--:--:-- (Київ)</div>
+    <div class="user-badge">
+      <span id="userGreeting" style="font-weight: 600;">Гість</span>
+      <button id="logoutBtn" style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 4px; padding: 0.25rem 0.5rem; cursor: pointer; font-size: 0.75rem;">Вихід</button>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="nav-bar">
+    <div class="nav-item active" data-tab="tab-dashboard">⚡ Головна</div>
+    <div class="nav-item" data-tab="tab-fuel">⛽ Паливо</div>
+    <div class="nav-item" data-tab="tab-maintenance">🔧 ТО</div>
+    <div class="nav-item" data-tab="tab-faults">⚠️ Несправності</div>
+    <div class="nav-item" data-tab="tab-runs">📋 Журнал</div>
+    <div class="nav-item" data-tab="tab-audit">🔍 Аудит</div>
+    <div class="nav-item" data-tab="tab-reports">📊 Звіти</div>
+    <div class="nav-item" data-tab="tab-admin">⚙️ Адмін</div>
+  </nav>
+
+  <!-- Main Content Area -->
+  <main class="container">
+
+    <!-- TAB 1: DASHBOARD (OPERATOR PANEL) -->
+    <section id="tab-dashboard" class="tab-pane active">
+      <!-- Status Card -->
+      <div class="status-card">
+        <div class="status-header">
+          <div>
+            <h2 id="genName" style="font-size: 1.3rem; margin-bottom: 0.25rem;">Завантаження генератора...</h2>
+            <div id="genModel" style="color: var(--text-muted); font-size: 0.85rem;">Модель: - | Серійний: -</div>
+          </div>
+          <div id="genStatusBadge" class="badge badge-stopped">ОСТАНОВЛЕН</div>
+        </div>
+
+        <!-- Big Operator Action Button -->
+        <button id="mainActionBtn" class="btn-hero btn-start">
+          <span style="font-size: 1.5rem;">▶</span>
+          <span>ЗАПУСТИТИ ГЕНЕРАТОР</span>
+        </button>
+
+        <!-- Live Running Timer (if active) -->
+        <div id="activeRunBanner" style="display: none; background: rgba(34, 197, 94, 0.1); border: 1px dashed #22c55e; border-radius: 0.5rem; padding: 0.75rem; font-size: 0.9rem; text-align: center;">
+          Триває робочий цикл. Початок: <b id="activeRunStart">-</b> | Початкові години: <b id="activeRunHours">-</b>
+        </div>
+      </div>
+
+      <!-- Key Metrics Grid -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">Мотогодини</div>
+          <div class="metric-value" id="cardHours">0.0</div>
+          <div class="metric-sub">накопичувальні</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Бак генератора</div>
+          <div class="metric-value"><span id="cardTank">0.0</span> <small style="font-size: 0.9rem;">л</small></div>
+          <div class="progress-bar">
+            <div id="tankProgress" class="progress-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Склад ГСМ</div>
+          <div class="metric-value"><span id="cardStock">0.0</span> <small style="font-size: 0.9rem;">л</small></div>
+          <div class="metric-sub">залишок палива</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">До наступного ТО</div>
+          <div class="metric-value" id="cardMaintRem">0.0 <small style="font-size: 0.9rem;">год</small></div>
+          <div class="metric-sub" id="cardMaintSub">план: 300 год</div>
+        </div>
+      </div>
+
+      <!-- Quick Operator Actions Grid (Section 26 & 27) -->
+      <h3 style="font-size: 1rem; color: var(--text-muted); margin-bottom: 0.75rem;">Швидкі дії оператора</h3>
+      <div class="quick-actions">
+        <button class="btn-action" onclick="openModal('modalTransfer')">
+          <span class="icon">⛽</span>
+          <span>Заправити бак</span>
+        </button>
+        <button class="btn-action" onclick="openModal('modalReceipt')">
+          <span class="icon">📥</span>
+          <span>+ Прийняти паливо</span>
+        </button>
+        <button class="btn-action" onclick="openModal('modalMaintenance')">
+          <span class="icon">🛠️</span>
+          <span>Зафіксувати ТО</span>
+        </button>
+        <button class="btn-action" onclick="openModal('modalFault')">
+          <span class="icon">⚠️</span>
+          <span>Несправність</span>
+        </button>
+      </div>
+
+      <!-- Recent Operational Events -->
+      <div class="panel">
+        <div class="panel-header">
+          <h3 style="font-size: 1rem;">Останні робочі цикли генератора</h3>
+        </div>
+        <div class="table-wrapper">
+          <table id="recentRunsTable">
+            <thead>
+              <tr>
+                <th>Дата/Час</th>
+                <th>Початок</th>
+                <th>Кінець</th>
+                <th>Тривалість</th>
+                <th>Розрахунковий розхід</th>
+                <th>Оператор</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Завантаження історії...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: FUEL MANAGEMENT -->
+    <section id="tab-fuel" class="tab-pane" style="display: none;">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Управління паливом (Склад ГСМ ↔ Бак генератора)</h3>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalReceipt')">+ Оприбуткувати (Бензовоз)</button>
+            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalTransfer')">⛽ Заправити бак</button>
+          </div>
+        </div>
+
+        <div class="metrics-grid" style="margin-bottom: 1.5rem;">
+          <div class="metric-card">
+            <div class="metric-label">Залишок на складі ГСМ</div>
+            <div class="metric-value" id="fuelStockBal">0.0 л</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Залишок у баку</div>
+            <div class="metric-value" id="fuelTankBal">0.0 л</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Всього закуплено</div>
+            <div class="metric-value" id="fuelTotalBought">0.0 л</div>
+            <div class="metric-sub" id="fuelTotalSpent">0 грн</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Сер. вартість літра</div>
+            <div class="metric-value" id="fuelAvgPrice">0.00 грн</div>
+          </div>
+        </div>
+
+        <h4 style="margin: 1.5rem 0 0.5rem;">Надходження палива на склад (Чеки / Накладні)</h4>
+        <div class="table-wrapper">
+          <table id="fuelReceiptsTable">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Літри</th>
+                <th>Сума (грн)</th>
+                <th>Ціна/л</th>
+                <th>Водій</th>
+                <th>Чек №</th>
+                <th>Прийняв</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <h4 style="margin: 2rem 0 0.5rem;">Переміщення палива (Склад ГСМ → Бак генератора)</h4>
+        <div class="table-wrapper">
+          <table id="fuelTransfersTable">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Заправлено</th>
+                <th>Склад (до → після)</th>
+                <th>Бак (до → після)</th>
+                <th>Коментар</th>
+                <th>Оператор</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: MAINTENANCE (ТО) -->
+    <section id="tab-maintenance" class="tab-pane" style="display: none;">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Технічне обслуговування генератора</h3>
+          <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalMaintenance')">+ Зафіксувати ТО</button>
+        </div>
+
+        <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-color); border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 1.5rem;">
+          <h4 style="color: #38bdf8; margin-bottom: 0.5rem;">Графік регламентного ТО</h4>
+          <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; font-size: 0.95rem;">
+            <div>Інтервал регламенту: <b id="maintInterval">300 год</b></div>
+            <div>Останнє ТО виконано на: <b id="maintLast">0.0 год</b></div>
+            <div>Наступне ТО заплановано: <b id="maintNext">300.0 год</b></div>
+            <div>Залишилося: <b id="maintRemaining" style="color: #22c55e;">300.0 год</b></div>
+          </div>
+          <div class="progress-bar" style="height: 10px; margin-top: 1rem;">
+            <div id="maintProgress" class="progress-fill" style="width: 0%;"></div>
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.75rem;">
+            ℹ️ <b>Бізнес-правило:</b> Проміжне ТО (заміна свічок, фільтрів, дрібний ремонт) фіксується окремо і не зрушує та не скидає основний регламентний інтервал!
+          </p>
+        </div>
+
+        <h4>Історія технічного обслуговування</h4>
+        <div class="table-wrapper">
+          <table id="maintenanceHistoryTable">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Тип</th>
+                <th>Мотогодини</th>
+                <th>Опис виконаних робіт</th>
+                <th>Матеріали</th>
+                <th>Вартість</th>
+                <th>Виконавець</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: FAULTS -->
+    <section id="tab-faults" class="tab-pane" style="display: none;">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Журнал несправностей та дефектів</h3>
+          <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalFault')">+ Повідомити про несправність</button>
+        </div>
+
+        <div class="table-wrapper">
+          <table id="faultsTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Пріоритет</th>
+                <th>Статус</th>
+                <th>Назва несправності</th>
+                <th>Опис</th>
+                <th>Мотогодини</th>
+                <th>Дата</th>
+                <th>Дія</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: RUNS JOURNAL -->
+    <section id="tab-runs" class="tab-pane" style="display: none;">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Експлуатаційний журнал запусків і зупинок</h3>
+        </div>
+        <div class="table-wrapper">
+          <table id="allRunsTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Час запуску</th>
+                <th>Час зупинки</th>
+                <th>Початкові год</th>
+                <th>Кінцеві год</th>
+                <th>Тривалість</th>
+                <th>Розрахункова витрата</th>
+                <th>Бак (поч/кін)</th>
+                <th>Оператор</th>
+                <th>Примітки</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 6: AUDIT & ADJUSTMENTS -->
+    <section id="tab-audit" class="tab-pane" style="display: none;">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Журнал аудиту та Системні коригування</h3>
+          <button id="btnOpenAdjustment" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #a855f7; color: #c084fc;" onclick="openModal('modalAdjustment')">⚙️ Системне коригування (SuperAdmin)</button>
+        </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+          🔒 Кожна операція фіксується в аудиті. Системні коригування дозволені виключно головному системному адміністратору з обов'язковою фіксацією причини зміни лічильників.
+        </p>
+
+        <h4 style="margin: 1rem 0 0.5rem;">Останні записи аудиту</h4>
+        <div class="table-wrapper">
+          <table id="auditTable">
+            <thead>
+              <tr>
+                <th>Час</th>
+                <th>Користувач</th>
+                <th>Дія</th>
+                <th>Об'єкт</th>
+                <th>Деталі</th>
+                <th>IP</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <h4 style="margin: 2rem 0 0.5rem;">Історія системних коригувань</h4>
+        <div class="table-wrapper">
+          <table id="adjustmentsTable">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Адміністратор</th>
+                <th>Сутність</th>
+                <th>Поле</th>
+                <th>Старе значення</th>
+                <th>Нове значення</th>
+                <th>Причина коригування</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 7: REPORTS -->
+    <section id="tab-reports" class="tab-pane" style="display: none;">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Експлуатаційна звітність</h3>
+          <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="downloadReportCSV()">📥 Експорт у CSV</button>
+        </div>
+
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; align-items: flex-end;">
+          <div>
+            <label>Початок періоду</label>
+            <input type="date" id="repStartDate">
+          </div>
+          <div>
+            <label>Кінець періоду</label>
+            <input type="date" id="repEndDate">
+          </div>
+          <button class="btn-primary" style="width: auto; padding: 0.75rem 1.5rem;" onclick="loadReport()">Сформувати звіт</button>
+        </div>
+
+        <div id="reportContainer" class="metrics-grid">
+          <!-- Filled by JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 8: ADMIN -->
+    <section id="tab-admin" class="tab-pane" style="display: none;">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Панель адміністратора</h3>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalWizard')">🧙 Майстер налаштування генератора</button>
+            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalUserCreate')">+ Створити користувача</button>
+          </div>
+        </div>
+
+        <h4 style="margin: 1rem 0 0.5rem;">Користувачі системи</h4>
+        <div class="table-wrapper">
+          <table id="usersTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Логін</th>
+                <th>ПІБ</th>
+                <th>Email</th>
+                <th>Статус</th>
+                <th>Ролі</th>
+                <th>Дії</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODALS -->
+
+  <!-- Modal: Stop Generator -->
+  <div id="modalStopGen" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Зупинка генератора</h3>
+        <button class="close-btn" onclick="closeModal('modalStopGen')">&times;</button>
+      </div>
+      <form id="stopGenForm">
+        <div class="form-group">
+          <label>Кінцеві мотогодини на лічильнику</label>
+          <input type="number" step="0.1" id="stopEndHours" required placeholder="напр. 104.5">
+          <small style="color: var(--text-muted);">Повинні бути більшими або рівними за початкові</small>
+        </div>
+        <div class="form-group">
+          <label>Фактичний рівень палива в баку (л, необов'язково)</label>
+          <input type="number" step="0.1" id="stopEndFuel" placeholder="Якщо не вказано, спишеться розрахунковий розхід">
+        </div>
+        <div class="form-group">
+          <label>Коментар / примітки</label>
+          <textarea id="stopNote" rows="2" placeholder="Планова зупинка, зауваження до роботи"></textarea>
+        </div>
+        <button type="submit" class="btn-hero btn-stop" style="font-size: 1.1rem; padding: 1rem;">Підтвердити зупинку</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add Fuel Receipt (Warehouse) -->
+  <div id="modalReceipt" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Оприбуткування палива на склад ГСМ</h3>
+        <button class="close-btn" onclick="closeModal('modalReceipt')">&times;</button>
+      </div>
+      <form id="receiptForm">
+        <div class="form-group">
+          <label>Кількість літрів</label>
+          <input type="number" step="0.1" id="recLiters" required placeholder="напр. 100.0">
+        </div>
+        <div class="form-group">
+          <label>Сума за чеком (грн)</label>
+          <input type="number" step="0.01" id="recCostTotal" required placeholder="напр. 5800.00">
+        </div>
+        <div class="form-group">
+          <label>ПІБ водія бензовоза / постачальник</label>
+          <input type="text" id="recDriver" required placeholder="напр. Іваненко І.І.">
+        </div>
+        <div class="form-group">
+          <label>Номер чека або накладної</label>
+          <input type="text" id="recNumber" required placeholder="напр. ЧЕК-4589">
+        </div>
+        <div class="form-group">
+          <label>Тип палива</label>
+          <select id="recFuelType">
+            <option value="А-95" selected>А-95</option>
+            <option value="А-92">А-92</option>
+            <option value="ДП">ДП</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Коментар</label>
+          <textarea id="recComment" rows="2" placeholder="Додаткова інформація"></textarea>
+        </div>
+        <button type="submit" class="btn-primary">Зберегти надходження</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Transfer Fuel to Tank -->
+  <div id="modalTransfer" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Заправити бак генератора</h3>
+        <button class="close-btn" onclick="closeModal('modalTransfer')">&times;</button>
+      </div>
+      <form id="transferForm">
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
+          Переміщення палива: Склад ГСМ → Бак генератора
+        </p>
+        <div class="form-group">
+          <label>Кількість літрів для заправки</label>
+          <input type="number" step="0.1" id="transLiters" required placeholder="напр. 20.0">
+        </div>
+        <div class="form-group">
+          <label>Коментар</label>
+          <textarea id="transComment" rows="2" placeholder="Заправка перед зміною"></textarea>
+        </div>
+        <button type="submit" class="btn-primary">Заправити бак</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Record Maintenance -->
+  <div id="modalMaintenance" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Фіксація технічного обслуговування</h3>
+        <button class="close-btn" onclick="closeModal('modalMaintenance')">&times;</button>
+      </div>
+      <form id="maintForm">
+        <div class="form-group">
+          <label>Тип обслуговування</label>
+          <select id="maintType" required>
+            <option value="SCHEDULED">Регламентне ТО (скидає та подовжує інтервал)</option>
+            <option value="INTERMEDIATE" selected>Проміжне ТО (не скидає регламентний інтервал)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Опис виконаних робіт</label>
+          <textarea id="maintWork" required rows="3" placeholder="напр. Заміна моторної оливи, свічки, чистка фільтра"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Використані витратні матеріали</label>
+          <input type="text" id="maintConsumables" placeholder="напр. Масло 10W40 1.1л, свічка NGK">
+        </div>
+        <div class="form-group">
+          <label>Вартість матеріалів та робіт (грн)</label>
+          <input type="number" step="0.01" id="maintCost" value="0.0" placeholder="0.00">
+        </div>
+        <button type="submit" class="btn-primary">Зафіксувати ТО</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Report Fault -->
+  <div id="modalFault" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Повідомити про несправність</h3>
+        <button class="close-btn" onclick="closeModal('modalFault')">&times;</button>
+      </div>
+      <form id="faultForm">
+        <div class="form-group">
+          <label>Коротка назва несправності</label>
+          <input type="text" id="faultTitle" required placeholder="напр. Стукіт у двигуні / витік масла">
+        </div>
+        <div class="form-group">
+          <label>Пріоритет</label>
+          <select id="faultPriority">
+            <option value="LOW">Низький (LOW)</option>
+            <option value="MEDIUM" selected>Середній (MEDIUM)</option>
+            <option value="HIGH">Високий (HIGH)</option>
+            <option value="CRITICAL">Критичний (блокує запуск генератора)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Детальний опис</label>
+          <textarea id="faultDesc" required rows="3" placeholder="Опишіть характер несправності, звуки, прояви"></textarea>
+        </div>
+        <button type="submit" class="btn-primary" style="background: var(--accent-red);">Надіслати заявку</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: System Adjustment (SuperAdmin) -->
+  <div id="modalAdjustment" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Системне коригування (SuperAdmin)</h3>
+        <button class="close-btn" onclick="closeModal('modalAdjustment')">&times;</button>
+      </div>
+      <form id="adjustmentForm">
+        <p style="color: #fbbf24; font-size: 0.85rem; margin-bottom: 1rem;">
+          ⚠️ Зміна експлуатаційних лічильників записується в незмінний аудит.
+        </p>
+        <div class="form-group">
+          <label>Сутність</label>
+          <select id="adjEntity" onchange="updateAdjFields()">
+            <option value="Generator">Генератор (Generator)</option>
+            <option value="FuelStock">Склад ГСМ (FuelStock)</option>
+            <option value="MaintenanceSchedule">Графік ТО (MaintenanceSchedule)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Поле для коригування</label>
+          <select id="adjField">
+            <option value="current_operating_hours">Мотогодини (current_operating_hours)</option>
+            <option value="fuel_tank_level_l">Рівень у баку (fuel_tank_level_l)</option>
+            <option value="status">Статус (STOPPED/RUNNING/MAINTENANCE_REQUIRED/FAULTY/BLOCKED)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Нове значення</label>
+          <input type="text" id="adjNewValue" required placeholder="Нове значення">
+        </div>
+        <div class="form-group">
+          <label>Причина коригування (ОБОВ'ЯЗКОВО)</label>
+          <textarea id="adjReason" required rows="2" placeholder="напр. Акт звірки механічного лічильника №42"></textarea>
+        </div>
+        <button type="submit" class="btn-primary" style="background: var(--accent-purple);">Застосувати та зареєструвати в аудиті</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Generator Wizard Setup -->
+  <div id="modalWizard" class="modal-overlay">
+    <div class="modal-content" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3>Майстер налаштування генератора</h3>
+        <button class="close-btn" onclick="closeModal('modalWizard')">&times;</button>
+      </div>
+      <form id="wizardForm">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <div class="form-group">
+            <label>Назва</label>
+            <input type="text" id="wizName" required value="Бензогенератор об'єкта 5.5кВт">
+          </div>
+          <div class="form-group">
+            <label>Модель</label>
+            <input type="text" id="wizModel" required value="KSB-6000">
+          </div>
+          <div class="form-group">
+            <label>Виробник</label>
+            <input type="text" id="wizManufacturer" required value="K&S">
+          </div>
+          <div class="form-group">
+            <label>Серійний номер</label>
+            <input type="text" id="wizSerial" required value="SN-2026-001">
+          </div>
+          <div class="form-group">
+            <label>Потужність (кВт)</label>
+            <input type="number" step="0.1" id="wizPower" required value="5.5">
+          </div>
+          <div class="form-group">
+            <label>Ємність бака (л)</label>
+            <input type="number" step="0.1" id="wizTankCap" required value="25.0">
+          </div>
+          <div class="form-group">
+            <label>Норм. розхід (л/год)</label>
+            <input type="number" step="0.1" id="wizConsumption" required value="2.2">
+          </div>
+          <div class="form-group">
+            <label>Початкові мотогодини</label>
+            <input type="number" step="0.1" id="wizInitHours" required value="0.0">
+          </div>
+          <div class="form-group">
+            <label>Початковий бак (л)</label>
+            <input type="number" step="0.1" id="wizInitFuel" required value="10.0">
+          </div>
+          <div class="form-group">
+            <label>Інтервал ТО (мотогодин)</label>
+            <input type="number" step="1" id="wizMaintInterval" required value="300">
+          </div>
+          <div class="form-group">
+            <label>Початок графіка роботи</label>
+            <input type="time" id="wizSchedStart" required value="08:00">
+          </div>
+          <div class="form-group">
+            <label>Кінець графіка роботи</label>
+            <input type="time" id="wizSchedEnd" required value="20:00">
+          </div>
+        </div>
+        <button type="submit" class="btn-primary" style="margin-top: 1rem;">Зберегти налаштування генератора</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create User -->
+  <div id="modalUserCreate" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Створення нового користувача</h3>
+        <button class="close-btn" onclick="closeModal('modalUserCreate')">&times;</button>
+      </div>
+      <form id="userCreateForm">
+        <div class="form-group">
+          <label>Логін</label>
+          <input type="text" id="newLogin" required placeholder="operator2">
+        </div>
+        <div class="form-group">
+          <label>ПІБ</label>
+          <input type="text" id="newName" required placeholder="Петро Сидоренко">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="newEmail" placeholder="user@facility.local">
+        </div>
+        <div class="form-group">
+          <label>Пароль</label>
+          <input type="password" id="newPassword" required placeholder="••••••••">
+        </div>
+        <div class="form-group">
+          <label>Роль</label>
+          <select id="newUserRole">
+            <option value="3" selected>Оператор (operator)</option>
+            <option value="2">Адміністратор (admin)</option>
+            <option value="4">Спостерігач (viewer)</option>
+          </select>
+        </div>
+        <button type="submit" class="btn-primary">Створити акаунт</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast">Повідомлення</div>
+
+  <!-- Application Logic -->
+  <script src="/frontend/app.js"></script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((reg) => console.log('ServiceWorker registered:', reg.scope))
+          .catch((err) => console.warn('ServiceWorker error:', err));
+      });
+    }
+  </script>
+</body>
+</html>

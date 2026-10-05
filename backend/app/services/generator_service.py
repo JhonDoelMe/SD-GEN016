@@ -1,0 +1,325 @@
+import datetime
+from typing import Optional, List
+from fastapi import HTTPException, status
+from sqlalchemy import select, delete
+from sqlalchemy.orm import selectinload
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.app.core.timezone import now_utc, is_within_work_schedule
+from backend.app.models.generator import Generator, GeneratorSchedule, GeneratorRun
+from backend.app.models.maintenance import MaintenanceSchedule
+from backend.app.schemas.generator import GeneratorWizardSetup, GeneratorStopRequest
+from backend.app.services.audit_service import log_audit
+
+
+def utc_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
+async def get_or_create_default_generator(db: AsyncSession) -> Generator:
+    res = await db.execute(
+        select(Generator).options(selectinload(Generator.schedules))
+    )
+    generator = res.scalars().first()
+    if not generator:
+        generator = Generator(
+            name="Бензиновий генератор 5кВт",
+            model="PG-6500",
+            manufacturer="PowerGen",
+            serial_number="GEN-2026-001",
+            rated_power_kw=5.0,
+            tank_capacity_l=25.0,
+            fuel_type="А-95",
+            nominal_consumption_l_per_h=2.2,
+            current_operating_hours=0.0,
+            fuel_tank_level_l=0.0,
+            status="STOPPED",
+            is_configured=False,
+            timezone="Europe/Kyiv",
+            created_at=utc_now(),
+            updated_at=utc_now()
+        )
+        db.add(generator)
+        await db.flush()
+        # Reload with schedules
+        res2 = await db.execute(
+            select(Generator).options(selectinload(Generator.schedules)).where(Generator.id == generator.id)
+        )
+        generator = res2.scalars().first()
+    return generator
+
+
+async def setup_generator_wizard(
+    db: AsyncSession,
+    setup_data: GeneratorWizardSetup,
+    user_id: int,
+    ip_address: Optional[str] = None
+) -> Generator:
+    generator = await get_or_create_default_generator(db)
+
+    generator.name = setup_data.name
+    generator.model = setup_data.model
+    generator.manufacturer = setup_data.manufacturer
+    generator.serial_number = setup_data.serial_number
+    generator.rated_power_kw = setup_data.rated_power_kw
+    generator.tank_capacity_l = setup_data.tank_capacity_l
+    generator.fuel_type = setup_data.fuel_type
+    generator.nominal_consumption_l_per_h = setup_data.nominal_consumption_l_per_h
+    generator.current_operating_hours = setup_data.initial_operating_hours
+    generator.fuel_tank_level_l = min(setup_data.initial_fuel_tank_level_l, setup_data.tank_capacity_l)
+    generator.timezone = setup_data.timezone
+    generator.is_configured = True
+    generator.status = "STOPPED"
+    generator.updated_at = utc_now()
+
+    # Clear old schedules with direct delete
+    await db.execute(delete(GeneratorSchedule).where(GeneratorSchedule.generator_id == generator.id))
+
+    new_schedule = GeneratorSchedule(
+        generator_id=generator.id,
+        weekday=-1,
+        start_time=setup_data.work_schedule_start,
+        end_time=setup_data.work_schedule_end,
+        timezone=setup_data.timezone,
+        is_active=True
+    )
+    db.add(new_schedule)
+
+    # Configure maintenance schedule
+    m_schedules_res = await db.execute(
+        select(MaintenanceSchedule).where(MaintenanceSchedule.generator_id == generator.id)
+    )
+    m_schedule = m_schedules_res.scalars().first()
+    if not m_schedule:
+        m_schedule = MaintenanceSchedule(
+            generator_id=generator.id,
+            interval_hours=setup_data.maintenance_interval_hours,
+            last_performed_hours=setup_data.initial_operating_hours,
+            next_due_hours=setup_data.initial_operating_hours + setup_data.maintenance_interval_hours,
+            is_active=True
+        )
+        db.add(m_schedule)
+    else:
+        m_schedule.interval_hours = setup_data.maintenance_interval_hours
+        m_schedule.last_performed_hours = setup_data.initial_operating_hours
+        m_schedule.next_due_hours = setup_data.initial_operating_hours + setup_data.maintenance_interval_hours
+
+    await db.flush()
+
+    await log_audit(
+        db=db,
+        action="GENERATOR_WIZARD_CONFIGURED",
+        entity_type="Generator",
+        entity_id=str(generator.id),
+        user_id=user_id,
+        details={
+            "name": generator.name,
+            "initial_hours": generator.current_operating_hours,
+            "tank_capacity": generator.tank_capacity_l,
+            "schedule": f"{setup_data.work_schedule_start}-{setup_data.work_schedule_end}",
+            "maint_interval": setup_data.maintenance_interval_hours,
+        },
+        ip_address=ip_address
+    )
+    await db.commit()
+
+    # Re-fetch with schedules eagerly loaded
+    res = await db.execute(
+        select(Generator).options(selectinload(Generator.schedules)).where(Generator.id == generator.id)
+    )
+    return res.scalars().first()
+
+
+async def start_generator(
+    db: AsyncSession,
+    generator_id: int,
+    user_id: int,
+    fuel_level_l: Optional[float] = None,
+    ip_address: Optional[str] = None
+) -> GeneratorRun:
+    res = await db.execute(
+        select(Generator).options(selectinload(Generator.schedules)).where(Generator.id == generator_id)
+    )
+    generator = res.scalars().first()
+    if not generator:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+
+    if not generator.is_configured:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Генератор ще не налаштований. Спочатку пройдіть майстер налаштування."
+        )
+
+    # Invariant checks on status
+    if generator.status == "RUNNING":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неможливо запустити генератор: генератор уже працює"
+        )
+    if generator.status == "BLOCKED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Генератор заблокований адміністратором. Запуск заборонено."
+        )
+    if generator.status == "FAULTY":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Генератор має критичну несправність. Спочатку усуньте несправність."
+        )
+
+    # Fetch active schedules explicitly
+    sched_res = await db.execute(
+        select(GeneratorSchedule).where(
+            GeneratorSchedule.generator_id == generator.id,
+            GeneratorSchedule.is_active == True
+        )
+    )
+    schedules = sched_res.scalars().all()
+    schedules_data = [
+        {"weekday": s.weekday, "start_time": s.start_time, "end_time": s.end_time, "is_active": s.is_active}
+        for s in schedules
+    ]
+    is_allowed, schedule_msg = is_within_work_schedule(schedules_data)
+    if not is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Запуск відхилено сервером: {schedule_msg}"
+        )
+
+    # Determine starting fuel level
+    current_fuel = fuel_level_l if fuel_level_l is not None else generator.fuel_tank_level_l
+    if current_fuel is not None and current_fuel > generator.tank_capacity_l:
+        current_fuel = generator.tank_capacity_l
+
+    # Create run record
+    run = GeneratorRun(
+        generator_id=generator.id,
+        user_id=user_id,
+        start_time=utc_now(),
+        start_hours=generator.current_operating_hours,
+        start_fuel_level_l=current_fuel,
+        status="RUNNING"
+    )
+    db.add(run)
+
+    generator.status = "RUNNING"
+    if current_fuel is not None:
+        generator.fuel_tank_level_l = current_fuel
+
+    await db.flush()
+
+    await log_audit(
+        db=db,
+        action="GENERATOR_START",
+        entity_type="Generator",
+        entity_id=str(generator.id),
+        user_id=user_id,
+        details={
+            "start_hours": run.start_hours,
+            "start_fuel": current_fuel,
+            "run_id": run.id
+        },
+        ip_address=ip_address
+    )
+    await db.commit()
+    return run
+
+
+async def stop_generator(
+    db: AsyncSession,
+    generator_id: int,
+    user_id: int,
+    stop_data: GeneratorStopRequest,
+    ip_address: Optional[str] = None
+) -> GeneratorRun:
+    res = await db.execute(
+        select(Generator).where(Generator.id == generator_id)
+    )
+    generator = res.scalars().first()
+    if not generator:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+
+    if generator.status != "RUNNING":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неможливо зупинити генератор: генератор не перебуває у стані 'Працює'"
+        )
+
+    # Find the active run
+    run_res = await db.execute(
+        select(GeneratorRun)
+        .where(GeneratorRun.generator_id == generator.id, GeneratorRun.status == "RUNNING")
+        .order_by(GeneratorRun.id.desc())
+    )
+    run = run_res.scalars().first()
+    if not run:
+        run = GeneratorRun(
+            generator_id=generator.id,
+            user_id=user_id,
+            start_time=generator.updated_at,
+            start_hours=generator.current_operating_hours,
+            status="RUNNING"
+        )
+        db.add(run)
+        await db.flush()
+
+    # Invariant: cumulative hours cannot decrease
+    if stop_data.end_hours < run.start_hours:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Кінцеві мотогодини ({stop_data.end_hours}) не можуть бути меншими за початкові ({run.start_hours})"
+        )
+
+    end_time = utc_now()
+    duration_hours = round(stop_data.end_hours - run.start_hours, 2)
+    calculated_consumption = round(duration_hours * generator.nominal_consumption_l_per_h, 2)
+
+    run.end_time = end_time
+    run.end_hours = stop_data.end_hours
+    run.duration_hours = duration_hours
+    run.calculated_consumption_l = calculated_consumption
+    run.status = "COMPLETED"
+    run.note = stop_data.note
+
+    # Update generator metrics
+    generator.current_operating_hours = stop_data.end_hours
+
+    if stop_data.end_fuel_level_l is not None:
+        generator.fuel_tank_level_l = max(0.0, min(stop_data.end_fuel_level_l, generator.tank_capacity_l))
+        run.end_fuel_level_l = generator.fuel_tank_level_l
+    else:
+        # Deduct calculated consumption from tank level
+        new_level = max(0.0, generator.fuel_tank_level_l - calculated_consumption)
+        generator.fuel_tank_level_l = round(new_level, 2)
+        run.end_fuel_level_l = generator.fuel_tank_level_l
+
+    # Check maintenance status
+    m_res = await db.execute(
+        select(MaintenanceSchedule).where(MaintenanceSchedule.generator_id == generator.id)
+    )
+    m_sched = m_res.scalars().first()
+    if m_sched and m_sched.is_active and generator.current_operating_hours >= m_sched.next_due_hours:
+        generator.status = "MAINTENANCE_REQUIRED"
+    else:
+        generator.status = "STOPPED"
+
+    await db.flush()
+
+    await log_audit(
+        db=db,
+        action="GENERATOR_STOP",
+        entity_type="Generator",
+        entity_id=str(generator.id),
+        user_id=user_id,
+        details={
+            "end_hours": run.end_hours,
+            "duration_hours": duration_hours,
+            "calculated_consumption_l": calculated_consumption,
+            "end_fuel_level_l": generator.fuel_tank_level_l,
+            "run_id": run.id,
+            "status_after": generator.status
+        },
+        ip_address=ip_address
+    )
+    await db.commit()
+    return run
