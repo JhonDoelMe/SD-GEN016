@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sd-gen016-v1';
+const CACHE_NAME = 'sd-gen016-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -34,9 +34,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Do NOT cache API requests - always fetch from server
+  // Do NOT intercept or cache API requests - let browser fetch natively
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(fetch(event.request));
     return;
   }
 

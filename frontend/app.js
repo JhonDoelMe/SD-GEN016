@@ -176,6 +176,22 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     errorBox.innerText = '';
   }
 
+  if (!loginInput) {
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.innerText = '❌ Будь ласка, введіть логін користувача';
+    }
+    return;
+  }
+
+  if (!passInput) {
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.innerText = '❌ Будь ласка, введіть пароль';
+    }
+    return;
+  }
+
   if (loginBtn) {
     loginBtn.disabled = true;
     loginBtn.innerText = 'Вхід...';

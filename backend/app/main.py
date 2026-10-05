@@ -64,6 +64,7 @@ async def lifespan(app: FastAPI):
     try:
         async with AsyncSessionLocal() as session:
             await seed_initial_data(session)
+        print(f"[AUTH] SuperAdmin user '{settings.INITIAL_ADMIN_LOGIN}' successfully ensured. Ready for login.", flush=True)
     except Exception as e:
         import traceback
         print(f"[ERROR] Failed to seed initial data: {e}")
