@@ -9,13 +9,24 @@ from backend.app.schemas.fuel import FuelReceiptCreate, FuelTransferCreate, Fuel
 from backend.app.services.audit_service import log_audit
 
 
-async def get_or_create_default_stock(db: AsyncSession) -> FuelStock:
-    res = await db.execute(select(FuelStock))
+async def get_or_create_default_stock(db: AsyncSession, facility_id: Optional[int] = None) -> FuelStock:
+    query = select(FuelStock)
+    if facility_id:
+        query = query.where(FuelStock.facility_id == facility_id)
+    res = await db.execute(query)
     stock = res.scalars().first()
     if not stock:
-        stock = FuelStock(name="Основний склад ГСМ", fuel_type="А-95", current_balance_l=0.0)
-        db.add(stock)
-        await db.flush()
+        res_any = await db.execute(select(FuelStock))
+        stock = res_any.scalars().first()
+        if not stock:
+            stock = FuelStock(
+                facility_id=facility_id or 1,
+                name="Основний склад ГСМ",
+                fuel_type="А-95",
+                current_balance_l=0.0
+            )
+            db.add(stock)
+            await db.flush()
     return stock
 
 
@@ -153,35 +164,46 @@ async def transfer_fuel_to_tank(
     return transfer
 
 
-async def get_fuel_balances_summary(db: AsyncSession) -> FuelBalancesSummary:
-    stock = await get_or_create_default_stock(db)
-    gen_res = await db.execute(select(Generator))
+async def get_fuel_balances_summary(
+    db: AsyncSession,
+    facility_id: Optional[int] = None,
+    generator_id: Optional[int] = None
+) -> FuelBalancesSummary:
+    stock = await get_or_create_default_stock(db, facility_id=facility_id)
+
+    gen_query = select(Generator)
+    if generator_id:
+        gen_query = gen_query.where(Generator.id == generator_id)
+    elif facility_id:
+        gen_query = gen_query.where(Generator.facility_id == facility_id)
+    gen_res = await db.execute(gen_query)
     generator = gen_res.scalars().first()
 
     tank_balance = generator.fuel_tank_level_l if generator else 0.0
     tank_capacity = generator.tank_capacity_l if generator else 25.0
 
     # Receipts aggregate
-    rec_res = await db.execute(
-        select(
-            func.coalesce(func.sum(FuelReceipt.liters), 0.0),
-            func.coalesce(func.sum(FuelReceipt.cost_total), 0.0)
-        )
-    )
+    rec_query = select(
+        func.coalesce(func.sum(FuelReceipt.liters), 0.0),
+        func.coalesce(func.sum(FuelReceipt.cost_total), 0.0)
+    ).where(FuelReceipt.stock_id == stock.id)
+    rec_res = await db.execute(rec_query)
     total_received_l, total_spent_uah = rec_res.first()
 
     avg_price = round(total_spent_uah / total_received_l, 2) if total_received_l > 0 else 0.0
 
     # Transfers aggregate
-    tr_res = await db.execute(
-        select(func.coalesce(func.sum(FuelTransfer.liters), 0.0))
-    )
+    tr_query = select(func.coalesce(func.sum(FuelTransfer.liters), 0.0))
+    if generator:
+        tr_query = tr_query.where(FuelTransfer.generator_id == generator.id)
+    tr_res = await db.execute(tr_query)
     total_transferred_l = tr_res.scalar_one()
 
     # Consumed aggregate
-    runs_res = await db.execute(
-        select(func.coalesce(func.sum(GeneratorRun.calculated_consumption_l), 0.0))
-    )
+    runs_query = select(func.coalesce(func.sum(GeneratorRun.calculated_consumption_l), 0.0))
+    if generator:
+        runs_query = runs_query.where(GeneratorRun.generator_id == generator.id)
+    runs_res = await db.execute(runs_query)
     total_consumed_l = runs_res.scalar_one()
 
     return FuelBalancesSummary(
@@ -194,3 +216,4 @@ async def get_fuel_balances_summary(db: AsyncSession) -> FuelBalancesSummary:
         total_transferred_l=round(total_transferred_l, 2),
         total_calculated_consumed_l=round(total_consumed_l, 2)
     )
+

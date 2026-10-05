@@ -56,9 +56,11 @@ class User(Base):
     full_name = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     is_superadmin = Column(Boolean, default=False, nullable=False)
+    facility_id = Column(Integer, ForeignKey("facilities.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
+    facility = relationship("Facility", back_populates="users")
     roles = relationship("Role", secondary=user_roles, back_populates="users", lazy="selectin")
     runs = relationship("GeneratorRun", back_populates="user")
     maintenance_records = relationship("MaintenanceRecord", back_populates="user")

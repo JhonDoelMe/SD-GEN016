@@ -22,6 +22,7 @@ class GeneratorScheduleOut(BaseModel):
 
 
 class GeneratorWizardSetup(BaseModel):
+    facility_id: Optional[int] = None
     name: str = Field(..., min_length=1)
     model: str = Field(..., min_length=1)
     manufacturer: str = Field(..., min_length=1)
@@ -39,7 +40,12 @@ class GeneratorWizardSetup(BaseModel):
     timezone: str = Field(default="Europe/Kyiv")
 
 
+class GeneratorCreate(GeneratorWizardSetup):
+    pass
+
+
 class GeneratorUpdate(BaseModel):
+    facility_id: Optional[int] = None
     name: Optional[str] = None
     model: Optional[str] = None
     manufacturer: Optional[str] = None
@@ -53,6 +59,7 @@ class GeneratorUpdate(BaseModel):
 
 class GeneratorOut(BaseModel):
     id: int
+    facility_id: Optional[int] = None
     name: str
     model: str
     manufacturer: str
@@ -74,10 +81,12 @@ class GeneratorOut(BaseModel):
 
 
 class GeneratorStartRequest(BaseModel):
+    generator_id: Optional[int] = None
     fuel_level_l: Optional[float] = None
 
 
 class GeneratorStopRequest(BaseModel):
+    generator_id: Optional[int] = None
     end_hours: Optional[float] = Field(None, description="Показання лічильника мотогодин при зупинці (якщо не вказано, розраховується автоматично)")
     end_fuel_level_l: Optional[float] = None
     note: Optional[str] = None

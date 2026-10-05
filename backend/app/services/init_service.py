@@ -4,6 +4,7 @@ from backend.app.config import settings
 from backend.app.core.security import get_password_hash
 from backend.app.models.user import User, Role, Permission
 from backend.app.models.fuel import FuelStock
+from backend.app.models.facility import Facility
 
 ALL_PERMISSIONS = [
     # Generator
@@ -87,7 +88,21 @@ async def seed_initial_data(db: AsyncSession) -> None:
                     role.permissions.append(existing_perms[p_code])
     await db.flush()
 
-    # 3. Seed Initial SuperAdmin if no users exist
+    # 3. Seed Default Facility if none exists
+    fac_res = await db.execute(select(Facility))
+    default_fac = fac_res.scalars().first()
+    if not default_fac:
+        default_fac = Facility(
+            id=1,
+            name="Основний об'єкт",
+            address="вул. Центральна, 1",
+            description="Головна виробничо-офісна локація",
+            timezone="Europe/Kyiv"
+        )
+        db.add(default_fac)
+        await db.flush()
+
+    # 4. Seed Initial SuperAdmin if no users exist
     users_res = await db.execute(select(User))
     user_count = len(users_res.scalars().all())
 
@@ -101,19 +116,21 @@ async def seed_initial_data(db: AsyncSession) -> None:
             full_name=settings.INITIAL_ADMIN_FULL_NAME,
             is_active=True,
             is_superadmin=True,
+            facility_id=default_fac.id if default_fac else 1,
         )
         if "superadmin" in existing_roles:
             superadmin_user.roles.append(existing_roles["superadmin"])
         db.add(superadmin_user)
         await db.flush()
 
-    # 4. Seed Default FuelStock if none exists
+    # 5. Seed Default FuelStock if none exists
     stock_res = await db.execute(select(FuelStock))
     if not stock_res.scalars().first():
         stock = FuelStock(
             name="Основний склад ГСМ",
             fuel_type="А-95",
-            current_balance_l=0.0
+            current_balance_l=0.0,
+            facility_id=default_fac.id if default_fac else 1,
         )
         db.add(stock)
         await db.flush()

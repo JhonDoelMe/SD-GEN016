@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.timezone import now_utc, is_within_work_schedule
 from backend.app.models.generator import Generator, GeneratorSchedule, GeneratorRun
-from backend.app.models.maintenance import MaintenanceSchedule
-from backend.app.schemas.generator import GeneratorWizardSetup, GeneratorStopRequest
+from backend.app.models.maintenance import MaintenanceSchedule, MaintenanceRecord
+from backend.app.models.fault import Fault
+from backend.app.models.fuel import FuelTransfer
+from backend.app.schemas.generator import GeneratorWizardSetup, GeneratorCreate, GeneratorStopRequest
 from backend.app.services.audit_service import log_audit
 
 
@@ -16,13 +18,23 @@ def utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
 
-async def get_or_create_default_generator(db: AsyncSession) -> Generator:
-    res = await db.execute(
-        select(Generator).options(selectinload(Generator.schedules))
-    )
+async def get_or_create_default_generator(db: AsyncSession, generator_id: Optional[int] = None, facility_id: Optional[int] = None) -> Generator:
+    if generator_id:
+        res = await db.execute(
+            select(Generator).options(selectinload(Generator.schedules)).where(Generator.id == generator_id)
+        )
+        gen = res.scalars().first()
+        if gen:
+            return gen
+
+    query = select(Generator).options(selectinload(Generator.schedules))
+    if facility_id:
+        query = query.where(Generator.facility_id == facility_id)
+    res = await db.execute(query)
     generator = res.scalars().first()
     if not generator:
         generator = Generator(
+            facility_id=facility_id or 1,
             name="Бензиновий генератор 5кВт",
             model="PG-6500",
             manufacturer="PowerGen",
@@ -72,6 +84,9 @@ async def setup_generator_wizard(
     generator.status = "STOPPED"
     generator.updated_at = utc_now()
 
+    if setup_data.facility_id:
+        generator.facility_id = setup_data.facility_id
+
     # Clear old schedules with direct delete
     await db.execute(delete(GeneratorSchedule).where(GeneratorSchedule.generator_id == generator.id))
 
@@ -90,9 +105,13 @@ async def setup_generator_wizard(
     init_hours = setup_data.initial_operating_hours
     if setup_data.last_maintenance_performed_hours is not None:
         last_performed = setup_data.last_maintenance_performed_hours
-        next_due = last_performed + interval
-        while next_due <= init_hours:
-            next_due += interval
+        if last_performed >= init_hours and init_hours < interval:
+            last_performed = 0.0
+            next_due = interval
+        else:
+            next_due = last_performed + interval
+            while next_due <= init_hours:
+                next_due += interval
     else:
         cycle = int(init_hours // interval)
         last_performed = float(cycle * interval)
@@ -361,3 +380,141 @@ async def stop_generator(
     )
     await db.commit()
     return run
+
+
+async def get_generators_list(db: AsyncSession, facility_id: Optional[int] = None) -> List[Generator]:
+    query = select(Generator).options(selectinload(Generator.schedules))
+    if facility_id:
+        query = query.where(Generator.facility_id == facility_id)
+    query = query.order_by(Generator.id.asc())
+    res = await db.execute(query)
+    generators = res.scalars().all()
+    if not generators and (facility_id is None or facility_id == 1):
+        default_gen = await get_or_create_default_generator(db, facility_id=facility_id)
+        return [default_gen]
+    return list(generators)
+
+
+async def create_generator(
+    db: AsyncSession,
+    setup_data: GeneratorCreate,
+    user_id: int,
+    ip_address: Optional[str] = None
+) -> Generator:
+    facility_id = setup_data.facility_id or 1
+    generator = Generator(
+        facility_id=facility_id,
+        name=setup_data.name.strip(),
+        model=setup_data.model.strip(),
+        manufacturer=setup_data.manufacturer.strip(),
+        serial_number=setup_data.serial_number.strip(),
+        rated_power_kw=setup_data.rated_power_kw,
+        tank_capacity_l=setup_data.tank_capacity_l,
+        fuel_type=setup_data.fuel_type.strip(),
+        nominal_consumption_l_per_h=setup_data.nominal_consumption_l_per_h,
+        current_operating_hours=setup_data.initial_operating_hours,
+        fuel_tank_level_l=min(setup_data.initial_fuel_tank_level_l, setup_data.tank_capacity_l),
+        timezone=setup_data.timezone.strip() if setup_data.timezone else "Europe/Kyiv",
+        is_configured=True,
+        status="STOPPED",
+        created_at=utc_now(),
+        updated_at=utc_now()
+    )
+    db.add(generator)
+    await db.flush()
+
+    new_schedule = GeneratorSchedule(
+        generator_id=generator.id,
+        weekday=-1,
+        start_time=setup_data.work_schedule_start,
+        end_time=setup_data.work_schedule_end,
+        timezone=generator.timezone,
+        is_active=True
+    )
+    db.add(new_schedule)
+
+    interval = setup_data.maintenance_interval_hours
+    init_hours = setup_data.initial_operating_hours
+    if setup_data.last_maintenance_performed_hours is not None:
+        last_performed = setup_data.last_maintenance_performed_hours
+        if last_performed >= init_hours and init_hours < interval:
+            last_performed = 0.0
+            next_due = interval
+        else:
+            next_due = last_performed + interval
+            while next_due <= init_hours:
+                next_due += interval
+    else:
+        last_performed = 0.0
+        next_due = interval
+        while next_due <= init_hours:
+            last_performed = next_due
+            next_due += interval
+
+    m_schedule = MaintenanceSchedule(
+        generator_id=generator.id,
+        interval_hours=interval,
+        last_performed_hours=last_performed,
+        next_due_hours=next_due,
+        is_active=True
+    )
+    db.add(m_schedule)
+    await db.flush()
+
+    await log_audit(
+        db=db,
+        action="GENERATOR_CREATED",
+        entity_type="Generator",
+        entity_id=str(generator.id),
+        user_id=user_id,
+        details={
+            "name": generator.name,
+            "facility_id": facility_id,
+            "initial_hours": generator.current_operating_hours,
+            "tank_capacity_l": generator.tank_capacity_l
+        },
+        ip_address=ip_address
+    )
+    await db.commit()
+
+    res = await db.execute(
+        select(Generator).options(selectinload(Generator.schedules)).where(Generator.id == generator.id)
+    )
+    return res.scalars().first()
+
+
+async def delete_generator(
+    db: AsyncSession,
+    generator_id: int,
+    user_id: int,
+    ip_address: Optional[str] = None
+) -> dict:
+    res = await db.execute(select(Generator).where(Generator.id == generator_id))
+    generator = res.scalars().first()
+    if not generator:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+
+    if generator.status == "RUNNING":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неможливо видалити генератор, який зараз працює! Спочатку зупиніть генератор."
+        )
+
+    gen_name = generator.name
+
+    # Cascade delete generator and all associated relations (runs, schedules, maintenance, faults, transfers)
+    await db.delete(generator)
+    await db.flush()
+
+    await log_audit(
+        db=db,
+        action="GENERATOR_DELETED",
+        entity_type="Generator",
+        entity_id=str(generator_id),
+        user_id=user_id,
+        details={"name": gen_name, "model": generator.model, "serial_number": generator.serial_number},
+        ip_address=ip_address
+    )
+    await db.commit()
+
+    return {"message": f"Генератор '{gen_name}' (ID {generator_id}) успішно видалено"}

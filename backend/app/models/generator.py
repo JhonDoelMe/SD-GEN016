@@ -32,15 +32,18 @@ class Generator(Base):
     timezone = Column(String(50), nullable=False, default="Europe/Kyiv")
     extra_params_json = Column(Text, nullable=True)
 
+    facility_id = Column(Integer, ForeignKey("facilities.id", ondelete="SET NULL"), nullable=True, index=True)
+
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
+    facility = relationship("Facility", back_populates="generators")
     schedules = relationship("GeneratorSchedule", back_populates="generator", cascade="all, delete-orphan", lazy="selectin")
     runs = relationship("GeneratorRun", back_populates="generator", cascade="all, delete-orphan")
     maintenance_schedules = relationship("MaintenanceSchedule", back_populates="generator", cascade="all, delete-orphan", lazy="selectin")
     maintenance_records = relationship("MaintenanceRecord", back_populates="generator", cascade="all, delete-orphan")
     faults = relationship("Fault", back_populates="generator", cascade="all, delete-orphan")
-    transfers = relationship("FuelTransfer", back_populates="generator")
+    transfers = relationship("FuelTransfer", back_populates="generator", cascade="all, delete-orphan")
 
 
 class GeneratorSchedule(Base):

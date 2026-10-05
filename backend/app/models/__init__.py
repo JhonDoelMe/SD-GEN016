@@ -1,4 +1,5 @@
 from backend.app.database import Base
+from backend.app.models.facility import Facility
 from backend.app.models.user import User, Role, Permission, user_roles, role_permissions
 from backend.app.models.generator import Generator, GeneratorSchedule, GeneratorRun
 from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer
@@ -9,6 +10,7 @@ from backend.app.models.settings import SystemSetting
 
 __all__ = [
     "Base",
+    "Facility",
     "User",
     "Role",
     "Permission",

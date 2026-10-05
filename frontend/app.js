@@ -2,6 +2,8 @@
 
 let token = localStorage.getItem('sd_token');
 let currentUser = null;
+let currentFacilityId = null;
+let currentGeneratorId = null;
 let currentGenerator = null;
 let activeRun = null;
 
@@ -207,8 +209,61 @@ document.querySelectorAll('.nav-item').forEach((tab) => {
   });
 });
 
+// Facilities & Generators Management
+async function loadFacilitiesList() {
+  try {
+    const facilities = await api('/facilities');
+    const sel = document.getElementById('facilitySelect');
+    const modalSel = document.getElementById('newGenFacilityId');
+    if (!sel) return;
+
+    sel.innerHTML = facilities.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+    if (modalSel) {
+      modalSel.innerHTML = facilities.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+    }
+
+    if (facilities.length > 0) {
+      if (!currentFacilityId || !facilities.some(f => f.id === currentFacilityId)) {
+        currentFacilityId = facilities[0].id;
+      }
+      sel.value = currentFacilityId;
+    }
+  } catch (err) {
+    console.warn('loadFacilitiesList:', err);
+  }
+}
+
+async function loadGeneratorsList(facilityId) {
+  try {
+    const url = `/generator/list${facilityId ? '?facility_id=' + facilityId : ''}`;
+    const generators = await api(url);
+    const sel = document.getElementById('generatorSelect');
+    if (!sel) return;
+
+    if (!generators || generators.length === 0) {
+      sel.innerHTML = '<option value="">(Немає генераторів)</option>';
+      currentGenerator = null;
+      currentGeneratorId = null;
+    } else {
+      sel.innerHTML = generators.map(g => `<option value="${g.id}">${g.name} (${g.model})</option>`).join('');
+      if (!currentGeneratorId || !generators.some(g => g.id === currentGeneratorId)) {
+        currentGeneratorId = generators[0].id;
+      }
+      sel.value = currentGeneratorId;
+    }
+  } catch (err) {
+    console.warn('loadGeneratorsList:', err);
+  }
+}
+
 // Load All Dashboard Data
 async function loadAllData() {
+  if (!currentFacilityId) {
+    await loadFacilitiesList();
+  }
+  if (!currentGeneratorId) {
+    await loadGeneratorsList(currentFacilityId);
+  }
   await loadGeneratorData();
   await loadFuelSummary();
   await loadMaintenanceSummary();
@@ -218,7 +273,20 @@ async function loadAllData() {
 // 1. Generator Data
 async function loadGeneratorData() {
   try {
-    currentGenerator = await api('/generator');
+    let url = '/generator';
+    const params = [];
+    if (currentGeneratorId) params.push(`generator_id=${currentGeneratorId}`);
+    if (currentFacilityId) params.push(`facility_id=${currentFacilityId}`);
+    if (params.length) url += `?${params.join('&')}`;
+
+    currentGenerator = await api(url);
+    if (!currentGenerator) return;
+    currentGeneratorId = currentGenerator.id;
+    const sel = document.getElementById('generatorSelect');
+    if (sel && sel.value != currentGeneratorId) {
+      sel.value = currentGeneratorId;
+    }
+
     document.getElementById('genName').innerText = currentGenerator.name;
     document.getElementById('genModel').innerText = `Модель: ${currentGenerator.model} | Серійний: ${currentGenerator.serial_number} | Потужність: ${currentGenerator.rated_power_kw} кВт`;
     document.getElementById('cardHours').innerText = currentGenerator.current_operating_hours.toFixed(1);
@@ -261,7 +329,7 @@ async function loadGeneratorData() {
     }
 
     // Active Run Check
-    activeRun = await api('/generator/active-run');
+    activeRun = await api(`/generator/active-run${currentGeneratorId ? '?generator_id=' + currentGeneratorId : ''}`);
     if (activeRun) {
       banner.style.display = 'block';
       document.getElementById('activeRunStart').innerText = formatTime(activeRun.start_time);
@@ -334,7 +402,7 @@ document.getElementById('mainActionBtn').addEventListener('click', async () => {
     try {
       await api('/generator/start', {
         method: 'POST',
-        body: JSON.stringify({ fuel_level_l: currentGenerator.fuel_tank_level_l })
+        body: JSON.stringify({ generator_id: currentGeneratorId, fuel_level_l: currentGenerator.fuel_tank_level_l })
       });
       showToast('Генератор успішно запущено!', 'success');
       loadAllData();
@@ -354,7 +422,7 @@ document.getElementById('stopGenForm').addEventListener('submit', async (e) => {
   try {
     const res = await api('/generator/stop', {
       method: 'POST',
-      body: JSON.stringify({ end_hours: endHours, end_fuel_level_l: endFuel, note: note })
+      body: JSON.stringify({ generator_id: currentGeneratorId, end_hours: endHours, end_fuel_level_l: endFuel, note: note })
     });
     closeModal('modalStopGen');
     stopRunStopwatch();
@@ -368,7 +436,12 @@ document.getElementById('stopGenForm').addEventListener('submit', async (e) => {
 // 2. Fuel Management
 async function loadFuelSummary() {
   try {
-    const s = await api('/fuel/summary');
+    const params = [];
+    if (currentFacilityId) params.push(`facility_id=${currentFacilityId}`);
+    if (currentGeneratorId) params.push(`generator_id=${currentGeneratorId}`);
+    const q = params.length ? '?' + params.join('&') : '';
+
+    const s = await api(`/fuel/summary${q}`);
     document.getElementById('cardStock').innerText = s.warehouse_balance_l.toFixed(1);
     document.getElementById('fuelStockBal').innerText = `${s.warehouse_balance_l.toFixed(1)} л`;
     document.getElementById('fuelTankBal').innerText = `${s.tank_balance_l.toFixed(1)} л`;
@@ -435,6 +508,7 @@ document.getElementById('receiptForm').addEventListener('submit', async (e) => {
 document.getElementById('transferForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = {
+    generator_id: currentGeneratorId,
     liters: parseFloat(document.getElementById('transLiters').value),
     comment: document.getElementById('transComment').value
   };
@@ -450,7 +524,8 @@ document.getElementById('transferForm').addEventListener('submit', async (e) => 
 // 3. Maintenance (ТО)
 async function loadMaintenanceSummary() {
   try {
-    const m = await api('/maintenance/schedule');
+    const q = currentGeneratorId ? `?generator_id=${currentGeneratorId}` : '';
+    const m = await api(`/maintenance/schedule${q}`);
     document.getElementById('cardMaintRem').innerHTML = `${m.hours_remaining.toFixed(1)} <small style="font-size:0.9rem;">год</small>`;
     document.getElementById('cardMaintSub').innerText = `план: ${m.next_due_hours.toFixed(0)} год`;
     document.getElementById('maintInterval').innerText = `${m.interval_hours.toFixed(0)} год`;
@@ -475,10 +550,23 @@ async function loadMaintenanceSummary() {
   } catch (_) {}
 }
 
+window.recalculateMaintenanceSchedule = async function() {
+  try {
+    const q = currentGeneratorId ? `?generator_id=${currentGeneratorId}` : '';
+    const m = await api(`/maintenance/schedule/recalculate${q}`, { method: 'POST' });
+    showToast(`Графік ТО перераховано! Наступне ТО: ${m.next_due_hours} год, залишилося: ${m.hours_remaining} год`, 'success');
+    await loadMaintenanceSummary();
+    await loadMaintenanceData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+};
+
 async function loadMaintenanceData() {
   await loadMaintenanceSummary();
   try {
-    const records = await api('/maintenance/records');
+    const q = currentGeneratorId ? `?generator_id=${currentGeneratorId}` : '';
+    const records = await api(`/maintenance/records${q}`);
     const tbody = document.querySelector('#maintenanceHistoryTable tbody');
     tbody.innerHTML = records.map((r) => `
       <tr>
@@ -498,6 +586,7 @@ async function loadMaintenanceData() {
 document.getElementById('maintForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = {
+    generator_id: currentGeneratorId,
     maintenance_type: document.getElementById('maintType').value,
     work_description: document.getElementById('maintWork').value,
     consumables_used: document.getElementById('maintConsumables').value,
@@ -570,7 +659,8 @@ document.getElementById('faultForm').addEventListener('submit', async (e) => {
 // 5. Runs History
 async function loadRecentRuns() {
   try {
-    const runs = await api('/generator/runs?limit=5');
+    const q = currentGeneratorId ? '&generator_id=' + currentGeneratorId : '';
+    const runs = await api('/generator/runs?limit=5' + q);
     const tbody = document.querySelector('#recentRunsTable tbody');
     tbody.innerHTML = runs.map((r) => {
       const durText = r.duration_formatted || (r.duration_seconds != null ? formatDuration(r.duration_seconds) : (r.duration_hours ? r.duration_hours.toFixed(2) + ' год' : '-'));
@@ -591,7 +681,8 @@ async function loadRecentRuns() {
 
 async function loadRunsData() {
   try {
-    const runs = await api('/generator/runs?limit=50');
+    const q = currentGeneratorId ? '&generator_id=' + currentGeneratorId : '';
+    const runs = await api('/generator/runs?limit=50' + q);
     const tbody = document.querySelector('#allRunsTable tbody');
     tbody.innerHTML = runs.map((r) => {
       const durText = r.duration_formatted || (r.duration_seconds != null ? formatDuration(r.duration_seconds) : (r.duration_hours ? r.duration_hours.toFixed(2) + ' год' : '-'));
@@ -696,16 +787,44 @@ document.getElementById('adjustmentForm').addEventListener('submit', async (e) =
 });
 
 // 7. Reports
+window.setReportPeriod = function(preset) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  let start = new Date(now);
+  let end = new Date(now);
+
+  if (preset === 'today') {
+    // start is today
+  } else if (preset === 'week') {
+    start.setDate(now.getDate() - 7);
+  } else if (preset === 'month') {
+    start.setMonth(now.getMonth() - 1);
+  } else if (preset === 'quarter') {
+    start.setMonth(now.getMonth() - 3);
+  } else if (preset === 'all') {
+    start = new Date(2020, 0, 1);
+  }
+
+  document.getElementById('repStartDate').value = fmt(start);
+  document.getElementById('repEndDate').value = fmt(end);
+  loadReport();
+};
+
 async function loadReport() {
   const startInput = document.getElementById('repStartDate').value;
   const endInput = document.getElementById('repEndDate').value;
 
-  let query = '';
-  if (startInput) query += `&start_date=${startInput}`;
-  if (endInput) query += `&end_date=${endInput}`;
+  const params = [];
+  if (currentGeneratorId) params.push(`generator_id=${currentGeneratorId}`);
+  if (currentFacilityId) params.push(`facility_id=${currentFacilityId}`);
+  if (startInput) params.push(`start_date=${startInput}`);
+  if (endInput) params.push(`end_date=${endInput}`);
+  const q = params.length ? '?' + params.join('&') : '';
 
   try {
-    const r = await api(`/reports/summary?${query.slice(1)}`);
+    const r = await api(`/reports/summary${q}`);
     const container = document.getElementById('reportContainer');
     container.innerHTML = `
       <div class="metric-card">
@@ -749,20 +868,56 @@ window.downloadReportCSV = function () {
   const endInput = document.getElementById('repEndDate').value;
   let url = '/api/v1/reports/export';
   const params = [];
+  if (currentGeneratorId) params.push(`generator_id=${currentGeneratorId}`);
+  if (currentFacilityId) params.push(`facility_id=${currentFacilityId}`);
   if (startInput) params.push(`start_date=${startInput}`);
   if (endInput) params.push(`end_date=${endInput}`);
   if (params.length) url += `?${params.join('&')}`;
 
-  // Fetch with auth header and trigger download
   fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-    .then((res) => res.blob())
+    .then((res) => {
+      if (!res.ok) throw new Error('Помилка сервера при генерації CSV');
+      return res.blob();
+    })
     .then((blob) => {
       const a = document.createElement('a');
       a.href = window.URL.createObjectURL(blob);
       a.download = `generator_report_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
+      showToast('CSV звіт успішно завантажено!', 'success');
     })
-    .catch(() => showToast('Помилка завантаження звіту', 'error'));
+    .catch((err) => showToast(err.message || 'Помилка завантаження звіту', 'error'));
+};
+
+window.downloadReportExcel = async function () {
+  const startInput = document.getElementById('repStartDate').value;
+  const endInput = document.getElementById('repEndDate').value;
+  let url = '/api/v1/reports/export-excel';
+  const params = [];
+  if (currentGeneratorId) params.push(`generator_id=${currentGeneratorId}`);
+  if (currentFacilityId) params.push(`facility_id=${currentFacilityId}`);
+  if (startInput) params.push(`start_date=${startInput}`);
+  if (endInput) params.push(`end_date=${endInput}`);
+  if (params.length) url += `?${params.join('&')}`;
+
+  try {
+    showToast('Формування динамічного Excel звіту (.xlsx)...', 'info');
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error('Помилка сервера при створенні Excel');
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = window.URL.createObjectURL(blob);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.download = `ServiceDesk_Report_${dateStr}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast('Excel звіт (.xlsx) успішно згенеровано та завантажено!', 'success');
+  } catch (err) {
+    showToast(err.message || 'Помилка завантаження Excel звіту', 'error');
+  }
 };
 
 // 8. Admin (Users & Wizard)
@@ -847,6 +1002,113 @@ document.getElementById('wizardForm').addEventListener('submit', async (e) => {
     showToast('Параметри генератора успішно налаштовані через майстер!', 'success');
     loadAllData();
   } catch (_) {}
+// Generator Deletion Handlers
+window.openDeleteGeneratorModal = function() {
+  if (!currentGenerator) {
+    showToast('Генератор не вибрано', 'error');
+    return;
+  }
+  if (currentGenerator.status === 'RUNNING') {
+    showToast('Неможливо видалити генератор, який зараз працює! Спершу зупиніть його.', 'error');
+    return;
+  }
+  const text = document.getElementById('deleteGenConfirmText');
+  if (text) {
+    text.innerHTML = `Ви дійсно бажаєте видалити генератор <b>"${currentGenerator.name}"</b> (Модель: ${currentGenerator.model}, S/N: ${currentGenerator.serial_number})?`;
+  }
+  openModal('modalDeleteGenerator');
+};
+
+window.confirmDeleteCurrentGenerator = async function() {
+  if (!currentGeneratorId) return;
+  try {
+    const res = await api(`/generator/${currentGeneratorId}`, { method: 'DELETE' });
+    closeModal('modalDeleteGenerator');
+    showToast(res.message || 'Генератор успішно видалено!', 'success');
+    currentGeneratorId = null;
+    await loadGeneratorsList(currentFacilityId);
+    await loadAllData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+};
+
+// Facility Create Form Submit
+document.getElementById('facilityCreateForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('newFacilityName').value;
+  const address = document.getElementById('newFacilityAddress').value;
+  const description = document.getElementById('newFacilityDescription').value;
+
+  try {
+    const created = await api('/facilities', {
+      method: 'POST',
+      body: JSON.stringify({ name, address, description, timezone: 'Europe/Kyiv' })
+    });
+    closeModal('modalCreateFacility');
+    showToast(`Об'єкт "${created.name}" успішно створено!`, 'success');
+    await loadFacilitiesList();
+    currentFacilityId = created.id;
+    if (document.getElementById('facilitySelect')) {
+      document.getElementById('facilitySelect').value = created.id;
+    }
+    await loadGeneratorsList(currentFacilityId);
+    await loadAllData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+// Generator Create Form Submit
+document.getElementById('generatorCreateForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    facility_id: parseInt(document.getElementById('newGenFacilityId').value) || currentFacilityId || 1,
+    name: document.getElementById('newGenName').value,
+    model: document.getElementById('newGenModel').value,
+    manufacturer: document.getElementById('newGenManufacturer').value,
+    serial_number: document.getElementById('newGenSerial').value,
+    rated_power_kw: parseFloat(document.getElementById('newGenPower').value),
+    tank_capacity_l: parseFloat(document.getElementById('newGenTank').value),
+    fuel_type: document.getElementById('newGenFuelType').value,
+    nominal_consumption_l_per_h: parseFloat(document.getElementById('newGenConsumption').value),
+    initial_operating_hours: parseFloat(document.getElementById('newGenInitialHours').value) || 0.0,
+    initial_fuel_tank_level_l: parseFloat(document.getElementById('newGenInitialFuel').value) || 0.0,
+    maintenance_interval_hours: parseFloat(document.getElementById('newGenMaintInterval').value) || 300.0,
+    work_schedule_start: "08:00",
+    work_schedule_end: "20:00",
+    timezone: "Europe/Kyiv"
+  };
+
+  try {
+    const created = await api('/generator', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+    closeModal('modalCreateGenerator');
+    showToast(`Генератор "${created.name}" успішно створено!`, 'success');
+    await loadGeneratorsList(currentFacilityId);
+    currentGeneratorId = created.id;
+    if (document.getElementById('generatorSelect')) {
+      document.getElementById('generatorSelect').value = created.id;
+    }
+    await loadAllData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+// Dropdowns Change Listeners
+document.getElementById('facilitySelect')?.addEventListener('change', async (e) => {
+  currentFacilityId = parseInt(e.target.value);
+  currentGeneratorId = null;
+  await loadGeneratorsList(currentFacilityId);
+  await loadAllData();
+});
+
+document.getElementById('generatorSelect')?.addEventListener('change', async (e) => {
+  currentGeneratorId = parseInt(e.target.value);
+  await loadAllData();
 });
 
 // Initialization on DOM ready
@@ -854,3 +1116,4 @@ document.addEventListener('DOMContentLoaded', () => {
   startClock();
   checkAuth();
 });
+

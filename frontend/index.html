@@ -52,6 +52,26 @@
     </div>
   </header>
 
+  <!-- Facility & Generator Switcher Bar -->
+  <div class="facility-bar" style="background: var(--card-bg, #1e293b); border-bottom: 1px solid var(--border-color); padding: 0.5rem 1rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+      <div style="display: flex; align-items: center; gap: 0.35rem;">
+        <span style="font-size: 1rem;">🏢</span>
+        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Об'єкт:</span>
+        <select id="facilitySelect" style="width: auto; min-width: 140px; padding: 0.25rem 0.5rem; font-size: 0.85rem; height: 32px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: white; border-radius: 4px; cursor: pointer;"></select>
+        <button id="addFacilityBtn" onclick="openModal('modalCreateFacility')" title="Створити новий об'єкт" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; height: 32px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">+ Об'єкт</button>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 0.35rem; margin-left: 0.5rem;">
+        <span style="font-size: 1rem;">⚡</span>
+        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Генератор:</span>
+        <select id="generatorSelect" style="width: auto; min-width: 160px; padding: 0.25rem 0.5rem; font-size: 0.85rem; height: 32px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: white; border-radius: 4px; cursor: pointer;"></select>
+        <button id="addGeneratorBtn" onclick="openModal('modalCreateGenerator')" title="Створити новий генератор" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; height: 32px; background: #059669; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">+ Генератор</button>
+        <button id="deleteGeneratorBtn" onclick="openDeleteGeneratorModal()" title="Видалити поточний генератор" style="padding: 0.25rem 0.5rem; font-size: 0.85rem; height: 32px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">🗑️</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Navigation Tabs -->
   <nav class="nav-bar">
     <div class="nav-item active" data-tab="tab-dashboard">⚡ Головна</div>
@@ -236,7 +256,10 @@
       <div class="panel">
         <div class="panel-header">
           <h3>Технічне обслуговування генератора</h3>
-          <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalMaintenance')">+ Зафіксувати ТО</button>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; background: #0284c7;" id="btnRecalculateMaint" onclick="recalculateMaintenanceSchedule()">🔄 Перерахувати за нормативом</button>
+            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalMaintenance')">+ Зафіксувати ТО</button>
+          </div>
         </div>
 
         <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-color); border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 1.5rem;">
@@ -385,7 +408,20 @@
       <div class="panel">
         <div class="panel-header">
           <h3>Експлуатаційна звітність</h3>
-          <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="downloadReportCSV()">📥 Експорт у CSV</button>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; background: #16a34a;" onclick="downloadReportExcel()">📊 Експорт в Excel (.xlsx)</button>
+            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="downloadReportCSV()">📥 CSV</button>
+          </div>
+        </div>
+
+        <!-- Quick Period Presets -->
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center;">
+          <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Швидкий період:</span>
+          <button type="button" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; min-height: auto;" onclick="setReportPeriod('today')">Сьогодні</button>
+          <button type="button" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; min-height: auto;" onclick="setReportPeriod('week')">Тиждень</button>
+          <button type="button" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; min-height: auto;" onclick="setReportPeriod('month')">Місяць</button>
+          <button type="button" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; min-height: auto;" onclick="setReportPeriod('quarter')">3 Місяці</button>
+          <button type="button" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; min-height: auto;" onclick="setReportPeriod('all')">Весь час</button>
         </div>
 
         <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; align-items: flex-end;">
@@ -749,6 +785,120 @@
         </div>
         <button type="submit" class="btn-primary">Створити акаунт</button>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create Facility -->
+  <div id="modalCreateFacility" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Створення нового об'єкту (локації)</h3>
+        <button class="close-btn" onclick="closeModal('modalCreateFacility')">&times;</button>
+      </div>
+      <form id="facilityCreateForm">
+        <div class="form-group">
+          <label>Назва об'єкту / локації *</label>
+          <input type="text" id="newFacilityName" required placeholder="Об'єкт №2">
+        </div>
+        <div class="form-group">
+          <label>Адреса / Локація</label>
+          <input type="text" id="newFacilityAddress" placeholder="м. Київ, вул. Промислова, 12">
+        </div>
+        <div class="form-group">
+          <label>Опис / Примітки</label>
+          <textarea id="newFacilityDescription" rows="2" placeholder="Опис об'єкта та його призначення"></textarea>
+        </div>
+        <button type="submit" class="btn-primary" style="margin-top: 0.5rem;">Зберегти об'єкт</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create Generator -->
+  <div id="modalCreateGenerator" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Додавання нового генератора</h3>
+        <button class="close-btn" onclick="closeModal('modalCreateGenerator')">&times;</button>
+      </div>
+      <form id="generatorCreateForm">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Об'єкт (локація) *</label>
+            <select id="newGenFacilityId" required></select>
+          </div>
+          <div class="form-group">
+            <label>Назва генератора *</label>
+            <input type="text" id="newGenName" required placeholder="Бензиновий генератор 5кВт #2">
+          </div>
+          <div class="form-group">
+            <label>Модель *</label>
+            <input type="text" id="newGenModel" required placeholder="PG-6500">
+          </div>
+          <div class="form-group">
+            <label>Виробник *</label>
+            <input type="text" id="newGenManufacturer" required placeholder="PowerGen">
+          </div>
+          <div class="form-group">
+            <label>Серійний номер *</label>
+            <input type="text" id="newGenSerial" required placeholder="GEN-2026-002">
+          </div>
+          <div class="form-group">
+            <label>Номінальна потужність (кВт) *</label>
+            <input type="number" step="0.1" id="newGenPower" required value="5.0">
+          </div>
+          <div class="form-group">
+            <label>Місткість паливного бака (л) *</label>
+            <input type="number" step="0.1" id="newGenTank" required value="25.0">
+          </div>
+          <div class="form-group">
+            <label>Тип палива *</label>
+            <select id="newGenFuelType">
+              <option value="А-95" selected>А-95</option>
+              <option value="А-92">А-92</option>
+              <option value="ДП">Дизель</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Номінальна витрата (л/год) *</label>
+            <input type="number" step="0.1" id="newGenConsumption" required value="2.2">
+          </div>
+          <div class="form-group">
+            <label>Початкові мотогодини *</label>
+            <input type="number" step="0.1" id="newGenInitialHours" required value="0.0">
+          </div>
+          <div class="form-group">
+            <label>Початковий залишок у баку (л) *</label>
+            <input type="number" step="0.1" id="newGenInitialFuel" required value="0.0">
+          </div>
+          <div class="form-group">
+            <label>Інтервал регламентного ТО (год) *</label>
+            <input type="number" step="1" id="newGenMaintInterval" required value="300">
+          </div>
+        </div>
+        <button type="submit" class="btn-primary" style="margin-top: 1rem;">Створити генератор</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Delete Generator Confirmation -->
+  <div id="modalDeleteGenerator" class="modal-overlay">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 style="color: #ef4444;">Видалення генератора</h3>
+        <button class="close-btn" onclick="closeModal('modalDeleteGenerator')">&times;</button>
+      </div>
+      <div style="padding: 0.5rem 0 1rem;">
+        <p id="deleteGenConfirmText" style="font-size: 0.95rem; line-height: 1.5; color: var(--text-color);">
+          Ви дійсно бажаєте видалити цей генератор?
+        </p>
+        <p style="font-size: 0.85rem; color: #ef4444; margin-top: 0.5rem; background: rgba(239, 68, 68, 0.1); padding: 0.5rem; border-radius: 4px;">
+          ⚠️ Увага: Усі пов'язані робочі цикли, історія заправок, ТО та несправності цього генератора будуть видалені! Цю дію неможливо скасувати.
+        </p>
+      </div>
+      <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+        <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalDeleteGenerator')">Скасувати</button>
+        <button type="button" class="btn-primary" id="confirmDeleteGenBtn" style="background: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentGenerator()">Підтвердити видалення</button>
+      </div>
     </div>
   </div>
 

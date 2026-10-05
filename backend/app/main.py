@@ -19,10 +19,38 @@ from sqlalchemy import inspect, text
 def ensure_schema_updates(sync_conn):
     inspector = inspect(sync_conn)
     tables = inspector.get_table_names()
+
+    # 1. generator_runs duration_seconds
     if "generator_runs" in tables:
         columns = [c["name"] for c in inspector.get_columns("generator_runs")]
         if "duration_seconds" not in columns:
             sync_conn.execute(text("ALTER TABLE generator_runs ADD COLUMN duration_seconds INTEGER"))
+
+    # 2. facilities default record
+    if "facilities" in tables:
+        res = sync_conn.execute(text("SELECT COUNT(*) FROM facilities")).scalar()
+        if res == 0:
+            sync_conn.execute(text(
+                "INSERT INTO facilities (id, name, address, description, timezone, created_at, updated_at) "
+                "VALUES (1, 'Основний об''єкт', 'Головна локація', 'Базовий об''єкт генератора', 'Europe/Kyiv', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            ))
+
+    # 3. Add facility_id to related tables
+    for table_name in ["generators", "fuel_stocks", "fuel_receipts", "fuel_transfers", "users"]:
+        if table_name in tables:
+            cols = [c["name"] for c in inspector.get_columns(table_name)]
+            if "facility_id" not in cols:
+                sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"))
+            # Set default facility_id to 1 if null
+            sync_conn.execute(text(f"UPDATE {table_name} SET facility_id = 1 WHERE facility_id IS NULL"))
+
+    # 4. Fix maintenance schedule anomaly: interval=300, next_due=535 -> next_due=300, last_performed=0
+    if "maintenance_schedules" in tables:
+        sync_conn.execute(text(
+            "UPDATE maintenance_schedules SET last_performed_hours = 0.0, next_due_hours = interval_hours "
+            "WHERE (last_performed_hours = 235.0 AND next_due_hours = 535.0) "
+            "OR (last_performed_hours = 235.0 AND next_due_hours > 300.0)"
+        ))
 
 
 @asynccontextmanager

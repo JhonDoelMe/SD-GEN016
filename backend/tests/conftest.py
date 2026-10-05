@@ -10,6 +10,7 @@ from backend.app.main import app
 from backend.app.services.init_service import seed_initial_data
 from backend.app.models.user import User, Role
 from backend.app.core.security import get_password_hash
+from backend.app.config import settings
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -57,7 +58,10 @@ async def superadmin_auth(client):
     # Log in as initial superadmin
     res = await client.post(
         "/api/v1/auth/login",
-        json={"login": "superadmin", "password": "SuperAdminPass123!"}
+        json={
+            "login": settings.INITIAL_ADMIN_LOGIN.strip(),
+            "password": settings.INITIAL_ADMIN_PASSWORD
+        }
     )
     assert res.status_code == 200, res.text
     token = res.json()["access_token"]

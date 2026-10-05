@@ -1,16 +1,20 @@
 import pytest
+from backend.app.config import settings
 
 
 @pytest.mark.asyncio
 async def test_initial_superadmin_login(client):
     res = await client.post(
         "/api/v1/auth/login",
-        json={"login": "superadmin", "password": "SuperAdminPass123!"}
+        json={
+            "login": settings.INITIAL_ADMIN_LOGIN.strip(),
+            "password": settings.INITIAL_ADMIN_PASSWORD
+        }
     )
     assert res.status_code == 200
     data = res.json()
     assert "access_token" in data
-    assert data["user"]["login"] == "superadmin"
+    assert data["user"]["login"] == settings.INITIAL_ADMIN_LOGIN.strip()
     assert data["user"]["is_superadmin"] is True
     assert "generator:start" in data["user"]["permissions"]
     assert "system:adjust" in data["user"]["permissions"]

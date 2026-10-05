@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,18 +21,21 @@ router = APIRouter(prefix="/fuel", tags=["Паливо"])
 
 @router.get("/summary", response_model=FuelBalancesSummary)
 async def fuel_summary(
+    facility_id: Optional[int] = None,
+    generator_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    return await get_fuel_balances_summary(db)
+    return await get_fuel_balances_summary(db, facility_id=facility_id, generator_id=generator_id)
 
 
 @router.get("/stock", response_model=FuelStockOut)
 async def get_stock(
+    facility_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stock = await get_or_create_default_stock(db)
+    stock = await get_or_create_default_stock(db, facility_id=facility_id)
     return stock
 
 

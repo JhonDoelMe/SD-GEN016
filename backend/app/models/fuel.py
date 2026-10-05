@@ -15,10 +15,12 @@ class FuelStock(Base):
     name = Column(String(100), nullable=False, default="Основний склад ГСМ")
     fuel_type = Column(String(50), nullable=False, default="А-95")
     current_balance_l = Column(Float, nullable=False, default=0.0)
+    facility_id = Column(Integer, ForeignKey("facilities.id", ondelete="CASCADE"), nullable=True, index=True)
 
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
+    facility = relationship("Facility", back_populates="fuel_stocks")
     receipts = relationship("FuelReceipt", back_populates="stock", cascade="all, delete-orphan")
     transfers = relationship("FuelTransfer", back_populates="stock", cascade="all, delete-orphan")
 
@@ -27,6 +29,7 @@ class FuelReceipt(Base):
     __tablename__ = "fuel_receipts"
 
     id = Column(Integer, primary_key=True, index=True)
+    facility_id = Column(Integer, ForeignKey("facilities.id", ondelete="SET NULL"), nullable=True, index=True)
     stock_id = Column(Integer, ForeignKey("fuel_stocks.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
@@ -49,6 +52,7 @@ class FuelTransfer(Base):
     __tablename__ = "fuel_transfers"
 
     id = Column(Integer, primary_key=True, index=True)
+    facility_id = Column(Integer, ForeignKey("facilities.id", ondelete="SET NULL"), nullable=True, index=True)
     stock_id = Column(Integer, ForeignKey("fuel_stocks.id"), nullable=False)
     generator_id = Column(Integer, ForeignKey("generators.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)

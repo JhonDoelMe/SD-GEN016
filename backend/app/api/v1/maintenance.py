@@ -11,7 +11,7 @@ from backend.app.schemas.maintenance import (
 )
 from backend.app.api.deps import get_current_user, require_permission, get_client_ip
 from backend.app.services.maintenance_service import (
-    get_maintenance_schedule_status, record_maintenance
+    get_maintenance_schedule_status, record_maintenance, recalculate_schedule
 )
 
 router = APIRouter(prefix="/maintenance", tags=["Технічне обслуговування"])
@@ -24,6 +24,18 @@ async def get_schedule(
     current_user: User = Depends(get_current_user)
 ):
     return await get_maintenance_schedule_status(db, generator_id)
+
+
+@router.post("/schedule/recalculate", response_model=MaintenanceScheduleOut)
+async def api_recalculate_schedule(
+    generator_id: Optional[int] = None,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("maintenance:perform_scheduled"))
+):
+    """Перерахувати графік планового ТО згідно з нормативом та фактичними мотогодинами"""
+    client_ip = get_client_ip(request) if request else None
+    return await recalculate_schedule(db, generator_id=generator_id, user_id=current_user.id, ip_address=client_ip)
 
 
 @router.post("/record", response_model=MaintenanceRecordOut, status_code=status.HTTP_201_CREATED)
