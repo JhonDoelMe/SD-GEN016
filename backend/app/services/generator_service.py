@@ -671,8 +671,8 @@ async def add_manual_run(
         )
 
     # Convert to naive UTC for storage consistency
-    start_dt = data.start_time.replace(tzinfo=None) if data.start_time.tzinfo else data.start_time
-    end_dt = data.end_time.replace(tzinfo=None) if data.end_time.tzinfo else data.end_time
+    start_dt = data.start_time.astimezone(datetime.timezone.utc).replace(tzinfo=None) if data.start_time.tzinfo else data.start_time
+    end_dt = data.end_time.astimezone(datetime.timezone.utc).replace(tzinfo=None) if data.end_time.tzinfo else data.end_time
 
     # Calculate duration
     duration_seconds = max(1, int((end_dt - start_dt).total_seconds()))

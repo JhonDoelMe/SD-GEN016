@@ -102,7 +102,10 @@ async def update_fault_status(
 
     if status_data.status in ("RESOLVED", "CLOSED"):
         fault.resolved_by_id = user_id
-        fault.resolved_at = now_utc()
+        fault.resolved_at = now_utc(naive=True)
+    elif status_data.status in ('OPEN', 'NEW', 'IN_PROGRESS'):
+        fault.resolved_by_id = None
+        fault.resolved_at = None
 
         # If generator was marked FAULTY, check if there are other open CRITICAL faults
         generator = await db.get(Generator, fault.generator_id)

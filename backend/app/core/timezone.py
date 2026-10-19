@@ -13,8 +13,9 @@ def get_facility_tz(tz_name: Optional[str] = None) -> ZoneInfo:
         return ZoneInfo("Europe/Kyiv")
 
 
-def now_utc() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc)
+def now_utc(naive: bool = True) -> datetime.datetime:
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return now.replace(tzinfo=None) if naive else now
 
 
 def now_facility() -> datetime.datetime:
