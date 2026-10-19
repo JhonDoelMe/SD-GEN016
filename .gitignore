@@ -36,8 +36,10 @@ uploads/*
 !uploads/.gitkeep
 backups/*.tar.gz
 
-# Environment variables
+# Environment variables & custom SSL certificates
 .env
+docker/ssl/*
+!docker/ssl/.gitkeep
 
 # OS
 .DS_Store

@@ -40,9 +40,26 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx.conf:/tmp/nginx.conf:ro
       - ./docker/ssl:/etc/nginx/ssl:ro
+      - ./docker/ssl-fallback:/etc/nginx/ssl-fallback:ro
       - uploads_data:/app/uploads:ro
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cp /tmp/nginx.conf /etc/nginx/conf.d/default.conf
+        mkdir -p /tmp/ssl
+        if [ -f /etc/nginx/ssl/fullchain.pem ] && [ -f /etc/nginx/ssl/privkey.pem ]; then
+          cp /etc/nginx/ssl/fullchain.pem /tmp/ssl/fullchain.pem
+          cp /etc/nginx/ssl/privkey.pem /tmp/ssl/privkey.pem
+          echo "[SSL] Loaded custom SSL certificates from /etc/nginx/ssl"
+        else
+          cp /etc/nginx/ssl-fallback/fullchain.pem /tmp/ssl/fullchain.pem
+          cp /etc/nginx/ssl-fallback/privkey.pem /tmp/ssl/privkey.pem
+          echo "[SSL] Loaded built-in fallback SSL certificates for port 443"
+        fi
+        exec /docker-entrypoint.sh nginx -g "daemon off;"
     depends_on:
       - app
     networks:

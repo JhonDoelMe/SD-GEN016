@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.config import settings
@@ -176,7 +176,11 @@ if FRONTEND_DIR.exists():
             return FileResponse(sw_path, media_type="application/javascript")
         return JSONResponse({"error": "Service worker not found"}, status_code=404)
 
-    @app.get("/")
+    @app.get("/robots.txt", include_in_schema=False)
+    async def get_robots():
+        return PlainTextResponse("User-agent: *\nDisallow: /api/\n")
+
+    @app.api_route("/", methods=["GET", "HEAD"])
     async def serve_index():
         index_path = FRONTEND_DIR / "index.html"
         if index_path.exists():
