@@ -415,17 +415,17 @@ async function loadGeneratorData() {
       btn.innerHTML = '<span>▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>';
     } else if (currentGenerator.status === 'FAULTY') {
       badge.classList.add('badge-faulty');
-      badge.innerText = 'НЕИСПРАВЕН';
+      badge.innerText = 'НЕСПРАВНИЙ';
       btn.className = 'btn-hero btn-start';
       btn.innerHTML = '<span>⚠️</span><span>НЕСПРАВНІСТЬ (БЛОК)</span>';
     } else if (currentGenerator.status === 'BLOCKED') {
       badge.classList.add('badge-blocked');
-      badge.innerText = 'ЗАБЛОКОВАНИЙ';
+      badge.innerText = 'ЗАБЛОКОВАНО';
       btn.className = 'btn-hero btn-start';
       btn.innerHTML = '<span>🔒</span><span>ЗАБЛОКОВАНО</span>';
     } else {
       badge.classList.add('badge-stopped');
-      badge.innerText = 'ОСТАНОВЛЕН';
+      badge.innerText = 'ЗУПИНЕНО';
       btn.className = 'btn-hero btn-start';
       btn.innerHTML = '<span>▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>';
     }
@@ -927,11 +927,13 @@ async function loadFaultsData() {
   try {
     const faults = await api('/faults');
     const tbody = document.querySelector('#faultsTable tbody');
+    const prioMap = { CRITICAL: 'Критичний', HIGH: 'Високий', MEDIUM: 'Середній', LOW: 'Низький' };
+    const statMap = { OPEN: 'Відкрито', IN_PROGRESS: 'В роботі', RESOLVED: 'Усунено', CLOSED: 'Закрито' };
     tbody.innerHTML = faults.map((f) => `
       <tr>
         <td>#${Number(f.id)}</td>
-        <td><span class="badge ${f.priority === 'CRITICAL' ? 'badge-faulty' : 'badge-maintenance'}">${escapeHtml(f.priority)}</span></td>
-        <td><span class="badge badge-stopped">${escapeHtml(f.status)}</span></td>
+        <td><span class="badge ${f.priority === 'CRITICAL' ? 'badge-faulty' : 'badge-maintenance'}">${escapeHtml(prioMap[f.priority] || f.priority)}</span></td>
+        <td><span class="badge ${f.status === 'RESOLVED' || f.status === 'CLOSED' ? 'badge-running' : 'badge-stopped'}">${escapeHtml(statMap[f.status] || f.status)}</span></td>
         <td><b>${escapeHtml(f.title)}</b></td>
         <td>${escapeHtml(f.description)}</td>
         <td>${f.operating_hours.toFixed(1)} год</td>
@@ -1027,34 +1029,119 @@ async function loadRunsData() {
 }
 
 // 6. Audit & System Adjustments
+const AUDIT_ACTION_MAP_UA = {
+  'LOGIN': 'Вхід у систему',
+  'LOGIN_FAIL': 'Невдала спроба входу',
+  'LOGOUT': 'Вихід із системи',
+  'GENERATOR_START': 'Запуск генератора',
+  'GENERATOR_STOP': 'Зупинка генератора',
+  'FUEL_RECEIPT': 'Оприбуткування палива',
+  'FUEL_RECEIPT_ADDED': 'Оприбуткування палива',
+  'FUEL_DISPENSE': 'Заправка генератора',
+  'FUEL_TRANSFERRED': 'Заправка бака генератора',
+  'MAINTENANCE_RECORD': 'Технічне обслуговування',
+  'MAINTENANCE_RECORDED': 'Фіксація ТО',
+  'FAULT_CREATE': 'Реєстрація несправності',
+  'FAULT_REPORTED': 'Повідомлення про несправність',
+  'FAULT_UPDATE': 'Оновлення несправності',
+  'FAULT_RESOLVED': 'Усунення несправності',
+  'ADJUSTMENT': 'Коригування даних',
+  'ADJUSTMENT_APPLIED': 'Системне коригування лічильників',
+  'USER_CREATE': 'Створення користувача',
+  'USER_UPDATE': 'Оновлення користувача',
+  'USER_TOGGLE_ACTIVE': 'Зміна активності користувача',
+  'SETTINGS_UPDATE': 'Зміна налаштувань',
+  'SYSTEM_SETTINGS_UPDATED': 'Оновлення налаштувань',
+  'WIZARD_SETUP': 'Налаштування через майстер',
+  'FACILITY_CREATE': 'Створення об\'єкту',
+  'FACILITY_CREATED': 'Створення об\'єкту',
+  'FACILITY_UPDATED': 'Оновлення об\'єкту',
+  'FACILITY_DELETED': 'Видалення об\'єкту',
+  'GENERATOR_CREATE': 'Створення генератора',
+  'GENERATOR_UPDATED': 'Оновлення параметрів генератора',
+  'GENERATOR_DELETE': 'Видалення генератора',
+  'SYSTEM_FACTORY_RESET': 'Скидання до заводських налаштувань',
+  'SYSTEM_CLEAR_DATA': 'Очищення робочих даних',
+  'SYSTEM_RESET': 'Очищення / скидання даних',
+  'FACILITY_SETTINGS_UPDATE': 'Оновлення налаштувань об\'єкту',
+  'GENERATOR_QUICK_CONFIG': 'Швидке налаштування генератора',
+  'FUEL_PRICES_REFRESHED': 'Оновлення цін АЗК WOG',
+  'SCHEDULE_RECALCULATED': 'Перерахунок графіка ТО'
+};
+
+const AUDIT_ENTITY_MAP_UA = {
+  'User': 'Користувач',
+  'Facility': 'Об\'єкт',
+  'Generator': 'Генератор',
+  'FuelStock': 'Склад палива',
+  'FuelReceipt': 'Оприбуткування палива',
+  'FuelTransaction': 'Заправка палива',
+  'FuelTransfer': 'Заправка палива',
+  'GeneratorRun': 'Робота генератора',
+  'MaintenanceRecord': 'Запис ТО',
+  'MaintenanceSchedule': 'Графік ТО',
+  'FaultReport': 'Несправність',
+  'Fault': 'Несправність',
+  'SystemSettings': 'Системні налаштування',
+  'SystemSetting': 'Системні налаштування',
+  'SystemAdjustment': 'Коригування',
+  'System': 'Система'
+};
+
+const ADJUSTMENT_FIELD_MAP_UA = {
+  'current_operating_hours': 'Мотогодини',
+  'fuel_tank_level_l': 'Рівень у баку (л)',
+  'status': 'Статус генератора',
+  'nominal_consumption_l_per_h': 'Нормативний розхід (л/год)',
+  'current_balance_l': 'Залишок на складі (л)',
+  'interval_hours': 'Інтервал ТО (год)',
+  'next_due_hours': 'Наступне ТО (мотогодини)',
+  'last_performed_hours': 'Останнє ТО (мотогодини)'
+};
+
+const ROLE_MAP_UA = {
+  'SuperAdmin': 'Головний адміністратор',
+  'Admin': 'Адміністратор',
+  'Operator': 'Оператор',
+  'Viewer': 'Спостерігач'
+};
+
 async function loadAuditData() {
   try {
     const logs = await api('/audit?limit=50');
     const tbody = document.querySelector('#auditTable tbody');
-    tbody.innerHTML = logs.map((l) => `
-      <tr>
-        <td>${formatDateTime(l.created_at)}</td>
-        <td>${escapeHtml(l.user_name || 'Система')}</td>
-        <td><b>${escapeHtml(l.action)}</b></td>
-        <td>${escapeHtml(l.entity_type)} #${escapeHtml(l.entity_id || '')}</td>
-        <td style="font-family:monospace; font-size:0.75rem;">${escapeHtml(l.details_json || '-')}</td>
-        <td>${escapeHtml(l.ip_address || '-')}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Аудит порожній</td></tr>';
+    tbody.innerHTML = logs.map((l) => {
+      const actionUa = AUDIT_ACTION_MAP_UA[l.action] || l.action;
+      const entityUa = AUDIT_ENTITY_MAP_UA[l.entity_type] || l.entity_type;
+      return `
+        <tr>
+          <td>${formatDateTime(l.created_at)}</td>
+          <td>${escapeHtml(l.user_name || 'Система')}</td>
+          <td><b>${escapeHtml(actionUa)}</b></td>
+          <td>${escapeHtml(entityUa)} #${escapeHtml(l.entity_id || '')}</td>
+          <td style="font-family:monospace; font-size:0.75rem;">${escapeHtml(l.details_json || '-')}</td>
+          <td>${escapeHtml(l.ip_address || '-')}</td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Аудит порожній</td></tr>';
 
     const adjustments = await api('/adjustments?limit=30');
     const adjTbody = document.querySelector('#adjustmentsTable tbody');
-    adjTbody.innerHTML = adjustments.map((a) => `
-      <tr>
-        <td>${formatDateTime(a.created_at)}</td>
-        <td>${escapeHtml(a.user_name || '-')}</td>
-        <td>${escapeHtml(a.entity_type)}</td>
-        <td>${escapeHtml(a.field_name)}</td>
-        <td><s style="color:#ef4444;">${escapeHtml(a.old_value)}</s></td>
-        <td><b style="color:#22c55e;">${escapeHtml(a.new_value)}</b></td>
-        <td>${escapeHtml(a.reason)}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="7" style="text-align:center; color:var(--text-muted)">Коригувань не виконувалось</td></tr>';
+    adjTbody.innerHTML = adjustments.map((a) => {
+      const entityUa = AUDIT_ENTITY_MAP_UA[a.entity_type] || a.entity_type;
+      const fieldUa = ADJUSTMENT_FIELD_MAP_UA[a.field_name] || a.field_name;
+      return `
+        <tr>
+          <td>${formatDateTime(a.created_at)}</td>
+          <td>${escapeHtml(a.user_name || '-')}</td>
+          <td>${escapeHtml(entityUa)}</td>
+          <td>${escapeHtml(fieldUa)}</td>
+          <td><s style="color:#ef4444;">${escapeHtml(a.old_value)}</s></td>
+          <td><b style="color:#22c55e;">${escapeHtml(a.new_value)}</b></td>
+          <td>${escapeHtml(a.reason)}</td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="7" style="text-align:center; color:var(--text-muted)">Коригувань не виконувалось</td></tr>';
   } catch (_) {}
 }
 
@@ -1064,18 +1151,18 @@ window.updateAdjFields = function() {
   fieldSelect.innerHTML = '';
   if (entity === 'Generator') {
     fieldSelect.innerHTML = `
-      <option value="current_operating_hours">Мотогодини (current_operating_hours)</option>
-      <option value="fuel_tank_level_l">Рівень у баку (fuel_tank_level_l)</option>
-      <option value="status">Статус (STOPPED/RUNNING/MAINTENANCE_REQUIRED/FAULTY/BLOCKED)</option>
-      <option value="nominal_consumption_l_per_h">Нормативний розхід (nominal_consumption_l_per_h)</option>
+      <option value="current_operating_hours">Мотогодини</option>
+      <option value="fuel_tank_level_l">Рівень у баку (л)</option>
+      <option value="status">Статус генератора</option>
+      <option value="nominal_consumption_l_per_h">Нормативний розхід (л/год)</option>
     `;
   } else if (entity === 'FuelStock') {
-    fieldSelect.innerHTML = `<option value="current_balance_l">Залишок на складі (current_balance_l)</option>`;
+    fieldSelect.innerHTML = `<option value="current_balance_l">Залишок на складі (л)</option>`;
   } else if (entity === 'MaintenanceSchedule') {
     fieldSelect.innerHTML = `
-      <option value="interval_hours">Інтервал ТО (interval_hours)</option>
-      <option value="next_due_hours">Наступне ТО (next_due_hours)</option>
-      <option value="last_performed_hours">Останнє ТО (last_performed_hours)</option>
+      <option value="interval_hours">Інтервал ТО (год)</option>
+      <option value="next_due_hours">Наступне ТО (мотогодини)</option>
+      <option value="last_performed_hours">Останнє ТО (мотогодини)</option>
     `;
   }
 };
@@ -1247,23 +1334,26 @@ async function loadUsersData() {
   try {
     const users = await api('/users');
     const tbody = document.querySelector('#usersTable tbody');
-    tbody.innerHTML = users.map((u) => `
-      <tr>
-        <td>#${Number(u.id)}</td>
-        <td><b>${escapeHtml(u.login)}</b></td>
-        <td>${escapeHtml(u.full_name)}</td>
-        <td>${escapeHtml(u.email || '-')}</td>
-        <td><span class="badge ${u.is_active ? 'badge-running' : 'badge-faulty'}">${u.is_active ? 'Активний' : 'Заблокований'}</span></td>
-        <td>${escapeHtml(u.roles.map((r) => r.name).join(', ') || '-')}</td>
-        <td>
-          ${!u.is_superadmin ? `
-            <button onclick="toggleUserActive(${Number(u.id)}, ${!u.is_active})" style="background:none; border:1px solid var(--border-color); color:var(--text-primary); border-radius:4px; padding:0.25rem 0.5rem; cursor:pointer; font-size:0.75rem;">
-              ${u.is_active ? 'Блокувати' : 'Розблокувати'}
-            </button>
-          ` : '<small style="color:#a855f7;">SuperAdmin</small>'}
-        </td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = users.map((u) => {
+      const rolesUa = u.roles.map((r) => ROLE_MAP_UA[r.name] || r.name).join(', ') || '-';
+      return `
+        <tr>
+          <td>#${Number(u.id)}</td>
+          <td><b>${escapeHtml(u.login)}</b></td>
+          <td>${escapeHtml(u.full_name)}</td>
+          <td>${escapeHtml(u.email || '-')}</td>
+          <td><span class="badge ${u.is_active ? 'badge-running' : 'badge-faulty'}">${u.is_active ? 'Активний' : 'Заблокований'}</span></td>
+          <td>${escapeHtml(rolesUa)}</td>
+          <td>
+            ${!u.is_superadmin ? `
+              <button onclick="toggleUserActive(${Number(u.id)}, ${!u.is_active})" style="background:none; border:1px solid var(--border-color); color:var(--text-primary); border-radius:4px; padding:0.25rem 0.5rem; cursor:pointer; font-size:0.75rem;">
+                ${u.is_active ? 'Блокувати' : 'Розблокувати'}
+              </button>
+            ` : '<small style="color:#a855f7;">Головний адміністратор</small>'}
+          </td>
+        </tr>
+      `;
+    }).join('');
   } catch (_) {}
 }
 

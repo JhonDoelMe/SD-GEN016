@@ -101,6 +101,60 @@ ALIGN_LEFT = Alignment(horizontal="left", vertical="center")
 ALIGN_CENTER = Alignment(horizontal="center", vertical="center")
 ALIGN_RIGHT = Alignment(horizontal="right", vertical="center")
 
+# Українські мапування статусів та системних дій для звітів Excel
+RUN_STATUS_UA = {
+    "ACTIVE": "В роботі",
+    "COMPLETED": "Завершено",
+}
+
+FAULT_STATUS_UA = {
+    "OPEN": "Відкрито",
+    "IN_PROGRESS": "В роботі",
+    "RESOLVED": "Усунено",
+    "CLOSED": "Закрито",
+}
+
+FAULT_PRIORITY_UA = {
+    "LOW": "Низький",
+    "MEDIUM": "Середній",
+    "HIGH": "Високий",
+    "CRITICAL": "Критичний",
+}
+
+AUDIT_ACTION_UA = {
+    "GENERATOR_START": "Запуск генератора",
+    "GENERATOR_STOP": "Зупинка генератора",
+    "FUEL_RECEIPT_ADDED": "Оприбуткування палива",
+    "FUEL_TRANSFERRED": "Заправка бака генератора",
+    "MAINTENANCE_RECORDED": "Фіксація ТО",
+    "FAULT_REPORTED": "Повідомлення про несправність",
+    "FAULT_RESOLVED": "Усунення несправності",
+    "SYSTEM_SETTINGS_UPDATED": "Оновлення системних налаштувань",
+    "FUEL_PRICES_REFRESHED": "Оновлення цін АЗК WOG",
+    "SYSTEM_RESET": "Очищення / скидання даних",
+    "USER_LOGIN": "Вхід у систему",
+    "USER_LOGOUT": "Вихід із системи",
+    "ADJUSTMENT_APPLIED": "Системне коригування лічильників",
+    "SCHEDULE_RECALCULATED": "Перерахунок графіка ТО",
+    "GENERATOR_UPDATED": "Оновлення параметрів генератора",
+    "FACILITY_CREATED": "Створення об'єкта",
+    "FACILITY_UPDATED": "Оновлення об'єкта",
+    "FACILITY_DELETED": "Видалення об'єкта",
+}
+
+AUDIT_ENTITY_UA = {
+    "Generator": "Генератор",
+    "Facility": "Об'єкт",
+    "FuelStock": "Склад ГСМ",
+    "FuelReceipt": "Оприбуткування",
+    "FuelTransfer": "Заправка",
+    "MaintenanceRecord": "Запис ТО",
+    "MaintenanceSchedule": "Графік ТО",
+    "Fault": "Несправність",
+    "User": "Користувач",
+    "SystemSetting": "Системні налаштування",
+}
+
 
 async def generate_operational_report(
     db: AsyncSession,
@@ -616,7 +670,7 @@ async def generate_excel_report(
             fuel_added if fuel_added > 0 else "-",
             fuel_rec if fuel_rec > 0 else "-",
             op_name,
-            r.status,
+            RUN_STATUS_UA.get(str(r.status).upper(), str(r.status)),
             r.note or ""
         ])
 
@@ -1046,12 +1100,15 @@ async def generate_excel_report(
         f_user = fl.user.full_name if fl.user else "Користувач"
         f_gen = fl.generator.name if fl.generator else generator_name
         resolved_t = fmt_dt(fl.resolved_at) if fl.resolved_at else "Не усунено"
+        st_ua = FAULT_STATUS_UA.get(str(fl.status).upper(), str(fl.status))
+        raw_imp = getattr(fl, "operational_impact", fl.priority)
+        imp_ua = FAULT_PRIORITY_UA.get(str(raw_imp).upper(), str(raw_imp))
         vals = [
             idx,
             fmt_dt(fl.created_at),
             sanitize_spreadsheet_cell(f_gen),
-            sanitize_spreadsheet_cell(fl.status),
-            sanitize_spreadsheet_cell(getattr(fl, "operational_impact", fl.priority)),
+            sanitize_spreadsheet_cell(st_ua),
+            sanitize_spreadsheet_cell(imp_ua),
             sanitize_spreadsheet_cell(fl.description),
             sanitize_spreadsheet_cell(getattr(fl, "resolution_actions", fl.resolution_notes) or "-"),
             sanitize_spreadsheet_cell(f_user),
@@ -1097,11 +1154,13 @@ async def generate_excel_report(
     for idx, al in enumerate(audit_logs, start=1):
         a_user = al.user.full_name if al.user else "Система"
         details_str = str(al.details_json) if al.details_json else ""
+        act_ua = AUDIT_ACTION_UA.get(str(al.action), str(al.action))
+        ent_ua = AUDIT_ENTITY_UA.get(str(al.entity_type), str(al.entity_type))
         vals = [
             idx,
             fmt_dt(al.created_at),
-            sanitize_spreadsheet_cell(al.action),
-            sanitize_spreadsheet_cell(f"{al.entity_type} #{al.entity_id or ''}"),
+            sanitize_spreadsheet_cell(act_ua),
+            sanitize_spreadsheet_cell(f"{ent_ua} #{al.entity_id or ''}"),
             sanitize_spreadsheet_cell(a_user),
             sanitize_spreadsheet_cell(al.ip_address or "-"),
             sanitize_spreadsheet_cell(details_str)

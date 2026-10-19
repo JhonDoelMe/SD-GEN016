@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=2.8">
+  <link rel="stylesheet" href="/frontend/styles.css?v=2.9">
 </head>
 <body>
 
@@ -134,7 +134,7 @@
             <h2 id="genName" style="font-size: 1.3rem; margin-bottom: 0.25rem;">Завантаження генератора...</h2>
             <div id="genModel" style="color: var(--text-muted); font-size: 0.85rem;">Модель: - | Серійний: -</div>
           </div>
-          <div id="genStatusBadge" class="badge badge-stopped">ОСТАНОВЛЕН</div>
+          <div id="genStatusBadge" class="badge badge-stopped">ЗУПИНЕНО</div>
         </div>
 
         <!-- Big Operator Action Button -->
@@ -419,7 +419,7 @@
       <div class="panel">
         <div class="panel-header">
           <h3>Журнал аудиту та Системні коригування</h3>
-          <button id="btnOpenAdjustment" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #a855f7; color: #c084fc;" onclick="openModal('modalAdjustment')">⚙️ Системне коригування (SuperAdmin)</button>
+          <button id="btnOpenAdjustment" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #a855f7; color: #c084fc;" onclick="openModal('modalAdjustment')">⚙️ Системне коригування (Головний адміністратор)</button>
         </div>
 
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
@@ -667,23 +667,23 @@
         </div>
         <div class="status-metric" title="Навантаження на центральний процесор">
           <span class="status-metric-icon">⚡</span>
-          <span class="status-metric-label">CPU:</span>
+          <span class="status-metric-label">ЦП:</span>
           <span id="footerCpu" class="status-metric-val">--%</span>
         </div>
         <div class="status-metric" title="Використання оперативної пам'яті">
           <span class="status-metric-icon">🧠</span>
-          <span class="status-metric-label">RAM:</span>
+          <span class="status-metric-label">ОЗП:</span>
           <span id="footerRam" class="status-metric-val">--%</span>
           <span id="footerRamMb" class="status-metric-sub">(-- / -- МБ)</span>
         </div>
         <div class="status-metric" title="Статус з'єднання з базою даних">
           <span class="status-metric-icon">💾</span>
           <span class="status-metric-label">БД:</span>
-          <span id="footerDb" class="status-metric-val">OK</span>
+          <span id="footerDb" class="status-metric-val">Підключено</span>
         </div>
         <div class="status-metric" title="Час безперервної роботи сервера">
           <span class="status-metric-icon">⏱️</span>
-          <span class="status-metric-label">Uptime:</span>
+          <span class="status-metric-label">Час роботи:</span>
           <span id="footerUptime" class="status-metric-val">--</span>
         </div>
       </div>
@@ -918,9 +918,9 @@
         <div class="form-group">
           <label>Пріоритет</label>
           <select id="faultPriority">
-            <option value="LOW">Низький (LOW)</option>
-            <option value="MEDIUM" selected>Середній (MEDIUM)</option>
-            <option value="HIGH">Високий (HIGH)</option>
+            <option value="LOW">Низький</option>
+            <option value="MEDIUM" selected>Середній</option>
+            <option value="HIGH">Високий</option>
             <option value="CRITICAL">Критичний (блокує запуск генератора)</option>
           </select>
         </div>
@@ -937,7 +937,7 @@
   <div id="modalAdjustment" class="modal-overlay">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>Системне коригування (SuperAdmin)</h3>
+        <h3>Системне коригування (Головний адміністратор)</h3>
         <button class="close-btn" onclick="closeModal('modalAdjustment')">&times;</button>
       </div>
       <form id="adjustmentForm">
@@ -947,17 +947,17 @@
         <div class="form-group">
           <label>Сутність</label>
           <select id="adjEntity" onchange="updateAdjFields()">
-            <option value="Generator">Генератор (Generator)</option>
-            <option value="FuelStock">Склад ГСМ (FuelStock)</option>
-            <option value="MaintenanceSchedule">Графік ТО (MaintenanceSchedule)</option>
+            <option value="Generator">Генератор</option>
+            <option value="FuelStock">Склад ГСМ</option>
+            <option value="MaintenanceSchedule">Графік ТО</option>
           </select>
         </div>
         <div class="form-group">
           <label>Поле для коригування</label>
           <select id="adjField">
-            <option value="current_operating_hours">Мотогодини (current_operating_hours)</option>
-            <option value="fuel_tank_level_l">Рівень у баку (fuel_tank_level_l)</option>
-            <option value="status">Статус (STOPPED/RUNNING/MAINTENANCE_REQUIRED/FAULTY/BLOCKED)</option>
+            <option value="current_operating_hours">Мотогодини</option>
+            <option value="fuel_tank_level_l">Рівень у баку (л)</option>
+            <option value="status">Статус (Зупинено / Працює / Потребує ТО / Несправний / Заблоковано)</option>
           </select>
         </div>
         <div class="form-group">
@@ -1067,9 +1067,9 @@
         <div class="form-group">
           <label>Роль</label>
           <select id="newUserRole">
-            <option value="3" selected>Оператор (operator)</option>
-            <option value="2">Адміністратор (admin)</option>
-            <option value="4">Спостерігач (viewer)</option>
+            <option value="3" selected>Оператор</option>
+            <option value="2">Адміністратор</option>
+            <option value="4">Спостерігач</option>
           </select>
         </div>
         <button type="submit" class="btn-primary">Створити акаунт</button>
@@ -1389,7 +1389,7 @@
             <option value="facility_clean">🏢 Очистити журнали та звіти обраного об'єкта (лічильники в 0)</option>
             <option value="reports_clean">📊 Очистити ВСІ журнали та звіти по всій системі (зберегти об'єкти і користувачів)</option>
             <option value="settings_reset">⚙️ Скинути системні налаштування до стандартних заводських</option>
-            <option value="factory_reset">🏭 Повне заводське скидання БД — Перед продажем / Нове впровадження (SuperAdmin)</option>
+            <option value="factory_reset">🏭 Повне заводське скидання БД — Перед продажем / Нове впровадження (Головний адміністратор)</option>
           </select>
         </div>
 
@@ -1417,7 +1417,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=2.8"></script>
+  <script src="/frontend/app.js?v=2.9"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>
