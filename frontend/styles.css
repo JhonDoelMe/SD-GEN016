@@ -766,6 +766,27 @@ input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:f
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
 }
 
+select {
+  cursor: pointer;
+}
+
+select option {
+  background-color: #1e293b;
+  color: #f8fafc;
+  padding: 0.75rem 1rem;
+  font-size: 0.95rem;
+}
+
+select option:checked {
+  background-color: #0284c7;
+  color: #ffffff;
+}
+
+select option:disabled {
+  color: #94a3b8;
+  background-color: #0f172a;
+}
+
 input[type="checkbox"], input[type="radio"] {
   width: 22px;
   height: 22px;

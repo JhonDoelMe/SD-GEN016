@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=3.0">
+  <link rel="stylesheet" href="/frontend/styles.css?v=3.2">
 </head>
 <body>
 
@@ -537,7 +537,7 @@
       <div class="panel">
         <div class="panel-header">
           <h3>Журнал аудиту та Системні коригування</h3>
-          <button id="btnOpenAdjustment" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #a855f7; color: #c084fc;" onclick="openModal('modalAdjustment')">⚙️ Системне коригування (Головний адміністратор)</button>
+          <button id="btnOpenAdjustment" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #a855f7; color: #c084fc;" onclick="openAdjustmentModal()">⚙️ Системне коригування (Головний адміністратор)</button>
         </div>
 
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
@@ -1067,13 +1067,13 @@
         <div class="form-group">
           <label>Об'єкт</label>
           <select id="adjFacility" onchange="onAdjFacilityOrEntityChange()">
-            <!-- Filled dynamically -->
+            <option value="1">Основний об'єкт</option>
           </select>
         </div>
         <div class="form-group">
           <label>Категорія сутності</label>
           <select id="adjEntity" onchange="onAdjFacilityOrEntityChange()">
-            <option value="FuelStock">Склад ГСМ</option>
+            <option value="FuelStock" selected>Склад ГСМ</option>
             <option value="Generator">Генератор</option>
             <option value="MaintenanceSchedule">Графік ТО</option>
             <option value="Facility">Параметри об'єкта</option>
@@ -1082,13 +1082,14 @@
         <div class="form-group">
           <label id="adjTargetLabel">Цільовий елемент</label>
           <select id="adjTargetItem" onchange="onAdjTargetItemChange()">
-            <!-- Filled dynamically -->
+            <option value="1">Основний склад палива</option>
           </select>
         </div>
         <div class="form-group">
           <label>Поле для коригування</label>
           <select id="adjField" onchange="onAdjFieldChange()">
-            <!-- Filled dynamically -->
+            <option value="current_balance_l">Залишок на складі (л)</option>
+            <option value="name">Назва складу</option>
           </select>
         </div>
         <div class="form-group">
@@ -1551,7 +1552,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=3.0"></script>
+  <script src="/frontend/app.js?v=3.2"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

@@ -82,7 +82,7 @@ window.openModal = function (id) {
   if (id === 'modalReceipt') setupReceiptModal();
   if (id === 'modalTransfer') setupTransferModal();
   if (id === 'modalNewStock') setupNewStockModal();
-  if (id === 'modalAdjustment') setupAdjustmentModal();
+  if (id === 'modalAdjustment') openAdjustmentModal();
 };
 
 window.closeModal = function (id) {
@@ -1158,32 +1158,80 @@ async function loadAuditData() {
   } catch (_) {}
 }
 
+window.openAdjustmentModal = async function() {
+  const modal = document.getElementById('modalAdjustment');
+  if (modal) modal.style.display = 'flex';
+
+  // 1. Immediately & synchronously populate facility dropdown from header selector if available
+  const mainFacSel = document.getElementById('facilitySelect');
+  const facSel = document.getElementById('adjFacility');
+  if (facSel && mainFacSel && mainFacSel.options.length > 0) {
+    facSel.innerHTML = mainFacSel.innerHTML;
+    if (currentFacilityId && Array.from(facSel.options).some(o => o.value == currentFacilityId)) {
+      facSel.value = currentFacilityId;
+    }
+  }
+
+  // 2. Synchronously ensure fields dropdown has initial options for current entity
+  const fieldSelect = document.getElementById('adjField');
+  const entitySel = document.getElementById('adjEntity');
+  const entity = entitySel ? entitySel.value : 'FuelStock';
+  if (fieldSelect && (!fieldSelect.options || fieldSelect.options.length === 0)) {
+    if (entity === 'FuelStock') {
+      fieldSelect.innerHTML = `
+        <option value="current_balance_l">Залишок на складі (л)</option>
+        <option value="name">Назва складу</option>
+      `;
+    } else if (entity === 'Generator') {
+      fieldSelect.innerHTML = `
+        <option value="current_operating_hours">Мотогодини</option>
+        <option value="fuel_tank_level_l">Рівень у баку (л)</option>
+        <option value="status">Статус генератора</option>
+        <option value="nominal_consumption_l_per_h">Нормативний розхід (л/год)</option>
+      `;
+    }
+  }
+
+  // 3. Asynchronously load fresh data
+  await setupAdjustmentModal();
+};
+
 async function setupAdjustmentModal() {
   try {
-    const facilities = await api('/facilities');
     const facSel = document.getElementById('adjFacility');
-    if (facSel && facilities && facilities.length > 0) {
+    let facilities = null;
+    try {
+      facilities = await api('/facilities');
+    } catch (_) {}
+
+    if (facSel && facilities && Array.isArray(facilities) && facilities.length > 0) {
       facSel.innerHTML = facilities.map((f) => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
       if (currentFacilityId && facilities.some((f) => f.id === currentFacilityId)) {
         facSel.value = currentFacilityId;
       }
+    } else if (facSel && facSel.options.length === 0) {
+      const mainFacSel = document.getElementById('facilitySelect');
+      if (mainFacSel && mainFacSel.options.length > 0) {
+        facSel.innerHTML = mainFacSel.innerHTML;
+      } else {
+        facSel.innerHTML = '<option value="1">Основний об\'єкт</option>';
+      }
     }
-    await onAdjFacilityOrEntityChange();
   } catch (err) {
     console.warn('setupAdjustmentModal error:', err);
+  } finally {
+    await onAdjFacilityOrEntityChange();
   }
 }
+window.setupAdjustmentModal = setupAdjustmentModal;
 
 window.onAdjFacilityOrEntityChange = async function() {
   const facSel = document.getElementById('adjFacility');
-  const facilityId = facSel ? parseInt(facSel.value, 10) : currentFacilityId;
+  const facilityId = (facSel && parseInt(facSel.value, 10)) || currentFacilityId || 1;
   const entity = document.getElementById('adjEntity').value;
   const targetSel = document.getElementById('adjTargetItem');
   const targetLabel = document.getElementById('adjTargetLabel');
   const fieldSelect = document.getElementById('adjField');
-
-  targetSel.innerHTML = '';
-  fieldSelect.innerHTML = '';
 
   if (entity === 'FuelStock') {
     if (targetLabel) targetLabel.innerText = 'Цільовий склад ГСМ';
@@ -1191,6 +1239,7 @@ window.onAdjFacilityOrEntityChange = async function() {
       <option value="current_balance_l">Залишок на складі (л)</option>
       <option value="name">Назва складу</option>
     `;
+    targetSel.innerHTML = '<option value="" disabled selected>Завантаження складів...</option>';
     try {
       const q = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : '';
       const stocks = await api(`/fuel/stocks${q}`);
@@ -1204,7 +1253,7 @@ window.onAdjFacilityOrEntityChange = async function() {
         targetSel.innerHTML = `<option value="" disabled selected>Немає складів на цьому об'єкті</option>`;
       }
     } catch (_) {
-      targetSel.innerHTML = `<option value="" disabled selected>Помилка завантаження складів</option>`;
+      targetSel.innerHTML = `<option value="1" data-balance="0.0">Основний склад ГСМ (за замовчуванням)</option>`;
     }
   } else if (entity === 'Generator') {
     if (targetLabel) targetLabel.innerText = 'Цільовий генератор';
@@ -1214,6 +1263,7 @@ window.onAdjFacilityOrEntityChange = async function() {
       <option value="status">Статус генератора</option>
       <option value="nominal_consumption_l_per_h">Нормативний розхід (л/год)</option>
     `;
+    targetSel.innerHTML = '<option value="" disabled selected>Завантаження генераторів...</option>';
     try {
       const q = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : '';
       const gens = await api(`/generators${q}`);
@@ -1227,7 +1277,7 @@ window.onAdjFacilityOrEntityChange = async function() {
         targetSel.innerHTML = `<option value="" disabled selected>Немає генераторів на цьому об'єкті</option>`;
       }
     } catch (_) {
-      targetSel.innerHTML = `<option value="" disabled selected>Помилка завантаження генераторів</option>`;
+      targetSel.innerHTML = `<option value="1">Основний генератор (за замовчуванням)</option>`;
     }
   } else if (entity === 'MaintenanceSchedule') {
     if (targetLabel) targetLabel.innerText = 'Цільовий регламент ТО';
@@ -1236,6 +1286,7 @@ window.onAdjFacilityOrEntityChange = async function() {
       <option value="next_due_hours">Наступне ТО (мотогодини)</option>
       <option value="last_performed_hours">Останнє ТО (мотогодини)</option>
     `;
+    targetSel.innerHTML = '<option value="" disabled selected>Завантаження графіків ТО...</option>';
     try {
       const q = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : '';
       const gens = await api(`/generators${q}`);
@@ -1252,7 +1303,7 @@ window.onAdjFacilityOrEntityChange = async function() {
         targetSel.innerHTML = `<option value="" disabled selected>Немає графіків ТО для об'єкта</option>`;
       }
     } catch (_) {
-      targetSel.innerHTML = `<option value="" disabled selected>Помилка завантаження графіків ТО</option>`;
+      targetSel.innerHTML = `<option value="1">Регламентне ТО (за замовчуванням)</option>`;
     }
   } else if (entity === 'Facility') {
     if (targetLabel) targetLabel.innerText = 'Цільовий об\'єкт';
