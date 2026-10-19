@@ -69,3 +69,30 @@ async def test_rbac_viewer_cannot_start_generator(client, viewer_auth):
     # Must be forbidden 403
     assert res.status_code == 403
     assert "Недостатньо прав" in res.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_remember_me_login_and_cookie_auth(client):
+    # Test login with remember_me=True
+    res = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "login": settings.INITIAL_ADMIN_LOGIN.strip(),
+            "password": settings.INITIAL_ADMIN_PASSWORD,
+            "remember_me": True
+        }
+    )
+    assert res.status_code == 200
+    assert "access_token" in res.cookies
+    cookie_header = res.headers.get("set-cookie", "")
+    assert "Max-Age=5184000" in cookie_header or "max-age=5184000" in cookie_header.lower()
+
+    # Authenticate via cookie directly (without Authorization header)
+    me_res = await client.get("/api/v1/auth/me")
+    assert me_res.status_code == 200
+    assert me_res.json()["login"] == settings.INITIAL_ADMIN_LOGIN.strip()
+
+    # Logout clears cookie
+    logout_res = await client.post("/api/v1/auth/logout")
+    assert logout_res.status_code == 200
+

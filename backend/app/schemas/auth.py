@@ -12,6 +12,7 @@ class TokenResponse(BaseModel):
 class LoginRequest(BaseModel):
     login: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
+    remember_me: bool = True
 
 
 class UserSummary(BaseModel):

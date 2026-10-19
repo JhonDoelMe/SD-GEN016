@@ -1,8 +1,10 @@
+import datetime
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.config import settings
 from backend.app.database import get_db
 from backend.app.core.security import verify_password, create_access_token
 from backend.app.models.user import User
@@ -65,16 +67,28 @@ async def login(
         for p in r.permissions:
             permissions_set.add(p.code)
 
-    token = create_access_token({"sub": str(user.id), "login": user.login})
+    # Configure token lifetime and cookie duration based on remember_me
+    if login_data.remember_me:
+        token_delta = datetime.timedelta(days=60)
+        cookie_max_age = 60 * 86400  # 60 days
+    else:
+        token_delta = datetime.timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        cookie_max_age = None  # Session cookie
+
+    token = create_access_token({"sub": str(user.id), "login": user.login}, expires_delta=token_delta)
 
     # Set secure HTTP-only cookie
-    response.set_cookie(
-        key="access_token",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        max_age=86400,
-    )
+    cookie_kwargs = {
+        "key": "access_token",
+        "value": token,
+        "httponly": True,
+        "samesite": "lax",
+        "path": "/",
+    }
+    if cookie_max_age is not None:
+        cookie_kwargs["max_age"] = cookie_max_age
+
+    response.set_cookie(**cookie_kwargs)
 
     await log_audit(
         db=db,
@@ -129,7 +143,7 @@ async def logout(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    response.delete_cookie(key="access_token")
+    response.delete_cookie(key="access_token", path="/")
     await log_audit(
         db=db,
         action="AUTH_LOGOUT",

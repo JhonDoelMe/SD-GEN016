@@ -1,6 +1,6 @@
 // Service Desk Бензинового Генератора - Frontend Application Logic
 
-let token = localStorage.getItem('sd_token');
+let token = localStorage.getItem('sd_token') || sessionStorage.getItem('sd_token');
 let currentUser = null;
 let currentFacilityId = null;
 let currentGeneratorId = null;
@@ -22,6 +22,7 @@ async function api(endpoint, options = {}) {
       if (endpoint !== '/auth/login') {
         token = null;
         localStorage.removeItem('sd_token');
+        sessionStorage.removeItem('sd_token');
         showAuthScreen();
         throw new Error('Сесія закінчилась. Будь ласка, увійдіть знову');
       } else {
@@ -154,8 +155,7 @@ function hideAuthScreen() {
 
 async function checkAuth() {
   if (!token) {
-    showAuthScreen();
-    return;
+    token = localStorage.getItem('sd_token') || sessionStorage.getItem('sd_token');
   }
   try {
     currentUser = await api('/auth/me');
@@ -163,6 +163,9 @@ async function checkAuth() {
     hideAuthScreen();
     loadAllData();
   } catch (_) {
+    token = null;
+    localStorage.removeItem('sd_token');
+    sessionStorage.removeItem('sd_token');
     showAuthScreen();
   }
 }
@@ -171,6 +174,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const loginInput = document.getElementById('loginUsername').value.trim();
   const passInput = document.getElementById('loginPassword').value;
+  const rememberMe = document.getElementById('loginRememberMe')?.checked ?? true;
   const loginBtn = document.getElementById('loginSubmitBtn');
   const errorBox = document.getElementById('loginError');
 
@@ -203,10 +207,17 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   try {
     const res = await api('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ login: loginInput, password: passInput })
+      body: JSON.stringify({ login: loginInput, password: passInput, remember_me: rememberMe })
     });
     token = res.access_token;
-    localStorage.setItem('sd_token', token);
+    if (rememberMe) {
+      localStorage.setItem('sd_token', token);
+      localStorage.setItem('sd_remember_me', 'true');
+    } else {
+      sessionStorage.setItem('sd_token', token);
+      localStorage.removeItem('sd_token');
+      localStorage.setItem('sd_remember_me', 'false');
+    }
     currentUser = res.user;
     document.getElementById('userGreeting').innerText = `${currentUser.full_name}`;
     hideAuthScreen();
@@ -231,6 +242,7 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   } catch (_) {}
   token = null;
   localStorage.removeItem('sd_token');
+  sessionStorage.removeItem('sd_token');
   currentUser = null;
   showAuthScreen();
 });
@@ -271,10 +283,14 @@ async function loadFacilitiesList() {
     }
 
     if (facilities.length > 0) {
-      if (!currentFacilityId || !facilities.some(f => f.id === currentFacilityId)) {
+      const savedFacilityId = parseInt(localStorage.getItem('sd_last_facility_id') || '0', 10);
+      if (savedFacilityId && facilities.some(f => f.id === savedFacilityId)) {
+        currentFacilityId = savedFacilityId;
+      } else if (!currentFacilityId || !facilities.some(f => f.id === currentFacilityId)) {
         currentFacilityId = facilities[0].id;
       }
       sel.value = currentFacilityId;
+      localStorage.setItem('sd_last_facility_id', currentFacilityId);
     }
   } catch (err) {
     console.warn('loadFacilitiesList:', err);
@@ -294,10 +310,23 @@ async function loadGeneratorsList(facilityId) {
       currentGeneratorId = null;
     } else {
       sel.innerHTML = generators.map(g => `<option value="${g.id}">${g.name} (${g.model})</option>`).join('');
-      if (!currentGeneratorId || !generators.some(g => g.id === currentGeneratorId)) {
+      
+      const savedGenForFac = parseInt(localStorage.getItem(`sd_last_gen_facility_${facilityId}`) || '0', 10);
+      const savedGlobalGen = parseInt(localStorage.getItem('sd_last_generator_id') || '0', 10);
+      const targetGenId = (savedGenForFac && generators.some(g => g.id === savedGenForFac))
+        ? savedGenForFac
+        : ((savedGlobalGen && generators.some(g => g.id === savedGlobalGen)) ? savedGlobalGen : null);
+
+      if (targetGenId) {
+        currentGeneratorId = targetGenId;
+      } else if (!currentGeneratorId || !generators.some(g => g.id === currentGeneratorId)) {
         currentGeneratorId = generators[0].id;
       }
       sel.value = currentGeneratorId;
+      localStorage.setItem('sd_last_generator_id', currentGeneratorId);
+      if (facilityId) {
+        localStorage.setItem(`sd_last_gen_facility_${facilityId}`, currentGeneratorId);
+      }
     }
   } catch (err) {
     console.warn('loadGeneratorsList:', err);
@@ -1241,6 +1270,10 @@ window.confirmDeleteCurrentGenerator = async function() {
     const res = await api(`/generator/${currentGeneratorId}`, { method: 'DELETE' });
     closeModal('modalDeleteGenerator');
     showToast(res.message || 'Генератор успішно видалено!', 'success');
+    localStorage.removeItem('sd_last_generator_id');
+    if (currentFacilityId) {
+      localStorage.removeItem(`sd_last_gen_facility_${currentFacilityId}`);
+    }
     currentGeneratorId = null;
     await loadGeneratorsList(currentFacilityId);
     await loadAllData();
@@ -1265,6 +1298,7 @@ document.getElementById('facilityCreateForm')?.addEventListener('submit', async 
     showToast(`Об'єкт "${created.name}" успішно створено!`, 'success');
     await loadFacilitiesList();
     currentFacilityId = created.id;
+    localStorage.setItem('sd_last_facility_id', currentFacilityId);
     if (document.getElementById('facilitySelect')) {
       document.getElementById('facilitySelect').value = created.id;
     }
@@ -1305,6 +1339,10 @@ document.getElementById('generatorCreateForm')?.addEventListener('submit', async
     showToast(`Генератор "${created.name}" успішно створено!`, 'success');
     await loadGeneratorsList(currentFacilityId);
     currentGeneratorId = created.id;
+    localStorage.setItem('sd_last_generator_id', currentGeneratorId);
+    if (currentFacilityId) {
+      localStorage.setItem(`sd_last_gen_facility_${currentFacilityId}`, currentGeneratorId);
+    }
     if (document.getElementById('generatorSelect')) {
       document.getElementById('generatorSelect').value = created.id;
     }
@@ -1317,6 +1355,7 @@ document.getElementById('generatorCreateForm')?.addEventListener('submit', async
 // Dropdowns Change Listeners
 document.getElementById('facilitySelect')?.addEventListener('change', async (e) => {
   currentFacilityId = parseInt(e.target.value);
+  localStorage.setItem('sd_last_facility_id', currentFacilityId);
   currentGeneratorId = null;
   await loadGeneratorsList(currentFacilityId);
   await loadAllData();
@@ -1324,12 +1363,111 @@ document.getElementById('facilitySelect')?.addEventListener('change', async (e) 
 
 document.getElementById('generatorSelect')?.addEventListener('change', async (e) => {
   currentGeneratorId = parseInt(e.target.value);
+  localStorage.setItem('sd_last_generator_id', currentGeneratorId);
+  if (currentFacilityId) {
+    localStorage.setItem(`sd_last_gen_facility_${currentFacilityId}`, currentGeneratorId);
+  }
   await loadAllData();
 });
+
+// PWA Installation & First-Visit Prompt Logic
+let deferredInstallPrompt = null;
+
+function setupPwaInstall() {
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
+  const banner = document.getElementById('pwaInstallBanner');
+  const headerInstallBtn = document.getElementById('headerInstallBtn');
+  const installBtn = document.getElementById('pwaInstallBtn');
+  const dismissBtn = document.getElementById('pwaDismissBtn');
+
+  // If already running in standalone PWA app mode, hide install buttons
+  if (isStandalone) {
+    if (banner) banner.style.display = 'none';
+    if (headerInstallBtn) headerInstallBtn.style.display = 'none';
+    return;
+  }
+
+  // Check dismissal timestamp
+  const dismissedTime = localStorage.getItem('pwa_install_dismissed_at');
+  const shouldShowPrompt = !dismissedTime || (Date.now() - parseInt(dismissedTime, 10) > 7 * 24 * 3600 * 1000);
+
+  // Native beforeinstallprompt event (Android / Chromium)
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (headerInstallBtn) headerInstallBtn.style.display = 'inline-flex';
+    if (shouldShowPrompt && banner) {
+      banner.style.display = 'flex';
+    }
+  });
+
+  // Prompt on first visit if not dismissed
+  if (shouldShowPrompt && banner) {
+    setTimeout(() => {
+      const activeStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      if (!activeStandalone) {
+        banner.style.display = 'flex';
+        if (headerInstallBtn) headerInstallBtn.style.display = 'inline-flex';
+      }
+    }, 1200);
+  } else if (headerInstallBtn) {
+    headerInstallBtn.style.display = 'inline-flex';
+  }
+
+  // Click install on banner
+  installBtn?.addEventListener('click', async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        if (banner) banner.style.display = 'none';
+        if (headerInstallBtn) headerInstallBtn.style.display = 'none';
+        localStorage.setItem('pwa_installed', 'true');
+      }
+      deferredInstallPrompt = null;
+    } else if (isIos) {
+      openModal('modalIosInstall');
+    } else {
+      showToast('Натисніть на значок встановлення в адресному рядку браузера або меню ⋮ -> "Встановити додаток"', 'info');
+    }
+  });
+
+  // Click install in header
+  headerInstallBtn?.addEventListener('click', async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        if (headerInstallBtn) headerInstallBtn.style.display = 'none';
+        if (banner) banner.style.display = 'none';
+      }
+      deferredInstallPrompt = null;
+    } else if (isIos) {
+      openModal('modalIosInstall');
+    } else {
+      showToast('Натисніть на значок встановлення в адресному рядку браузера або меню ⋮ -> "Встановити додаток"', 'info');
+    }
+  });
+
+  // Click dismiss
+  dismissBtn?.addEventListener('click', () => {
+    if (banner) banner.style.display = 'none';
+    localStorage.setItem('pwa_install_dismissed_at', Date.now().toString());
+  });
+
+  window.addEventListener('appinstalled', () => {
+    if (banner) banner.style.display = 'none';
+    if (headerInstallBtn) headerInstallBtn.style.display = 'none';
+    localStorage.setItem('pwa_installed', 'true');
+    showToast('Додаток успішно встановлено!', 'success');
+  });
+}
 
 // Initialization on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   startClock();
+  setupPwaInstall();
   checkAuth();
 });
 

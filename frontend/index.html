@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Service Desk Генератора | SD-GEN016</title>
   
   <!-- PWA Meta -->
@@ -14,28 +14,52 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=2.0">
+  <link rel="stylesheet" href="/frontend/styles.css?v=2.2">
 </head>
 <body>
 
+  <!-- PWA Install Floating Banner (Shown on first visit or when installable) -->
+  <div id="pwaInstallBanner" class="pwa-install-banner" style="display: none;">
+    <div class="pwa-install-content">
+      <div class="pwa-install-icon">📲</div>
+      <div class="pwa-install-text">
+        <div class="pwa-install-title">Встановити додаток Service Desk</div>
+        <div class="pwa-install-desc">Зручний мобільний вигляд, швидкий доступ без браузера та стабільна робота</div>
+      </div>
+    </div>
+    <div class="pwa-install-actions">
+      <button id="pwaInstallBtn" class="btn-pwa-install" type="button">Встановити</button>
+      <button id="pwaDismissBtn" class="btn-pwa-dismiss" type="button" title="Закрити підказку">Пізніше</button>
+    </div>
+  </div>
+
   <!-- Auth Screen (Shown when logged out) -->
   <div id="authOverlay" class="modal-overlay" style="display: flex;">
-    <div class="modal-content" style="max-width: 400px; text-align: center;">
-      <div style="font-size: 3rem; margin-bottom: 0.5rem;">⚡</div>
-      <h2 style="margin-bottom: 0.25rem;">Service Desk Генератора</h2>
-      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;">Вхід в систему експлуатації</p>
+    <div class="modal-content auth-modal-content" style="max-width: 420px; text-align: center;">
+      <div style="font-size: 3.2rem; margin-bottom: 0.5rem;">⚡</div>
+      <h2 style="margin-bottom: 0.35rem; font-size: 1.5rem;">Service Desk Генератора</h2>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">Вхід в систему експлуатації</p>
       
       <form id="loginForm" novalidate>
         <div class="form-group" style="text-align: left;">
-          <label>Логін користувача</label>
+          <label style="font-weight: 600;">Логін користувача</label>
           <input type="text" id="loginUsername" autocomplete="username" value="superadmin" placeholder="superadmin">
         </div>
         <div class="form-group" style="text-align: left;">
-          <label>Пароль</label>
+          <label style="font-weight: 600;">Пароль</label>
           <input type="password" id="loginPassword" autocomplete="current-password" placeholder="Введіть ваш пароль">
         </div>
-        <div id="loginError" style="display: none; color: #f87171; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 0.5rem; padding: 0.75rem; margin-top: 1rem; font-size: 0.875rem; text-align: left; line-height: 1.4;"></div>
-        <button type="submit" id="loginSubmitBtn" class="btn-primary" style="padding: 1rem; font-size: 1.1rem; margin-top: 1rem; width: 100%;">Увійти в систему</button>
+        
+        <!-- Remember Me Checkbox -->
+        <div class="form-group remember-me-container">
+          <label for="loginRememberMe" class="remember-me-label">
+            <input type="checkbox" id="loginRememberMe" checked class="remember-me-checkbox">
+            <span>Запам'ятати мене на цьому пристрої</span>
+          </label>
+        </div>
+
+        <div id="loginError" style="display: none; color: #f87171; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 0.5rem; padding: 0.85rem; margin-top: 1rem; font-size: 0.95rem; text-align: left; line-height: 1.4;"></div>
+        <button type="submit" id="loginSubmitBtn" class="btn-primary" style="padding: 1rem; font-size: 1.15rem; margin-top: 1.25rem; width: 100%; border-radius: 0.65rem;">Увійти в систему</button>
       </form>
     </div>
   </div>
@@ -43,32 +67,43 @@
   <!-- App Header -->
   <header class="app-header">
     <div class="brand-title">
-      <span>⚡</span>
-      <span>SD-GEN016</span>
+      <span class="brand-icon">⚡</span>
+      <span class="brand-name">SD-GEN016</span>
     </div>
-    <div style="font-size: 0.8rem; color: #38bdf8;" id="clockKyiv">--:--:-- (Київ)</div>
+    <div class="header-clock" id="clockKyiv">--:--:-- (Київ)</div>
     <div class="user-badge">
-      <span id="userGreeting" style="font-weight: 600;">Гість</span>
-      <button id="logoutBtn" style="background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 4px; padding: 0.25rem 0.5rem; cursor: pointer; font-size: 0.75rem;">Вихід</button>
+      <button id="headerInstallBtn" class="btn-header-install" style="display: none;" title="Встановити додаток на екран">
+        <span>📲</span><span class="desktop-only-inline">Встановити</span>
+      </button>
+      <span id="userGreeting" class="user-name">Гість</span>
+      <button id="logoutBtn" class="btn-logout" title="Вихід з системи">Вихід</button>
     </div>
   </header>
 
   <!-- Facility & Generator Switcher Bar -->
-  <div class="facility-bar" style="background: var(--card-bg, #1e293b); border-bottom: 1px solid var(--border-color); padding: 0.5rem 1rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
-    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-      <div style="display: flex; align-items: center; gap: 0.35rem;">
-        <span style="font-size: 1rem;">🏢</span>
-        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Об'єкт:</span>
-        <select id="facilitySelect" style="width: auto; min-width: 140px; padding: 0.25rem 0.5rem; font-size: 0.85rem; height: 32px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: white; border-radius: 4px; cursor: pointer;"></select>
-        <button id="addFacilityBtn" onclick="openModal('modalCreateFacility')" title="Створити новий об'єкт" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; height: 32px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">+ Об'єкт</button>
+  <div class="facility-bar">
+    <div class="facility-bar-content">
+      <div class="facility-control-group">
+        <div class="control-label">
+          <span class="control-icon">🏢</span>
+          <span class="control-title">Об'єкт:</span>
+        </div>
+        <div class="control-input-wrapper">
+          <select id="facilitySelect" class="control-select" aria-label="Вибір об'єкта"></select>
+          <button id="addFacilityBtn" class="btn-control-add btn-facility-add" onclick="openModal('modalCreateFacility')" title="Створити новий об'єкт">+ Об'єкт</button>
+        </div>
       </div>
 
-      <div style="display: flex; align-items: center; gap: 0.35rem; margin-left: 0.5rem;">
-        <span style="font-size: 1rem;">⚡</span>
-        <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Генератор:</span>
-        <select id="generatorSelect" style="width: auto; min-width: 160px; padding: 0.25rem 0.5rem; font-size: 0.85rem; height: 32px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: white; border-radius: 4px; cursor: pointer;"></select>
-        <button id="addGeneratorBtn" onclick="openModal('modalCreateGenerator')" title="Створити новий генератор" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; height: 32px; background: #059669; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">+ Генератор</button>
-        <button id="deleteGeneratorBtn" onclick="openDeleteGeneratorModal()" title="Видалити поточний генератор" style="padding: 0.25rem 0.5rem; font-size: 0.85rem; height: 32px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">🗑️</button>
+      <div class="facility-control-group">
+        <div class="control-label">
+          <span class="control-icon">⚡</span>
+          <span class="control-title">Генератор:</span>
+        </div>
+        <div class="control-input-wrapper">
+          <select id="generatorSelect" class="control-select" aria-label="Вибір генератора"></select>
+          <button id="addGeneratorBtn" class="btn-control-add btn-generator-add" onclick="openModal('modalCreateGenerator')" title="Створити новий генератор">+ Генератор</button>
+          <button id="deleteGeneratorBtn" class="btn-control-del" onclick="openDeleteGeneratorModal()" title="Видалити поточний генератор">🗑️</button>
+        </div>
       </div>
     </div>
   </div>
@@ -974,11 +1009,28 @@
     </div>
   </div>
 
+  <!-- Modal: iOS PWA Installation Guide -->
+  <div id="modalIosInstall" class="modal-overlay">
+    <div class="modal-content" style="max-width: 440px; text-align: center;">
+      <div class="modal-header" style="justify-content: flex-end; margin-bottom: 0.5rem;">
+        <button class="close-btn" onclick="closeModal('modalIosInstall')">&times;</button>
+      </div>
+      <div style="font-size: 3rem; margin-bottom: 0.5rem;">📲</div>
+      <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Встановлення на iPhone або iPad</h3>
+      <div style="color: var(--text-muted); font-size: 0.95rem; text-align: left; line-height: 1.6; margin-bottom: 1.5rem; background: rgba(15, 23, 42, 0.6); padding: 1rem; border-radius: 0.75rem; border: 1px solid var(--border-color);">
+        <p style="margin-bottom: 0.6rem;">1. У нижній панелі Safari натисніть іконку <b>«Поділитися»</b> (<span style="font-size: 1.1rem; color: #38bdf8;">⎋</span> або квадрат зі стрілкою вгору).</p>
+        <p style="margin-bottom: 0.6rem;">2. Прокрутіть список дій униз та натисніть <b>«На початковий екран»</b> (<span style="font-size: 1.1rem; color: #22c55e;">➕ Add to Home Screen</span>).</p>
+        <p>3. У верхньому правому куті натисніть <b>«Додати»</b>.</p>
+      </div>
+      <button type="button" class="btn-primary" onclick="closeModal('modalIosInstall')">Зрозуміло</button>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=2.1"></script>
+  <script src="/frontend/app.js?v=2.2"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

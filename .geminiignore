@@ -1,0 +1,70 @@
+# Gemini / AI Agent Ignore Patterns
+# Version control
+.git/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Python bytecode and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Local databases, storage, and binary dumps
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+service_desk.db
+uploads/*
+!uploads/.gitkeep
+backups/*.tar.gz
+backups/*.sql
+
+# Environment variables & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Operating system and editor artifacts
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node / frontend caches (if any)
+node_modules/
+.npm/
