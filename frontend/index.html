@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=2.7">
+  <link rel="stylesheet" href="/frontend/styles.css?v=2.8">
 </head>
 <body>
 
@@ -505,91 +505,123 @@
     <section id="tab-admin" class="tab-pane" style="display: none;">
       <div class="panel" style="margin-bottom: 1.5rem;">
         <div class="panel-header">
-          <h3>⚙️ Глобальні налаштування системи та Ціни на паливо (Тільки Адміністратор)</h3>
+          <div>
+            <h3 style="margin-bottom: 0.25rem;">⚙️ Системні налаштування та Тарифи на паливо</h3>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0;">
+              Керування робочим регламентом, часовим поясом, цінами пального АЗК WOG та режимами роботи (доступно лише Адміністратору)
+            </p>
+          </div>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #22c55e; color: #4ade80;" onclick="refreshFuelPricesFromInternet()">🟢 Оновити ціни АЗК WOG</button>
-            <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #ef4444; color: #f87171;" onclick="openSystemResetModal()">🧹 Очищення даних / Скидання БД</button>
+            <button type="button" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #22c55e; color: #4ade80;" onclick="refreshFuelPricesFromInternet()">🟢 Оновити ціни АЗК WOG</button>
+            <button type="button" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #ef4444; color: #f87171;" onclick="openSystemResetModal()">🧹 Очищення даних / Скидання БД</button>
           </div>
         </div>
 
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
-          Тут зберігаються всі динамічні параметри системи (часовий пояс, графік роботи, інтервали ТО, ціни на паливо). Файл <code>.env</code> використовується лише для статичних параметрів БД та первинного SuperAdmin.
-        </p>
-
         <form id="systemSettingsForm">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
-            <div class="form-group" style="margin-bottom: 0;">
-              <label>Назва організації (для звітів)</label>
-              <input type="text" id="sysOrgName" required placeholder="MAXI-UA LLC">
+          <!-- Блок 1: Організація та Робочий регламент -->
+          <div class="settings-block">
+            <div class="settings-block-header">
+              <h4 class="settings-block-title">🏢 1. Організація, Часовий пояс та Робочий графік</h4>
+              <span style="font-size: 0.78rem; color: var(--text-muted);">Базові параметри підприємства</span>
             </div>
-            <div class="form-group" style="margin-bottom: 0;">
-              <label>Часовий пояс системи</label>
-              <select id="sysTimezone">
-                <option value="Europe/Kyiv">Europe/Kyiv (Україна)</option>
-                <option value="Europe/Warsaw">Europe/Warsaw (Польща)</option>
-                <option value="Europe/Berlin">Europe/Berlin (Німеччина)</option>
-                <option value="Europe/London">Europe/London ( Велика Британія)</option>
-                <option value="UTC">UTC (Всесвітній час)</option>
-              </select>
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-              <label>Початок робочого графіка</label>
-              <input type="time" id="sysWorkStart" required value="08:00">
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-              <label>Кінець робочого графіка</label>
-              <input type="time" id="sysWorkEnd" required value="20:00">
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-              <label>Базовий інтервал ТО (мотогодин)</label>
-              <input type="number" step="10" min="10" id="sysMaintInterval" required value="300">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Назва організації (у звітах Excel)</label>
+                <input type="text" id="sysOrgName" required placeholder="MAXI-UA LLC">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Часовий пояс системи</label>
+                <select id="sysTimezone">
+                  <option value="Europe/Kyiv">Europe/Kyiv (Україна)</option>
+                  <option value="Europe/Warsaw">Europe/Warsaw (Польща)</option>
+                  <option value="Europe/Berlin">Europe/Berlin (Німеччина)</option>
+                  <option value="Europe/London">Europe/London (Велика Британія)</option>
+                  <option value="UTC">UTC (Всесвітній час)</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Початок робочої зміни</label>
+                <input type="time" id="sysWorkStart" required value="08:00">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Завершення робочої зміни</label>
+                <input type="time" id="sysWorkEnd" required value="20:00">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Регламентний інтервал ТО (мотогодин)</label>
+                <input type="number" step="10" min="10" id="sysMaintInterval" required value="300">
+              </div>
             </div>
           </div>
 
-          <div style="background: rgba(34, 197, 94, 0.07); border: 1px solid rgba(34, 197, 94, 0.28); border-radius: 0.65rem; padding: 1rem; margin-bottom: 1rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.6rem;">
-              <h4 style="margin: 0; color: #4ade80;">⛽ Ціни на паливо (грн/л) — Табло АЗК WOG (<a href="https://wog.ua/ua/fuels/" target="_blank" rel="noopener" style="color: #38bdf8;">wog.ua/ua/fuels</a>)</h4>
-              <span id="sysInternetPricesMeta" style="font-size: 0.8rem; color: var(--text-muted);">Джерело: АЗК WOG</span>
+          <!-- Блок 2: Табло цін АЗК WOG та Фіксовані тарифи -->
+          <div class="settings-block" style="background: rgba(34, 197, 94, 0.05); border-color: rgba(34, 197, 94, 0.28);">
+            <div class="settings-block-header" style="border-bottom-color: rgba(34, 197, 94, 0.18);">
+              <h4 class="settings-block-title" style="color: #4ade80;">
+                ⛽ 2. Табло цін АЗК WOG (<a href="https://wog.ua/ua/fuels/" target="_blank" rel="noopener" style="color: #38bdf8; text-decoration: underline;">wog.ua/ua/fuels</a>)
+              </h4>
+              <span id="sysInternetPricesMeta" style="font-size: 0.8rem; color: #94a3b8;">Джерело: АЗК WOG</span>
             </div>
-            <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-              Актуальне табло цін мережі <b>АЗК WOG</b>. Якщо поле власної фіксованої ціни нижче залишити <b>0</b>, при оприбуткуванні палива без суми чека система автоматично розрахує вартість за ціною WOG.
+            <p style="font-size: 0.83rem; color: var(--text-muted); margin-bottom: 0.85rem;">
+              Актуальне табло цін мережі <b>АЗК WOG</b>. Якщо власна договірна ціна нижче встановлена як <b>0</b>, при оприбуткуванні палива без суми чека система автоматично розраховує вартість за ціною АЗК WOG.
             </p>
-            <div id="wogPriceBoard" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 0.6rem; margin-bottom: 1rem;"></div>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+            <div id="wogPriceBoard" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 0.65rem; margin-bottom: 1.1rem;"></div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
               <div class="form-group" style="margin-bottom: 0;">
-                <label>Фіксована ціна А-95 (грн/л, 0 = ціна WOG)</label>
+                <label>Власна ціна А-95 (грн/л, <b>0 = ціна WOG</b>)</label>
                 <input type="number" step="0.01" min="0" id="sysPriceA95" value="0">
-                <small id="sysNetHintA95" style="color: #4ade80; display: block; margin-top: 0.25rem;">WOG 95 Євро5: 92.90 грн/л</small>
+                <small id="sysNetHintA95" style="color: #4ade80; display: block; margin-top: 0.3rem; font-weight: 500;">WOG 95 Євро5: 92.90 грн/л</small>
               </div>
               <div class="form-group" style="margin-bottom: 0;">
-                <label>Фіксована ціна ДП (грн/л, 0 = ціна WOG)</label>
+                <label>Власна ціна ДП (грн/л, <b>0 = ціна WOG</b>)</label>
                 <input type="number" step="0.01" min="0" id="sysPriceDP" value="0">
-                <small id="sysNetHintDP" style="color: #4ade80; display: block; margin-top: 0.25rem;">WOG ДП Євро5: 103.50 грн/л</small>
+                <small id="sysNetHintDP" style="color: #4ade80; display: block; margin-top: 0.3rem; font-weight: 500;">WOG ДП Євро5: 103.50 грн/л</small>
               </div>
               <div class="form-group" style="margin-bottom: 0;">
-                <label>Фіксована ціна А-92 (грн/л, 0 = ціна WOG)</label>
+                <label>Власна ціна А-92 (грн/л, <b>0 = ціна WOG</b>)</label>
                 <input type="number" step="0.01" min="0" id="sysPriceA92" value="0">
-                <small id="sysNetHintA92" style="color: #4ade80; display: block; margin-top: 0.25rem;">WOG Ідикатор: 89.90 грн/л</small>
+                <small id="sysNetHintA92" style="color: #4ade80; display: block; margin-top: 0.3rem; font-weight: 500;">Індикатор А-92: 92.90 грн/л</small>
               </div>
             </div>
           </div>
 
-          <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
-            <label class="remember-me-label" style="cursor: pointer;">
-              <input type="checkbox" id="sysEnforceSchedule" checked>
-              <span>Обмежувати запуск генераторів дозволеним робочим графіком (якщо вимкнено — дозволено запуск 24/7)</span>
-            </label>
-            <label class="remember-me-label" style="cursor: pointer;">
-              <input type="checkbox" id="sysAutoFetchPrices" checked>
-              <span>Автоматично підтягувати актуальні ціни на пальне з інтернету</span>
-            </label>
-            <label class="remember-me-label" style="cursor: pointer; color: #38bdf8;">
-              <input type="checkbox" id="sysApplyAllGens">
-              <span>Застосувати вказаний часовий пояс, графік роботи та інтервал ТО до всіх існуючих об'єктів і генераторів</span>
-            </label>
+          <!-- Блок 3: Режими роботи та Синхронізація -->
+          <div class="settings-block">
+            <div class="settings-block-header">
+              <h4 class="settings-block-title">⚡ 3. Правила контролю та Синхронізація</h4>
+              <span style="font-size: 0.78rem; color: var(--text-muted);">Натисніть на рядок для увімкнення/вимкнення</span>
+            </div>
+            <div class="settings-toggle-list">
+              <label class="settings-toggle-item" for="sysEnforceSchedule">
+                <input type="checkbox" id="sysEnforceSchedule" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title">🕒 Контроль запуску генераторів за робочим графіком</span>
+                  <span class="settings-toggle-desc">Якщо увімкнено — оператори можуть запускати генератор лише в межах дозволеної робочої зміни. Якщо вимкнено — дозволено цілодобовий запуск 24/7.</span>
+                </div>
+              </label>
+
+              <label class="settings-toggle-item" for="sysAutoFetchPrices">
+                <input type="checkbox" id="sysAutoFetchPrices" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title">🌐 Автоматичне оновлення цін пального з табло АЗК WOG</span>
+                  <span class="settings-toggle-desc">Автоматично підтягувати актуальні роздрібні ціни з офіційного сайту <code>wog.ua/ua/fuels/</code> для розрахунку вартості палива, коли сума чека не вказана.</span>
+                </div>
+              </label>
+
+              <label class="settings-toggle-item" for="sysApplyAllGens" style="border-color: rgba(56, 189, 248, 0.35);">
+                <input type="checkbox" id="sysApplyAllGens" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title" style="color: #38bdf8;">🔄 Синхронізувати графік, часовий пояс та інтервал ТО для всіх об'єктів і генераторів</span>
+                  <span class="settings-toggle-desc">При збереженні налаштувань автоматично застосовувати обраний часовий пояс, години початку/кінця зміни та базовий інтервал ТО до всіх існуючих об'єктів та генераторів у системі.</span>
+                </div>
+              </label>
+            </div>
           </div>
 
-          <button type="submit" class="btn-primary" style="width: auto; padding: 0.7rem 1.5rem;">💾 Зберегти системні налаштування</button>
+          <div style="display: flex; justify-content: flex-end;">
+            <button type="submit" class="btn-primary" style="width: auto; min-width: 280px; margin-top: 0; padding: 0.85rem 1.75rem;">💾 Зберегти системні налаштування</button>
+          </div>
         </form>
       </div>
 
@@ -1385,7 +1417,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=2.7"></script>
+  <script src="/frontend/app.js?v=2.8"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

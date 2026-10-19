@@ -400,17 +400,24 @@ async def test_admin_system_settings_and_internet_fuel_prices(client, superadmin
     assert rec_net["cost_total"] == round(20.0 * rec_net["price_per_liter"], 2)
     assert "Авторозрахунок" in (rec_net["comment"] or "")
 
-    # 4. Admin sets custom fuel price in system settings (e.g. А-95 = 60.00 грн/л)
+    # 4. Admin sets custom fuel price in system settings (e.g. А-95 = 60.00 грн/л) and apply_to_all_generators = False
     put_res = await client.put("/api/v1/system/settings", json={
         "organization_name": "MAXI-UA TEST",
         "facility_timezone": "Europe/Kyiv",
         "work_schedule_start": "07:00",
         "work_schedule_end": "22:00",
         "fuel_price_a95": 60.0,
-        "apply_to_all_generators": True
+        "apply_to_all_generators": False
     }, headers=superadmin_auth)
     assert put_res.status_code == 200
     assert put_res.json()["settings"]["fuel_price_a95"] == 60.0
+    assert put_res.json()["settings"]["apply_to_all_generators"] is False
+    assert len(put_res.json()["fuel_prices"]["wog_lineup"]) >= 5
+
+    # Verify GET /api/v1/system/settings preserves apply_to_all_generators == False
+    get_res2 = await client.get("/api/v1/system/settings", headers=superadmin_auth)
+    assert get_res2.status_code == 200
+    assert get_res2.json()["settings"]["apply_to_all_generators"] is False
 
     # 5. Receipt WITHOUT cost_total now uses 60.00 грн/л from system settings!
     rec_conf_res = await client.post("/api/v1/fuel/receipt", json={

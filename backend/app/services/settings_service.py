@@ -20,10 +20,12 @@ from backend.app.models.user import User
 DEFAULT_INTERNET_PRICES: Dict[str, float] = {
     "А-95": 92.90,
     "А-95 Mustang": 95.90,
+    "А-100 Mustang": 102.90,
     "А-92": 92.90,
     "ДП": 103.50,
     "ДП Mustang+": 106.50,
     "ГАЗ": 52.50,
+    "AdBlue": 61.90,
 }
 
 DEFAULT_WOG_LINEUP = [
@@ -43,6 +45,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "work_schedule_start": "08:00",
     "work_schedule_end": "20:00",
     "enforce_work_schedule": True,
+    "apply_to_all_generators": True,
     "default_maintenance_interval_hours": 300.0,
     "login_max_attempts": 5,
     "login_lockout_seconds": 300,
@@ -54,10 +57,12 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     # Cached WOG internet prices
     "internet_price_a95": DEFAULT_INTERNET_PRICES["А-95"],
     "internet_price_a95_mustang": DEFAULT_INTERNET_PRICES["А-95 Mustang"],
+    "internet_price_a100_mustang": DEFAULT_INTERNET_PRICES["А-100 Mustang"],
     "internet_price_a92": DEFAULT_INTERNET_PRICES["А-92"],
     "internet_price_dp": DEFAULT_INTERNET_PRICES["ДП"],
     "internet_price_dp_mustang": DEFAULT_INTERNET_PRICES["ДП Mustang+"],
     "internet_price_gas": DEFAULT_INTERNET_PRICES["ГАЗ"],
+    "internet_price_adblue": DEFAULT_INTERNET_PRICES["AdBlue"],
     "wog_lineup": DEFAULT_WOG_LINEUP,
     "internet_prices_updated_at": "",
     "internet_prices_source": "АЗК WOG (https://wog.ua/ua/fuels/)",
@@ -199,10 +204,11 @@ async def load_system_settings(db: AsyncSession) -> Dict[str, Any]:
             "internet_prices_source",
         )
         for wk in wog_keys:
-            merged[wk] = DEFAULT_SYSTEM_SETTINGS[wk]
-            if wk in existing_map:
-                existing_map[wk].value_json = json.dumps(DEFAULT_SYSTEM_SETTINGS[wk], ensure_ascii=False)
-                needs_flush = True
+            if wk in DEFAULT_SYSTEM_SETTINGS:
+                merged[wk] = DEFAULT_SYSTEM_SETTINGS[wk]
+                if wk in existing_map:
+                    existing_map[wk].value_json = json.dumps(DEFAULT_SYSTEM_SETTINGS[wk], ensure_ascii=False)
+                    needs_flush = True
 
     if needs_flush:
         await db.commit()
@@ -214,13 +220,16 @@ async def load_system_settings(db: AsyncSession) -> Dict[str, Any]:
 async def update_system_settings(
     db: AsyncSession,
     updates: Dict[str, Any],
-    apply_to_all_generators: bool = False
+    apply_to_all_generators: Optional[bool] = None
 ) -> Dict[str, Any]:
     """
     Оновлює системні налаштування в БД та в RUNTIME_SETTINGS.
     Опціонально синхронізує часовий пояс та робочий графік для всіх об'єктів та генераторів.
     """
     await load_system_settings(db)
+
+    if apply_to_all_generators is not None:
+        updates["apply_to_all_generators"] = bool(apply_to_all_generators)
 
     res = await db.execute(select(SystemSetting))
     existing_map = {r.key: r for r in res.scalars().all()}
@@ -260,7 +269,7 @@ async def update_system_settings(
                 updated_at=now
             ))
 
-    if apply_to_all_generators:
+    if apply_to_all_generators or updates.get("apply_to_all_generators"):
         tz = RUNTIME_SETTINGS.get("facility_timezone", "Europe/Kyiv")
         w_start = RUNTIME_SETTINGS.get("work_schedule_start", "08:00")
         w_end = RUNTIME_SETTINGS.get("work_schedule_end", "20:00")

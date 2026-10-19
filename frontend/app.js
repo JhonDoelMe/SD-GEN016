@@ -1744,7 +1744,7 @@ async function loadAdminSystemSettings() {
     if (document.getElementById('sysPriceDP')) document.getElementById('sysPriceDP').value = s.fuel_price_dp ?? 0;
     if (document.getElementById('sysEnforceSchedule')) document.getElementById('sysEnforceSchedule').checked = s.enforce_work_schedule !== false;
     if (document.getElementById('sysAutoFetchPrices')) document.getElementById('sysAutoFetchPrices').checked = s.auto_fetch_fuel_prices !== false;
-    if (document.getElementById('sysApplyAllGens')) document.getElementById('sysApplyAllGens').checked = false;
+    if (document.getElementById('sysApplyAllGens')) document.getElementById('sysApplyAllGens').checked = s.apply_to_all_generators !== false;
 
     renderAdminFuelPricesHints(fp);
   } catch (_) {}
@@ -1781,7 +1781,9 @@ document.getElementById('systemSettingsForm')?.addEventListener('submit', async 
   try {
     const res = await api('/system/settings', { method: 'PUT', body: JSON.stringify(body) });
     renderAdminFuelPricesHints(res.fuel_prices);
-    document.getElementById('sysApplyAllGens').checked = false;
+    if (document.getElementById('sysApplyAllGens') && res.settings) {
+      document.getElementById('sysApplyAllGens').checked = res.settings.apply_to_all_generators !== false;
+    }
     showToast(res.message || 'Системні налаштування успішно збережено!', 'success');
     loadAllData();
   } catch (_) {}
