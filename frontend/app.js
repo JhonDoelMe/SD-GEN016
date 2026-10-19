@@ -1090,6 +1090,10 @@ async function loadReport() {
 
   try {
     const r = await api(`/reports/summary${q}`);
+    const startEl = document.getElementById('repStartDate');
+    const endEl = document.getElementById('repEndDate');
+    if (startEl && !startEl.value && r.start_date) startEl.value = String(r.start_date).slice(0, 10);
+    if (endEl && !endEl.value && r.end_date) endEl.value = String(r.end_date).slice(0, 10);
     const container = document.getElementById('reportContainer');
     container.innerHTML = `
       <div class="metric-card">

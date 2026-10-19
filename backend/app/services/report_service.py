@@ -569,13 +569,13 @@ async def generate_excel_report(
     # Map daily transfers and receipts by date
     transfers_by_date = {}
     for tr in transfers:
-        d_str = to_facility_time(tr.created_at).strftime("%Y-%m-%d")
-        transfers_by_date[d_str] = transfers_by_date.get(d_str, 0.0) + tr.liters
+        d_str = fmt_date(tr.created_at)
+        transfers_by_date[d_str] = transfers_by_date.get(d_str, 0.0) + (tr.liters or 0.0)
 
     receipts_by_date = {}
     for rc in receipts:
-        d_str = to_facility_time(rc.created_at).strftime("%Y-%m-%d")
-        receipts_by_date[d_str] = receipts_by_date.get(d_str, 0.0) + rc.liters
+        d_str = fmt_date(rc.created_at)
+        receipts_by_date[d_str] = receipts_by_date.get(d_str, 0.0) + (rc.liters or 0.0)
 
     tot_dur_hours = 0.0
     tot_cons_l = 0.0
@@ -591,7 +591,7 @@ async def generate_excel_report(
         start_t = fmt_time(r.start_time)
         end_t = fmt_time(r.end_time) if r.end_time else "-"
         dur_h = round(r.duration_hours or 0.0, 2)
-        dur_str = r.duration_formatted or fmt_duration(r.duration_seconds, r.duration_hours)
+        dur_str = getattr(r, "duration_formatted", None) or fmt_duration(r.duration_seconds, r.duration_hours)
         consumption = round(r.calculated_consumption_l or 0.0, 2)
         fuel_added = round(transfers_by_date.pop(date_str, 0.0), 2)
         fuel_rec = round(receipts_by_date.pop(date_str, 0.0), 2)

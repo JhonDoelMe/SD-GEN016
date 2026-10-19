@@ -84,3 +84,17 @@ class GeneratorRun(Base):
 
     generator = relationship("Generator", back_populates="runs")
     user = relationship("User", back_populates="runs", lazy="selectin")
+
+    @property
+    def duration_formatted(self):
+        sec = self.duration_seconds
+        if sec is None and self.start_time and self.end_time:
+            sec = max(0, int((self.end_time - self.start_time).total_seconds()))
+        if sec is None and self.duration_hours is not None and self.duration_hours >= 0:
+            sec = int(round(self.duration_hours * 3600))
+        if sec is None:
+            return None
+        h = sec // 3600
+        m = (sec % 3600) // 60
+        s = sec % 60
+        return f"{h:02d}:{m:02d}:{s:02d}"

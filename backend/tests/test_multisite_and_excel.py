@@ -164,9 +164,50 @@ async def test_maintenance_schedule_calculation_and_recalculate(client, superadm
 
 
 @pytest.mark.asyncio
-async def test_dynamic_excel_report_generation(client, superadmin_auth):
-    # Request Excel report
-    res = await client.get("/api/v1/reports/export-excel", headers=superadmin_auth)
+async def test_dynamic_excel_report_generation(client, superadmin_auth, operator_auth):
+    # Ensure there is a real GeneratorRun in DB so all loops in generate_excel_report execute
+    setup_res = await client.post(
+        "/api/v1/generator/wizard",
+        headers=superadmin_auth,
+        json={
+            "name": "Генератор Звіт Тест",
+            "model": "GT-5000",
+            "manufacturer": "GenTech",
+            "serial_number": "SN-REP-01",
+            "rated_power_kw": 5.0,
+            "tank_capacity_l": 25.0,
+            "fuel_type": "А-95",
+            "nominal_consumption_l_per_h": 2.2,
+            "initial_operating_hours": 100.0,
+            "initial_fuel_tank_level_l": 20.0,
+            "work_schedule_start": "00:00",
+            "work_schedule_end": "23:59",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv"
+        }
+    )
+    assert setup_res.status_code == 200
+    gen_id = setup_res.json()["id"]
+
+    start_res = await client.post(
+        "/api/v1/generator/start",
+        headers=operator_auth,
+        json={"generator_id": gen_id, "fuel_level_l": 15.0}
+    )
+    assert start_res.status_code == 200
+
+    stop_res = await client.post(
+        "/api/v1/generator/stop",
+        headers=operator_auth,
+        json={"generator_id": gen_id, "note": "Тестовий цикл для звіту Excel"}
+    )
+    assert stop_res.status_code == 200
+
+    # Request Excel report with date range query parameters matching frontend format
+    res = await client.get(
+        f"/api/v1/reports/export-excel?generator_id={gen_id}&start_date=2020-01-01&end_date=2030-12-31",
+        headers=superadmin_auth
+    )
     assert res.status_code == 200
     assert "spreadsheetml.sheet" in res.headers["content-type"]
     assert "attachment; filename=" in res.headers["content-disposition"]
@@ -187,11 +228,13 @@ async def test_dynamic_excel_report_generation(client, superadmin_auth):
     ws1 = wb["Загальний звіт"]
     assert "SERVICE DESK" in ws1["A1"].value
 
-    # Verify Sheet 2 freeze panes and headers
+    # Verify Sheet 2 freeze panes, headers, and populated GeneratorRun row
     ws2 = wb["Звіт по днях"]
     assert ws2.freeze_panes == "A2"
     assert ws2["A1"].value == "№"
     assert ws2["B1"].value == "Дата (РРРР-ММ-ДД)"
+    ws2_text = " ".join(str(cell.value) for row in ws2.iter_rows() for cell in row if cell.value)
+    assert "Тестовий цикл для звіту Excel" in ws2_text
 
 
 @pytest.mark.asyncio

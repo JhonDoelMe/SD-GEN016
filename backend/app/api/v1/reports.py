@@ -21,6 +21,8 @@ def parse_report_dt(dt_str: Optional[str], is_end: bool = False) -> Optional[dat
         dt = datetime.datetime.fromisoformat(dt_str)
     except ValueError:
         return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
     if is_end and len(dt_str) <= 10:
         dt = dt.replace(hour=23, minute=59, second=59, microsecond=999999)
     return dt
