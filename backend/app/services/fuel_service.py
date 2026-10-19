@@ -1,14 +1,14 @@
 from typing import Optional, List
 from fastapi import HTTPException, status
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, update, delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer
+from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer, utc_now
 from backend.app.models.generator import Generator, GeneratorRun
 from backend.app.models.facility import Facility
 from backend.app.schemas.fuel import (
-    FuelStockCreate, FuelReceiptCreate, FuelTransferCreate, FuelBalancesSummary
+    FuelStockCreate, FuelStockUpdate, FuelReceiptCreate, FuelTransferCreate, FuelBalancesSummary
 )
 from backend.app.services.audit_service import log_audit
 
@@ -88,6 +88,133 @@ async def create_fuel_stock(
         select(FuelStock).options(selectinload(FuelStock.facility)).where(FuelStock.id == stock.id)
     )
     return res.scalars().first()
+
+
+async def update_fuel_stock(
+    db: AsyncSession,
+    stock_id: int,
+    data: FuelStockUpdate,
+    user_id: int,
+    ip_address: Optional[str] = None
+) -> FuelStock:
+    """Оновити склад ГСМ (назву, тип палива, об'єкт)"""
+    stock = await db.get(FuelStock, stock_id)
+    if not stock:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+
+    old_details = {
+        "name": stock.name,
+        "fuel_type": stock.fuel_type,
+        "facility_id": stock.facility_id
+    }
+
+    if data.name is not None and data.name.strip():
+        stock.name = data.name.strip()
+    if data.fuel_type is not None and data.fuel_type.strip():
+        stock.fuel_type = data.fuel_type.strip()
+    if data.facility_id is not None:
+        fac = await db.get(Facility, data.facility_id)
+        if not fac:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Цільовий об'єкт не знайдено")
+        stock.facility_id = data.facility_id
+
+    stock.updated_at = utc_now()
+    await db.flush()
+
+    await log_audit(
+        db=db,
+        action="FUEL_STOCK_UPDATED",
+        entity_type="FuelStock",
+        entity_id=str(stock.id),
+        user_id=user_id,
+        details={
+            "old": old_details,
+            "new": {
+                "name": stock.name,
+                "fuel_type": stock.fuel_type,
+                "facility_id": stock.facility_id
+            }
+        },
+        ip_address=ip_address
+    )
+    await db.commit()
+
+    res = await db.execute(
+        select(FuelStock).options(selectinload(FuelStock.facility)).where(FuelStock.id == stock.id)
+    )
+    return res.scalars().first()
+
+
+async def delete_fuel_stock(
+    db: AsyncSession,
+    stock_id: int,
+    user_id: int,
+    ip_address: Optional[str] = None
+) -> dict:
+    """Видалити склад ГСМ із безпечним перенесенням залишків та історії на інший склад об'єкта"""
+    stock = await db.get(FuelStock, stock_id)
+    if not stock:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+
+    # Перевірка: не дозволяти видалити останній склад на об'єкті
+    stocks_count = await db.scalar(
+        select(func.count(FuelStock.id)).where(FuelStock.facility_id == stock.facility_id)
+    )
+    if (stocks_count or 0) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неможливо видалити єдиний склад ГСМ на цьому об'єкті. Створіть інший склад перед видаленням."
+        )
+
+    # Знаходимо альтернативний склад цього ж об'єкта
+    alt_stock = await db.scalar(
+        select(FuelStock)
+        .where(FuelStock.facility_id == stock.facility_id, FuelStock.id != stock.id)
+        .order_by(FuelStock.id.asc())
+    )
+
+    stock_name = stock.name
+    stock_balance = stock.current_balance_l
+
+    # Якщо на складі був залишок — безпечно переносимо його на альтернативний склад
+    if alt_stock and stock_balance > 0:
+        alt_stock.current_balance_l = round(alt_stock.current_balance_l + stock_balance, 2)
+        alt_stock.updated_at = utc_now()
+
+    # Переприв'язуємо чеки та переміщення, щоб зберегти фінансову історію
+    if alt_stock:
+        await db.execute(
+            update(FuelReceipt).where(FuelReceipt.stock_id == stock_id).values(stock_id=alt_stock.id)
+        )
+        await db.execute(
+            update(FuelTransfer).where(FuelTransfer.stock_id == stock_id).values(stock_id=alt_stock.id)
+        )
+
+    await db.delete(stock)
+    await db.flush()
+
+    await log_audit(
+        db=db,
+        action="FUEL_STOCK_DELETED",
+        entity_type="FuelStock",
+        entity_id=str(stock_id),
+        user_id=user_id,
+        details={
+            "deleted_stock_name": stock_name,
+            "transferred_balance_l": stock_balance,
+            "target_stock_id": alt_stock.id if alt_stock else None,
+            "target_stock_name": alt_stock.name if alt_stock else None
+        },
+        ip_address=ip_address
+    )
+    await db.commit()
+
+    return {
+        "ok": True,
+        "detail": f"Склад '{stock_name}' успішно видалено" + (
+            f". Залишок {stock_balance:.1f} л перенесено на склад '{alt_stock.name}'" if (alt_stock and stock_balance > 0) else ""
+        )
+    }
 
 
 async def add_fuel_receipt(

@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=3.2">
+  <link rel="stylesheet" href="/frontend/styles.css?v=3.3">
 </head>
 <body>
 
@@ -265,6 +265,7 @@
                 <th>Тип палива</th>
                 <th>Залишок (л)</th>
                 <th>Останнє оновлення</th>
+                <th style="text-align: center; width: 110px;">Дії</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -959,6 +960,38 @@
     </div>
   </div>
 
+  <!-- Modal: Edit Fuel Stock -->
+  <div id="modalEditStock" class="modal-overlay">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3>Редагувати склад ГСМ</h3>
+        <button class="close-btn" onclick="closeModal('modalEditStock')">&times;</button>
+      </div>
+      <form id="editStockForm">
+        <input type="hidden" id="editStockId">
+        <div class="form-group">
+          <label>Назва складу ГСМ</label>
+          <input type="text" id="editStockName" required placeholder="напр. Резервний склад №2">
+        </div>
+        <div class="form-group">
+          <label>Тип палива</label>
+          <select id="editStockFuelType">
+            <option value="А-95">А-95 (WOG 95 Євро5-Е10)</option>
+            <option value="А-95 Mustang">А-95 Mustang (WOG 95 Mustang)</option>
+            <option value="ДП">ДП (WOG ДП Євро5)</option>
+            <option value="ДП Mustang+">ДП Mustang+ (WOG ДП Mustang+)</option>
+            <option value="ГАЗ">ГАЗ (WOG LPG)</option>
+            <option value="А-92">А-92</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
+          <button type="submit" class="btn-primary" style="flex: 1;">Зберегти зміни</button>
+          <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalEditStock')">Скасувати</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal: Transfer Fuel to Tank -->
   <div id="modalTransfer" class="modal-overlay">
     <div class="modal-content">
@@ -1552,7 +1585,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=3.2"></script>
+  <script src="/frontend/app.js?v=3.3"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

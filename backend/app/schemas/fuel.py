@@ -10,6 +10,12 @@ class FuelStockCreate(BaseModel):
     initial_balance_l: float = Field(default=0.0, ge=0, description="Початковий залишок (л)")
 
 
+class FuelStockUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=100, description="Нова назва складу ГСМ")
+    fuel_type: Optional[str] = Field(None, min_length=2, max_length=50, description="Новий тип палива")
+    facility_id: Optional[int] = Field(None, description="Перенесення на інший об'єкт")
+
+
 class FuelStockOut(BaseModel):
     id: int
     facility_id: Optional[int] = None

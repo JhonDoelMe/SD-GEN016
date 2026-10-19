@@ -701,8 +701,12 @@ async function loadFuelData() {
           <td><span class="badge badge-stopped">${escapeHtml(s.fuel_type)}</span></td>
           <td><b style="color:#38bdf8;">${s.current_balance_l.toFixed(1)} л</b></td>
           <td>${formatDateTime(s.updated_at)}</td>
+          <td style="white-space:nowrap; text-align:center;">
+            <button class="btn-action" style="padding: 0.25rem 0.5rem; min-height: auto; font-size: 0.8rem; display: inline-flex;" onclick="openEditStockModal(${Number(s.id)}, '${escapeHtml(s.name).replace(/'/g, "\\'")}', '${escapeHtml(s.fuel_type).replace(/'/g, "\\'")}')" title="Редагувати склад">✏️</button>
+            <button class="btn-action" style="padding: 0.25rem 0.5rem; min-height: auto; font-size: 0.8rem; display: inline-flex; border-color: #ef4444; color: #f87171;" onclick="deleteFuelStock(${Number(s.id)}, '${escapeHtml(s.name).replace(/'/g, "\\'")}', ${Number(s.current_balance_l)})" title="Видалити склад">🗑️</button>
+          </td>
         </tr>
-      `).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Складів ГСМ не знайдено</td></tr>';
+      `).join('') || '<tr><td colspan="7" style="text-align:center; color:var(--text-muted)">Складів ГСМ не знайдено</td></tr>';
     }
 
     // Receipts Table
@@ -807,6 +811,48 @@ document.getElementById('newStockForm')?.addEventListener('submit', async (e) =>
     loadFuelSummary();
   } catch (_) {}
 });
+
+// Edit Fuel Stock Modal and Form Submit
+window.openEditStockModal = function(id, name, fuelType) {
+  document.getElementById('editStockId').value = id;
+  document.getElementById('editStockName').value = name;
+  document.getElementById('editStockFuelType').value = fuelType || 'А-95';
+  openModal('modalEditStock');
+};
+
+const editStockForm = document.getElementById('editStockForm');
+if (editStockForm) {
+  editStockForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('editStockId').value;
+    const name = document.getElementById('editStockName').value.trim();
+    const fuelType = document.getElementById('editStockFuelType').value;
+    try {
+      await api(`/fuel/stocks/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ name, fuel_type: fuelType })
+      });
+      closeModal('modalEditStock');
+      showToast('Склад ГСМ успішно оновлено!', 'success');
+      loadFuelData();
+      loadFuelSummary();
+    } catch (_) {}
+  });
+}
+
+window.deleteFuelStock = async function(id, name, balance) {
+  let msg = `Ви впевнені, що хочете видалити склад "${name}"?`;
+  if (balance > 0) {
+    msg += `\n\nУвага: на складі є залишок ${balance.toFixed(1)} л. Його буде автоматично перенесено на основний склад об'єкта, щоб уникнути втрати даних обліку.`;
+  }
+  if (!confirm(msg)) return;
+  try {
+    const res = await api(`/fuel/stocks/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    showToast(res.detail || 'Склад ГСМ успішно видалено!', 'success');
+    loadFuelData();
+    loadFuelSummary();
+  } catch (_) {}
+};
 
 // Transfer Form Submit
 document.getElementById('transferForm').addEventListener('submit', async (e) => {
@@ -1072,7 +1118,9 @@ const AUDIT_ACTION_MAP_UA = {
   'FACILITY_SETTINGS_UPDATE': 'Оновлення налаштувань об\'єкту',
   'GENERATOR_QUICK_CONFIG': 'Швидке налаштування генератора',
   'FUEL_PRICES_REFRESHED': 'Оновлення цін АЗК WOG',
-  'SCHEDULE_RECALCULATED': 'Перерахунок графіка ТО'
+  'SCHEDULE_RECALCULATED': 'Перерахунок графіка ТО',
+  'FUEL_STOCK_UPDATED': 'Оновлення складу ГСМ',
+  'FUEL_STOCK_DELETED': 'Видалення складу ГСМ'
 };
 
 const AUDIT_ENTITY_MAP_UA = {

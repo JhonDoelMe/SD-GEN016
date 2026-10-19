@@ -10,12 +10,13 @@ from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer
 from backend.app.models.generator import Generator
 from backend.app.models.facility import Facility
 from backend.app.schemas.fuel import (
-    FuelStockCreate, FuelStockOut, FuelReceiptCreate, FuelReceiptOut,
+    FuelStockCreate, FuelStockUpdate, FuelStockOut, FuelReceiptCreate, FuelReceiptOut,
     FuelTransferCreate, FuelTransferOut, FuelBalancesSummary
 )
 from backend.app.api.deps import get_current_user, require_permission, get_client_ip
 from backend.app.services.fuel_service import (
     get_or_create_default_stock, list_fuel_stocks, create_fuel_stock,
+    update_fuel_stock, delete_fuel_stock,
     add_fuel_receipt, transfer_fuel_to_tank, get_fuel_balances_summary
 )
 
@@ -74,6 +75,40 @@ async def create_stock_api(
         current_balance_l=stock.current_balance_l,
         updated_at=stock.updated_at
     )
+
+
+@router.put("/stocks/{stock_id}", response_model=FuelStockOut)
+async def update_stock_api(
+    stock_id: int,
+    data: FuelStockUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("fuel:receipt"))
+):
+    """Редагувати склад ГСМ (назву, тип палива, об'єкт)"""
+    client_ip = get_client_ip(request)
+    stock = await update_fuel_stock(db, stock_id, data, current_user.id, client_ip)
+    return FuelStockOut(
+        id=stock.id,
+        facility_id=stock.facility_id,
+        facility_name=stock.facility.name if stock.facility else None,
+        name=stock.name,
+        fuel_type=stock.fuel_type,
+        current_balance_l=stock.current_balance_l,
+        updated_at=stock.updated_at
+    )
+
+
+@router.delete("/stocks/{stock_id}")
+async def delete_stock_api(
+    stock_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("fuel:receipt"))
+):
+    """Видалити склад ГСМ із безпечним перенесенням залишків та історії на інший склад об'єкта"""
+    client_ip = get_client_ip(request)
+    return await delete_fuel_stock(db, stock_id, current_user.id, client_ip)
 
 
 @router.get("/stock", response_model=FuelStockOut)
