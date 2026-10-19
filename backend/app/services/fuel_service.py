@@ -106,22 +106,40 @@ async def add_fuel_receipt(
 
     if receipt_data.liters <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Кількість літрів має бути більше 0")
-    if receipt_data.cost_total <= 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Сума за чеком має бути більше 0")
 
-    price_per_l = round(receipt_data.cost_total / receipt_data.liters, 2)
+    effective_fuel_type = receipt_data.fuel_type or stock.fuel_type or "А-95"
+    price_source = "manual_total"
+
+    if receipt_data.cost_total is not None and receipt_data.cost_total > 0:
+        cost_total = round(receipt_data.cost_total, 2)
+        price_per_l = round(cost_total / receipt_data.liters, 2)
+        price_source = "manual_total"
+    elif receipt_data.price_per_liter is not None and receipt_data.price_per_liter > 0:
+        price_per_l = round(receipt_data.price_per_liter, 2)
+        cost_total = round(receipt_data.liters * price_per_l, 2)
+        price_source = "manual_unit_price"
+    else:
+        from backend.app.services.settings_service import resolve_fuel_price_per_liter
+        price_per_l, price_source = await resolve_fuel_price_per_liter(db, effective_fuel_type)
+        cost_total = round(receipt_data.liters * price_per_l, 2)
+
+    comment_text = receipt_data.comment
+    if price_source in ("system_settings", "internet"):
+        src_ua = "Налаштування системи" if price_source == "system_settings" else "Авто-ціна з інтернету"
+        auto_note = f"[Авторозрахунок: {price_per_l:.2f} грн/л ({src_ua})]"
+        comment_text = f"{comment_text} {auto_note}".strip() if comment_text else auto_note
 
     receipt = FuelReceipt(
         facility_id=facility_id,
         stock_id=stock.id,
         user_id=user_id,
-        fuel_type=receipt_data.fuel_type or stock.fuel_type,
+        fuel_type=effective_fuel_type,
         liters=round(receipt_data.liters, 2),
-        cost_total=round(receipt_data.cost_total, 2),
+        cost_total=cost_total,
         price_per_liter=price_per_l,
         driver_name=receipt_data.driver_name.strip(),
         receipt_number=receipt_data.receipt_number.strip(),
-        comment=receipt_data.comment
+        comment=comment_text
     )
     db.add(receipt)
 
@@ -144,6 +162,7 @@ async def add_fuel_receipt(
             "liters": receipt.liters,
             "cost_total": receipt.cost_total,
             "price_per_l": price_per_l,
+            "price_source": price_source,
             "stock_before": stock_before,
             "stock_after": stock.current_balance_l,
             "receipt_no": receipt.receipt_number,

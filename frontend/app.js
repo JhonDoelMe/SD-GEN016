@@ -287,7 +287,10 @@ document.querySelectorAll('.nav-item').forEach((tab) => {
     if (paneId === 'tab-runs') loadRunsData();
     if (paneId === 'tab-audit') loadAuditData();
     if (paneId === 'tab-reports') loadReport();
-    if (paneId === 'tab-admin') loadUsersData();
+    if (paneId === 'tab-admin') {
+      loadUsersData();
+      loadAdminSystemSettings();
+    }
   });
 });
 
@@ -533,9 +536,44 @@ document.getElementById('stopGenForm').addEventListener('submit', async (e) => {
 });
 
 // 2. Fuel Management
+let cachedFuelPrices = null;
+
+async function fetchFuelPricesCache() {
+  try {
+    cachedFuelPrices = await api('/system/fuel-prices');
+  } catch (_) {}
+  return cachedFuelPrices;
+}
+
+window.updateReceiptPriceEstimate = function () {
+  const hintEl = document.getElementById('recAutoPriceHint');
+  if (!hintEl) return;
+  const fuelType = document.getElementById('recFuelType')?.value || 'А-95';
+  const litersVal = parseFloat(document.getElementById('recLiters')?.value || '0');
+  const rawCost = document.getElementById('recCostTotal')?.value?.trim() || '';
+  const costVal = rawCost ? parseFloat(rawCost) : 0;
+
+  const fuelEntry = cachedFuelPrices?.fuels?.[fuelType];
+  const unitPrice = fuelEntry ? Number(fuelEntry.effective_price) : (fuelType === 'А-92' ? 53.9 : (fuelType === 'ДП' ? 52.8 : 56.5));
+  const srcName = fuelEntry ? fuelEntry.source_name : 'Інтернет / Налаштування';
+
+  if (costVal > 0 && litersVal > 0) {
+    const manualPerL = (costVal / litersVal).toFixed(2);
+    hintEl.innerHTML = `✅ Сума вказана за чеком: <b style="color:#4ade80;">${costVal.toFixed(2)} грн</b> (виходить <b>${manualPerL} грн/л</b>)`;
+  } else if (litersVal > 0) {
+    const autoSum = (litersVal * unitPrice).toFixed(2);
+    hintEl.innerHTML = `💡 Авторозрахунок <b>${escapeHtml(fuelType)}</b>: <b>${unitPrice.toFixed(2)} грн/л</b> <span style="color:var(--text-muted);">(${escapeHtml(srcName)})</span> → буде нараховано: <b style="color:#4ade80;">${autoSum} грн</b>`;
+  } else {
+    hintEl.innerHTML = `💡 Діюча ціна <b>${escapeHtml(fuelType)}</b>: <b>${unitPrice.toFixed(2)} грн/л</b> <span style="color:var(--text-muted);">(${escapeHtml(srcName)})</span>. Введіть літри для авторозрахунку суми.`;
+  }
+};
+
 async function setupReceiptModal() {
   try {
-    const facilities = await api('/facilities');
+    const [facilities] = await Promise.all([
+      api('/facilities'),
+      fetchFuelPricesCache()
+    ]);
     const facSel = document.getElementById('recFacility');
     if (facSel && facilities && facilities.length > 0) {
       facSel.innerHTML = facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
@@ -544,6 +582,7 @@ async function setupReceiptModal() {
       }
     }
     await updateReceiptStocks();
+    updateReceiptPriceEstimate();
   } catch (err) {
     console.warn('setupReceiptModal error:', err);
   }
@@ -699,11 +738,14 @@ document.getElementById('receiptForm').addEventListener('submit', async (e) => {
     showToast('Будь ласка, оберіть склад ГСМ або створіть його', 'error');
     return;
   }
+  const rawCost = document.getElementById('recCostTotal').value.trim();
+  const parsedCost = rawCost ? parseFloat(rawCost) : null;
+
   const body = {
     facility_id: parseInt(document.getElementById('recFacility').value),
     stock_id: parseInt(stockVal),
     liters: parseFloat(document.getElementById('recLiters').value),
-    cost_total: parseFloat(document.getElementById('recCostTotal').value),
+    cost_total: parsedCost && parsedCost > 0 ? parsedCost : null,
     driver_name: document.getElementById('recDriver').value,
     receipt_number: document.getElementById('recNumber').value,
     fuel_type: document.getElementById('recFuelType').value,
@@ -711,9 +753,15 @@ document.getElementById('receiptForm').addEventListener('submit', async (e) => {
   };
 
   try {
-    await api('/fuel/receipt', { method: 'POST', body: JSON.stringify(body) });
+    const saved = await api('/fuel/receipt', { method: 'POST', body: JSON.stringify(body) });
     closeModal('modalReceipt');
-    showToast('Паливо успішно оприбутковано на склад ГСМ!', 'success');
+    document.getElementById('recLiters').value = '';
+    document.getElementById('recCostTotal').value = '';
+    document.getElementById('recComment').value = '';
+    showToast(
+      `Паливо оприбутковано: +${Number(saved.liters).toFixed(1)} л на суму ${Number(saved.cost_total).toFixed(2)} грн (${Number(saved.price_per_liter).toFixed(2)} грн/л)!`,
+      'success'
+    );
     loadFuelData();
     loadFuelSummary();
   } catch (_) {}
@@ -1623,6 +1671,146 @@ async function refreshServerStatus() {
   } catch (_) {}
 }
 
+// Admin System Settings, Internet Fuel Prices & DB Reset
+function renderAdminFuelPricesHints(fp) {
+  if (!fp || !fp.fuels) return;
+  cachedFuelPrices = fp;
+  const metaEl = document.getElementById('sysInternetPricesMeta');
+  if (metaEl) {
+    const upd = fp.internet_prices_updated_at ? ` (оновлено: ${fp.internet_prices_updated_at})` : '';
+    metaEl.textContent = `Джерело: ${fp.internet_prices_source || 'Інтернет'}${upd}`;
+  }
+  const map = [
+    ['А-95', 'sysNetHintA95'],
+    ['А-92', 'sysNetHintA92'],
+    ['ДП', 'sysNetHintDP']
+  ];
+  for (const [fKey, elId] of map) {
+    const el = document.getElementById(elId);
+    const info = fp.fuels[fKey];
+    if (el && info) {
+      el.textContent = `Інтернет-ціна: ${Number(info.internet_price).toFixed(2)} грн/л | Діюча: ${Number(info.effective_price).toFixed(2)} грн/л`;
+    }
+  }
+}
+
+async function loadAdminSystemSettings() {
+  try {
+    const res = await api('/system/settings');
+    const s = res.settings || {};
+    const fp = res.fuel_prices || null;
+
+    if (document.getElementById('sysOrgName')) document.getElementById('sysOrgName').value = s.organization_name || 'MAXI-UA LLC';
+    if (document.getElementById('sysTimezone')) document.getElementById('sysTimezone').value = s.facility_timezone || 'Europe/Kyiv';
+    if (document.getElementById('sysWorkStart')) document.getElementById('sysWorkStart').value = s.work_schedule_start || '08:00';
+    if (document.getElementById('sysWorkEnd')) document.getElementById('sysWorkEnd').value = s.work_schedule_end || '20:00';
+    if (document.getElementById('sysMaintInterval')) document.getElementById('sysMaintInterval').value = s.default_maintenance_interval_hours ?? 300;
+    if (document.getElementById('sysPriceA95')) document.getElementById('sysPriceA95').value = s.fuel_price_a95 ?? 0;
+    if (document.getElementById('sysPriceA92')) document.getElementById('sysPriceA92').value = s.fuel_price_a92 ?? 0;
+    if (document.getElementById('sysPriceDP')) document.getElementById('sysPriceDP').value = s.fuel_price_dp ?? 0;
+    if (document.getElementById('sysEnforceSchedule')) document.getElementById('sysEnforceSchedule').checked = s.enforce_work_schedule !== false;
+    if (document.getElementById('sysAutoFetchPrices')) document.getElementById('sysAutoFetchPrices').checked = s.auto_fetch_fuel_prices !== false;
+    if (document.getElementById('sysApplyAllGens')) document.getElementById('sysApplyAllGens').checked = false;
+
+    renderAdminFuelPricesHints(fp);
+  } catch (_) {}
+}
+
+window.refreshFuelPricesFromInternet = async function () {
+  try {
+    showToast('Запит актуальних цін на паливо з інтернету...', 'info');
+    const fp = await api('/system/fuel-prices/refresh', { method: 'POST' });
+    renderAdminFuelPricesHints(fp);
+    const a95 = fp?.fuels?.['А-95']?.internet_price ?? '-';
+    const a92 = fp?.fuels?.['А-92']?.internet_price ?? '-';
+    const dp = fp?.fuels?.['ДП']?.internet_price ?? '-';
+    showToast(`Ціни оновлено! А-95: ${a95} грн | А-92: ${a92} грн | ДП: ${dp} грн`, 'success');
+  } catch (_) {}
+};
+
+document.getElementById('systemSettingsForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    organization_name: document.getElementById('sysOrgName').value.trim() || 'MAXI-UA LLC',
+    facility_timezone: document.getElementById('sysTimezone').value,
+    work_schedule_start: document.getElementById('sysWorkStart').value,
+    work_schedule_end: document.getElementById('sysWorkEnd').value,
+    default_maintenance_interval_hours: parseFloat(document.getElementById('sysMaintInterval').value) || 300.0,
+    fuel_price_a95: parseFloat(document.getElementById('sysPriceA95').value) || 0.0,
+    fuel_price_a92: parseFloat(document.getElementById('sysPriceA92').value) || 0.0,
+    fuel_price_dp: parseFloat(document.getElementById('sysPriceDP').value) || 0.0,
+    enforce_work_schedule: document.getElementById('sysEnforceSchedule').checked,
+    auto_fetch_fuel_prices: document.getElementById('sysAutoFetchPrices').checked,
+    apply_to_all_generators: document.getElementById('sysApplyAllGens').checked
+  };
+
+  try {
+    const res = await api('/system/settings', { method: 'PUT', body: JSON.stringify(body) });
+    renderAdminFuelPricesHints(res.fuel_prices);
+    document.getElementById('sysApplyAllGens').checked = false;
+    showToast(res.message || 'Системні налаштування успішно збережено!', 'success');
+    loadAllData();
+  } catch (_) {}
+});
+
+window.toggleResetFacilitySelect = function () {
+  const mode = document.getElementById('resetModeSelect')?.value;
+  const grp = document.getElementById('resetFacilityGroup');
+  if (grp) {
+    grp.style.display = mode === 'facility_clean' ? 'block' : 'none';
+  }
+};
+
+window.openSystemResetModal = async function () {
+  try {
+    const facilities = await api('/facilities');
+    const sel = document.getElementById('resetFacilitySelect');
+    if (sel && facilities) {
+      sel.innerHTML = facilities.map((f) => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
+      if (currentFacilityId && facilities.some((f) => f.id === currentFacilityId)) {
+        sel.value = currentFacilityId;
+      }
+    }
+  } catch (_) {}
+  if (document.getElementById('resetAdminPassword')) document.getElementById('resetAdminPassword').value = '';
+  if (document.getElementById('resetConfirmCode')) document.getElementById('resetConfirmCode').value = '';
+  toggleResetFacilitySelect();
+  openModal('modalSystemReset');
+};
+
+document.getElementById('systemResetForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const mode = document.getElementById('resetModeSelect').value;
+  const facId = parseInt(document.getElementById('resetFacilitySelect')?.value || '0', 10) || currentFacilityId || 1;
+  const adminPassword = document.getElementById('resetAdminPassword').value;
+  const confirmCode = document.getElementById('resetConfirmCode').value.trim();
+
+  try {
+    const res = await api('/system/reset', {
+      method: 'POST',
+      body: JSON.stringify({
+        mode: mode,
+        facility_id: mode === 'facility_clean' ? facId : null,
+        admin_password: adminPassword,
+        confirm_code: confirmCode
+      })
+    });
+    closeModal('modalSystemReset');
+    showToast(res.message || 'Очищення успішно виконано!', 'success');
+    if (mode === 'factory_reset') {
+      localStorage.removeItem('sd_last_facility_id');
+      localStorage.removeItem('sd_last_generator_id');
+      currentFacilityId = null;
+      currentGeneratorId = null;
+    }
+    await loadFacilitiesList();
+    await loadGeneratorsList(currentFacilityId);
+    await loadAllData();
+    await loadAdminSystemSettings();
+    await loadUsersData();
+  } catch (_) {}
+});
+
 // Initialization on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   startClock();
@@ -1631,4 +1819,5 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshServerStatus();
   setInterval(refreshServerStatus, 30000);
 });
+
 

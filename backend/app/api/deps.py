@@ -87,6 +87,20 @@ async def get_current_superadmin(
     return current_user
 
 
+async def get_current_admin(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    if current_user.is_superadmin:
+        return current_user
+    role_names = {r.name.lower() for r in current_user.roles}
+    if "admin" not in role_names and "superadmin" not in role_names:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Доступ дозволено виключно адміністратору системи"
+        )
+    return current_user
+
+
 def require_permission(perm_code: str) -> Callable:
     async def permission_checker(
         current_user: User = Depends(get_current_user)

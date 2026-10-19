@@ -151,3 +151,8 @@ async def seed_initial_data(db: AsyncSession) -> None:
         await db.flush()
 
     await db.commit()
+
+    # 6. Load or initialize dynamic SystemSettings in DB & memory
+    from backend.app.services.settings_service import load_system_settings
+    await load_system_settings(db)
+

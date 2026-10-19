@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=2.5">
+  <link rel="stylesheet" href="/frontend/styles.css?v=2.6">
 </head>
 <body>
 
@@ -503,16 +503,104 @@
 
     <!-- TAB 8: ADMIN -->
     <section id="tab-admin" class="tab-pane" style="display: none;">
+      <div class="panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+          <h3>⚙️ Глобальні налаштування системи та Ціни на паливо (Тільки Адміністратор)</h3>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #38bdf8; color: #38bdf8;" onclick="refreshFuelPricesFromInternet()">🌐 Оновити ціни з інтернету</button>
+            <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #ef4444; color: #f87171;" onclick="openSystemResetModal()">🧹 Очищення даних / Скидання БД</button>
+          </div>
+        </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Тут зберігаються всі динамічні параметри системи (часовий пояс, графік роботи, інтервали ТО, ціни на паливо). Файл <code>.env</code> використовується лише для статичних параметрів БД та первинного SuperAdmin.
+        </p>
+
+        <form id="systemSettingsForm">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Назва організації (для звітів)</label>
+              <input type="text" id="sysOrgName" required placeholder="MAXI-UA LLC">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Часовий пояс системи</label>
+              <select id="sysTimezone">
+                <option value="Europe/Kyiv">Europe/Kyiv (Україна)</option>
+                <option value="Europe/Warsaw">Europe/Warsaw (Польща)</option>
+                <option value="Europe/Berlin">Europe/Berlin (Німеччина)</option>
+                <option value="Europe/London">Europe/London ( Велика Британія)</option>
+                <option value="UTC">UTC (Всесвітній час)</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Початок робочого графіка</label>
+              <input type="time" id="sysWorkStart" required value="08:00">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Кінець робочого графіка</label>
+              <input type="time" id="sysWorkEnd" required value="20:00">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Базовий інтервал ТО (мотогодин)</label>
+              <input type="number" step="10" min="10" id="sysMaintInterval" required value="300">
+            </div>
+          </div>
+
+          <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 0.65rem; padding: 1rem; margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem;">
+              <h4 style="margin: 0; color: #38bdf8;">⛽ Ціни на паливо (грн/л) — Налаштування та Авто-ціни з інтернету</h4>
+              <span id="sysInternetPricesMeta" style="font-size: 0.8rem; color: var(--text-muted);">Джерело: завантаження...</span>
+            </div>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+              Якщо поле ціни залишити <b>0</b> (або порожнім), при оприбуткуванні палива без суми чека система автоматично використає актуальну середню ціну з інтернету по Україні.
+            </p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Бензин А-95 (грн/л, 0 = з інтернету)</label>
+                <input type="number" step="0.01" min="0" id="sysPriceA95" value="0">
+                <small id="sysNetHintA95" style="color: #4ade80; display: block; margin-top: 0.25rem;">Інтернет-ціна: -- грн/л</small>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Бензин А-92 (грн/л, 0 = з інтернету)</label>
+                <input type="number" step="0.01" min="0" id="sysPriceA92" value="0">
+                <small id="sysNetHintA92" style="color: #4ade80; display: block; margin-top: 0.25rem;">Інтернет-ціна: -- грн/л</small>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Дизпаливо ДП (грн/л, 0 = з інтернету)</label>
+                <input type="number" step="0.01" min="0" id="sysPriceDP" value="0">
+                <small id="sysNetHintDP" style="color: #4ade80; display: block; margin-top: 0.25rem;">Інтернет-ціна: -- грн/л</small>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+            <label class="remember-me-label" style="cursor: pointer;">
+              <input type="checkbox" id="sysEnforceSchedule" checked>
+              <span>Обмежувати запуск генераторів дозволеним робочим графіком (якщо вимкнено — дозволено запуск 24/7)</span>
+            </label>
+            <label class="remember-me-label" style="cursor: pointer;">
+              <input type="checkbox" id="sysAutoFetchPrices" checked>
+              <span>Автоматично підтягувати актуальні ціни на пальне з інтернету</span>
+            </label>
+            <label class="remember-me-label" style="cursor: pointer; color: #38bdf8;">
+              <input type="checkbox" id="sysApplyAllGens">
+              <span>Застосувати вказаний часовий пояс, графік роботи та інтервал ТО до всіх існуючих об'єктів і генераторів</span>
+            </label>
+          </div>
+
+          <button type="submit" class="btn-primary" style="width: auto; padding: 0.7rem 1.5rem;">💾 Зберегти системні налаштування</button>
+        </form>
+      </div>
+
       <div class="panel">
         <div class="panel-header">
-          <h3>Панель адміністратора</h3>
-          <div style="display: flex; gap: 0.5rem;">
+          <h3>👥 Користувачі системи та Генератор</h3>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
             <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalWizard')">🧙 Майстер налаштування генератора</button>
             <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalUserCreate')">+ Створити користувача</button>
           </div>
         </div>
 
-        <h4 style="margin: 1rem 0 0.5rem;">Користувачі системи</h4>
         <div class="table-wrapper">
           <table id="usersTable">
             <thead>
@@ -644,12 +732,23 @@
           <select id="recStock" required></select>
         </div>
         <div class="form-group">
-          <label>Кількість літрів</label>
-          <input type="number" step="0.1" id="recLiters" required placeholder="напр. 100.0">
+          <label>Тип палива</label>
+          <select id="recFuelType" onchange="updateReceiptPriceEstimate()">
+            <option value="А-95" selected>А-95</option>
+            <option value="А-92">А-92</option>
+            <option value="ДП">ДП</option>
+          </select>
         </div>
         <div class="form-group">
-          <label>Сума за чеком (грн)</label>
-          <input type="number" step="0.01" id="recCostTotal" required placeholder="напр. 5800.00">
+          <label>Кількість літрів</label>
+          <input type="number" step="0.1" id="recLiters" required placeholder="напр. 100.0" oninput="updateReceiptPriceEstimate()">
+        </div>
+        <div class="form-group">
+          <label>Сума за чеком (грн) — <span style="color: #38bdf8; font-weight: 400;">необов'язково (авторозрахунок)</span></label>
+          <input type="number" step="0.01" id="recCostTotal" placeholder="Залиште порожнім для авторозрахунку за ціною з налаштувань/інтернету" oninput="updateReceiptPriceEstimate()">
+          <div id="recAutoPriceHint" style="margin-top: 0.4rem; padding: 0.5rem 0.65rem; border-radius: 0.45rem; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 0.82rem; color: #cbd5e1;">
+            💡 Введіть кількість літрів — якщо суму не вказано, її буде розраховано автоматично за ціною з налаштувань або інтернету.
+          </div>
         </div>
         <div class="form-group">
           <label>ПІБ водія бензовоза / постачальник</label>
@@ -658,14 +757,6 @@
         <div class="form-group">
           <label>Номер чека або накладної</label>
           <input type="text" id="recNumber" required placeholder="напр. ЧЕК-4589">
-        </div>
-        <div class="form-group">
-          <label>Тип палива</label>
-          <select id="recFuelType">
-            <option value="А-95" selected>А-95</option>
-            <option value="А-92">А-92</option>
-            <option value="ДП">ДП</option>
-          </select>
         </div>
         <div class="form-group">
           <label>Коментар</label>
@@ -1241,11 +1332,53 @@
     </div>
   </div>
 
+  <!-- Modal: System Reset & DB Clean (Admin Only) -->
+  <div id="modalSystemReset" class="modal-overlay">
+    <div class="modal-content" style="max-width: 560px; border-color: rgba(239, 68, 68, 0.45);">
+      <div class="modal-header">
+        <h3 style="color: #f87171;">🧹 Очищення даних та Скидання БД</h3>
+        <button class="close-btn" onclick="closeModal('modalSystemReset')">&times;</button>
+      </div>
+      <form id="systemResetForm">
+        <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 0.5rem; padding: 0.85rem; margin-bottom: 1rem; font-size: 0.85rem; color: #fca5a5;">
+          ⚠️ <b>Увага!</b> Цей інструмент призначений для підготовки чистої системи перед продажем, впровадженням на новому об'єкті або очищення тестових звітів. Дія виконується миттєво і не може бути скасована.
+        </div>
+
+        <div class="form-group">
+          <label>Оберіть режим очищення</label>
+          <select id="resetModeSelect" required onchange="toggleResetFacilitySelect()">
+            <option value="facility_clean">🏢 Очистити журнали та звіти обраного об'єкта (лічильники в 0)</option>
+            <option value="reports_clean">📊 Очистити ВСІ журнали та звіти по всій системі (зберегти об'єкти і користувачів)</option>
+            <option value="settings_reset">⚙️ Скинути системні налаштування до стандартних заводських</option>
+            <option value="factory_reset">🏭 Повне заводське скидання БД — Перед продажем / Нове впровадження (SuperAdmin)</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="resetFacilityGroup">
+          <label>Цільовий об'єкт для очищення звітів</label>
+          <select id="resetFacilitySelect"></select>
+        </div>
+
+        <div class="form-group">
+          <label>Ваш поточний пароль адміністратора</label>
+          <input type="password" id="resetAdminPassword" required placeholder="Введіть ваш пароль для підтвердження">
+        </div>
+
+        <div class="form-group">
+          <label>Введіть кодове слово <b>ОЧИСТИТИ</b> (або <b>RESET</b>)</label>
+          <input type="text" id="resetConfirmCode" required placeholder="ОЧИСТИТИ" autocomplete="off">
+        </div>
+
+        <button type="submit" class="btn-primary" style="background: #dc2626;">Підтвердити та виконати очищення</button>
+      </form>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=2.5"></script>
+  <script src="/frontend/app.js?v=2.6"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

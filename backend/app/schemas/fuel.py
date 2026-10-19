@@ -27,7 +27,16 @@ class FuelReceiptCreate(BaseModel):
     stock_id: Optional[int] = None
     fuel_type: str = Field(default="А-95")
     liters: float = Field(..., gt=0, description="Кількість літрів за чеком")
-    cost_total: float = Field(..., gt=0, description="Загальна сума за чеком (грн)")
+    cost_total: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description="Загальна сума за чеком (грн). Якщо не вказано або 0 — розраховується автоматично з налаштувань або інтернету"
+    )
+    price_per_liter: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description="Ціна за літр (грн, необов'язково)"
+    )
     driver_name: str = Field(..., min_length=2, description="ПІБ водія бензовоза")
     receipt_number: str = Field(..., min_length=1, description="Номер чека або накладної")
     comment: Optional[str] = None
@@ -45,6 +54,7 @@ class FuelReceiptOut(BaseModel):
     liters: float
     cost_total: float
     price_per_liter: float
+    price_source: Optional[str] = None
     driver_name: str
     receipt_number: str
     comment: Optional[str] = None

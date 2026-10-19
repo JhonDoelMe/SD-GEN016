@@ -2,11 +2,13 @@ import datetime
 from zoneinfo import ZoneInfo
 from typing import Optional, List
 from backend.app.config import settings
+from backend.app.services.settings_service import get_runtime_timezone, get_runtime_setting
 
 
-def get_facility_tz() -> ZoneInfo:
+def get_facility_tz(tz_name: Optional[str] = None) -> ZoneInfo:
+    target_tz = tz_name or get_runtime_timezone() or settings.FACILITY_TIMEZONE
     try:
-        return ZoneInfo(settings.FACILITY_TIMEZONE)
+        return ZoneInfo(target_tz)
     except Exception:
         return ZoneInfo("Europe/Kyiv")
 
@@ -35,6 +37,9 @@ def is_within_work_schedule(
     Schedules list format: [{'weekday': -1 or 0-6, 'start_time': '08:00', 'end_time': '20:00', 'is_active': True}]
     Returns (is_allowed, reason_message)
     """
+    if not bool(get_runtime_setting("enforce_work_schedule", True)):
+        return True, "Контроль робочого графіка вимкнено в налаштуваннях (режим 24/7)"
+
     if not schedules:
         # If no schedule is configured, default to allowed or require setup
         return True, "Розклад не обмежений"

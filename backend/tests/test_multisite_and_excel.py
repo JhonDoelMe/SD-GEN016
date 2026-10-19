@@ -370,3 +370,95 @@ async def test_generator_quick_update_api(client, superadmin_auth):
     assert updated["tank_capacity_l"] == 28.0
     assert updated["nominal_consumption_l_per_h"] == 2.25
 
+
+@pytest.mark.asyncio
+async def test_admin_system_settings_and_internet_fuel_prices(client, superadmin_auth, operator_auth):
+    """Тест системних налаштувань (тільки адмін) та автоматичного розрахунку ціни палива з інтернету/налаштувань"""
+    # 1. Operator cannot access /api/v1/system/settings
+    op_res = await client.get("/api/v1/system/settings", headers=operator_auth)
+    assert op_res.status_code == 403
+
+    # 2. SuperAdmin gets system settings
+    get_res = await client.get("/api/v1/system/settings", headers=superadmin_auth)
+    assert get_res.status_code == 200
+    data = get_res.json()
+    assert "settings" in data
+    assert "fuel_prices" in data
+    assert "А-95" in data["fuel_prices"]["fuels"]
+
+    # 3. Receipt WITHOUT cost_total when fuel_price_a95 == 0 -> uses internet price automatically!
+    rec_internet_res = await client.post("/api/v1/fuel/receipt", json={
+        "liters": 20.0,
+        "driver_name": "Водій Інтернет Ціна",
+        "receipt_number": "AUTO-NET-01",
+        "fuel_type": "А-95"
+    }, headers=operator_auth)
+    assert rec_internet_res.status_code == 201
+    rec_net = rec_internet_res.json()
+    assert rec_net["liters"] == 20.0
+    assert rec_net["price_per_liter"] >= 30.0
+    assert rec_net["cost_total"] == round(20.0 * rec_net["price_per_liter"], 2)
+    assert "Авторозрахунок" in (rec_net["comment"] or "")
+
+    # 4. Admin sets custom fuel price in system settings (e.g. А-95 = 60.00 грн/л)
+    put_res = await client.put("/api/v1/system/settings", json={
+        "organization_name": "MAXI-UA TEST",
+        "facility_timezone": "Europe/Kyiv",
+        "work_schedule_start": "07:00",
+        "work_schedule_end": "22:00",
+        "fuel_price_a95": 60.0,
+        "apply_to_all_generators": True
+    }, headers=superadmin_auth)
+    assert put_res.status_code == 200
+    assert put_res.json()["settings"]["fuel_price_a95"] == 60.0
+
+    # 5. Receipt WITHOUT cost_total now uses 60.00 грн/л from system settings!
+    rec_conf_res = await client.post("/api/v1/fuel/receipt", json={
+        "liters": 10.0,
+        "driver_name": "Водій Налаштування Ціна",
+        "receipt_number": "AUTO-SET-02",
+        "fuel_type": "А-95"
+    }, headers=operator_auth)
+    assert rec_conf_res.status_code == 201
+    rec_conf = rec_conf_res.json()
+    assert rec_conf["price_per_liter"] == 60.0
+    assert rec_conf["cost_total"] == 600.0
+
+
+@pytest.mark.asyncio
+async def test_system_reset_and_clean_db(client, superadmin_auth, operator_auth):
+    """Тест очищення звітів об'єкта та повного заводського скидання БД"""
+    # 1. Operator is forbidden from resetting DB
+    op_res = await client.post("/api/v1/system/reset", json={
+        "mode": "reports_clean",
+        "admin_password": "OperatorPass123!",
+        "confirm_code": "ОЧИСТИТИ"
+    }, headers=operator_auth)
+    assert op_res.status_code == 403
+
+    # 2. Wrong admin password is rejected
+    bad_pass_res = await client.post("/api/v1/system/reset", json={
+        "mode": "reports_clean",
+        "admin_password": "WrongPassword123!",
+        "confirm_code": "ОЧИСТИТИ"
+    }, headers=superadmin_auth)
+    assert bad_pass_res.status_code == 403
+
+    # 3. Clean reports & counters across system
+    from backend.app.config import settings
+    clean_res = await client.post("/api/v1/system/reset", json={
+        "mode": "reports_clean",
+        "admin_password": settings.INITIAL_ADMIN_PASSWORD,
+        "confirm_code": "ОЧИСТИТИ"
+    }, headers=superadmin_auth)
+    assert clean_res.status_code == 200
+    assert clean_res.json()["status"] == "ok"
+
+    # Verify fuel summary is now 0.0
+    sum_res = await client.get("/api/v1/fuel/summary", headers=superadmin_auth)
+    assert sum_res.status_code == 200
+    assert sum_res.json()["warehouse_balance_l"] == 0.0
+    assert sum_res.json()["total_received_l"] == 0.0
+
+
+
