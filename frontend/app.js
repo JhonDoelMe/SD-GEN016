@@ -82,6 +82,7 @@ window.openModal = function (id) {
   if (id === 'modalReceipt') setupReceiptModal();
   if (id === 'modalTransfer') setupTransferModal();
   if (id === 'modalNewStock') setupNewStockModal();
+  if (id === 'modalAdjustment') setupAdjustmentModal();
 };
 
 window.closeModal = function (id) {
@@ -1101,7 +1102,9 @@ const ADJUSTMENT_FIELD_MAP_UA = {
   'current_balance_l': 'Залишок на складі (л)',
   'interval_hours': 'Інтервал ТО (год)',
   'next_due_hours': 'Наступне ТО (мотогодини)',
-  'last_performed_hours': 'Останнє ТО (мотогодини)'
+  'last_performed_hours': 'Останнє ТО (мотогодини)',
+  'name': 'Назва',
+  'address': 'Адреса'
 };
 
 const ROLE_MAP_UA = {
@@ -1130,15 +1133,20 @@ async function loadAuditData() {
       `;
     }).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Аудит порожній</td></tr>';
 
-    const adjustments = await api('/adjustments?limit=30');
+    const qFac = currentFacilityId ? `&facility_id=${encodeURIComponent(currentFacilityId)}` : '';
+    const adjustments = await api(`/adjustments?limit=50${qFac}`);
     const adjTbody = document.querySelector('#adjustmentsTable tbody');
     adjTbody.innerHTML = adjustments.map((a) => {
       const entityUa = AUDIT_ENTITY_MAP_UA[a.entity_type] || a.entity_type;
       const fieldUa = ADJUSTMENT_FIELD_MAP_UA[a.field_name] || a.field_name;
+      const facName = a.facility_name || (a.facility_id ? `Об'єкт #${a.facility_id}` : 'Базовий об\'єкт');
+      const targetName = a.target_name || `${entityUa} #${a.entity_id}`;
       return `
         <tr>
           <td>${formatDateTime(a.created_at)}</td>
           <td>${escapeHtml(a.user_name || '-')}</td>
+          <td><span class="badge" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8;">${escapeHtml(facName)}</span></td>
+          <td><b>${escapeHtml(targetName)}</b></td>
           <td>${escapeHtml(entityUa)}</td>
           <td>${escapeHtml(fieldUa)}</td>
           <td><s style="color:#ef4444;">${escapeHtml(a.old_value)}</s></td>
@@ -1146,56 +1154,204 @@ async function loadAuditData() {
           <td>${escapeHtml(a.reason)}</td>
         </tr>
       `;
-    }).join('') || '<tr><td colspan="7" style="text-align:center; color:var(--text-muted)">Коригувань не виконувалось</td></tr>';
+    }).join('') || '<tr><td colspan="9" style="text-align:center; color:var(--text-muted)">Коригувань не виконувалось</td></tr>';
   } catch (_) {}
 }
 
-window.updateAdjFields = function() {
+async function setupAdjustmentModal() {
+  try {
+    const facilities = await api('/facilities');
+    const facSel = document.getElementById('adjFacility');
+    if (facSel && facilities && facilities.length > 0) {
+      facSel.innerHTML = facilities.map((f) => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
+      if (currentFacilityId && facilities.some((f) => f.id === currentFacilityId)) {
+        facSel.value = currentFacilityId;
+      }
+    }
+    await onAdjFacilityOrEntityChange();
+  } catch (err) {
+    console.warn('setupAdjustmentModal error:', err);
+  }
+}
+
+window.onAdjFacilityOrEntityChange = async function() {
+  const facSel = document.getElementById('adjFacility');
+  const facilityId = facSel ? parseInt(facSel.value, 10) : currentFacilityId;
   const entity = document.getElementById('adjEntity').value;
+  const targetSel = document.getElementById('adjTargetItem');
+  const targetLabel = document.getElementById('adjTargetLabel');
   const fieldSelect = document.getElementById('adjField');
+
+  targetSel.innerHTML = '';
   fieldSelect.innerHTML = '';
-  if (entity === 'Generator') {
+
+  if (entity === 'FuelStock') {
+    if (targetLabel) targetLabel.innerText = 'Цільовий склад ГСМ';
+    fieldSelect.innerHTML = `
+      <option value="current_balance_l">Залишок на складі (л)</option>
+      <option value="name">Назва складу</option>
+    `;
+    try {
+      const q = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : '';
+      const stocks = await api(`/fuel/stocks${q}`);
+      if (stocks && stocks.length > 0) {
+        targetSel.innerHTML = stocks.map((s) => `
+          <option value="${s.id}" data-type="FuelStock" data-balance="${s.current_balance_l}" data-name="${escapeHtml(s.name)}">
+            ${escapeHtml(s.name)} (${escapeHtml(s.fuel_type)}) — залишок: ${s.current_balance_l} л
+          </option>
+        `).join('');
+      } else {
+        targetSel.innerHTML = `<option value="" disabled selected>Немає складів на цьому об'єкті</option>`;
+      }
+    } catch (_) {
+      targetSel.innerHTML = `<option value="" disabled selected>Помилка завантаження складів</option>`;
+    }
+  } else if (entity === 'Generator') {
+    if (targetLabel) targetLabel.innerText = 'Цільовий генератор';
     fieldSelect.innerHTML = `
       <option value="current_operating_hours">Мотогодини</option>
       <option value="fuel_tank_level_l">Рівень у баку (л)</option>
       <option value="status">Статус генератора</option>
       <option value="nominal_consumption_l_per_h">Нормативний розхід (л/год)</option>
     `;
-  } else if (entity === 'FuelStock') {
-    fieldSelect.innerHTML = `<option value="current_balance_l">Залишок на складі (л)</option>`;
+    try {
+      const q = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : '';
+      const gens = await api(`/generators${q}`);
+      if (gens && gens.length > 0) {
+        targetSel.innerHTML = gens.map((g) => `
+          <option value="${g.id}" data-type="Generator" data-hours="${g.current_operating_hours}" data-fuel="${g.fuel_tank_level_l}" data-status="${g.status}" data-consumption="${g.nominal_consumption_l_per_h}">
+            ${escapeHtml(g.name)} (${escapeHtml(g.model || 'Генератор')})
+          </option>
+        `).join('');
+      } else {
+        targetSel.innerHTML = `<option value="" disabled selected>Немає генераторів на цьому об'єкті</option>`;
+      }
+    } catch (_) {
+      targetSel.innerHTML = `<option value="" disabled selected>Помилка завантаження генераторів</option>`;
+    }
   } else if (entity === 'MaintenanceSchedule') {
+    if (targetLabel) targetLabel.innerText = 'Цільовий регламент ТО';
     fieldSelect.innerHTML = `
       <option value="interval_hours">Інтервал ТО (год)</option>
       <option value="next_due_hours">Наступне ТО (мотогодини)</option>
       <option value="last_performed_hours">Останнє ТО (мотогодини)</option>
     `;
+    try {
+      const q = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : '';
+      const gens = await api(`/generators${q}`);
+      const genIds = (gens || []).map(g => g.id);
+      const scheds = await api('/maintenance/schedules');
+      const filtered = (scheds || []).filter(s => genIds.length === 0 || genIds.includes(s.generator_id));
+      if (filtered && filtered.length > 0) {
+        targetSel.innerHTML = filtered.map((s) => `
+          <option value="${s.id}" data-type="MaintenanceSchedule" data-interval="${s.interval_hours}" data-due="${s.next_due_hours}" data-performed="${s.last_performed_hours}">
+            ${escapeHtml(s.title || 'Регламентне ТО')} (Генератор #${s.generator_id})
+          </option>
+        `).join('');
+      } else {
+        targetSel.innerHTML = `<option value="" disabled selected>Немає графіків ТО для об'єкта</option>`;
+      }
+    } catch (_) {
+      targetSel.innerHTML = `<option value="" disabled selected>Помилка завантаження графіків ТО</option>`;
+    }
+  } else if (entity === 'Facility') {
+    if (targetLabel) targetLabel.innerText = 'Цільовий об\'єкт';
+    fieldSelect.innerHTML = `
+      <option value="name">Назва об'єкта</option>
+      <option value="address">Адреса об'єкта</option>
+    `;
+    const selOpt = facSel ? facSel.options[facSel.selectedIndex] : null;
+    const facName = selOpt ? selOpt.text : `Об'єкт #${facilityId}`;
+    targetSel.innerHTML = `<option value="${facilityId}" data-type="Facility" data-name="${escapeHtml(facName)}">${escapeHtml(facName)}</option>`;
   }
+
+  onAdjTargetItemChange();
+};
+
+window.onAdjTargetItemChange = function() {
+  onAdjFieldChange();
+};
+
+window.onAdjFieldChange = function() {
+  const targetSel = document.getElementById('adjTargetItem');
+  const field = document.getElementById('adjField').value;
+  const hintEl = document.getElementById('adjCurrentValHint');
+  const inputEl = document.getElementById('adjNewValue');
+  if (!targetSel || !hintEl) return;
+
+  const opt = targetSel.options[targetSel.selectedIndex];
+  if (!opt || opt.disabled) {
+    hintEl.innerText = '';
+    return;
+  }
+
+  let val = '';
+  if (field === 'current_balance_l') val = opt.getAttribute('data-balance') || '';
+  else if (field === 'current_operating_hours') val = opt.getAttribute('data-hours') || '';
+  else if (field === 'fuel_tank_level_l') val = opt.getAttribute('data-fuel') || '';
+  else if (field === 'status') val = opt.getAttribute('data-status') || '';
+  else if (field === 'nominal_consumption_l_per_h') val = opt.getAttribute('data-consumption') || '';
+  else if (field === 'interval_hours') val = opt.getAttribute('data-interval') || '';
+  else if (field === 'next_due_hours') val = opt.getAttribute('data-due') || '';
+  else if (field === 'last_performed_hours') val = opt.getAttribute('data-performed') || '';
+  else if (field === 'name') val = opt.getAttribute('data-name') || '';
+
+  if (val !== '') {
+    hintEl.innerText = `Поточне значення: ${val}`;
+    if (inputEl && !inputEl.value) {
+      inputEl.placeholder = `Поточне: ${val}`;
+    }
+  } else {
+    hintEl.innerText = '';
+    if (inputEl) inputEl.placeholder = 'Нове значення';
+  }
+};
+
+window.updateAdjFields = function() {
+  window.onAdjFacilityOrEntityChange();
 };
 
 document.getElementById('adjustmentForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const facSel = document.getElementById('adjFacility');
+  const facilityId = facSel ? parseInt(facSel.value, 10) : currentFacilityId;
   const entity = document.getElementById('adjEntity').value;
+  const targetSel = document.getElementById('adjTargetItem');
+  const targetId = targetSel ? parseInt(targetSel.value, 10) : null;
   const field = document.getElementById('adjField').value;
-  const newVal = document.getElementById('adjNewValue').value;
-  const reason = document.getElementById('adjReason').value;
+  const newVal = document.getElementById('adjNewValue').value.trim();
+  const reason = document.getElementById('adjReason').value.trim();
 
-  const entityId = currentGenerator ? currentGenerator.id : 1;
+  if (!targetId || isNaN(targetId)) {
+    showToast('Будь ласка, оберіть цільовий склад або елемент для коригування', 'warning');
+    return;
+  }
+  if (!newVal) {
+    showToast('Введіть нове значення', 'warning');
+    return;
+  }
+  if (reason.length < 5) {
+    showToast('Обов\'язково вкажіть детальну причину коригування (не менше 5 символів)', 'warning');
+    return;
+  }
 
   try {
     await api('/adjustments', {
       method: 'POST',
       body: JSON.stringify({
         entity_type: entity,
-        entity_id: entityId,
+        entity_id: targetId,
+        facility_id: facilityId || null,
         field_name: field,
         new_value: newVal,
         reason: reason
       })
     });
     closeModal('modalAdjustment');
-    showToast('Системне коригування успішно виконано та внесено в аудит!', 'success');
+    showToast('Системне коригування успішно виконано та внесено в журнал аудиту!', 'success');
     loadAuditData();
     loadAllData();
+    if (typeof loadFuelData === 'function') loadFuelData();
   } catch (_) {}
 });
 

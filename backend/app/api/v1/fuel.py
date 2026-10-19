@@ -54,6 +54,7 @@ async def get_stocks_list(
     ]
 
 
+@router.post("/stocks", response_model=FuelStockOut, status_code=status.HTTP_201_CREATED)
 @router.post("/stock/new", response_model=FuelStockOut, status_code=status.HTTP_201_CREATED)
 async def create_stock_api(
     data: FuelStockCreate,

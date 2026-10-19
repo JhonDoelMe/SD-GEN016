@@ -1,11 +1,13 @@
 import math
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
 from backend.app.models.user import User
+from backend.app.models.facility import Facility
 from backend.app.models.generator import Generator
 from backend.app.models.fuel import FuelStock
 from backend.app.models.maintenance import MaintenanceSchedule
@@ -38,16 +40,28 @@ def _parse_non_negative_float(raw: str, field_name: str) -> float:
 @router.get("", response_model=List[SystemAdjustmentOut])
 async def list_adjustments(
     limit: int = Query(50, ge=1, le=500),
+    facility_id: Optional[int] = Query(None, description="Фільтр за об'єктом"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("audit:view"))
 ):
-    res = await db.execute(select(SystemAdjustment).order_by(SystemAdjustment.id.desc()).limit(limit))
+    query = (
+        select(SystemAdjustment)
+        .options(selectinload(SystemAdjustment.user), selectinload(SystemAdjustment.facility))
+    )
+    if facility_id:
+        query = query.where(SystemAdjustment.facility_id == facility_id)
+
+    query = query.order_by(SystemAdjustment.id.desc()).limit(limit)
+    res = await db.execute(query)
     items = res.scalars().all()
     return [
         SystemAdjustmentOut(
             id=i.id,
             user_id=i.user_id,
             user_name=i.user.full_name if i.user else None,
+            facility_id=i.facility_id,
+            facility_name=i.facility.name if i.facility else None,
+            target_name=i.target_name,
             entity_type=i.entity_type,
             entity_id=i.entity_id,
             field_name=i.field_name,
@@ -76,11 +90,15 @@ async def perform_adjustment(
 
     old_val_str = ""
     target_entity_type = data.entity_type.strip()
+    target_facility_id = data.facility_id
+    target_name = None
 
     if target_entity_type == "Generator":
         gen = await db.get(Generator, data.entity_id)
         if not gen:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+        target_facility_id = gen.facility_id or target_facility_id
+        target_name = f"{gen.name} ({gen.model or 'Генератор'})"
 
         if data.field_name == "current_operating_hours":
             old_val_str = str(gen.current_operating_hours)
@@ -107,10 +125,15 @@ async def perform_adjustment(
         stock = await db.get(FuelStock, data.entity_id)
         if not stock:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+        target_facility_id = stock.facility_id or target_facility_id
+        target_name = f"{stock.name} ({stock.fuel_type})"
 
         if data.field_name == "current_balance_l":
             old_val_str = str(stock.current_balance_l)
             stock.current_balance_l = _parse_non_negative_float(data.new_value, data.field_name)
+        elif data.field_name == "name":
+            old_val_str = str(stock.name)
+            stock.name = str(data.new_value).strip()
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Непідтримуване поле: {data.field_name}")
 
@@ -118,6 +141,9 @@ async def perform_adjustment(
         sched = await db.get(MaintenanceSchedule, data.entity_id)
         if not sched:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Графік ТО не знайдено")
+        gen = await db.get(Generator, sched.generator_id) if sched.generator_id else None
+        target_facility_id = (gen.facility_id if gen else None) or target_facility_id
+        target_name = f"{sched.title or 'Графік ТО'} ({gen.name if gen else 'Генератор'})"
 
         if data.field_name == "interval_hours":
             old_val_str = str(sched.interval_hours)
@@ -131,15 +157,40 @@ async def perform_adjustment(
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Непідтримуване поле: {data.field_name}")
 
+    elif target_entity_type == "Facility":
+        fac = await db.get(Facility, data.entity_id)
+        if not fac:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Об'єкт не знайдено")
+        target_facility_id = fac.id
+        target_name = fac.name
+
+        if data.field_name == "name":
+            old_val_str = str(fac.name)
+            fac.name = str(data.new_value).strip()
+        elif data.field_name == "address":
+            old_val_str = str(fac.address or "")
+            fac.address = str(data.new_value).strip()
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Непідтримуване поле: {data.field_name}")
+
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Непідтримувана сутність для системного коригування: {target_entity_type}"
         )
 
+    # Resolve facility name for response
+    facility_name = None
+    if target_facility_id:
+        fac_obj = await db.get(Facility, target_facility_id)
+        if fac_obj:
+            facility_name = fac_obj.name
+
     adj = await record_system_adjustment(
         db=db,
         user_id=current_user.id,
+        facility_id=target_facility_id,
+        target_name=target_name,
         entity_type=target_entity_type,
         entity_id=data.entity_id,
         field_name=data.field_name,
@@ -154,6 +205,9 @@ async def perform_adjustment(
         id=adj.id,
         user_id=adj.user_id,
         user_name=current_user.full_name,
+        facility_id=target_facility_id,
+        facility_name=facility_name,
+        target_name=target_name,
         entity_type=adj.entity_type,
         entity_id=adj.entity_id,
         field_name=adj.field_name,

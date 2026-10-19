@@ -568,6 +568,8 @@
               <tr>
                 <th>Дата</th>
                 <th>Адміністратор</th>
+                <th>Об'єкт</th>
+                <th>Цільовий елемент</th>
                 <th>Сутність</th>
                 <th>Поле</th>
                 <th>Старе значення</th>
@@ -1060,31 +1062,45 @@
       </div>
       <form id="adjustmentForm">
         <p style="color: #fbbf24; font-size: 0.85rem; margin-bottom: 1rem;">
-          ⚠️ Зміна експлуатаційних лічильників записується в незмінний аудит.
+          ⚠️ Зміна експлуатаційних лічильників та залишків складів фіксується в незмінному журналі аудиту.
         </p>
         <div class="form-group">
-          <label>Сутність</label>
-          <select id="adjEntity" onchange="updateAdjFields()">
-            <option value="Generator">Генератор</option>
+          <label>Об'єкт</label>
+          <select id="adjFacility" onchange="onAdjFacilityOrEntityChange()">
+            <!-- Filled dynamically -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Категорія сутності</label>
+          <select id="adjEntity" onchange="onAdjFacilityOrEntityChange()">
             <option value="FuelStock">Склад ГСМ</option>
+            <option value="Generator">Генератор</option>
             <option value="MaintenanceSchedule">Графік ТО</option>
+            <option value="Facility">Параметри об'єкта</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label id="adjTargetLabel">Цільовий елемент</label>
+          <select id="adjTargetItem" onchange="onAdjTargetItemChange()">
+            <!-- Filled dynamically -->
           </select>
         </div>
         <div class="form-group">
           <label>Поле для коригування</label>
-          <select id="adjField">
-            <option value="current_operating_hours">Мотогодини</option>
-            <option value="fuel_tank_level_l">Рівень у баку (л)</option>
-            <option value="status">Статус (Зупинено / Працює / Потребує ТО / Несправний / Заблоковано)</option>
+          <select id="adjField" onchange="onAdjFieldChange()">
+            <!-- Filled dynamically -->
           </select>
         </div>
         <div class="form-group">
-          <label>Нове значення</label>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+            <label style="margin-bottom: 0;">Нове значення</label>
+            <span id="adjCurrentValHint" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+          </div>
           <input type="text" id="adjNewValue" required placeholder="Нове значення">
         </div>
         <div class="form-group">
           <label>Причина коригування (ОБОВ'ЯЗКОВО)</label>
-          <textarea id="adjReason" required rows="2" placeholder="напр. Акт звірки механічного лічильника №42"></textarea>
+          <textarea id="adjReason" required rows="2" placeholder="напр. Акт інвентаризації / звірки №42"></textarea>
         </div>
         <button type="submit" class="btn-primary" style="background: var(--accent-purple);">Застосувати та зареєструвати в аудиті</button>
       </form>

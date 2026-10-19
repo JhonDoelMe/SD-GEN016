@@ -36,7 +36,7 @@ def ensure_schema_updates(sync_conn):
             ))
 
     # 3. Add facility_id to related tables (strictly whitelisted identifiers)
-    allowed_facility_tables = ("generators", "fuel_stocks", "fuel_receipts", "fuel_transfers", "users")
+    allowed_facility_tables = ("generators", "fuel_stocks", "fuel_receipts", "fuel_transfers", "users", "system_adjustments")
     for table_name in allowed_facility_tables:
         if table_name in tables:
             cols = [c["name"] for c in inspector.get_columns(table_name)]
@@ -44,6 +44,11 @@ def ensure_schema_updates(sync_conn):
                 sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"))
             # Set default facility_id to 1 if null
             sync_conn.execute(text(f"UPDATE {table_name} SET facility_id = 1 WHERE facility_id IS NULL"))
+
+    if "system_adjustments" in tables:
+        cols = [c["name"] for c in inspector.get_columns("system_adjustments")]
+        if "target_name" not in cols:
+            sync_conn.execute(text("ALTER TABLE system_adjustments ADD COLUMN target_name VARCHAR(200)"))
 
     # 4. Fix maintenance schedule anomaly: interval=300, next_due=535 -> next_due=300, last_performed=0
     if "maintenance_schedules" in tables:

@@ -42,10 +42,14 @@ async def record_system_adjustment(
     old_value: Any,
     new_value: Any,
     reason: str,
+    facility_id: Optional[int] = None,
+    target_name: Optional[str] = None,
     ip_address: Optional[str] = None
 ) -> SystemAdjustment:
     adj = SystemAdjustment(
         user_id=user_id,
+        facility_id=facility_id,
+        target_name=target_name,
         entity_type=entity_type,
         entity_id=entity_id,
         field_name=field_name,
@@ -65,6 +69,8 @@ async def record_system_adjustment(
         entity_id=str(entity_id),
         user_id=user_id,
         details={
+            "facility_id": facility_id,
+            "target_name": target_name,
             "field": field_name,
             "old_value": str(old_value),
             "new_value": str(new_value),

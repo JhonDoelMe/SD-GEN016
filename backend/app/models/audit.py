@@ -32,6 +32,9 @@ class SystemAdjustment(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
+    facility_id = Column(Integer, ForeignKey("facilities.id", ondelete="SET NULL"), nullable=True, index=True)
+    target_name = Column(String(200), nullable=True)
+
     entity_type = Column(String(100), nullable=False)
     entity_id = Column(Integer, nullable=False)
     field_name = Column(String(100), nullable=False)
@@ -43,3 +46,4 @@ class SystemAdjustment(Base):
     created_at = Column(DateTime, default=utc_now, nullable=False, index=True)
 
     user = relationship("User", back_populates="adjustments", lazy="selectin")
+    facility = relationship("Facility", lazy="selectin")

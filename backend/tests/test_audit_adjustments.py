@@ -78,7 +78,58 @@ async def test_system_adjustments_and_audit(client, superadmin_auth, operator_au
     gen_check = await client.get("/api/v1/generator", headers=superadmin_auth)
     assert gen_check.json()["current_operating_hours"] == 55.0
 
-    # 4. Check audit log contains both adjustments and previous operations
+    # 4. Create a FuelStock and perform warehouse adjustment
+    stock_res = await client.post(
+        "/api/v1/fuel/stocks",
+        headers=superadmin_auth,
+        json={
+            "facility_id": 1,
+            "name": "Основний резервуар ДП",
+            "fuel_type": "ДП",
+            "capacity_l": 1000.0,
+            "initial_balance_l": 200.0,
+            "min_balance_warning_l": 50.0,
+            "min_balance_critical_l": 20.0
+        }
+    )
+    assert stock_res.status_code == 201
+    stock_id = stock_res.json()["id"]
+
+    # Adjust fuel stock balance
+    stock_adj = await client.post(
+        "/api/v1/adjustments",
+        headers=superadmin_auth,
+        json={
+            "facility_id": 1,
+            "entity_type": "FuelStock",
+            "entity_id": stock_id,
+            "field_name": "current_balance_l",
+            "new_value": "350.5",
+            "reason": "Акт інвентаризації резервуара №3 від 20.10.2026"
+        }
+    )
+    assert stock_adj.status_code == 201
+    stock_adj_data = stock_adj.json()
+    assert stock_adj_data["old_value"] == "200.0"
+    assert stock_adj_data["new_value"] == "350.5"
+    assert stock_adj_data["facility_id"] == 1
+    assert "Основний резервуар ДП" in stock_adj_data["target_name"]
+
+    # Verify fuel stock balance was actually updated in database
+    stock_check = await client.get("/api/v1/fuel/stocks", headers=superadmin_auth)
+    assert stock_check.status_code == 200
+    stocks = stock_check.json()
+    updated_stock = next(s for s in stocks if s["id"] == stock_id)
+    assert updated_stock["current_balance_l"] == 350.5
+
+    # 5. List adjustments with facility filter
+    adj_list = await client.get("/api/v1/adjustments?facility_id=1", headers=superadmin_auth)
+    assert adj_list.status_code == 200
+    items = adj_list.json()
+    assert len(items) >= 2
+    assert any(i["entity_type"] == "FuelStock" and i["entity_id"] == stock_id for i in items)
+
+    # 6. Check audit log contains both adjustments and previous operations
     audit_res = await client.get("/api/v1/audit", headers=superadmin_auth)
     assert audit_res.status_code == 200
     logs = audit_res.json()

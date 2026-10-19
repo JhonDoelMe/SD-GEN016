@@ -23,12 +23,16 @@ class SystemAdjustmentCreate(BaseModel):
     field_name: str = Field(..., min_length=2, description="Поле для коригування")
     new_value: str = Field(..., description="Нове значення")
     reason: str = Field(..., min_length=5, description="Обов'язкова причина системного коригування")
+    facility_id: Optional[int] = Field(None, description="ID об'єкта")
 
 
 class SystemAdjustmentOut(BaseModel):
     id: int
     user_id: int
     user_name: Optional[str] = None
+    facility_id: Optional[int] = None
+    facility_name: Optional[str] = None
+    target_name: Optional[str] = None
     entity_type: str
     entity_id: int
     field_name: str
