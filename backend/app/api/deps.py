@@ -1,3 +1,4 @@
+import re
 from typing import Callable, Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -9,12 +10,15 @@ from backend.app.core.security import decode_access_token
 from backend.app.models.user import User
 
 security_scheme = HTTPBearer(auto_error=False)
+_SAFE_IP_RE = re.compile(r"^[0-9a-fA-F:.\-]+$")
 
 
 def get_client_ip(request: Request) -> Optional[str]:
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        candidate = forwarded.split(",")[0].strip()
+        if candidate and len(candidate) <= 45 and _SAFE_IP_RE.match(candidate):
+            return candidate
     return request.client.host if request.client else None
 
 
@@ -46,13 +50,15 @@ async def get_current_user(
         )
 
     user_id = payload.get("sub")
-    if not user_id:
+    try:
+        user_id_int = int(user_id)
+    except (ValueError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Некоректний токен авторизації"
         )
 
-    res = await db.execute(select(User).where(User.id == int(user_id)))
+    res = await db.execute(select(User).where(User.id == user_id_int))
     user = res.scalars().first()
 
     if not user:

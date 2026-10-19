@@ -56,6 +56,13 @@ def fmt_duration(seconds: Optional[int], hours: Optional[float]) -> str:
     return "00:00:00"
 
 
+def sanitize_spreadsheet_cell(val):
+    """Sanitize string values against CSV/Excel Formula Injection (=, +, -, @, tab, CR)."""
+    if isinstance(val, str) and val and val[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return f"'{val}"
+    return val
+
+
 def auto_adjust_column_widths(ws, min_width=12, padding=3):
     for col in ws.columns:
         max_len = 0
@@ -242,7 +249,7 @@ def export_report_to_csv(report: OperationalReportOut) -> str:
 
     writer.writerow(["Параметр", "Значення", "Одиниця виміру"])
     writer.writerow(["Період звіт", f"{report.start_date} - {report.end_date}", ""])
-    writer.writerow(["Генератор", report.generator_name, ""])
+    writer.writerow(["Генератор", sanitize_spreadsheet_cell(report.generator_name), ""])
     writer.writerow(["Кількість робочих циклів (пусків)", report.total_runs_count, "шт"])
     writer.writerow(["Відпрацьовано мотогодин", report.total_operating_hours, "год"])
     writer.writerow(["Розрахункова витрата палива", report.total_calculated_consumption_l, "л"])
@@ -653,7 +660,7 @@ async def generate_excel_report(
             c_num.fill = fill
 
         for c_offset, val in enumerate(vals, start=2):
-            cell = ws2.cell(row=r_row, column=c_offset, value=val)
+            cell = ws2.cell(row=r_row, column=c_offset, value=sanitize_spreadsheet_cell(val))
             cell.font = REGULAR_FONT
             cell.border = CELL_BORDER
             if fill.fill_type:
@@ -757,7 +764,7 @@ async def generate_excel_report(
         ws3.row_dimensions[row_cur].height = 20
         fill = ZEBRA_FILL if idx % 2 == 0 else PatternFill(fill_type=None)
         for c_idx, val in enumerate(vals, start=1):
-            cell = ws3.cell(row=row_cur, column=c_idx, value=val)
+            cell = ws3.cell(row=row_cur, column=c_idx, value=sanitize_spreadsheet_cell(val))
             cell.font = REGULAR_FONT
             cell.border = CELL_BORDER
             if fill.fill_type:
@@ -839,7 +846,7 @@ async def generate_excel_report(
         ws3.row_dimensions[row_cur].height = 20
         fill = ZEBRA_FILL if idx % 2 == 0 else PatternFill(fill_type=None)
         for c_idx, val in enumerate(vals, start=1):
-            cell = ws3.cell(row=row_cur, column=c_idx, value=val)
+            cell = ws3.cell(row=row_cur, column=c_idx, value=sanitize_spreadsheet_cell(val))
             cell.font = REGULAR_FONT
             cell.border = CELL_BORDER
             if fill.fill_type:
@@ -904,7 +911,7 @@ async def generate_excel_report(
         ws3.row_dimensions[row_cur].height = 20
         fill = ZEBRA_FILL if idx % 2 == 0 else PatternFill(fill_type=None)
         for c_idx, val in enumerate(vals, start=1):
-            cell = ws3.cell(row=row_cur, column=c_idx, value=val)
+            cell = ws3.cell(row=row_cur, column=c_idx, value=sanitize_spreadsheet_cell(val))
             cell.font = REGULAR_FONT
             cell.border = CELL_BORDER
             if fill.fill_type:
@@ -976,7 +983,7 @@ async def generate_excel_report(
         ws4.row_dimensions[r_row].height = 20
         fill = ZEBRA_FILL if idx % 2 == 0 else PatternFill(fill_type=None)
         for c_idx, val in enumerate(vals, start=1):
-            cell = ws4.cell(row=r_row, column=c_idx, value=val)
+            cell = ws4.cell(row=r_row, column=c_idx, value=sanitize_spreadsheet_cell(val))
             cell.font = REGULAR_FONT
             cell.border = CELL_BORDER
             if fill.fill_type:
@@ -1042,12 +1049,12 @@ async def generate_excel_report(
         vals = [
             idx,
             fmt_dt(fl.created_at),
-            f_gen,
-            fl.status,
-            fl.operational_impact,
-            fl.description,
-            fl.resolution_actions or "-",
-            f_user,
+            sanitize_spreadsheet_cell(f_gen),
+            sanitize_spreadsheet_cell(fl.status),
+            sanitize_spreadsheet_cell(getattr(fl, "operational_impact", fl.priority)),
+            sanitize_spreadsheet_cell(fl.description),
+            sanitize_spreadsheet_cell(getattr(fl, "resolution_actions", fl.resolution_notes) or "-"),
+            sanitize_spreadsheet_cell(f_user),
             resolved_t
         ]
         ws5.row_dimensions[row_f].height = 20
@@ -1093,11 +1100,11 @@ async def generate_excel_report(
         vals = [
             idx,
             fmt_dt(al.created_at),
-            al.action,
-            f"{al.entity_type} #{al.entity_id or ''}",
-            a_user,
-            al.ip_address or "-",
-            details_str
+            sanitize_spreadsheet_cell(al.action),
+            sanitize_spreadsheet_cell(f"{al.entity_type} #{al.entity_id or ''}"),
+            sanitize_spreadsheet_cell(a_user),
+            sanitize_spreadsheet_cell(al.ip_address or "-"),
+            sanitize_spreadsheet_cell(details_str)
         ]
         ws5.row_dimensions[row_f].height = 20
         fill = ZEBRA_FILL if idx % 2 == 0 else PatternFill(fill_type=None)

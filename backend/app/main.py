@@ -35,8 +35,9 @@ def ensure_schema_updates(sync_conn):
                 "VALUES (1, 'Основний об''єкт', 'Головна локація', 'Базовий об''єкт генератора', 'Europe/Kyiv', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
             ))
 
-    # 3. Add facility_id to related tables
-    for table_name in ["generators", "fuel_stocks", "fuel_receipts", "fuel_transfers", "users"]:
+    # 3. Add facility_id to related tables (strictly whitelisted identifiers)
+    allowed_facility_tables = ("generators", "fuel_stocks", "fuel_receipts", "fuel_transfers", "users")
+    for table_name in allowed_facility_tables:
         if table_name in tables:
             cols = [c["name"] for c in inspector.get_columns(table_name)]
             if "facility_id" not in cols:
@@ -54,12 +55,12 @@ def ensure_schema_updates(sync_conn):
 
     # 5. Synchronize sequences for PostgreSQL to avoid duplicate key errors on auto-incrementing IDs
     if sync_conn.dialect.name == "postgresql":
-        serial_tables = [
+        serial_tables = (
             "facilities", "generators", "fuel_stocks", "fuel_receipts",
             "fuel_transfers", "users", "roles", "permissions",
             "maintenance_schedules", "maintenance_records",
-            "generator_runs", "generator_faults", "audit_logs"
-        ]
+            "generator_runs", "faults", "audit_logs", "system_adjustments"
+        )
         for tbl in serial_tables:
             if tbl in tables:
                 try:
@@ -107,24 +108,48 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration
+# Restrict CORS origins based on configuration
+cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    return response
+
 
 # API routes
 app.include_router(api_v1_router)
 
-# Healthcheck
+
+# Healthcheck (minimal info to avoid configuration disclosure)
 @app.get("/api/health", tags=["Health"])
 async def health_check():
     return {
         "status": "healthy",
-        "app_env": settings.APP_ENV,
         "facility_timezone": settings.FACILITY_TIMEZONE,
         "database": "connected"
     }

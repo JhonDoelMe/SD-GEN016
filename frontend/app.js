@@ -7,6 +7,28 @@ let currentGeneratorId = null;
 let currentGenerator = null;
 let activeRun = null;
 
+// HTML Escaping Helper (Protects against Stored & Reflected XSS)
+function escapeHtml(val) {
+  if (val === null || val === undefined) return '';
+  return String(val)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function extractErrorMessage(data, fallback) {
+  if (!data || !data.detail) return fallback;
+  if (typeof data.detail === 'string') return data.detail;
+  if (Array.isArray(data.detail)) {
+    return data.detail
+      .map((item) => (item && item.msg ? String(item.msg).replace(/^Value error,\s*/i, '') : JSON.stringify(item)))
+      .join('; ');
+  }
+  return fallback;
+}
+
 // API Helper
 async function api(endpoint, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
@@ -26,13 +48,13 @@ async function api(endpoint, options = {}) {
         showAuthScreen();
         throw new Error('Сесія закінчилась. Будь ласка, увійдіть знову');
       } else {
-        const msg = data && data.detail ? data.detail : 'Невірний логін або пароль';
+        const msg = extractErrorMessage(data, 'Невірний логін або пароль');
         throw new Error(msg);
       }
     }
 
     if (!res.ok) {
-      const msg = data && data.detail ? data.detail : `Помилка сервера (${res.status})`;
+      const msg = extractErrorMessage(data, `Помилка сервера (${res.status})`);
       throw new Error(msg);
     }
     return data;
@@ -277,9 +299,9 @@ async function loadFacilitiesList() {
     const modalSel = document.getElementById('newGenFacilityId');
     if (!sel) return;
 
-    sel.innerHTML = facilities.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+    sel.innerHTML = facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
     if (modalSel) {
-      modalSel.innerHTML = facilities.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+      modalSel.innerHTML = facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
     }
 
     if (facilities.length > 0) {
@@ -299,7 +321,7 @@ async function loadFacilitiesList() {
 
 async function loadGeneratorsList(facilityId) {
   try {
-    const url = `/generator/list${facilityId ? '?facility_id=' + facilityId : ''}`;
+    const url = `/generator/list${facilityId ? '?facility_id=' + encodeURIComponent(facilityId) : ''}`;
     const generators = await api(url);
     const sel = document.getElementById('generatorSelect');
     if (!sel) return;
@@ -309,7 +331,7 @@ async function loadGeneratorsList(facilityId) {
       currentGenerator = null;
       currentGeneratorId = null;
     } else {
-      sel.innerHTML = generators.map(g => `<option value="${g.id}">${g.name} (${g.model})</option>`).join('');
+      sel.innerHTML = generators.map(g => `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)})</option>`).join('');
       
       const savedGenForFac = parseInt(localStorage.getItem(`sd_last_gen_facility_${facilityId}`) || '0', 10);
       const savedGlobalGen = parseInt(localStorage.getItem('sd_last_generator_id') || '0', 10);
@@ -352,8 +374,8 @@ async function loadGeneratorData() {
   try {
     let url = '/generator';
     const params = [];
-    if (currentGeneratorId) params.push(`generator_id=${currentGeneratorId}`);
-    if (currentFacilityId) params.push(`facility_id=${currentFacilityId}`);
+    if (currentGeneratorId) params.push(`generator_id=${encodeURIComponent(currentGeneratorId)}`);
+    if (currentFacilityId) params.push(`facility_id=${encodeURIComponent(currentFacilityId)}`);
     if (params.length) url += `?${params.join('&')}`;
 
     currentGenerator = await api(url);
@@ -406,7 +428,7 @@ async function loadGeneratorData() {
     }
 
     // Active Run Check
-    activeRun = await api(`/generator/active-run${currentGeneratorId ? '?generator_id=' + currentGeneratorId : ''}`);
+    activeRun = await api(`/generator/active-run${currentGeneratorId ? '?generator_id=' + encodeURIComponent(currentGeneratorId) : ''}`);
     if (activeRun) {
       banner.style.display = 'block';
       document.getElementById('activeRunStart').innerText = formatTime(activeRun.start_time);
@@ -516,7 +538,7 @@ async function setupReceiptModal() {
     const facilities = await api('/facilities');
     const facSel = document.getElementById('recFacility');
     if (facSel && facilities && facilities.length > 0) {
-      facSel.innerHTML = facilities.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+      facSel.innerHTML = facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
       if (currentFacilityId && facilities.some(f => f.id === currentFacilityId)) {
         facSel.value = currentFacilityId;
       }
@@ -533,11 +555,11 @@ async function updateReceiptStocks() {
   if (!facSel || !stockSel) return;
   const facId = facSel.value;
   try {
-    const stocks = await api(`/fuel/stocks?facility_id=${facId}`);
+    const stocks = await api(`/fuel/stocks?facility_id=${encodeURIComponent(facId)}`);
     if (!stocks || stocks.length === 0) {
       stockSel.innerHTML = '<option value="">(Немає складів — створіть новий склад)</option>';
     } else {
-      stockSel.innerHTML = stocks.map(s => `<option value="${s.id}">${s.name} (залишок: ${s.current_balance_l.toFixed(1)} л)</option>`).join('');
+      stockSel.innerHTML = stocks.map(s => `<option value="${Number(s.id)}">${escapeHtml(s.name)} (залишок: ${s.current_balance_l.toFixed(1)} л)</option>`).join('');
     }
   } catch (_) {
     stockSel.innerHTML = '<option value="">(Помилка завантаження)</option>';
@@ -551,7 +573,7 @@ async function setupNewStockModal() {
     const facilities = await api('/facilities');
     const facSel = document.getElementById('newStockFacility');
     if (facSel && facilities && facilities.length > 0) {
-      facSel.innerHTML = facilities.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+      facSel.innerHTML = facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
       if (currentFacilityId && facilities.some(f => f.id === currentFacilityId)) {
         facSel.value = currentFacilityId;
       }
@@ -565,14 +587,14 @@ async function setupTransferModal() {
   try {
     const stockSel = document.getElementById('transStock');
     const genSel = document.getElementById('transGenerator');
-    const qFac = currentFacilityId ? `?facility_id=${currentFacilityId}` : '';
+    const qFac = currentFacilityId ? `?facility_id=${encodeURIComponent(currentFacilityId)}` : '';
 
     const stocks = await api(`/fuel/stocks${qFac}`);
     if (stockSel) {
       if (!stocks || stocks.length === 0) {
         stockSel.innerHTML = '<option value="">(Немає доступних складів)</option>';
       } else {
-        stockSel.innerHTML = stocks.map(s => `<option value="${s.id}">${s.name} (${s.current_balance_l.toFixed(1)} л)</option>`).join('');
+        stockSel.innerHTML = stocks.map(s => `<option value="${Number(s.id)}">${escapeHtml(s.name)} (${s.current_balance_l.toFixed(1)} л)</option>`).join('');
       }
     }
 
@@ -581,7 +603,7 @@ async function setupTransferModal() {
       if (!gens || gens.length === 0) {
         genSel.innerHTML = '<option value="">(Немає генераторів)</option>';
       } else {
-        genSel.innerHTML = gens.map(g => `<option value="${g.id}">${g.name} (${g.model}, в баку: ${g.fuel_tank_level_l.toFixed(1)} л)</option>`).join('');
+        genSel.innerHTML = gens.map(g => `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)}, в баку: ${g.fuel_tank_level_l.toFixed(1)} л)</option>`).join('');
         if (currentGeneratorId && gens.some(g => g.id === currentGeneratorId)) {
           genSel.value = currentGeneratorId;
         }
@@ -595,8 +617,8 @@ async function setupTransferModal() {
 async function loadFuelSummary() {
   try {
     const params = [];
-    if (currentFacilityId) params.push(`facility_id=${currentFacilityId}`);
-    if (currentGeneratorId) params.push(`generator_id=${currentGeneratorId}`);
+    if (currentFacilityId) params.push(`facility_id=${encodeURIComponent(currentFacilityId)}`);
+    if (currentGeneratorId) params.push(`generator_id=${encodeURIComponent(currentGeneratorId)}`);
     const q = params.length ? '?' + params.join('&') : '';
 
     const s = await api(`/fuel/summary${q}`);
@@ -612,7 +634,7 @@ async function loadFuelSummary() {
 async function loadFuelData() {
   await loadFuelSummary();
   try {
-    const qFac = currentFacilityId ? `?facility_id=${currentFacilityId}` : '';
+    const qFac = currentFacilityId ? `?facility_id=${encodeURIComponent(currentFacilityId)}` : '';
 
     // Stocks Table
     const stocks = await api(`/fuel/stocks${qFac}`);
@@ -620,10 +642,10 @@ async function loadFuelData() {
     if (sTbody) {
       sTbody.innerHTML = stocks.map((s) => `
         <tr>
-          <td>#${s.id}</td>
-          <td><b>${s.name}</b></td>
-          <td>${s.facility_name || '-'}</td>
-          <td><span class="badge badge-stopped">${s.fuel_type}</span></td>
+          <td>#${Number(s.id)}</td>
+          <td><b>${escapeHtml(s.name)}</b></td>
+          <td>${escapeHtml(s.facility_name || '-')}</td>
+          <td><span class="badge badge-stopped">${escapeHtml(s.fuel_type)}</span></td>
           <td><b style="color:#38bdf8;">${s.current_balance_l.toFixed(1)} л</b></td>
           <td>${formatDateTime(s.updated_at)}</td>
         </tr>
@@ -637,14 +659,14 @@ async function loadFuelData() {
       rTbody.innerHTML = receipts.map((r) => `
         <tr>
           <td>${formatDateTime(r.created_at)}</td>
-          <td>${r.facility_name || '-'}</td>
-          <td><b>${r.stock_name || '-'}</b></td>
+          <td>${escapeHtml(r.facility_name || '-')}</td>
+          <td><b>${escapeHtml(r.stock_name || '-')}</b></td>
           <td><b>${r.liters.toFixed(1)} л</b></td>
           <td>${r.cost_total.toFixed(2)}</td>
           <td>${r.price_per_liter.toFixed(2)}</td>
-          <td>${r.driver_name}</td>
-          <td>${r.receipt_number}</td>
-          <td>${r.user_name || '-'}</td>
+          <td>${escapeHtml(r.driver_name)}</td>
+          <td>${escapeHtml(r.receipt_number)}</td>
+          <td>${escapeHtml(r.user_name || '-')}</td>
         </tr>
       `).join('') || '<tr><td colspan="9" style="text-align:center; color:var(--text-muted)">Надходжень не зареєстровано</td></tr>';
     }
@@ -656,13 +678,13 @@ async function loadFuelData() {
       tTbody.innerHTML = transfers.map((t) => `
         <tr>
           <td>${formatDateTime(t.created_at)}</td>
-          <td>${t.stock_name || '-'}</td>
-          <td><b>${t.generator_name || '-'}</b></td>
+          <td>${escapeHtml(t.stock_name || '-')}</td>
+          <td><b>${escapeHtml(t.generator_name || '-')}</b></td>
           <td><b style="color:#38bdf8;">+${t.liters.toFixed(1)} л</b></td>
           <td>${t.source_balance_before.toFixed(1)} → ${t.source_balance_after.toFixed(1)} л</td>
           <td>${t.tank_balance_before.toFixed(1)} → ${t.tank_balance_after.toFixed(1)} л</td>
-          <td>${t.comment || '-'}</td>
-          <td>${t.user_name || '-'}</td>
+          <td>${escapeHtml(t.comment || '-')}</td>
+          <td>${escapeHtml(t.user_name || '-')}</td>
         </tr>
       `).join('') || '<tr><td colspan="8" style="text-align:center; color:var(--text-muted)">Заправок не зареєстровано</td></tr>';
     }
@@ -808,7 +830,7 @@ window.recalculateMaintenanceSchedule = async function() {
 async function loadMaintenanceData() {
   await loadMaintenanceSummary();
   try {
-    const q = currentGeneratorId ? `?generator_id=${currentGeneratorId}` : '';
+    const q = currentGeneratorId ? `?generator_id=${encodeURIComponent(currentGeneratorId)}` : '';
     const records = await api(`/maintenance/records${q}`);
     const tbody = document.querySelector('#maintenanceHistoryTable tbody');
     tbody.innerHTML = records.map((r) => `
@@ -816,10 +838,10 @@ async function loadMaintenanceData() {
         <td>${formatDateTime(r.created_at)}</td>
         <td><span class="badge ${r.maintenance_type === 'SCHEDULED' ? 'badge-running' : 'badge-stopped'}">${r.maintenance_type === 'SCHEDULED' ? 'Регламентне' : 'Проміжне'}</span></td>
         <td><b>${r.operating_hours.toFixed(1)} год</b></td>
-        <td>${r.work_description}</td>
-        <td>${r.consumables_used || '-'}</td>
+        <td>${escapeHtml(r.work_description)}</td>
+        <td>${escapeHtml(r.consumables_used || '-')}</td>
         <td>${r.cost.toFixed(2)} грн</td>
-        <td>${r.user_name || '-'}</td>
+        <td>${escapeHtml(r.user_name || '-')}</td>
       </tr>
     `).join('') || '<tr><td colspan="7" style="text-align:center; color:var(--text-muted)">Записів ТО не знайдено</td></tr>';
   } catch (_) {}
@@ -851,16 +873,16 @@ async function loadFaultsData() {
     const tbody = document.querySelector('#faultsTable tbody');
     tbody.innerHTML = faults.map((f) => `
       <tr>
-        <td>#${f.id}</td>
-        <td><span class="badge ${f.priority === 'CRITICAL' ? 'badge-faulty' : 'badge-maintenance'}">${f.priority}</span></td>
-        <td><span class="badge badge-stopped">${f.status}</span></td>
-        <td><b>${f.title}</b></td>
-        <td>${f.description}</td>
+        <td>#${Number(f.id)}</td>
+        <td><span class="badge ${f.priority === 'CRITICAL' ? 'badge-faulty' : 'badge-maintenance'}">${escapeHtml(f.priority)}</span></td>
+        <td><span class="badge badge-stopped">${escapeHtml(f.status)}</span></td>
+        <td><b>${escapeHtml(f.title)}</b></td>
+        <td>${escapeHtml(f.description)}</td>
         <td>${f.operating_hours.toFixed(1)} год</td>
         <td>${formatDateOnly(f.created_at)}</td>
         <td>
           ${f.status !== 'RESOLVED' && f.status !== 'CLOSED' ? `
-            <button onclick="resolveFault(${f.id})" style="background:#22c55e; border:none; color:white; border-radius:4px; padding:0.25rem 0.5rem; cursor:pointer; font-size:0.75rem;">Усунути</button>
+            <button onclick="resolveFault(${Number(f.id)})" style="background:#22c55e; border:none; color:white; border-radius:4px; padding:0.25rem 0.5rem; cursor:pointer; font-size:0.75rem;">Усунути</button>
           ` : '<span style="color:#22c55e;">Усунено</span>'}
         </td>
       </tr>
@@ -872,7 +894,7 @@ window.resolveFault = async function(id) {
   const notes = prompt('Вкажіть примітки щодо усунення несправності:');
   if (notes === null) return;
   try {
-    await api(`/faults/${id}/status`, {
+    await api(`/faults/${encodeURIComponent(id)}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status: 'RESOLVED', resolution_notes: notes })
     });
@@ -902,7 +924,7 @@ document.getElementById('faultForm').addEventListener('submit', async (e) => {
 // 5. Runs History
 async function loadRecentRuns() {
   try {
-    const q = currentGeneratorId ? '&generator_id=' + currentGeneratorId : '';
+    const q = currentGeneratorId ? '&generator_id=' + encodeURIComponent(currentGeneratorId) : '';
     const runs = await api('/generator/runs?limit=5' + q);
     const tbody = document.querySelector('#recentRunsTable tbody');
     tbody.innerHTML = runs.map((r) => {
@@ -913,9 +935,9 @@ async function loadRecentRuns() {
           <td>${formatDateTime(r.start_time)}</td>
           <td>${r.start_hours.toFixed(1)} год</td>
           <td>${r.end_hours != null ? r.end_hours.toFixed(1) + ' год' : '<i>працює...</i>'}</td>
-          <td><b style="color: #38bdf8; font-family: monospace;">${durText}</b></td>
-          <td>${consText}</td>
-          <td>${r.user_name || '-'}</td>
+          <td><b style="color: #38bdf8; font-family: monospace;">${escapeHtml(durText)}</b></td>
+          <td>${escapeHtml(consText)}</td>
+          <td>${escapeHtml(r.user_name || '-')}</td>
         </tr>
       `;
     }).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Циклів не знайдено</td></tr>';
@@ -924,7 +946,7 @@ async function loadRecentRuns() {
 
 async function loadRunsData() {
   try {
-    const q = currentGeneratorId ? '&generator_id=' + currentGeneratorId : '';
+    const q = currentGeneratorId ? '&generator_id=' + encodeURIComponent(currentGeneratorId) : '';
     const runs = await api('/generator/runs?limit=50' + q);
     const tbody = document.querySelector('#allRunsTable tbody');
     tbody.innerHTML = runs.map((r) => {
@@ -932,16 +954,16 @@ async function loadRunsData() {
       const consText = r.calculated_consumption_l != null ? (r.calculated_consumption_l < 0.1 && r.calculated_consumption_l > 0 ? r.calculated_consumption_l.toFixed(3) : r.calculated_consumption_l.toFixed(2)) + ' л' : '-';
       return `
         <tr>
-          <td>#${r.id}</td>
+          <td>#${Number(r.id)}</td>
           <td>${formatDateTime(r.start_time)}</td>
           <td>${r.end_time ? formatDateTime(r.end_time) : '<i>в процесі...</i>'}</td>
           <td>${r.start_hours.toFixed(1)}</td>
           <td>${r.end_hours != null ? r.end_hours.toFixed(1) : '-'}</td>
-          <td><b style="color: #38bdf8; font-family: monospace;">${durText}</b></td>
-          <td>${consText}</td>
-          <td>${r.start_fuel_level_l ?? '-'} → ${r.end_fuel_level_l ?? '-'} л</td>
-          <td>${r.user_name || '-'}</td>
-          <td>${r.note || '-'}</td>
+          <td><b style="color: #38bdf8; font-family: monospace;">${escapeHtml(durText)}</b></td>
+          <td>${escapeHtml(consText)}</td>
+          <td>${escapeHtml(r.start_fuel_level_l ?? '-')} → ${escapeHtml(r.end_fuel_level_l ?? '-')} л</td>
+          <td>${escapeHtml(r.user_name || '-')}</td>
+          <td>${escapeHtml(r.note || '-')}</td>
         </tr>
       `;
     }).join('') || '<tr><td colspan="10" style="text-align:center; color:var(--text-muted)">Записів не знайдено</td></tr>';
@@ -956,11 +978,11 @@ async function loadAuditData() {
     tbody.innerHTML = logs.map((l) => `
       <tr>
         <td>${formatDateTime(l.created_at)}</td>
-        <td>${l.user_name || 'Система'}</td>
-        <td><b>${l.action}</b></td>
-        <td>${l.entity_type} #${l.entity_id || ''}</td>
-        <td style="font-family:monospace; font-size:0.75rem;">${l.details_json || '-'}</td>
-        <td>${l.ip_address || '-'}</td>
+        <td>${escapeHtml(l.user_name || 'Система')}</td>
+        <td><b>${escapeHtml(l.action)}</b></td>
+        <td>${escapeHtml(l.entity_type)} #${escapeHtml(l.entity_id || '')}</td>
+        <td style="font-family:monospace; font-size:0.75rem;">${escapeHtml(l.details_json || '-')}</td>
+        <td>${escapeHtml(l.ip_address || '-')}</td>
       </tr>
     `).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Аудит порожній</td></tr>';
 
@@ -969,12 +991,12 @@ async function loadAuditData() {
     adjTbody.innerHTML = adjustments.map((a) => `
       <tr>
         <td>${formatDateTime(a.created_at)}</td>
-        <td>${a.user_name || '-'}</td>
-        <td>${a.entity_type}</td>
-        <td>${a.field_name}</td>
-        <td><s style="color:#ef4444;">${a.old_value}</s></td>
-        <td><b style="color:#22c55e;">${a.new_value}</b></td>
-        <td>${a.reason}</td>
+        <td>${escapeHtml(a.user_name || '-')}</td>
+        <td>${escapeHtml(a.entity_type)}</td>
+        <td>${escapeHtml(a.field_name)}</td>
+        <td><s style="color:#ef4444;">${escapeHtml(a.old_value)}</s></td>
+        <td><b style="color:#22c55e;">${escapeHtml(a.new_value)}</b></td>
+        <td>${escapeHtml(a.reason)}</td>
       </tr>
     `).join('') || '<tr><td colspan="7" style="text-align:center; color:var(--text-muted)">Коригувань не виконувалось</td></tr>';
   } catch (_) {}
@@ -1060,10 +1082,10 @@ async function loadReport() {
   const endInput = document.getElementById('repEndDate').value;
 
   const params = [];
-  if (currentGeneratorId) params.push(`generator_id=${currentGeneratorId}`);
-  if (currentFacilityId) params.push(`facility_id=${currentFacilityId}`);
-  if (startInput) params.push(`start_date=${startInput}`);
-  if (endInput) params.push(`end_date=${endInput}`);
+  if (currentGeneratorId) params.push(`generator_id=${encodeURIComponent(currentGeneratorId)}`);
+  if (currentFacilityId) params.push(`facility_id=${encodeURIComponent(currentFacilityId)}`);
+  if (startInput) params.push(`start_date=${encodeURIComponent(startInput)}`);
+  if (endInput) params.push(`end_date=${encodeURIComponent(endInput)}`);
   const q = params.length ? '?' + params.join('&') : '';
 
   try {
@@ -1072,35 +1094,35 @@ async function loadReport() {
     container.innerHTML = `
       <div class="metric-card">
         <div class="metric-label">Відпрацьовано мотогодин</div>
-        <div class="metric-value">${r.total_operating_hours} год</div>
-        <div class="metric-sub">${r.total_runs_count} пусків</div>
+        <div class="metric-value">${escapeHtml(r.total_operating_hours)} год</div>
+        <div class="metric-sub">${escapeHtml(r.total_runs_count)} пусків</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Розрахунковий розхід палива</div>
-        <div class="metric-value">${r.total_calculated_consumption_l} л</div>
+        <div class="metric-value">${escapeHtml(r.total_calculated_consumption_l)} л</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Оприбутковано на склад</div>
-        <div class="metric-value">${r.total_fuel_received_l} л</div>
-        <div class="metric-sub">${r.total_fuel_receipts_cost_uah} грн (${r.avg_fuel_price_per_liter} грн/л)</div>
+        <div class="metric-value">${escapeHtml(r.total_fuel_received_l)} л</div>
+        <div class="metric-sub">${escapeHtml(r.total_fuel_receipts_cost_uah)} грн (${escapeHtml(r.avg_fuel_price_per_liter)} грн/л)</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Заправлено в бак</div>
-        <div class="metric-value">${r.total_fuel_transferred_to_tank_l} л</div>
+        <div class="metric-value">${escapeHtml(r.total_fuel_transferred_to_tank_l)} л</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Виконано ТО</div>
-        <div class="metric-value">${r.total_maintenance_count}</div>
-        <div class="metric-sub">Регламентних: ${r.scheduled_maintenance_count} | Проміжних: ${r.intermediate_maintenance_count}</div>
+        <div class="metric-value">${escapeHtml(r.total_maintenance_count)}</div>
+        <div class="metric-sub">Регламентних: ${escapeHtml(r.scheduled_maintenance_count)} | Проміжних: ${escapeHtml(r.intermediate_maintenance_count)}</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Витрати на ТО</div>
-        <div class="metric-value">${r.total_maintenance_cost_uah} грн</div>
+        <div class="metric-value">${escapeHtml(r.total_maintenance_cost_uah)} грн</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Несправності</div>
-        <div class="metric-value">${r.total_faults_count}</div>
-        <div class="metric-sub">Усунено: ${r.resolved_faults_count} | Відкрито: ${r.open_faults_count}</div>
+        <div class="metric-value">${escapeHtml(r.total_faults_count)}</div>
+        <div class="metric-sub">Усунено: ${escapeHtml(r.resolved_faults_count)} | Відкрито: ${escapeHtml(r.open_faults_count)}</div>
       </div>
     `;
   } catch (_) {}
@@ -1111,10 +1133,10 @@ window.downloadReportCSV = function () {
   const endInput = document.getElementById('repEndDate').value;
   let url = '/api/v1/reports/export';
   const params = [];
-  if (currentGeneratorId) params.push(`generator_id=${currentGeneratorId}`);
-  if (currentFacilityId) params.push(`facility_id=${currentFacilityId}`);
-  if (startInput) params.push(`start_date=${startInput}`);
-  if (endInput) params.push(`end_date=${endInput}`);
+  if (currentGeneratorId) params.push(`generator_id=${encodeURIComponent(currentGeneratorId)}`);
+  if (currentFacilityId) params.push(`facility_id=${encodeURIComponent(currentFacilityId)}`);
+  if (startInput) params.push(`start_date=${encodeURIComponent(startInput)}`);
+  if (endInput) params.push(`end_date=${encodeURIComponent(endInput)}`);
   if (params.length) url += `?${params.join('&')}`;
 
   fetch(url, { headers: { Authorization: `Bearer ${token}` } })
@@ -1139,10 +1161,10 @@ window.downloadReportExcel = async function () {
   const endInput = document.getElementById('repEndDate').value;
   let url = '/api/v1/reports/export-excel';
   const params = [];
-  if (currentGeneratorId) params.push(`generator_id=${currentGeneratorId}`);
-  if (currentFacilityId) params.push(`facility_id=${currentFacilityId}`);
-  if (startInput) params.push(`start_date=${startInput}`);
-  if (endInput) params.push(`end_date=${endInput}`);
+  if (currentGeneratorId) params.push(`generator_id=${encodeURIComponent(currentGeneratorId)}`);
+  if (currentFacilityId) params.push(`facility_id=${encodeURIComponent(currentFacilityId)}`);
+  if (startInput) params.push(`start_date=${encodeURIComponent(startInput)}`);
+  if (endInput) params.push(`end_date=${encodeURIComponent(endInput)}`);
   if (params.length) url += `?${params.join('&')}`;
 
   try {
@@ -1170,15 +1192,15 @@ async function loadUsersData() {
     const tbody = document.querySelector('#usersTable tbody');
     tbody.innerHTML = users.map((u) => `
       <tr>
-        <td>#${u.id}</td>
-        <td><b>${u.login}</b></td>
-        <td>${u.full_name}</td>
-        <td>${u.email || '-'}</td>
+        <td>#${Number(u.id)}</td>
+        <td><b>${escapeHtml(u.login)}</b></td>
+        <td>${escapeHtml(u.full_name)}</td>
+        <td>${escapeHtml(u.email || '-')}</td>
         <td><span class="badge ${u.is_active ? 'badge-running' : 'badge-faulty'}">${u.is_active ? 'Активний' : 'Заблокований'}</span></td>
-        <td>${u.roles.map((r) => r.name).join(', ') || '-'}</td>
+        <td>${escapeHtml(u.roles.map((r) => r.name).join(', ') || '-')}</td>
         <td>
           ${!u.is_superadmin ? `
-            <button onclick="toggleUserActive(${u.id}, ${!u.is_active})" style="background:none; border:1px solid var(--border-color); color:var(--text-primary); border-radius:4px; padding:0.25rem 0.5rem; cursor:pointer; font-size:0.75rem;">
+            <button onclick="toggleUserActive(${Number(u.id)}, ${!u.is_active})" style="background:none; border:1px solid var(--border-color); color:var(--text-primary); border-radius:4px; padding:0.25rem 0.5rem; cursor:pointer; font-size:0.75rem;">
               ${u.is_active ? 'Блокувати' : 'Розблокувати'}
             </button>
           ` : '<small style="color:#a855f7;">SuperAdmin</small>'}
@@ -1190,7 +1212,7 @@ async function loadUsersData() {
 
 window.toggleUserActive = async function(id, active) {
   try {
-    await api(`/users/${id}`, {
+    await api(`/users/${encodeURIComponent(id)}`, {
       method: 'PUT',
       body: JSON.stringify({ is_active: active })
     });
@@ -1202,12 +1224,26 @@ window.toggleUserActive = async function(id, active) {
 // User Create Form Submit
 document.getElementById('userCreateForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const loginVal = document.getElementById('newLogin').value.trim();
+  const fullNameVal = document.getElementById('newName').value.trim();
+  const emailVal = document.getElementById('newEmail').value.trim() || null;
+  const passVal = document.getElementById('newPassword').value;
+
+  if (!/^[a-zA-Z0-9_.\-]{3,50}$/.test(loginVal)) {
+    showToast("Логін повинен містити 3–50 символів (латинські літери, цифри, '_', '.', '-')", 'error');
+    return;
+  }
+  if (passVal.length < 8 || !/[a-zA-Zа-яА-ЯіїєґІЇЄҐ]/.test(passVal) || !/\d/.test(passVal)) {
+    showToast('Пароль повинен містити щонайменше 8 символів, літери та цифри', 'error');
+    return;
+  }
+
   const body = {
-    login: document.getElementById('newLogin').value,
-    full_name: document.getElementById('newName').value,
-    email: document.getElementById('newEmail').value || null,
-    password: document.getElementById('newPassword').value,
-    role_ids: [parseInt(document.getElementById('newUserRole').value)]
+    login: loginVal,
+    full_name: fullNameVal,
+    email: emailVal,
+    password: passVal,
+    role_ids: [parseInt(document.getElementById('newUserRole').value, 10)]
   };
 
   try {
@@ -1259,7 +1295,7 @@ window.openDeleteGeneratorModal = function() {
   }
   const text = document.getElementById('deleteGenConfirmText');
   if (text) {
-    text.innerHTML = `Ви дійсно бажаєте видалити генератор <b>"${currentGenerator.name}"</b> (Модель: ${currentGenerator.model}, S/N: ${currentGenerator.serial_number})?`;
+    text.innerHTML = `Ви дійсно бажаєте видалити генератор <b>"${escapeHtml(currentGenerator.name)}"</b> (Модель: ${escapeHtml(currentGenerator.model)}, S/N: ${escapeHtml(currentGenerator.serial_number)})?`;
   }
   openModal('modalDeleteGenerator');
 };

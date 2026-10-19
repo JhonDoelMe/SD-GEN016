@@ -1,6 +1,6 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
@@ -26,7 +26,7 @@ async def list_users(
 @router.get("/roles", response_model=List[RoleOut])
 async def list_roles(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("users:manage"))
 ):
     res = await db.execute(select(Role).order_by(Role.id.asc()))
     roles = res.scalars().all()
@@ -41,7 +41,7 @@ async def create_user(
     current_user: User = Depends(require_permission("users:manage"))
 ):
     clean_login = data.login.strip()
-    existing = await db.execute(select(User).where(User.login == clean_login))
+    existing = await db.execute(select(User).where(func.lower(User.login) == func.lower(clean_login)))
     if existing.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

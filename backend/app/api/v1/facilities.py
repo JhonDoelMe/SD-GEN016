@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.database import get_db
 from backend.app.models.user import User
 from backend.app.schemas.facility import FacilityCreate, FacilityUpdate, FacilityOut
-from backend.app.api.deps import get_current_user, get_client_ip
+from backend.app.api.deps import get_current_user, require_permission, get_client_ip
 from backend.app.services.facility_service import (
     get_all_facilities, get_facility_by_id, create_facility,
     update_facility, delete_facility
@@ -28,7 +28,7 @@ async def add_facility(
     data: FacilityCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("generator:configure"))
 ):
     """Створити новий об'єкт (локацію)"""
     client_ip = get_client_ip(request)
@@ -51,7 +51,7 @@ async def edit_facility(
     data: FacilityUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("generator:configure"))
 ):
     """Оновити параметри об'єкту"""
     client_ip = get_client_ip(request)
@@ -63,7 +63,7 @@ async def remove_facility(
     facility_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("generator:configure"))
 ):
     """Видалити об'єкт"""
     client_ip = get_client_ip(request)

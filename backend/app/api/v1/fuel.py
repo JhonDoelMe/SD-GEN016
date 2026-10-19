@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -143,7 +143,7 @@ async def create_receipt(
 @router.get("/receipts", response_model=List[FuelReceiptOut])
 async def list_receipts(
     facility_id: Optional[int] = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -234,7 +234,7 @@ async def create_transfer(
 async def list_transfers(
     facility_id: Optional[int] = None,
     generator_id: Optional[int] = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

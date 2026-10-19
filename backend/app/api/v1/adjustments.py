@@ -1,5 +1,6 @@
+import math
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,10 +16,28 @@ from backend.app.services.audit_service import record_system_adjustment
 
 router = APIRouter(prefix="/adjustments", tags=["Системні коригування (SuperAdmin)"])
 
+ALLOWED_GENERATOR_STATUSES = {"STOPPED", "RUNNING", "MAINTENANCE_REQUIRED", "FAULTY", "BLOCKED"}
+
+
+def _parse_non_negative_float(raw: str, field_name: str) -> float:
+    try:
+        val = float(raw)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Некоректне числове значення для поля '{field_name}'"
+        )
+    if not math.isfinite(val) or val < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Значення поля '{field_name}' повинно бути скінченним невід'ємним числом"
+        )
+    return val
+
 
 @router.get("", response_model=List[SystemAdjustmentOut])
 async def list_adjustments(
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("audit:view"))
 ):
@@ -65,16 +84,22 @@ async def perform_adjustment(
 
         if data.field_name == "current_operating_hours":
             old_val_str = str(gen.current_operating_hours)
-            gen.current_operating_hours = float(data.new_value)
+            gen.current_operating_hours = _parse_non_negative_float(data.new_value, data.field_name)
         elif data.field_name == "fuel_tank_level_l":
             old_val_str = str(gen.fuel_tank_level_l)
-            gen.fuel_tank_level_l = float(data.new_value)
+            gen.fuel_tank_level_l = _parse_non_negative_float(data.new_value, data.field_name)
         elif data.field_name == "status":
+            new_status = str(data.new_value).strip().upper()
+            if new_status not in ALLOWED_GENERATOR_STATUSES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Недопустимий статус генератора: {new_status}"
+                )
             old_val_str = str(gen.status)
-            gen.status = str(data.new_value)
+            gen.status = new_status
         elif data.field_name == "nominal_consumption_l_per_h":
             old_val_str = str(gen.nominal_consumption_l_per_h)
-            gen.nominal_consumption_l_per_h = float(data.new_value)
+            gen.nominal_consumption_l_per_h = _parse_non_negative_float(data.new_value, data.field_name)
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Непідтримуване поле: {data.field_name}")
 
@@ -85,7 +110,7 @@ async def perform_adjustment(
 
         if data.field_name == "current_balance_l":
             old_val_str = str(stock.current_balance_l)
-            stock.current_balance_l = float(data.new_value)
+            stock.current_balance_l = _parse_non_negative_float(data.new_value, data.field_name)
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Непідтримуване поле: {data.field_name}")
 
@@ -96,13 +121,13 @@ async def perform_adjustment(
 
         if data.field_name == "interval_hours":
             old_val_str = str(sched.interval_hours)
-            sched.interval_hours = float(data.new_value)
+            sched.interval_hours = _parse_non_negative_float(data.new_value, data.field_name)
         elif data.field_name == "next_due_hours":
             old_val_str = str(sched.next_due_hours)
-            sched.next_due_hours = float(data.new_value)
+            sched.next_due_hours = _parse_non_negative_float(data.new_value, data.field_name)
         elif data.field_name == "last_performed_hours":
             old_val_str = str(sched.last_performed_hours)
-            sched.last_performed_hours = float(data.new_value)
+            sched.last_performed_hours = _parse_non_negative_float(data.new_value, data.field_name)
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Непідтримуване поле: {data.field_name}")
 

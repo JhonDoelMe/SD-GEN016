@@ -9,7 +9,7 @@ from backend.app.database import Base, get_db
 from backend.app.main import app
 from backend.app.services.init_service import seed_initial_data
 from backend.app.models.user import User, Role
-from backend.app.core.security import get_password_hash
+from backend.app.core.security import get_password_hash, clear_all_login_attempts
 from backend.app.config import settings
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
@@ -43,6 +43,8 @@ async def db_session():
 
 @pytest_asyncio.fixture(scope="function")
 async def client(db_session):
+    clear_all_login_attempts()
+
     async def override_get_db():
         yield db_session
 
@@ -51,6 +53,7 @@ async def client(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
+    clear_all_login_attempts()
 
 
 @pytest_asyncio.fixture(scope="function")
