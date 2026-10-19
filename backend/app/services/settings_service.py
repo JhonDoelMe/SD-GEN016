@@ -16,12 +16,25 @@ from backend.app.models.fault import Fault
 from backend.app.models.audit import AuditLog, SystemAdjustment
 from backend.app.models.user import User
 
-# Default Ukrainian retail fuel prices fallback (UAH per liter) if offline
+# Default WOG Ukraine retail fuel prices fallback (UAH per liter)
 DEFAULT_INTERNET_PRICES: Dict[str, float] = {
-    "А-95": 56.50,
-    "А-92": 53.90,
-    "ДП": 52.80,
+    "А-95": 92.90,
+    "А-95 Mustang": 95.90,
+    "А-92": 92.90,
+    "ДП": 103.50,
+    "ДП Mustang+": 106.50,
+    "ГАЗ": 52.50,
 }
+
+DEFAULT_WOG_LINEUP = [
+    {"type": "ДП", "brand": "Євро5", "label": "ДП Євро5", "price": 103.50},
+    {"type": "ДП", "brand": "Mustang+", "label": "ДП Mustang+", "price": 106.50},
+    {"type": "95", "brand": "Євро5-Е10", "label": "95 Євро5-Е10", "price": 92.90},
+    {"type": "95", "brand": "Mustang Євро5-Е10", "label": "95 Mustang Євро5-Е10", "price": 95.90},
+    {"type": "100", "brand": "Mustang Євро5-Е0", "label": "100 Mustang Євро5-Е0", "price": 102.90},
+    {"type": "ГАЗ", "brand": "", "label": "ГАЗ", "price": 52.50},
+    {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": 61.90},
+]
 
 # Default dynamic system settings (stored in DB table `system_settings`)
 DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
@@ -33,17 +46,21 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "default_maintenance_interval_hours": 300.0,
     "login_max_attempts": 5,
     "login_lockout_seconds": 300,
-    # Fuel pricing configuration (0.0 means "not manually set -> use internet price")
+    # Fuel pricing configuration (0.0 means "not manually set -> use WOG internet price")
     "fuel_price_a95": 0.0,
     "fuel_price_a92": 0.0,
     "fuel_price_dp": 0.0,
     "auto_fetch_fuel_prices": True,
-    # Cached internet prices
+    # Cached WOG internet prices
     "internet_price_a95": DEFAULT_INTERNET_PRICES["А-95"],
+    "internet_price_a95_mustang": DEFAULT_INTERNET_PRICES["А-95 Mustang"],
     "internet_price_a92": DEFAULT_INTERNET_PRICES["А-92"],
     "internet_price_dp": DEFAULT_INTERNET_PRICES["ДП"],
+    "internet_price_dp_mustang": DEFAULT_INTERNET_PRICES["ДП Mustang+"],
+    "internet_price_gas": DEFAULT_INTERNET_PRICES["ГАЗ"],
+    "wog_lineup": DEFAULT_WOG_LINEUP,
     "internet_prices_updated_at": "",
-    "internet_prices_source": "Ринковий індикатор АЗС України",
+    "internet_prices_source": "АЗК WOG (https://wog.ua/ua/fuels/)",
 }
 
 # In-memory cache of runtime settings for fast synchronous reads (e.g. timezone.py)
@@ -65,82 +82,80 @@ def get_runtime_timezone() -> str:
         return "Europe/Kyiv"
 
 
-def fetch_ukraine_fuel_prices_online(timeout: float = 4.0) -> Tuple[Dict[str, float], str, bool]:
+def fetch_ukraine_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, float], list, str, bool]:
     """
-    Отримує актуальні середні роздрібні ціни на пальне в Україні (А-95, А-92, ДП)
-    з відкритих фінансових джерел (Мінфін / AutoRia).
-    Повертає: (prices_dict, source_label, is_live_from_internet)
+    Парсить офіційні актуальні ціни на пальне з сайту АЗК WOG:
+    https://wog.ua/ua/fuels/
+    Повертає: (prices_dict, wog_lineup_list, source_label, is_live_from_internet)
     """
     prices = dict(DEFAULT_INTERNET_PRICES)
+    lineup = []
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 
-    # Source 1: index.minfin.com.ua/ua/markets/fuel/
     try:
-        req = urllib.request.Request("https://index.minfin.com.ua/ua/markets/fuel/", headers=headers)
+        req = urllib.request.Request("https://wog.ua/ua/fuels/", headers=headers)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             html = resp.read().decode("utf-8", errors="ignore")
 
-        found_any = False
-        patterns = {
-            "А-95": [
-                r"Бензин\s+А-95(?![\s+]*преміум|\+)[^<]*</a>\s*</td>\s*<td[^>]*>[^<]*</td>\s*<td[^>]*>\s*<b>\s*(\d{2}[.,]\d{2})\s*</b>",
-                r"А-95(?![\s+]*преміум|\+).*?(\d{2}[.,]\d{2})",
-            ],
-            "А-92": [
-                r"Бензин\s+А-92[^<]*</a>\s*</td>\s*<td[^>]*>[^<]*</td>\s*<td[^>]*>\s*<b>\s*(\d{2}[.,]\d{2})\s*</b>",
-                r"А-92.*?(\d{2}[.,]\d{2})",
-            ],
-            "ДП": [
-                r"Дизельне\s+паливо(?![\s+]*преміум|\+)[^<]*</a>\s*</td>\s*<td[^>]*>[^<]*</td>\s*<td[^>]*>\s*<b>\s*(\d{2}[.,]\d{2})\s*</b>",
-                r"Дизельне\s+паливо.*?(\d{2}[.,]\d{2})",
-            ],
-        }
-        for fuel_key, regex_list in patterns.items():
-            for pat in regex_list:
-                m = re.search(pat, html, flags=re.IGNORECASE | re.DOTALL)
-                if m:
-                    val = float(m.group(1).replace(",", "."))
-                    if 30.0 <= val <= 150.0:
-                        prices[fuel_key] = round(val, 2)
-                        found_any = True
-                        break
+        # Method 1: Parse WOG Next.js SSR JSON blocks ("i_am_page_element":"block.fuels_fuel")
+        json_matches = list(re.finditer(
+            r'"price"\s*:\s*(\d+)\s*,\s*"cla"\s*:\s*"[^"]*"\s*,\s*"i_am_page_element"\s*:\s*"block\.fuels_fuel"\s*,\s*"type"\s*:\s*"([^"]*)"\s*,\s*"brand"\s*:\s*"([^"]*)"',
+            html
+        ))
+        for m in json_matches:
+            raw_kop = int(m.group(1))
+            f_type = m.group(2).strip()
+            f_brand = m.group(3).strip()
+            val_uah = round(raw_kop / 100.0, 2)
+            if 10.0 <= val_uah <= 300.0:
+                label = f"{f_type} {f_brand}".strip()
+                lineup.append({"type": f_type, "brand": f_brand, "label": label, "price": val_uah})
 
-        if found_any:
-            return prices, "Мінфін (середні ціни АЗС України)", True
+        # Method 2: Fallback to HTML blocks on https://wog.ua/ua/fuels/ if JSON layout changes
+        if not lineup:
+            html_matches = list(re.finditer(
+                r'<div class="s_type__[^"]*">([^<]*)</div><div class="s_brand__[^"]*">([^<]*)</div></div><div class="s_price__[^"]*">([0-9]+(?:[.,][0-9]+)?)</div>',
+                html
+            ))
+            for m in html_matches:
+                f_type = m.group(1).strip()
+                f_brand = m.group(2).strip()
+                val_uah = round(float(m.group(3).replace(",", ".")), 2)
+                if 10.0 <= val_uah <= 300.0:
+                    label = f"{f_type} {f_brand}".strip()
+                    lineup.append({"type": f_type, "brand": f_brand, "label": label, "price": val_uah})
+
+        if lineup:
+            for item in lineup:
+                ft = item["type"].upper()
+                fb = item["brand"].upper()
+                p = item["price"]
+                if ft == "95":
+                    if "MUSTANG" in fb:
+                        prices["А-95 Mustang"] = p
+                    else:
+                        prices["А-95"] = p
+                        # WOG no longer sells А-92; sync А-92 fallback to standard WOG 95 Euro5
+                        prices["А-92"] = p
+                elif ft == "ДП":
+                    if "MUSTANG" in fb:
+                        prices["ДП Mustang+"] = p
+                    else:
+                        prices["ДП"] = p
+                elif "ГАЗ" in ft:
+                    prices["ГАЗ"] = p
+                elif ft == "92" or "92" in fb:
+                    prices["А-92"] = p
+
+            return prices, lineup, "АЗК WOG (wog.ua/ua/fuels)", True
     except Exception:
         pass
 
-    # Source 2: auto.ria.com/uk/toplivo/
-    try:
-        req = urllib.request.Request("https://auto.ria.com/uk/toplivo/", headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            html = resp.read().decode("utf-8", errors="ignore")
-
-        found_any = False
-        for fuel_key, label in [("А-95", r"А-95(?!\+)"), ("А-92", r"А-92"), ("ДП", r"ДП(?!\+)")]:
-            m = re.search(label + r".{1,250}?(\d{2}[.,]\d{2})", html, flags=re.IGNORECASE | re.DOTALL)
-            if m:
-                val = float(m.group(1).replace(",", "."))
-                if 30.0 <= val <= 150.0:
-                    prices[fuel_key] = round(val, 2)
-                    found_any = True
-
-        if found_any:
-            return prices, "Auto.ria (середні ціни АЗС України)", True
-    except Exception:
-        pass
-
-    # Fallback: preserve existing cached internet prices if valid, else default Ukrainian market benchmark
-    for k, setting_key in [("А-95", "internet_price_a95"), ("А-92", "internet_price_a92"), ("ДП", "internet_price_dp")]:
-        cached_val = float(RUNTIME_SETTINGS.get(setting_key) or 0.0)
-        if 30.0 <= cached_val <= 150.0:
-            prices[k] = round(cached_val, 2)
-
-    return prices, "Ринковий індикатор АЗС України (резерв)", False
+    return prices, list(DEFAULT_WOG_LINEUP), "АЗК WOG (резервний кеш)", False
 
 
 async def load_system_settings(db: AsyncSession) -> Dict[str, Any]:
@@ -168,6 +183,26 @@ async def load_system_settings(db: AsyncSession) -> Dict[str, Any]:
                 description=f"Системний параметр {k}"
             ))
             needs_flush = True
+
+    # Авто-міграція старих не-WOG кешованих інтернет-цін на актуальне табло АЗК WOG
+    if "WOG" not in str(merged.get("internet_prices_source") or "").upper():
+        wog_keys = (
+            "internet_price_a95",
+            "internet_price_a95_mustang",
+            "internet_price_a100_mustang",
+            "internet_price_a92",
+            "internet_price_dp",
+            "internet_price_dp_mustang",
+            "internet_price_gas",
+            "internet_price_adblue",
+            "wog_lineup",
+            "internet_prices_source",
+        )
+        for wk in wog_keys:
+            merged[wk] = DEFAULT_SYSTEM_SETTINGS[wk]
+            if wk in existing_map:
+                existing_map[wk].value_json = json.dumps(DEFAULT_SYSTEM_SETTINGS[wk], ensure_ascii=False)
+                needs_flush = True
 
     if needs_flush:
         await db.commit()
@@ -260,14 +295,21 @@ async def update_system_settings(
 
 async def refresh_internet_fuel_prices(db: AsyncSession) -> Dict[str, Any]:
     """
-    Запитує актуальні ціни на пальне з інтернету та зберігає їх у SystemSetting.
+    Запитує актуальні ціни на пальне з офіційного сайту АЗК WOG (https://wog.ua/ua/fuels/)
+    та зберігає їх у SystemSetting.
     """
-    prices, source_label, is_live = fetch_ukraine_fuel_prices_online()
+    prices, lineup, source_label, is_live = fetch_ukraine_fuel_prices_online()
     now_str = datetime.datetime.now(ZoneInfo(get_runtime_timezone())).strftime("%Y-%m-%d %H:%M:%S")
     updates = {
         "internet_price_a95": prices.get("А-95", DEFAULT_INTERNET_PRICES["А-95"]),
+        "internet_price_a95_mustang": prices.get("А-95 Mustang", DEFAULT_INTERNET_PRICES["А-95 Mustang"]),
+        "internet_price_a100_mustang": prices.get("А-100 Mustang", DEFAULT_INTERNET_PRICES["А-100 Mustang"]),
         "internet_price_a92": prices.get("А-92", DEFAULT_INTERNET_PRICES["А-92"]),
         "internet_price_dp": prices.get("ДП", DEFAULT_INTERNET_PRICES["ДП"]),
+        "internet_price_dp_mustang": prices.get("ДП Mustang+", DEFAULT_INTERNET_PRICES["ДП Mustang+"]),
+        "internet_price_gas": prices.get("ГАЗ", DEFAULT_INTERNET_PRICES["ГАЗ"]),
+        "internet_price_adblue": prices.get("AdBlue", DEFAULT_INTERNET_PRICES["AdBlue"]),
+        "wog_lineup": lineup,
         "internet_prices_updated_at": now_str,
         "internet_prices_source": source_label,
     }
@@ -278,30 +320,34 @@ async def refresh_internet_fuel_prices(db: AsyncSession) -> Dict[str, Any]:
 def get_fuel_prices_info() -> Dict[str, Any]:
     """
     Повертає повну інформацію про ціни на пальне:
-    налаштовані вручну, ціни з інтернету та ефективні (діючі) ціни для розрахунку.
+    налаштовані вручну, ціни з мережі WOG (https://wog.ua/ua/fuels/) та ефективні (діючі) ціни.
     """
     mapping = [
         ("А-95", "fuel_price_a95", "internet_price_a95"),
-        ("А-92", "fuel_price_a92", "internet_price_a92"),
+        ("А-95 Mustang", "fuel_price_a95", "internet_price_a95_mustang"),
         ("ДП", "fuel_price_dp", "internet_price_dp"),
+        ("ДП Mustang+", "fuel_price_dp", "internet_price_dp_mustang"),
+        ("ГАЗ", "fuel_price_a92", "internet_price_gas"),
+        ("А-92", "fuel_price_a92", "internet_price_a92"),
     ]
     fuels: Dict[str, Dict[str, Any]] = {}
     for label, conf_key, net_key in mapping:
         conf_val = float(RUNTIME_SETTINGS.get(conf_key) or 0.0)
-        net_val = float(RUNTIME_SETTINGS.get(net_key) or DEFAULT_INTERNET_PRICES[label])
-        if conf_val > 0:
+        net_val = float(RUNTIME_SETTINGS.get(net_key) or DEFAULT_INTERNET_PRICES.get(label, 92.90))
+        # Якщо обрано преміум пальне Mustang і базова ручна ціна = 0, беремо інтернет-ціну Mustang
+        if conf_val > 0 and label in ("А-95", "ДП", "А-92"):
             effective = round(conf_val, 2)
             source = "settings"
             source_name = "Встановлено в налаштуваннях"
         else:
             effective = round(net_val, 2)
             source = "internet"
-            source_name = str(RUNTIME_SETTINGS.get("internet_prices_source") or "Інтернет (АЗС України)")
+            source_name = str(RUNTIME_SETTINGS.get("internet_prices_source") or "АЗК WOG (wog.ua/ua/fuels/)")
 
         fuels[label] = {
             "fuel_type": label,
             "effective_price": effective,
-            "configured_price": round(conf_val, 2),
+            "configured_price": round(conf_val, 2) if label in ("А-95", "ДП", "А-92") else 0.0,
             "internet_price": round(net_val, 2),
             "source": source,
             "source_name": source_name,
@@ -309,9 +355,10 @@ def get_fuel_prices_info() -> Dict[str, Any]:
 
     return {
         "fuels": fuels,
+        "wog_lineup": RUNTIME_SETTINGS.get("wog_lineup") or list(DEFAULT_WOG_LINEUP),
         "auto_fetch_fuel_prices": bool(RUNTIME_SETTINGS.get("auto_fetch_fuel_prices", True)),
         "internet_prices_updated_at": RUNTIME_SETTINGS.get("internet_prices_updated_at") or "",
-        "internet_prices_source": RUNTIME_SETTINGS.get("internet_prices_source") or "Ринковий індикатор АЗС України",
+        "internet_prices_source": RUNTIME_SETTINGS.get("internet_prices_source") or "АЗК WOG (wog.ua/ua/fuels/)",
     }
 
 
@@ -319,37 +366,65 @@ async def resolve_fuel_price_per_liter(db: AsyncSession, fuel_type: str) -> Tupl
     """
     Визначає ціну за літр для оприбуткування палива, якщо сума чека не була вказана:
     1) Якщо в налаштуваннях задана ціна > 0 для цього типу палива -> використовує її.
-    2) Інакше якщо увімкнено автооновлення і ціни з інтернету ще не оновлювалися -> оновлює з інтернету та повертає інтернет-ціну.
+    2) Інакше використовує актуальну ціну з АЗК WOG (https://wog.ua/ua/fuels/).
     """
     await load_system_settings(db)
     ft = (fuel_type or "А-95").strip().upper()
-    if "92" in ft:
+    is_mustang = "MUSTANG" in ft or "+" in ft
+
+    if "100" in ft:
+        norm_ft = "А-100 Mustang"
+        conf_key = None
+        net_key = "internet_price_a100_mustang"
+    elif "ГАЗ" in ft or "LPG" in ft or "GAS" in ft:
+        norm_ft = "ГАЗ"
+        conf_key = None
+        net_key = "internet_price_gas"
+    elif "ADBLUE" in ft:
+        norm_ft = "AdBlue"
+        conf_key = None
+        net_key = "internet_price_adblue"
+    elif "92" in ft:
         norm_ft = "А-92"
         conf_key = "fuel_price_a92"
         net_key = "internet_price_a92"
     elif "ДП" in ft or "ДИЗ" in ft or "DIESEL" in ft:
-        norm_ft = "ДП"
-        conf_key = "fuel_price_dp"
-        net_key = "internet_price_dp"
+        if is_mustang:
+            norm_ft = "ДП Mustang+"
+            conf_key = None
+            net_key = "internet_price_dp_mustang"
+        else:
+            norm_ft = "ДП"
+            conf_key = "fuel_price_dp"
+            net_key = "internet_price_dp"
     else:
-        norm_ft = "А-95"
-        conf_key = "fuel_price_a95"
-        net_key = "internet_price_a95"
+        if is_mustang:
+            norm_ft = "А-95 Mustang"
+            conf_key = None
+            net_key = "internet_price_a95_mustang"
+        else:
+            norm_ft = "А-95"
+            conf_key = "fuel_price_a95"
+            net_key = "internet_price_a95"
 
-    conf_price = float(RUNTIME_SETTINGS.get(conf_key) or 0.0)
-    if conf_price > 0:
-        return round(conf_price, 2), "system_settings"
+    if conf_key:
+        conf_price = float(RUNTIME_SETTINGS.get(conf_key) or 0.0)
+        if conf_price > 0:
+            return round(conf_price, 2), "system_settings"
 
-    # Try refreshing from internet if never updated or if auto_fetch is enabled and cache is empty
-    if RUNTIME_SETTINGS.get("auto_fetch_fuel_prices", True) and not RUNTIME_SETTINGS.get("internet_prices_updated_at"):
+    # Try refreshing from WOG if never updated or if legacy non-WOG source is cached
+    cur_source = str(RUNTIME_SETTINGS.get("internet_prices_source") or "")
+    if RUNTIME_SETTINGS.get("auto_fetch_fuel_prices", True) and (
+        not RUNTIME_SETTINGS.get("internet_prices_updated_at") or "WOG" not in cur_source.upper()
+    ):
         try:
             await refresh_internet_fuel_prices(db)
         except Exception:
             pass
 
-    net_price = float(RUNTIME_SETTINGS.get(net_key) or DEFAULT_INTERNET_PRICES.get(norm_ft, 56.50))
+    net_price = float(RUNTIME_SETTINGS.get(net_key) or DEFAULT_INTERNET_PRICES.get(norm_ft, 92.90))
     if net_price <= 0:
-        net_price = DEFAULT_INTERNET_PRICES.get(norm_ft, 56.50)
+        net_price = DEFAULT_INTERNET_PRICES.get(norm_ft, 92.90)
 
     return round(net_price, 2), "internet"
 

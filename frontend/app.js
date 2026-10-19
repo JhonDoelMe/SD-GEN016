@@ -553,9 +553,17 @@ window.updateReceiptPriceEstimate = function () {
   const rawCost = document.getElementById('recCostTotal')?.value?.trim() || '';
   const costVal = rawCost ? parseFloat(rawCost) : 0;
 
+  const wogFallbacks = {
+    'А-95': 92.90,
+    'А-95 Mustang': 95.90,
+    'ДП': 103.50,
+    'ДП Mustang+': 106.50,
+    'ГАЗ': 52.50,
+    'А-92': 89.90
+  };
   const fuelEntry = cachedFuelPrices?.fuels?.[fuelType];
-  const unitPrice = fuelEntry ? Number(fuelEntry.effective_price) : (fuelType === 'А-92' ? 53.9 : (fuelType === 'ДП' ? 52.8 : 56.5));
-  const srcName = fuelEntry ? fuelEntry.source_name : 'Інтернет / Налаштування';
+  const unitPrice = fuelEntry ? Number(fuelEntry.effective_price) : (wogFallbacks[fuelType] || 92.90);
+  const srcName = fuelEntry ? fuelEntry.source_name : 'АЗК WOG (wog.ua/ua/fuels/)';
 
   if (costVal > 0 && litersVal > 0) {
     const manualPerL = (costVal / litersVal).toFixed(2);
@@ -1671,25 +1679,51 @@ async function refreshServerStatus() {
   } catch (_) {}
 }
 
-// Admin System Settings, Internet Fuel Prices & DB Reset
+// Admin System Settings, WOG Fuel Prices & DB Reset
 function renderAdminFuelPricesHints(fp) {
   if (!fp || !fp.fuels) return;
   cachedFuelPrices = fp;
   const metaEl = document.getElementById('sysInternetPricesMeta');
   if (metaEl) {
     const upd = fp.internet_prices_updated_at ? ` (оновлено: ${fp.internet_prices_updated_at})` : '';
-    metaEl.textContent = `Джерело: ${fp.internet_prices_source || 'Інтернет'}${upd}`;
+    metaEl.textContent = `Джерело: ${fp.internet_prices_source || 'АЗК WOG (wog.ua/ua/fuels/)'}${upd}`;
   }
+
+  // Render WOG Price Board
+  const boardEl = document.getElementById('wogPriceBoard');
+  if (boardEl) {
+    const lineup = Array.isArray(fp.wog_lineup) && fp.wog_lineup.length > 0 ? fp.wog_lineup : [
+      { type: 'ДП', brand: 'Євро5', price: fp.fuels['ДП']?.internet_price ?? 103.50 },
+      { type: 'ДП', brand: 'Mustang+', price: fp.fuels['ДП Mustang+']?.internet_price ?? 106.50 },
+      { type: '95', brand: 'Євро5-Е10', price: fp.fuels['А-95']?.internet_price ?? 92.90 },
+      { type: '95', brand: 'Mustang Євро5-Е10', price: fp.fuels['А-95 Mustang']?.internet_price ?? 95.90 },
+      { type: '100', brand: 'Mustang Євро5-Е0', price: 102.90 },
+      { type: 'ГАЗ', brand: '', price: fp.fuels['ГАЗ']?.internet_price ?? 52.50 },
+      { type: 'AdBlue', brand: '', price: 61.90 }
+    ];
+    boardEl.innerHTML = lineup.map((item) => {
+      const isMustang = String(item.brand || '').toLowerCase().includes('mustang');
+      const badgeColor = isMustang ? '#ef4444' : '#3b82f6';
+      return `<div style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(148, 163, 184, 0.22); border-left: 3px solid ${badgeColor}; border-radius: 0.5rem; padding: 0.55rem 0.7rem; display: flex; justify-content: space-between; align-items: center; gap: 0.4rem;">
+        <div>
+          <div style="font-weight: 800; font-size: 0.95rem; color: #f8fafc; line-height: 1.1;">${escapeHtml(item.type)}</div>
+          <div style="font-size: 0.72rem; color: ${isMustang ? '#fca5a5' : '#94a3b8'};">${escapeHtml(item.brand || 'Стандарт')}</div>
+        </div>
+        <div style="font-weight: 800; font-size: 1.05rem; color: #4ade80; white-space: nowrap;">${Number(item.price).toFixed(2)} <span style="font-size: 0.7rem; font-weight: 500; color: #94a3b8;">₴</span></div>
+      </div>`;
+    }).join('');
+  }
+
   const map = [
-    ['А-95', 'sysNetHintA95'],
-    ['А-92', 'sysNetHintA92'],
-    ['ДП', 'sysNetHintDP']
+    ['А-95', 'sysNetHintA95', 'WOG 95 Євро5'],
+    ['ДП', 'sysNetHintDP', 'WOG ДП Євро5'],
+    ['А-92', 'sysNetHintA92', 'Індикатор А-92']
   ];
-  for (const [fKey, elId] of map) {
+  for (const [fKey, elId, labelPrefix] of map) {
     const el = document.getElementById(elId);
     const info = fp.fuels[fKey];
     if (el && info) {
-      el.textContent = `Інтернет-ціна: ${Number(info.internet_price).toFixed(2)} грн/л | Діюча: ${Number(info.effective_price).toFixed(2)} грн/л`;
+      el.textContent = `${labelPrefix}: ${Number(info.internet_price).toFixed(2)} грн/л | Діюча: ${Number(info.effective_price).toFixed(2)} грн/л`;
     }
   }
 }
@@ -1718,13 +1752,13 @@ async function loadAdminSystemSettings() {
 
 window.refreshFuelPricesFromInternet = async function () {
   try {
-    showToast('Запит актуальних цін на паливо з інтернету...', 'info');
+    showToast('Запит актуальних цін з офіційного сайту АЗК WOG (wog.ua)...', 'info');
     const fp = await api('/system/fuel-prices/refresh', { method: 'POST' });
     renderAdminFuelPricesHints(fp);
-    const a95 = fp?.fuels?.['А-95']?.internet_price ?? '-';
-    const a92 = fp?.fuels?.['А-92']?.internet_price ?? '-';
-    const dp = fp?.fuels?.['ДП']?.internet_price ?? '-';
-    showToast(`Ціни оновлено! А-95: ${a95} грн | А-92: ${a92} грн | ДП: ${dp} грн`, 'success');
+    const dp = Number(fp?.fuels?.['ДП']?.internet_price ?? 103.50).toFixed(2);
+    const a95 = Number(fp?.fuels?.['А-95']?.internet_price ?? 92.90).toFixed(2);
+    const gas = Number(fp?.fuels?.['ГАЗ']?.internet_price ?? 52.50).toFixed(2);
+    showToast(`Ціни АЗК WOG оновлено! ДП: ${dp} грн | А-95: ${a95} грн | ГАЗ: ${gas} грн`, 'success');
   } catch (_) {}
 };
 

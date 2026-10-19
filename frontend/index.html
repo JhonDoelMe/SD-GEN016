@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=2.6">
+  <link rel="stylesheet" href="/frontend/styles.css?v=2.7">
 </head>
 <body>
 
@@ -507,7 +507,7 @@
         <div class="panel-header">
           <h3>⚙️ Глобальні налаштування системи та Ціни на паливо (Тільки Адміністратор)</h3>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #38bdf8; color: #38bdf8;" onclick="refreshFuelPricesFromInternet()">🌐 Оновити ціни з інтернету</button>
+            <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #22c55e; color: #4ade80;" onclick="refreshFuelPricesFromInternet()">🟢 Оновити ціни АЗК WOG</button>
             <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #ef4444; color: #f87171;" onclick="openSystemResetModal()">🧹 Очищення даних / Скидання БД</button>
           </div>
         </div>
@@ -546,29 +546,30 @@
             </div>
           </div>
 
-          <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 0.65rem; padding: 1rem; margin-bottom: 1rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem;">
-              <h4 style="margin: 0; color: #38bdf8;">⛽ Ціни на паливо (грн/л) — Налаштування та Авто-ціни з інтернету</h4>
-              <span id="sysInternetPricesMeta" style="font-size: 0.8rem; color: var(--text-muted);">Джерело: завантаження...</span>
+          <div style="background: rgba(34, 197, 94, 0.07); border: 1px solid rgba(34, 197, 94, 0.28); border-radius: 0.65rem; padding: 1rem; margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.6rem;">
+              <h4 style="margin: 0; color: #4ade80;">⛽ Ціни на паливо (грн/л) — Табло АЗК WOG (<a href="https://wog.ua/ua/fuels/" target="_blank" rel="noopener" style="color: #38bdf8;">wog.ua/ua/fuels</a>)</h4>
+              <span id="sysInternetPricesMeta" style="font-size: 0.8rem; color: var(--text-muted);">Джерело: АЗК WOG</span>
             </div>
             <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-              Якщо поле ціни залишити <b>0</b> (або порожнім), при оприбуткуванні палива без суми чека система автоматично використає актуальну середню ціну з інтернету по Україні.
+              Актуальне табло цін мережі <b>АЗК WOG</b>. Якщо поле власної фіксованої ціни нижче залишити <b>0</b>, при оприбуткуванні палива без суми чека система автоматично розрахує вартість за ціною WOG.
             </p>
+            <div id="wogPriceBoard" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 0.6rem; margin-bottom: 1rem;"></div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
               <div class="form-group" style="margin-bottom: 0;">
-                <label>Бензин А-95 (грн/л, 0 = з інтернету)</label>
+                <label>Фіксована ціна А-95 (грн/л, 0 = ціна WOG)</label>
                 <input type="number" step="0.01" min="0" id="sysPriceA95" value="0">
-                <small id="sysNetHintA95" style="color: #4ade80; display: block; margin-top: 0.25rem;">Інтернет-ціна: -- грн/л</small>
+                <small id="sysNetHintA95" style="color: #4ade80; display: block; margin-top: 0.25rem;">WOG 95 Євро5: 92.90 грн/л</small>
               </div>
               <div class="form-group" style="margin-bottom: 0;">
-                <label>Бензин А-92 (грн/л, 0 = з інтернету)</label>
-                <input type="number" step="0.01" min="0" id="sysPriceA92" value="0">
-                <small id="sysNetHintA92" style="color: #4ade80; display: block; margin-top: 0.25rem;">Інтернет-ціна: -- грн/л</small>
-              </div>
-              <div class="form-group" style="margin-bottom: 0;">
-                <label>Дизпаливо ДП (грн/л, 0 = з інтернету)</label>
+                <label>Фіксована ціна ДП (грн/л, 0 = ціна WOG)</label>
                 <input type="number" step="0.01" min="0" id="sysPriceDP" value="0">
-                <small id="sysNetHintDP" style="color: #4ade80; display: block; margin-top: 0.25rem;">Інтернет-ціна: -- грн/л</small>
+                <small id="sysNetHintDP" style="color: #4ade80; display: block; margin-top: 0.25rem;">WOG ДП Євро5: 103.50 грн/л</small>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Фіксована ціна А-92 (грн/л, 0 = ціна WOG)</label>
+                <input type="number" step="0.01" min="0" id="sysPriceA92" value="0">
+                <small id="sysNetHintA92" style="color: #4ade80; display: block; margin-top: 0.25rem;">WOG Ідикатор: 89.90 грн/л</small>
               </div>
             </div>
           </div>
@@ -734,9 +735,12 @@
         <div class="form-group">
           <label>Тип палива</label>
           <select id="recFuelType" onchange="updateReceiptPriceEstimate()">
-            <option value="А-95" selected>А-95</option>
+            <option value="А-95" selected>А-95 (WOG 95 Євро5-Е10)</option>
+            <option value="А-95 Mustang">А-95 Mustang (WOG 95 Mustang)</option>
+            <option value="ДП">ДП (WOG ДП Євро5)</option>
+            <option value="ДП Mustang+">ДП Mustang+ (WOG ДП Mustang+)</option>
+            <option value="ГАЗ">ГАЗ (WOG LPG)</option>
             <option value="А-92">А-92</option>
-            <option value="ДП">ДП</option>
           </select>
         </div>
         <div class="form-group">
@@ -745,9 +749,9 @@
         </div>
         <div class="form-group">
           <label>Сума за чеком (грн) — <span style="color: #38bdf8; font-weight: 400;">необов'язково (авторозрахунок)</span></label>
-          <input type="number" step="0.01" id="recCostTotal" placeholder="Залиште порожнім для авторозрахунку за ціною з налаштувань/інтернету" oninput="updateReceiptPriceEstimate()">
+          <input type="number" step="0.01" id="recCostTotal" placeholder="Залиште порожнім для авторозрахунку за ціною з налаштувань/WOG" oninput="updateReceiptPriceEstimate()">
           <div id="recAutoPriceHint" style="margin-top: 0.4rem; padding: 0.5rem 0.65rem; border-radius: 0.45rem; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 0.82rem; color: #cbd5e1;">
-            💡 Введіть кількість літрів — якщо суму не вказано, її буде розраховано автоматично за ціною з налаштувань або інтернету.
+            💡 Введіть кількість літрів — якщо суму не вказано, її буде розраховано автоматично за ціною з налаштувань або табло АЗК WOG.
           </div>
         </div>
         <div class="form-group">
@@ -786,9 +790,12 @@
         <div class="form-group">
           <label>Тип палива</label>
           <select id="newStockFuelType">
-            <option value="А-95" selected>А-95</option>
+            <option value="А-95" selected>А-95 (WOG 95 Євро5-Е10)</option>
+            <option value="А-95 Mustang">А-95 Mustang (WOG 95 Mustang)</option>
+            <option value="ДП">ДП (WOG ДП Євро5)</option>
+            <option value="ДП Mustang+">ДП Mustang+ (WOG ДП Mustang+)</option>
+            <option value="ГАЗ">ГАЗ (WOG LPG)</option>
             <option value="А-92">А-92</option>
-            <option value="ДП">ДП</option>
           </select>
         </div>
         <div class="form-group">
@@ -1378,7 +1385,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=2.6"></script>
+  <script src="/frontend/app.js?v=2.7"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>
