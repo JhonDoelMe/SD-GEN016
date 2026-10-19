@@ -74,7 +74,7 @@ async def test_fault_lifecycle_and_generator_safety(client, superadmin_auth, ope
 
 
 @pytest.mark.asyncio
-async def test_operational_reports_and_csv_export(client, superadmin_auth):
+async def test_operational_reports_and_csv_export(client, superadmin_auth, operator_auth):
     # Fetch summary
     rep_res = await client.get("/api/v1/reports/summary", headers=superadmin_auth)
     assert rep_res.status_code == 200
@@ -82,8 +82,13 @@ async def test_operational_reports_and_csv_export(client, superadmin_auth):
     assert "total_operating_hours" in rep_data
     assert "total_fuel_received_l" in rep_data
 
-    # Fetch CSV export
+    # CSV export must be disabled per business requirements
     csv_res = await client.get("/api/v1/reports/export", headers=superadmin_auth)
-    assert csv_res.status_code == 200
-    assert "text/csv" in csv_res.headers["content-type"]
-    assert "Параметр" in csv_res.text
+    assert csv_res.status_code == 400
+    assert "CSV вимкнено" in csv_res.json()["detail"]
+
+    # Excel export must succeed (both for superadmin and operator)
+    excel_res = await client.get("/api/v1/reports/export-excel", headers=operator_auth)
+    assert excel_res.status_code == 200
+    assert "spreadsheetml.sheet" in excel_res.headers["content-type"]
+    assert len(excel_res.content) > 1000

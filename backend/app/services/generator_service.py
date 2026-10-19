@@ -10,7 +10,8 @@ from backend.app.models.generator import Generator, GeneratorSchedule, Generator
 from backend.app.models.maintenance import MaintenanceSchedule, MaintenanceRecord
 from backend.app.models.fault import Fault
 from backend.app.models.fuel import FuelTransfer
-from backend.app.schemas.generator import GeneratorWizardSetup, GeneratorCreate, GeneratorStopRequest
+from backend.app.models.facility import Facility
+from backend.app.schemas.generator import GeneratorWizardSetup, GeneratorCreate, GeneratorStopRequest, GeneratorUpdate
 from backend.app.services.audit_service import log_audit
 
 
@@ -518,3 +519,98 @@ async def delete_generator(
     await db.commit()
 
     return {"message": f"Генератор '{gen_name}' (ID {generator_id}) успішно видалено"}
+
+
+async def update_generator(
+    db: AsyncSession,
+    generator_id: int,
+    data: GeneratorUpdate,
+    user_id: int,
+    ip_address: Optional[str] = None
+) -> Generator:
+    res = await db.execute(
+        select(Generator).options(selectinload(Generator.schedules)).where(Generator.id == generator_id)
+    )
+    generator = res.scalars().first()
+    if not generator:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+
+    changes = {}
+
+    if data.facility_id is not None and data.facility_id != generator.facility_id:
+        fac_check = await db.execute(select(Facility).where(Facility.id == data.facility_id))
+        if not fac_check.scalars().first():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вказаний об'єкт не знайдено")
+        changes["facility_id"] = (generator.facility_id, data.facility_id)
+        generator.facility_id = data.facility_id
+
+    if data.name is not None and data.name.strip():
+        new_name = data.name.strip()
+        if new_name != generator.name:
+            changes["name"] = (generator.name, new_name)
+            generator.name = new_name
+
+    if data.model is not None and data.model.strip():
+        new_model = data.model.strip()
+        if new_model != generator.model:
+            changes["model"] = (generator.model, new_model)
+            generator.model = new_model
+
+    if data.manufacturer is not None and data.manufacturer.strip():
+        new_mfg = data.manufacturer.strip()
+        if new_mfg != generator.manufacturer:
+            changes["manufacturer"] = (generator.manufacturer, new_mfg)
+            generator.manufacturer = new_mfg
+
+    if data.serial_number is not None and data.serial_number.strip():
+        new_sn = data.serial_number.strip()
+        if new_sn != generator.serial_number:
+            changes["serial_number"] = (generator.serial_number, new_sn)
+            generator.serial_number = new_sn
+
+    if data.rated_power_kw is not None and data.rated_power_kw > 0:
+        if data.rated_power_kw != generator.rated_power_kw:
+            changes["rated_power_kw"] = (generator.rated_power_kw, data.rated_power_kw)
+            generator.rated_power_kw = data.rated_power_kw
+
+    if data.tank_capacity_l is not None and data.tank_capacity_l > 0:
+        if data.tank_capacity_l != generator.tank_capacity_l:
+            changes["tank_capacity_l"] = (generator.tank_capacity_l, data.tank_capacity_l)
+            generator.tank_capacity_l = data.tank_capacity_l
+
+    if data.fuel_type is not None and data.fuel_type.strip():
+        new_ft = data.fuel_type.strip()
+        if new_ft != generator.fuel_type:
+            changes["fuel_type"] = (generator.fuel_type, new_ft)
+            generator.fuel_type = new_ft
+
+    if data.nominal_consumption_l_per_h is not None and data.nominal_consumption_l_per_h > 0:
+        if data.nominal_consumption_l_per_h != generator.nominal_consumption_l_per_h:
+            changes["nominal_consumption_l_per_h"] = (generator.nominal_consumption_l_per_h, data.nominal_consumption_l_per_h)
+            generator.nominal_consumption_l_per_h = data.nominal_consumption_l_per_h
+
+    if data.timezone is not None and data.timezone.strip():
+        new_tz = data.timezone.strip()
+        if new_tz != generator.timezone:
+            changes["timezone"] = (generator.timezone, new_tz)
+            generator.timezone = new_tz
+
+    generator.updated_at = utc_now()
+    await db.flush()
+
+    if changes:
+        await log_audit(
+            db=db,
+            action="GENERATOR_UPDATED",
+            entity_type="Generator",
+            entity_id=str(generator.id),
+            user_id=user_id,
+            details={"changes": {k: {"old": str(v[0]), "new": str(v[1])} for k, v in changes.items()}},
+            ip_address=ip_address
+        )
+        await db.commit()
+
+    res = await db.execute(
+        select(Generator).options(selectinload(Generator.schedules)).where(Generator.id == generator.id)
+    )
+    return res.scalars().first()

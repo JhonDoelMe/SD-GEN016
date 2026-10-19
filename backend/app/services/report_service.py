@@ -63,7 +63,7 @@ def sanitize_spreadsheet_cell(val):
     return val
 
 
-def auto_adjust_column_widths(ws, min_width=12, padding=3):
+def auto_adjust_column_widths(ws, min_width=12, max_width=50, padding=3):
     for col in ws.columns:
         max_len = 0
         col_letter = get_column_letter(col[0].column)
@@ -74,7 +74,7 @@ def auto_adjust_column_widths(ws, min_width=12, padding=3):
                 max_len = max(max_len, max(len(l) for l in lines))
             else:
                 max_len = max(max_len, len(val_str))
-        ws.column_dimensions[col_letter].width = max(max_len + padding, min_width)
+        ws.column_dimensions[col_letter].width = min(max(max_len + padding, min_width), max_width)
 
 
 # Styling Definitions

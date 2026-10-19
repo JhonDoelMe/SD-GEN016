@@ -47,10 +47,10 @@ ROLE_PERMISSIONS_MAP = {
         "fuel:view", "fuel:receipt", "fuel:transfer",
         "maintenance:view", "maintenance:create_intermediate", "maintenance:perform_scheduled",
         "faults:view", "faults:create",
-        "reports:view"
+        "reports:view", "reports:export"
     ],
     "viewer": [
-        "generator:view", "fuel:view", "maintenance:view", "faults:view", "reports:view"
+        "generator:view", "fuel:view", "maintenance:view", "faults:view", "reports:view", "reports:export"
     ],
 }
 

@@ -8,13 +8,13 @@ from backend.app.models.user import User
 from backend.app.models.generator import Generator, GeneratorRun
 from backend.app.schemas.generator import (
     GeneratorOut, GeneratorWizardSetup, GeneratorCreate, GeneratorStartRequest,
-    GeneratorStopRequest, GeneratorRunOut
+    GeneratorStopRequest, GeneratorRunOut, GeneratorUpdate
 )
 from backend.app.api.deps import get_current_user, require_permission, get_client_ip
 from backend.app.services.generator_service import (
     get_or_create_default_generator, setup_generator_wizard,
     start_generator, stop_generator, get_generators_list,
-    create_generator, delete_generator
+    create_generator, delete_generator, update_generator
 )
 
 def format_seconds(seconds: Optional[int]) -> Optional[str]:
@@ -97,6 +97,19 @@ async def delete_generator_api(
     """Видалити генератор"""
     client_ip = get_client_ip(request)
     return await delete_generator(db, generator_id, current_user.id, client_ip)
+
+
+@router.put("/{generator_id}", response_model=GeneratorOut)
+async def update_generator_api(
+    generator_id: int,
+    data: GeneratorUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("generator:configure"))
+):
+    """Швидке оновлення налаштувань генератора (назва, модель, бак, розхід тощо)"""
+    client_ip = get_client_ip(request)
+    return await update_generator(db, generator_id, data, current_user.id, client_ip)
 
 
 @router.post("/wizard", response_model=GeneratorOut)

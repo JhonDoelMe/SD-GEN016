@@ -288,3 +288,42 @@ async def test_multi_warehouse_receipt_transfer_and_excel(client, superadmin_aut
     assert "Резервний склад Львів" in sheet_text
     assert "ЧЕК-LV-100" in sheet_text
 
+
+@pytest.mark.asyncio
+async def test_system_status_api(client, superadmin_auth):
+    """Тест ендпоінту стану сервера для підвалу сайту"""
+    res = await client.get("/api/v1/system/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "online"
+    assert "cpu" in data and "percent" in data["cpu"]
+    assert "memory" in data and "percent" in data["memory"]
+    assert "uptime" in data and "formatted" in data["uptime"]
+    assert data["database"]["status"] == "connected"
+    assert "timezone" in data
+
+
+@pytest.mark.asyncio
+async def test_generator_quick_update_api(client, superadmin_auth):
+    """Тест швидких налаштувань генератора через PUT /api/v1/generator/{id}"""
+    # 1. Fetch default generator
+    gen_res = await client.get("/api/v1/generator", headers=superadmin_auth)
+    assert gen_res.status_code == 200
+    gen_id = gen_res.json()["id"]
+
+    # 2. Update settings
+    upd_res = await client.put(f"/api/v1/generator/{gen_id}", json={
+        "name": "Генератор Оновлений",
+        "model": "Honda GX390 Pro",
+        "rated_power_kw": 6.0,
+        "tank_capacity_l": 28.0,
+        "nominal_consumption_l_per_h": 2.25
+    }, headers=superadmin_auth)
+    assert upd_res.status_code == 200
+    updated = upd_res.json()
+    assert updated["name"] == "Генератор Оновлений"
+    assert updated["model"] == "Honda GX390 Pro"
+    assert updated["rated_power_kw"] == 6.0
+    assert updated["tank_capacity_l"] == 28.0
+    assert updated["nominal_consumption_l_per_h"] == 2.25
+

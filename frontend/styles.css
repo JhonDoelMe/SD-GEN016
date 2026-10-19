@@ -334,6 +334,26 @@ body {
 }
 .btn-control-del:hover { background: #b91c1c; }
 
+.btn-control-edit {
+  height: 38px;
+  padding: 0.35rem 0.65rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
+  color: #f1f5f9;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-control-edit:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
 /* ==========================================================================
    Navigation Tabs
    ========================================================================== */
@@ -1035,4 +1055,123 @@ input:focus, select:focus, textarea:focus {
     max-width: 500px;
     margin: 0 auto;
   }
+}
+
+/* ==========================================================================
+   App Footer & Server Status Bar
+   ========================================================================== */
+.app-footer {
+  margin-top: 3rem;
+  background: #090e1a;
+  border-top: 1px solid var(--border-color);
+  padding: 1.5rem 1rem calc(1.5rem + var(--safe-bottom));
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.footer-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  align-items: center;
+  text-align: center;
+}
+
+.server-status-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  width: 100%;
+}
+
+.status-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.status-metric-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.status-metric-val {
+  color: #f8fafc;
+  font-weight: 700;
+  font-family: monospace;
+}
+
+.status-metric-sub {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.status-pulse-dot {
+  width: 9px;
+  height: 9px;
+  background-color: #22c55e;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 8px #22c55e;
+  animation: pulseGreen 2s infinite ease-in-out;
+}
+
+@keyframes pulseGreen {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+.footer-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.footer-link-btn, .footer-link-a {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.2s, background 0.2s;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+}
+
+.footer-link-btn:hover, .footer-link-a:hover {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.footer-dot {
+  color: #475569;
+}
+
+.footer-copyright {
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.footer-mail {
+  color: #38bdf8;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.footer-mail:hover {
+  text-decoration: underline;
 }

@@ -1125,35 +1125,21 @@ async function loadReport() {
         <div class="metric-sub">Усунено: ${escapeHtml(r.resolved_faults_count)} | Відкрито: ${escapeHtml(r.open_faults_count)}</div>
       </div>
     `;
-  } catch (_) {}
+  } catch (err) {
+    const container = document.getElementById('reportContainer');
+    if (container) {
+      container.innerHTML = `
+        <div style="grid-column: 1 / -1; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 0.75rem; padding: 1.5rem; text-align: center; color: #f87171;">
+          <div style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem;">⚠️ Не вдалося завантажити показники звіту</div>
+          <div style="font-size: 0.95rem;">${escapeHtml(err.message || 'Помилка отримання зведених даних')}</div>
+        </div>
+      `;
+    }
+  }
 }
 
 window.downloadReportCSV = function () {
-  const startInput = document.getElementById('repStartDate').value;
-  const endInput = document.getElementById('repEndDate').value;
-  let url = '/api/v1/reports/export';
-  const params = [];
-  if (currentGeneratorId) params.push(`generator_id=${encodeURIComponent(currentGeneratorId)}`);
-  if (currentFacilityId) params.push(`facility_id=${encodeURIComponent(currentFacilityId)}`);
-  if (startInput) params.push(`start_date=${encodeURIComponent(startInput)}`);
-  if (endInput) params.push(`end_date=${encodeURIComponent(endInput)}`);
-  if (params.length) url += `?${params.join('&')}`;
-
-  fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-    .then((res) => {
-      if (!res.ok) throw new Error('Помилка сервера при генерації CSV');
-      return res.blob();
-    })
-    .then((blob) => {
-      const a = document.createElement('a');
-      a.href = window.URL.createObjectURL(blob);
-      a.download = `generator_report_${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      showToast('CSV звіт успішно завантажено!', 'success');
-    })
-    .catch((err) => showToast(err.message || 'Помилка завантаження звіту', 'error'));
+  showToast('Експорт у форматі CSV вимкнено. Звіти формуються виключно у форматі Excel (.xlsx)', 'info');
 };
 
 window.downloadReportExcel = async function () {
@@ -1169,8 +1155,19 @@ window.downloadReportExcel = async function () {
 
   try {
     showToast('Формування динамічного Excel звіту (.xlsx)...', 'info');
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) throw new Error('Помилка сервера при створенні Excel');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(url, { headers, credentials: 'same-origin' });
+    if (!res.ok) {
+      let errMsg = `Помилка сервера при створенні Excel (${res.status})`;
+      try {
+        const errJson = await res.json();
+        errMsg = extractErrorMessage(errJson, errMsg);
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = window.URL.createObjectURL(blob);
@@ -1406,6 +1403,102 @@ document.getElementById('generatorSelect')?.addEventListener('change', async (e)
   await loadAllData();
 });
 
+// Quick Edit Facility Modal Handlers
+window.openQuickEditFacilityModal = async function() {
+  if (!currentFacilityId) {
+    showToast("Будь ласка, спочатку оберіть об'єкт", "warning");
+    return;
+  }
+  try {
+    const fac = await api(`/facilities/${currentFacilityId}`);
+    document.getElementById('quickEditFacilityId').value = fac.id;
+    document.getElementById('quickEditFacilityName').value = fac.name || '';
+    document.getElementById('quickEditFacilityAddress').value = fac.address || '';
+    document.getElementById('quickEditFacilityDescription').value = fac.description || '';
+    openModal('modalQuickEditFacility');
+  } catch (err) {
+    showToast(err.message || "Не вдалося завантажити дані об'єкта", 'error');
+  }
+};
+
+document.getElementById('quickEditFacilityForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const facId = parseInt(document.getElementById('quickEditFacilityId').value);
+  const name = document.getElementById('quickEditFacilityName').value.trim();
+  const address = document.getElementById('quickEditFacilityAddress').value.trim();
+  const description = document.getElementById('quickEditFacilityDescription').value.trim();
+
+  try {
+    const updated = await api(`/facilities/${facId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, address, description })
+    });
+    closeModal('modalQuickEditFacility');
+    showToast(`Об'єкт "${updated.name}" успішно оновлено!`, 'success');
+    await loadFacilitiesList();
+    if (document.getElementById('facilitySelect')) {
+      document.getElementById('facilitySelect').value = updated.id;
+    }
+    await loadAllData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+// Quick Edit Generator Modal Handlers
+window.openQuickEditGeneratorModal = async function() {
+  if (!currentGeneratorId) {
+    showToast("Будь ласка, спочатку оберіть генератор", "warning");
+    return;
+  }
+  try {
+    const gen = currentGenerator || await api(`/generator?generator_id=${currentGeneratorId}`);
+    document.getElementById('quickEditGenId').value = gen.id;
+    document.getElementById('quickEditGenName').value = gen.name || '';
+    document.getElementById('quickEditGenModel').value = gen.model || '';
+    document.getElementById('quickEditGenSerial').value = gen.serial_number || '';
+    document.getElementById('quickEditGenPower').value = gen.rated_power_kw || '';
+    document.getElementById('quickEditGenTank').value = gen.tank_capacity_l || '';
+    document.getElementById('quickEditGenConsumption').value = gen.nominal_consumption_l_per_h || '';
+    if (document.getElementById('quickEditGenFuelType')) {
+      document.getElementById('quickEditGenFuelType').value = gen.fuel_type || 'А-95';
+    }
+    openModal('modalQuickEditGenerator');
+  } catch (err) {
+    showToast(err.message || 'Не вдалося завантажити дані генератора', 'error');
+  }
+};
+
+document.getElementById('quickEditGeneratorForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const genId = parseInt(document.getElementById('quickEditGenId').value);
+  const body = {
+    name: document.getElementById('quickEditGenName').value.trim(),
+    model: document.getElementById('quickEditGenModel').value.trim(),
+    serial_number: document.getElementById('quickEditGenSerial').value.trim(),
+    rated_power_kw: parseFloat(document.getElementById('quickEditGenPower').value),
+    tank_capacity_l: parseFloat(document.getElementById('quickEditGenTank').value),
+    fuel_type: document.getElementById('quickEditGenFuelType').value,
+    nominal_consumption_l_per_h: parseFloat(document.getElementById('quickEditGenConsumption').value)
+  };
+
+  try {
+    const updated = await api(`/generator/${genId}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+    closeModal('modalQuickEditGenerator');
+    showToast(`Генератор "${updated.name}" успішно оновлено!`, 'success');
+    await loadGeneratorsList(currentFacilityId);
+    if (document.getElementById('generatorSelect')) {
+      document.getElementById('generatorSelect').value = updated.id;
+    }
+    await loadAllData();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
 // PWA Installation & First-Visit Prompt Logic
 let deferredInstallPrompt = null;
 
@@ -1500,10 +1593,38 @@ function setupPwaInstall() {
   });
 }
 
+// Live Server Status in Footer
+async function refreshServerStatus() {
+  try {
+    const res = await fetch('/api/v1/system/status');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    const statusEl = document.getElementById('footerServerStatus');
+    const cpuEl = document.getElementById('footerCpu');
+    const ramEl = document.getElementById('footerRam');
+    const ramMbEl = document.getElementById('footerRamMb');
+    const dbEl = document.getElementById('footerDb');
+    const uptimeEl = document.getElementById('footerUptime');
+
+    if (statusEl) statusEl.textContent = data.status === 'online' ? 'Онлайн' : data.status;
+    if (cpuEl) cpuEl.textContent = `${data.cpu.percent}%`;
+    if (ramEl) ramEl.textContent = `${data.memory.percent}%`;
+    if (ramMbEl) ramMbEl.textContent = `(${Math.round(data.memory.used_mb)} / ${Math.round(data.memory.total_mb)} МБ)`;
+    if (dbEl) {
+      dbEl.textContent = data.database.status === 'connected' ? 'OK' : 'Помилка';
+      dbEl.style.color = data.database.status === 'connected' ? '#22c55e' : '#ef4444';
+    }
+    if (uptimeEl) uptimeEl.textContent = data.uptime.formatted || `${data.uptime.seconds}с`;
+  } catch (_) {}
+}
+
 // Initialization on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   startClock();
   setupPwaInstall();
   checkAuth();
+  refreshServerStatus();
+  setInterval(refreshServerStatus, 30000);
 });
 

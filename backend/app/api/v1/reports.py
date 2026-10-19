@@ -1,6 +1,6 @@
 import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Response, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
@@ -49,34 +49,15 @@ async def get_report_summary(
 
 @router.get("/export")
 async def export_report(
-    generator_id: Optional[int] = None,
-    facility_id: Optional[int] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("reports:export"))
 ):
-    start_dt = parse_report_dt(start_date, is_end=False)
-    end_dt = parse_report_dt(end_date, is_end=True)
-
-    report = await generate_operational_report(
-        db=db,
-        generator_id=generator_id,
-        facility_id=facility_id,
-        start_date=start_dt,
-        end_date=end_dt
-    )
-    csv_content = export_report_to_csv(report)
-
-    filename = f"generator_report_{report.start_date}_{report.end_date}.csv"
-    response_bytes = ("\ufeff" + csv_content).encode("utf-8")
-
-    return Response(
-        content=response_bytes,
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        }
+    """
+    Експорт CSV вимкнено за бізнес-вимогами.
+    Система підтримує виключно багатосторінковий експорт у форматі Excel (.xlsx).
+    """
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Експорт у форматі CSV вимкнено. Система підтримує виключно експорт у форматі Excel (.xlsx). Будь ласка, використовуйте /api/v1/reports/export-excel"
     )
 
 
