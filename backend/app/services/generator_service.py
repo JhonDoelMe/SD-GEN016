@@ -11,7 +11,7 @@ from backend.app.models.maintenance import MaintenanceSchedule, MaintenanceRecor
 from backend.app.models.fault import Fault
 from backend.app.models.fuel import FuelTransfer
 from backend.app.models.facility import Facility
-from backend.app.schemas.generator import GeneratorWizardSetup, GeneratorCreate, GeneratorStopRequest, GeneratorUpdate
+from backend.app.schemas.generator import GeneratorWizardSetup, GeneratorCreate, GeneratorStopRequest, GeneratorUpdate, GeneratorManualRunCreate
 from backend.app.services.audit_service import log_audit
 
 
@@ -649,3 +649,122 @@ async def update_generator(
         select(Generator).options(selectinload(Generator.schedules)).where(Generator.id == generator.id)
     )
     return res.scalars().first()
+
+
+
+async def add_manual_run(
+    db: AsyncSession,
+    generator_id: int,
+    user_id: int,
+    data: GeneratorManualRunCreate,
+    ip_address: Optional[str] = None
+) -> GeneratorRun:
+    res = await db.execute(select(Generator).where(Generator.id == generator_id))
+    generator = res.scalars().first()
+    if not generator:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+
+    if data.start_time >= data.end_time:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Час завершення роботи має бути пізнішим за час запуску"
+        )
+
+    # Convert to naive UTC for storage consistency
+    start_dt = data.start_time.replace(tzinfo=None) if data.start_time.tzinfo else data.start_time
+    end_dt = data.end_time.replace(tzinfo=None) if data.end_time.tzinfo else data.end_time
+
+    # Calculate duration
+    duration_seconds = max(1, int((end_dt - start_dt).total_seconds()))
+    duration_hours = round(duration_seconds / 3600.0, 3)
+
+    # Operating hours
+    start_hours = data.start_hours if data.start_hours is not None else generator.current_operating_hours
+    if data.end_hours is not None:
+        if data.end_hours < start_hours:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Кінцеві мотогодини ({data.end_hours}) не можуть бути меншими за початкові ({start_hours})"
+            )
+        end_hours = data.end_hours
+        hours_worked = round(end_hours - start_hours, 2)
+        if hours_worked > 0:
+            duration_hours = hours_worked
+    else:
+        end_hours = round(start_hours + duration_hours, 2)
+
+    # Fuel consumption
+    if data.fuel_consumed_l is not None:
+        calculated_consumption = round(data.fuel_consumed_l, 2)
+    else:
+        calculated_consumption = round(duration_hours * generator.nominal_consumption_l_per_h, 3)
+
+    start_fuel = generator.fuel_tank_level_l
+    new_fuel_level = max(0.0, round(generator.fuel_tank_level_l - calculated_consumption, 2))
+
+    # Create run record
+    run = GeneratorRun(
+        generator_id=generator.id,
+        user_id=user_id,
+        start_time=start_dt,
+        end_time=end_dt,
+        start_hours=start_hours,
+        end_hours=end_hours,
+        duration_seconds=duration_seconds,
+        duration_hours=duration_hours,
+        start_fuel_level_l=start_fuel,
+        end_fuel_level_l=new_fuel_level,
+        calculated_consumption_l=calculated_consumption,
+        status="COMPLETED",
+        note=data.note.strip() if data.note else "Внесено вручну (запис з паперового журналу)"
+    )
+    db.add(run)
+
+    # Update generator metrics
+    generator.current_operating_hours = max(generator.current_operating_hours, end_hours)
+    generator.fuel_tank_level_l = new_fuel_level
+    generator.updated_at = utc_now()
+
+    # Check maintenance status
+    m_res = await db.execute(
+        select(MaintenanceSchedule).where(MaintenanceSchedule.generator_id == generator.id)
+    )
+    m_sched = m_res.scalars().first()
+    if m_sched and m_sched.is_active and generator.current_operating_hours >= m_sched.next_due_hours:
+        generator.status = "MAINTENANCE_REQUIRED"
+
+    await db.flush()
+
+    h = duration_seconds // 3600
+    m = (duration_seconds % 3600) // 60
+    s = duration_seconds % 60
+    duration_formatted = f"{h:02d}:{m:02d}:{s:02d}"
+
+    await log_audit(
+        db=db,
+        action="GENERATOR_MANUAL_RUN_ADDED",
+        entity_type="Generator",
+        entity_id=str(generator.id),
+        user_id=user_id,
+        details={
+            "run_id": run.id,
+            "start_time": str(start_dt),
+            "end_time": str(end_dt),
+            "duration_formatted": duration_formatted,
+            "duration_hours": duration_hours,
+            "calculated_consumption_l": calculated_consumption,
+            "new_operating_hours": generator.current_operating_hours,
+            "new_fuel_tank_level_l": generator.fuel_tank_level_l,
+            "note": run.note
+        },
+        ip_address=ip_address
+    )
+    await db.commit()
+
+    q_fresh = (
+        select(GeneratorRun)
+        .options(selectinload(GeneratorRun.user))
+        .where(GeneratorRun.id == run.id)
+    )
+    res_fresh = await db.execute(q_fresh)
+    return res_fresh.scalar_one()

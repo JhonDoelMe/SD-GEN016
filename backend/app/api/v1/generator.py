@@ -8,13 +8,13 @@ from backend.app.models.user import User
 from backend.app.models.generator import Generator, GeneratorRun
 from backend.app.schemas.generator import (
     GeneratorOut, GeneratorWizardSetup, GeneratorCreate, GeneratorStartRequest,
-    GeneratorStopRequest, GeneratorRunOut, GeneratorUpdate
+    GeneratorStopRequest, GeneratorRunOut, GeneratorUpdate, GeneratorManualRunCreate
 )
 from backend.app.api.deps import get_current_user, require_permission, get_client_ip
 from backend.app.services.generator_service import (
     get_or_create_default_generator, setup_generator_wizard,
     start_generator, stop_generator, get_generators_list,
-    create_generator, delete_generator, update_generator
+    create_generator, delete_generator, update_generator, add_manual_run
 )
 
 def format_seconds(seconds: Optional[int]) -> Optional[str]:
@@ -159,6 +159,28 @@ async def api_stop_generator(
         generator_id=gen.id,
         user_id=current_user.id,
         stop_data=data,
+        ip_address=get_client_ip(request)
+    )
+    return run_to_out(run, user_name=current_user.full_name)
+
+
+
+
+
+@router.post("/manual-run", response_model=GeneratorRunOut, status_code=status.HTTP_201_CREATED)
+async def api_add_manual_run(
+    data: GeneratorManualRunCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("generator:start"))
+):
+    """Внесення сеансу роботи генератора вручну (з паперового журналу при відсутності зв'язку)"""
+    gen = await get_or_create_default_generator(db, generator_id=data.generator_id)
+    run = await add_manual_run(
+        db=db,
+        generator_id=gen.id,
+        user_id=current_user.id,
+        data=data,
         ip_address=get_client_ip(request)
     )
     return run_to_out(run, user_name=current_user.full_name)

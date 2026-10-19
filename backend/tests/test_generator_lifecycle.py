@@ -100,3 +100,92 @@ async def test_generator_wizard_and_lifecycle(client, superadmin_auth, operator_
     )
     assert stop_again.status_code == 400
     assert "не перебуває у стані 'Працює'" in stop_again.json()["detail"]
+
+
+
+@pytest.mark.asyncio
+async def test_generator_manual_run_entry(client, superadmin_auth, operator_auth):
+    # Setup generator with 10.0 hours and 20.0 L fuel
+    gen_res = await client.post(
+        "/api/v1/generator/wizard",
+        headers=superadmin_auth,
+        json={
+            "name": "Генератор Ручний Запис",
+            "model": "M-100",
+            "manufacturer": "PG",
+            "serial_number": "SN-MANUAL-01",
+            "rated_power_kw": 5.0,
+            "tank_capacity_l": 25.0,
+            "fuel_type": "А-95",
+            "nominal_consumption_l_per_h": 2.0,
+            "initial_operating_hours": 10.0,
+            "initial_fuel_tank_level_l": 20.0,
+            "work_schedule_start": "00:00",
+            "work_schedule_end": "23:59",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv"
+        }
+    )
+    assert gen_res.status_code == 200
+    gen_id = gen_res.json()["id"]
+
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    start_time = (now - datetime.timedelta(hours=3)).isoformat()
+    end_time = (now - datetime.timedelta(hours=1)).isoformat()
+
+    # 1. Validation: start_time >= end_time is rejected
+    invalid_res = await client.post(
+        "/api/v1/generator/manual-run",
+        headers=operator_auth,
+        json={
+            "generator_id": gen_id,
+            "start_time": end_time,
+            "end_time": start_time,
+            "note": "Помилковий час"
+        }
+    )
+    assert invalid_res.status_code == 400
+    assert "Час завершення" in invalid_res.json()["detail"]
+
+    # 2. Valid manual entry (2.0 hours run)
+    valid_res = await client.post(
+        "/api/v1/generator/manual-run",
+        headers=operator_auth,
+        json={
+            "generator_id": gen_id,
+            "start_time": start_time,
+            "end_time": end_time,
+            "start_hours": 10.0,
+            "end_hours": 12.0,
+            "note": "Запис з паперового журналу через блекаут"
+        }
+    )
+    assert valid_res.status_code == 201
+    run_data = valid_res.json()
+    assert run_data["status"] == "COMPLETED"
+    assert run_data["start_hours"] == 10.0
+    assert run_data["end_hours"] == 12.0
+    assert run_data["duration_hours"] == 2.0
+    # consumption = 2.0 * 2.0 l/h = 4.0 liters
+    assert run_data["calculated_consumption_l"] == 4.0
+    assert "блекаут" in run_data["note"]
+
+    # 3. Generator state updated properly
+    gen_after = await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=operator_auth)
+    g = gen_after.json()
+    assert g["current_operating_hours"] == 12.0
+    assert g["fuel_tank_level_l"] == 16.0  # 20.0 - 4.0 = 16.0 L
+
+    # 4. Check runs history
+    runs_res = await client.get(f"/api/v1/generator/runs?generator_id={gen_id}", headers=operator_auth)
+    assert runs_res.status_code == 200
+    runs = runs_res.json()
+    assert len(runs) >= 1
+    assert any(r["id"] == run_data["id"] for r in runs)
+
+    # 5. Check audit log
+    audit_res = await client.get("/api/v1/audit?limit=10", headers=superadmin_auth)
+    assert audit_res.status_code == 200
+    actions = [a["action"] for a in audit_res.json()]
+    assert "GENERATOR_MANUAL_RUN_ADDED" in actions

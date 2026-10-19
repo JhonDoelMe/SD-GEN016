@@ -92,6 +92,16 @@ class GeneratorStopRequest(BaseModel):
     note: Optional[str] = None
 
 
+class GeneratorManualRunCreate(BaseModel):
+    generator_id: Optional[int] = None
+    start_time: datetime.datetime = Field(..., description="Час запуску генератора (з паперового журналу)")
+    end_time: datetime.datetime = Field(..., description="Час зупинки генератора (з паперового журналу)")
+    start_hours: Optional[float] = Field(None, ge=0, description="Початкові мотогодини (якщо відомі)")
+    end_hours: Optional[float] = Field(None, ge=0, description="Кінцеві мотогодини (якщо відомі)")
+    fuel_consumed_l: Optional[float] = Field(None, ge=0, description="Фактично витрачене паливо (якщо відомо)")
+    note: Optional[str] = Field(None, max_length=500, description="Примітки (напр. Внесено з паперового журналу)")
+
+
 class GeneratorRunOut(BaseModel):
     id: int
     generator_id: int
@@ -109,5 +119,6 @@ class GeneratorRunOut(BaseModel):
     calculated_consumption_l: Optional[float] = None
     status: str
     note: Optional[str] = None
+
 
     model_config = {"from_attributes": True}
