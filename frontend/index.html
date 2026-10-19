@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=3.3">
+  <link rel="stylesheet" href="/frontend/styles.css?v=3.4">
 </head>
 <body>
 
@@ -1086,6 +1086,31 @@
     </div>
   </div>
 
+  <!-- Modal: Resolve Fault -->
+  <div id="modalResolveFault" class="modal-overlay">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 style="color: #22c55e;">🛠️ Усунення несправності</h3>
+        <button class="close-btn" onclick="closeModal('modalResolveFault')">&times;</button>
+      </div>
+      <form id="resolveFaultForm">
+        <input type="hidden" id="resolveFaultId">
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 1rem;">
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem;">Несправність:</div>
+          <div id="resolveFaultInfo" style="font-weight: 600; color: var(--text-color); font-size: 0.95rem;">-</div>
+        </div>
+        <div class="form-group">
+          <label>Примітки щодо усунення несправності *</label>
+          <textarea id="resolveFaultNotes" required rows="3" placeholder="напр. Замінено паливний шланг та фільтр, виконано перевірку герметичності"></textarea>
+        </div>
+        <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
+          <button type="submit" class="btn-primary" style="flex: 1; background: #22c55e;">Позначити як усунену</button>
+          <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalResolveFault')">Скасувати</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal: System Adjustment (SuperAdmin) -->
   <div id="modalAdjustment" class="modal-overlay">
     <div class="modal-content">
@@ -1585,7 +1610,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=3.3"></script>
+  <script src="/frontend/app.js?v=3.4"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

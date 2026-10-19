@@ -977,46 +977,86 @@ document.getElementById('maintForm').addEventListener('submit', async (e) => {
 // 4. Faults
 async function loadFaultsData() {
   try {
-    const faults = await api('/faults');
+    const qGen = currentGeneratorId ? `?generator_id=${encodeURIComponent(currentGeneratorId)}` : '';
+    const faults = await api(`/faults${qGen}`);
     const tbody = document.querySelector('#faultsTable tbody');
     const prioMap = { CRITICAL: 'Критичний', HIGH: 'Високий', MEDIUM: 'Середній', LOW: 'Низький' };
-    const statMap = { OPEN: 'Відкрито', IN_PROGRESS: 'В роботі', RESOLVED: 'Усунено', CLOSED: 'Закрито' };
-    tbody.innerHTML = faults.map((f) => `
-      <tr>
-        <td>#${Number(f.id)}</td>
-        <td><span class="badge ${f.priority === 'CRITICAL' ? 'badge-faulty' : 'badge-maintenance'}">${escapeHtml(prioMap[f.priority] || f.priority)}</span></td>
-        <td><span class="badge ${f.status === 'RESOLVED' || f.status === 'CLOSED' ? 'badge-running' : 'badge-stopped'}">${escapeHtml(statMap[f.status] || f.status)}</span></td>
-        <td><b>${escapeHtml(f.title)}</b></td>
-        <td>${escapeHtml(f.description)}</td>
-        <td>${f.operating_hours.toFixed(1)} год</td>
-        <td>${formatDateOnly(f.created_at)}</td>
-        <td>
-          ${f.status !== 'RESOLVED' && f.status !== 'CLOSED' ? `
-            <button onclick="resolveFault(${Number(f.id)})" style="background:#22c55e; border:none; color:white; border-radius:4px; padding:0.25rem 0.5rem; cursor:pointer; font-size:0.75rem;">Усунути</button>
-          ` : '<span style="color:#22c55e;">Усунено</span>'}
-        </td>
-      </tr>
-    `).join('') || '<tr><td colspan="8" style="text-align:center; color:var(--text-muted)">Несправностей немає</td></tr>';
-  } catch (_) {}
+    const statMap = {
+      NEW: 'Нова',
+      ACCEPTED: 'Прийнято',
+      OPEN: 'Відкрито',
+      IN_PROGRESS: 'В роботі',
+      PENDING: 'В очікуванні',
+      RESOLVED: 'Усунено',
+      CLOSED: 'Закрито'
+    };
+    tbody.innerHTML = faults.map((f) => {
+      const isResolved = f.status === 'RESOLVED' || f.status === 'CLOSED';
+      const resolvedInfo = isResolved
+        ? `Усунув: ${escapeHtml(f.resolved_by_name || 'Оператор')}${f.resolution_notes ? ' | ' + escapeHtml(f.resolution_notes) : ''}`
+        : '';
+      return `
+        <tr>
+          <td>#${Number(f.id)}</td>
+          <td><span class="badge ${f.priority === 'CRITICAL' ? 'badge-faulty' : 'badge-maintenance'}">${escapeHtml(prioMap[f.priority] || f.priority)}</span></td>
+          <td><span class="badge ${isResolved ? 'badge-running' : 'badge-stopped'}" title="${resolvedInfo}">${escapeHtml(statMap[f.status] || f.status)}</span></td>
+          <td><b>${escapeHtml(f.title)}</b></td>
+          <td>${escapeHtml(f.description)}</td>
+          <td>${f.operating_hours.toFixed(1)} год</td>
+          <td>${formatDateOnly(f.created_at)}</td>
+          <td>
+            ${!isResolved ? `
+              <button class="btn-action" onclick="openResolveFaultModal(${Number(f.id)}, '${escapeHtml(f.title).replace(/'/g, "\\'")}')" style="background:#22c55e; border:none; color:white; border-radius:4px; padding:0.35rem 0.65rem; cursor:pointer; font-size:0.8rem; font-weight:600;" title="Усунути несправність">Усунути</button>
+            ` : `<span style="color:#22c55e; font-size:0.85rem;" title="${resolvedInfo}">✓ Усунено</span>`}
+          </td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="8" style="text-align:center; color:var(--text-muted)">Несправностей немає</td></tr>';
+  } catch (err) {
+    console.warn('loadFaultsData error:', err);
+  }
+}
+
+window.openResolveFaultModal = function(id, title) {
+  const idEl = document.getElementById('resolveFaultId');
+  const infoEl = document.getElementById('resolveFaultInfo');
+  const notesEl = document.getElementById('resolveFaultNotes');
+  if (idEl) idEl.value = id;
+  if (infoEl) infoEl.innerText = `#${id}: ${title}`;
+  if (notesEl) notesEl.value = '';
+  openModal('modalResolveFault');
+};
+
+const resolveFaultForm = document.getElementById('resolveFaultForm');
+if (resolveFaultForm) {
+  resolveFaultForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('resolveFaultId').value;
+    const notes = document.getElementById('resolveFaultNotes').value.trim();
+    try {
+      await api(`/faults/${encodeURIComponent(id)}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: 'RESOLVED', resolution_notes: notes })
+      });
+      closeModal('modalResolveFault');
+      showToast('Несправність успішно позначено як усунену!', 'success');
+      loadFaultsData();
+      loadGeneratorData();
+      loadAllData();
+    } catch (err) {
+      showToast(err.message || 'Помилка при усуненні несправності', 'error');
+    }
+  });
 }
 
 window.resolveFault = async function(id) {
-  const notes = prompt('Вкажіть примітки щодо усунення несправності:');
-  if (notes === null) return;
-  try {
-    await api(`/faults/${encodeURIComponent(id)}/status`, {
-      method: 'PUT',
-      body: JSON.stringify({ status: 'RESOLVED', resolution_notes: notes })
-    });
-    showToast('Несправність позначено як усунену!', 'success');
-    loadFaultsData();
-    loadGeneratorData();
-  } catch (_) {}
+  window.openResolveFaultModal(id, '');
 };
 
-document.getElementById('faultForm').addEventListener('submit', async (e) => {
+document.getElementById('faultForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = {
+    generator_id: currentGeneratorId || null,
     title: document.getElementById('faultTitle').value,
     priority: document.getElementById('faultPriority').value,
     description: document.getElementById('faultDesc').value
@@ -1028,7 +1068,9 @@ document.getElementById('faultForm').addEventListener('submit', async (e) => {
     showToast('Заявку про несправність створено!', 'success');
     loadFaultsData();
     loadGeneratorData();
-  } catch (_) {}
+  } catch (err) {
+    showToast(err.message || 'Помилка при створенні несправності', 'error');
+  }
 });
 
 // 5. Runs History

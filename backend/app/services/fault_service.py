@@ -1,6 +1,7 @@
 from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.timezone import now_utc
@@ -67,7 +68,13 @@ async def create_fault(
         except Exception as ex:
             print(f"[NOTIF] Failed to send critical fault notification: {ex}", flush=True)
 
-    return fault
+    q_fresh = (
+        select(Fault)
+        .options(selectinload(Fault.user), selectinload(Fault.resolved_by))
+        .where(Fault.id == fault.id)
+    )
+    res_fresh = await db.execute(q_fresh)
+    return res_fresh.scalar_one()
 
 
 async def update_fault_status(
@@ -77,14 +84,20 @@ async def update_fault_status(
     user_id: int,
     ip_address: Optional[str] = None
 ) -> Fault:
-    fault = await db.get(Fault, fault_id)
+    q = (
+        select(Fault)
+        .options(selectinload(Fault.user), selectinload(Fault.resolved_by))
+        .where(Fault.id == fault_id)
+    )
+    res = await db.execute(q)
+    fault = res.scalar_one_or_none()
     if not fault:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Несправність не знайдена")
 
     old_status = fault.status
     fault.status = status_data.status
 
-    if status_data.resolution_notes:
+    if status_data.resolution_notes is not None:
         fault.resolution_notes = status_data.resolution_notes.strip()
 
     if status_data.status in ("RESOLVED", "CLOSED"):
@@ -121,4 +134,12 @@ async def update_fault_status(
         ip_address=ip_address
     )
     await db.commit()
-    return fault
+
+    # Re-fetch with fresh relationships
+    q_fresh = (
+        select(Fault)
+        .options(selectinload(Fault.user), selectinload(Fault.resolved_by))
+        .where(Fault.id == fault.id)
+    )
+    res_fresh = await db.execute(q_fresh)
+    return res_fresh.scalar_one()

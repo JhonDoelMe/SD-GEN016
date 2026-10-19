@@ -50,23 +50,34 @@ async def test_fault_lifecycle_and_generator_safety(client, superadmin_auth, ope
     assert start_try.status_code == 400
     assert "має критичну несправність" in start_try.json()["detail"]
 
-    # 2. Advance fault lifecycle: IN_PROGRESS -> RESOLVED
-    await client.put(
+    # 2. Advance fault lifecycle: IN_PROGRESS -> RESOLVED (by operator)
+    in_prog = await client.put(
         f"/api/v1/faults/{fault_id}/status",
-        headers=superadmin_auth,
+        headers=operator_auth,
         json={"status": "IN_PROGRESS"}
     )
+    assert in_prog.status_code == 200
+    assert in_prog.json()["status"] == "IN_PROGRESS"
 
     resolve_res = await client.put(
         f"/api/v1/faults/{fault_id}/status",
-        headers=superadmin_auth,
+        headers=operator_auth,
         json={
             "status": "RESOLVED",
             "resolution_notes": "Замінено паливний шланг та затискний хомут. Герметичність перевірена."
         }
     )
     assert resolve_res.status_code == 200
-    assert resolve_res.json()["status"] == "RESOLVED"
+    res_data = resolve_res.json()
+    assert res_data["status"] == "RESOLVED"
+    assert res_data["resolved_by_name"] is not None
+    assert res_data["resolution_notes"] == "Замінено паливний шланг та затискний хомут. Герметичність перевірена."
+
+    # List faults check with generator_id filter
+    list_res = await client.get(f"/api/v1/faults?generator_id={gen_id}", headers=operator_auth)
+    assert list_res.status_code == 200
+    assert len(list_res.json()) >= 1
+    assert list_res.json()[0]["resolved_by_name"] is not None
 
     # Generator status should now be restored to STOPPED
     gen_restored = await client.get("/api/v1/generator", headers=operator_auth)
