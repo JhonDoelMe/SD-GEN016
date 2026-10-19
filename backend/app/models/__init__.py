@@ -7,6 +7,7 @@ from backend.app.models.maintenance import MaintenanceSchedule, MaintenanceRecor
 from backend.app.models.fault import Fault
 from backend.app.models.audit import AuditLog, SystemAdjustment
 from backend.app.models.settings import SystemSetting
+from backend.app.models.notification import PushSubscription, NotificationLog
 
 __all__ = [
     "Base",
@@ -28,4 +29,6 @@ __all__ = [
     "AuditLog",
     "SystemAdjustment",
     "SystemSetting",
+    "PushSubscription",
+    "NotificationLog",
 ]

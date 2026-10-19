@@ -66,6 +66,16 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "wog_lineup": DEFAULT_WOG_LINEUP,
     "internet_prices_updated_at": "",
     "internet_prices_source": "АЗК WOG (https://wog.ua/ua/fuels/)",
+    # Push Notifications configuration
+    "notifications_enabled": True,
+    "notify_generator_start": True,
+    "notify_generator_stop": True,
+    "notify_low_fuel": True,
+    "low_fuel_threshold_l": 5.0,
+    "notify_maintenance": True,
+    "max_maintenance_notifications_per_day": 2,
+    "notify_critical_faults": True,
+    "vapid_claims_sub": "mailto:maxiuallc@gmail.com",
 }
 
 # In-memory cache of runtime settings for fast synchronous reads (e.g. timezone.py)
@@ -76,6 +86,10 @@ _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 def get_runtime_setting(key: str, default: Any = None) -> Any:
     return RUNTIME_SETTINGS.get(key, DEFAULT_SYSTEM_SETTINGS.get(key, default))
+
+
+def set_runtime_setting(key: str, value: Any) -> None:
+    RUNTIME_SETTINGS[key] = value
 
 
 def get_runtime_timezone() -> str:

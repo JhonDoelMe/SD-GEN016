@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=2.9">
+  <link rel="stylesheet" href="/frontend/styles.css?v=3.0">
 </head>
 <body>
 
@@ -117,6 +117,7 @@
     <div class="nav-item" data-tab="tab-maintenance">🔧 ТО</div>
     <div class="nav-item" data-tab="tab-faults">⚠️ Несправності</div>
     <div class="nav-item" data-tab="tab-runs">📋 Журнал</div>
+    <div class="nav-item" data-tab="tab-notifications">🔔 Сповіщення</div>
     <div class="nav-item" data-tab="tab-audit">🔍 Аудит</div>
     <div class="nav-item" data-tab="tab-reports">📊 Звіти</div>
     <div class="nav-item" data-tab="tab-admin">⚙️ Адмін</div>
@@ -406,6 +407,123 @@
                 <th>Бак (поч/кін)</th>
                 <th>Оператор</th>
                 <th>Примітки</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: NOTIFICATIONS -->
+    <section id="tab-notifications" class="tab-pane" style="display: none;">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>🔔 Налаштування сповіщень (PWA & Android Push)</h3>
+          <span id="pushStatusBadge" class="badge badge-stopped">Перевірка...</span>
+        </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+          📲 Система підтримує нативні Web Push сповіщення. Повідомлення надходять безпосередньо у шторку телефону Android та на робочий стіл браузера навіть тоді, коли вкладку закрито.
+        </p>
+
+        <!-- Push Device Subscription Card -->
+        <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-color); border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 1.5rem;">
+          <h4 style="margin: 0 0 0.5rem; color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem;">
+            <span>📱</span> Поточний пристрій
+          </h4>
+          <p id="pushDeviceInfoText" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+            Оцінка стану реєстрації пристрою...
+          </p>
+
+          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button id="btnSubscribePush" class="btn-primary" style="width: auto; padding: 0.5rem 1.25rem;" onclick="subscribeDevicePush()">
+              🔔 Увімкнути сповіщення на цьому пристрої
+            </button>
+            <button id="btnUnsubscribePush" class="btn-action" style="padding: 0.5rem 1.25rem; border-color: #ef4444; color: #f87171; display: none;" onclick="unsubscribeDevicePush()">
+              🔕 Вимкнути сповіщення на цьому пристрої
+            </button>
+            <button id="btnSendTestPush" class="btn-action" style="padding: 0.5rem 1.25rem; border-color: #38bdf8; color: #38bdf8;" onclick="triggerTestPushNotification()">
+              📲 Надіслати тестове сповіщення
+            </button>
+          </div>
+        </div>
+
+        <!-- Notification Types & Thresholds Settings -->
+        <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-color); border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h4 style="margin: 0; color: var(--text-primary);">⚙️ Правила та типи сповіщень</h4>
+            <small style="color: var(--text-muted);">Зміни застосовуються для всієї системи (Адмін)</small>
+          </div>
+
+          <form id="notifSettingsForm" onsubmit="saveNotificationSettings(event)">
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.25rem;">
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.95rem;">
+                <input type="checkbox" id="notifMasterEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: #38bdf8;">
+                <span><b>Загальне увімкнення розсилки сповіщень</b></span>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem;">
+                <input type="checkbox" id="notifStartEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: #22c55e;">
+                <span>🟢 <b>Запуск генератора</b> (повідомлення про час старту, оператора, мотогодини та паливо)</span>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem;">
+                <input type="checkbox" id="notifStopEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: #ef4444;">
+                <span>🔴 <b>Зупинка генератора</b> (відпрацьований час, розрахункова витрата палива та залишок)</span>
+              </label>
+
+              <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.75rem;">
+                <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; margin-bottom: 0.5rem;">
+                  <input type="checkbox" id="notifLowFuelEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: #f59e0b;">
+                  <span>⚠️ <b>Критичний залишок палива в баку</b></span>
+                </label>
+                <div style="display: flex; align-items: center; gap: 0.75rem; margin-left: 1.85rem;">
+                  <label for="notifLowFuelThreshold" style="font-size: 0.85rem; color: var(--text-secondary);">Поріг спрацювання тривоги:</label>
+                  <input type="number" id="notifLowFuelThreshold" step="0.5" min="1" max="100" value="5.0" style="width: 90px; padding: 0.35rem 0.5rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; color: white;">
+                  <span style="font-size: 0.85rem; color: var(--text-muted);">літрів</span>
+                </div>
+              </div>
+
+              <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.75rem;">
+                <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; margin-bottom: 0.5rem;">
+                  <input type="checkbox" id="notifMaintEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: #a855f7;">
+                  <span>🔧 <b>Нагадування про планове ТО</b> (коли наближається або прострочено регламент)</span>
+                </label>
+                <div style="margin-left: 1.85rem; display: flex; align-items: center; gap: 0.75rem;">
+                  <span style="font-size: 0.85rem; color: var(--text-secondary);">Частота нагадувань:</span>
+                  <input type="number" id="notifMaxMaintPerDay" min="1" max="5" value="2" style="width: 70px; padding: 0.35rem 0.5rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; color: white;">
+                  <span style="font-size: 0.85rem; color: #a78bfa;"><b>рази на добу (не більше 2 разів за правилами)</b></span>
+                </div>
+              </div>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 0.75rem;">
+                <input type="checkbox" id="notifFaultsEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: #f87171;">
+                <span>🚨 <b>Критичні несправності та аварійні блокування</b></span>
+              </label>
+            </div>
+
+            <button type="submit" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem;">
+              💾 Зберегти налаштування сповіщень
+            </button>
+          </form>
+        </div>
+
+        <!-- Dispatched Notifications Log -->
+        <div class="panel-header" style="margin-top: 1.5rem; margin-bottom: 0.5rem;">
+          <h4 style="margin: 0;">📜 Журнал надісланих сповіщень</h4>
+          <button class="btn-action" style="padding: 0.25rem 0.75rem; font-size: 0.8rem;" onclick="loadNotificationLogs()">🔄 Оновити</button>
+        </div>
+        <div class="table-wrapper">
+          <table id="notifLogsTable">
+            <thead>
+              <tr>
+                <th>Час</th>
+                <th>Подія</th>
+                <th>Заголовок</th>
+                <th>Текст повідомлення</th>
+                <th>Отримувачі</th>
+                <th>Результат</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -1417,7 +1535,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=2.9"></script>
+  <script src="/frontend/app.js?v=3.0"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

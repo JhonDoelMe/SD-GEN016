@@ -254,6 +254,23 @@ async def start_generator(
         ip_address=ip_address
     )
     await db.commit()
+
+    # Dispatch push notification in background
+    try:
+        from backend.app.services.notification_service import notify_generator_start
+        from backend.app.models.user import User
+        u_res = await db.execute(select(User.full_name).where(User.id == user_id))
+        u_name = u_res.scalar() or "Оператор"
+        await notify_generator_start(
+            db=db,
+            generator=generator,
+            user_name=u_name,
+            start_fuel=current_fuel or 0.0,
+            start_hours=run.start_hours
+        )
+    except Exception as ex:
+        print(f"[NOTIF] Failed to send start notification: {ex}", flush=True)
+
     return run
 
 
@@ -380,6 +397,24 @@ async def stop_generator(
         ip_address=ip_address
     )
     await db.commit()
+
+    # Dispatch push notification in background
+    try:
+        from backend.app.services.notification_service import notify_generator_stop
+        from backend.app.models.user import User
+        u_res = await db.execute(select(User.full_name).where(User.id == user_id))
+        u_name = u_res.scalar() or "Оператор"
+        await notify_generator_stop(
+            db=db,
+            generator=generator,
+            user_name=u_name,
+            duration_str=duration_formatted,
+            consumption_l=calculated_consumption,
+            end_fuel=generator.fuel_tank_level_l
+        )
+    except Exception as ex:
+        print(f"[NOTIF] Failed to send stop notification: {ex}", flush=True)
+
     return run
 
 

@@ -54,6 +54,19 @@ async def create_fault(
         ip_address=ip_address
     )
     await db.commit()
+
+    if fault_data.priority == "CRITICAL":
+        try:
+            from backend.app.services.notification_service import notify_critical_fault
+            await notify_critical_fault(
+                db=db,
+                generator=generator,
+                fault_title=fault.title,
+                fault_description=fault.description
+            )
+        except Exception as ex:
+            print(f"[NOTIF] Failed to send critical fault notification: {ex}", flush=True)
+
     return fault
 
 

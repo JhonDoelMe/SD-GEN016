@@ -59,7 +59,8 @@ def ensure_schema_updates(sync_conn):
             "facilities", "generators", "fuel_stocks", "fuel_receipts",
             "fuel_transfers", "users", "roles", "permissions",
             "maintenance_schedules", "maintenance_records",
-            "generator_runs", "faults", "audit_logs", "system_adjustments"
+            "generator_runs", "faults", "audit_logs", "system_adjustments",
+            "push_subscriptions", "notification_logs"
         )
         for tbl in serial_tables:
             if tbl in tables:

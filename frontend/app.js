@@ -285,6 +285,11 @@ document.querySelectorAll('.nav-item').forEach((tab) => {
     if (paneId === 'tab-maintenance') loadMaintenanceData();
     if (paneId === 'tab-faults') loadFaultsData();
     if (paneId === 'tab-runs') loadRunsData();
+    if (paneId === 'tab-notifications') {
+      loadNotificationSettings();
+      loadNotificationLogs();
+      checkPushSubscriptionStatus();
+    }
     if (paneId === 'tab-audit') loadAuditData();
     if (paneId === 'tab-reports') loadReport();
     if (paneId === 'tab-admin') {
@@ -1937,6 +1942,258 @@ document.getElementById('systemResetForm')?.addEventListener('submit', async (e)
   } catch (_) {}
 });
 
+// ==========================================
+// 9. Push Notifications & PWA Mobile Alerts
+// ==========================================
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+async function checkPushSubscriptionStatus() {
+  const badge = document.getElementById('pushStatusBadge');
+  const infoText = document.getElementById('pushDeviceInfoText');
+  const btnSub = document.getElementById('btnSubscribePush');
+  const btnUnsub = document.getElementById('btnUnsubscribePush');
+
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    if (badge) {
+      badge.className = 'badge badge-faulty';
+      badge.innerText = 'НЕ ПІДТРИМУЄТЬСЯ';
+    }
+    if (infoText) {
+      infoText.innerHTML = '⚠️ Ваш поточний браузер не підтримує Web Push API. Для отримання системних сповіщень у шторку використовуйте Google Chrome, Samsung Internet або встановіть додаток через меню PWA.';
+    }
+    if (btnSub) btnSub.style.display = 'none';
+    if (btnUnsub) btnUnsub.style.display = 'none';
+    return;
+  }
+
+  const permission = Notification.permission;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+
+    if (sub && permission === 'granted') {
+      if (badge) {
+        badge.className = 'badge badge-running';
+        badge.innerText = 'АКТИВНО 📲';
+      }
+      if (infoText) {
+        infoText.innerHTML = '✅ <b>Сповіщення увімкнено!</b> Цей пристрій успішно підписаний на системні сповіщення. Повідомлення надходитимуть у шторку Android та на екран блокування.';
+      }
+      if (btnSub) btnSub.style.display = 'none';
+      if (btnUnsub) btnUnsub.style.display = 'inline-block';
+    } else if (permission === 'denied') {
+      if (badge) {
+        badge.className = 'badge badge-faulty';
+        badge.innerText = 'ЗАБЛОКОВАНО';
+      }
+      if (infoText) {
+        infoText.innerHTML = '🚫 <b>Дозвіл заблоковано в налаштуваннях браузера.</b> Щоб отримувати сповіщення, натисніть на значок замочка біля адреси сайту та дозвольте «Сповіщення».';
+      }
+      if (btnSub) {
+        btnSub.style.display = 'inline-block';
+        btnSub.disabled = true;
+      }
+      if (btnUnsub) btnUnsub.style.display = 'none';
+    } else {
+      if (badge) {
+        badge.className = 'badge badge-stopped';
+        badge.innerText = 'НЕ ПІДКЛЮЧЕНО';
+      }
+      if (infoText) {
+        infoText.innerHTML = 'ℹ️ Сповіщення на цьому пристрої ще не увімкнені. Натисніть кнопку нижче, щоб отримувати нагадування про ТО, старт/стоп та залишок палива.';
+      }
+      if (btnSub) {
+        btnSub.style.display = 'inline-block';
+        btnSub.disabled = false;
+      }
+      if (btnUnsub) btnUnsub.style.display = 'none';
+    }
+  } catch (err) {
+    console.warn('Error checking push subscription:', err);
+  }
+}
+
+window.subscribeDevicePush = async function() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    showToast('Web Push не підтримується цим браузером', 'error');
+    return;
+  }
+
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      showToast('Дозвіл на сповіщення не надано користувачем', 'warning');
+      checkPushSubscriptionStatus();
+      return;
+    }
+
+    // Get VAPID public key from backend
+    const vapidRes = await api('/notifications/vapid-public-key');
+    const applicationServerKey = urlBase64ToUint8Array(vapidRes.public_key);
+
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: applicationServerKey
+      });
+    }
+
+    const subJson = sub.toJSON();
+    await api('/notifications/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({
+        endpoint: sub.endpoint,
+        keys: {
+          p256dh: subJson.keys.p256dh,
+          auth: subJson.keys.auth
+        },
+        user_agent: navigator.userAgent,
+        facility_id: currentFacilityId || null
+      })
+    });
+
+    showToast('Пристрій успішно підписано на сповіщення!', 'success');
+    checkPushSubscriptionStatus();
+    loadNotificationSettings();
+  } catch (err) {
+    showToast('Помилка підписки: ' + err.message, 'error');
+  }
+};
+
+window.unsubscribeDevicePush = async function() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await api('/notifications/unsubscribe', {
+        method: 'POST',
+        body: JSON.stringify({ endpoint: sub.endpoint })
+      });
+      await sub.unsubscribe();
+    }
+    showToast('Сповіщення для цього пристрою вимкнено', 'info');
+    checkPushSubscriptionStatus();
+    loadNotificationSettings();
+  } catch (err) {
+    showToast('Помилка відписки: ' + err.message, 'error');
+  }
+};
+
+window.triggerTestPushNotification = async function() {
+  try {
+    showToast('Відправка тестового сповіщення...', 'info');
+    const res = await api('/notifications/test', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: '🔔 Тестове сповіщення Service Desk',
+        body: 'Система сповіщень працює належним чином на вашому пристрої!'
+      })
+    });
+
+    // Also trigger local notification if permission is granted as an instant preview
+    if (Notification.permission === 'granted' && navigator.serviceWorker) {
+      const reg = await navigator.serviceWorker.ready;
+      reg.showNotification('🔔 Тестове сповіщення Service Desk', {
+        body: 'Перевірка звуку, вібрації та шторки повідомлень виконана успішно!',
+        icon: '/frontend/icons/icon-192.png',
+        badge: '/frontend/icons/icon-192.png',
+        vibrate: [200, 100, 200],
+        tag: 'sd-test'
+      });
+    }
+
+    showToast(`Тестове сповіщення успішно надіслано (доставлено: ${res.sent || 1})`, 'success');
+    loadNotificationLogs();
+  } catch (err) {
+    showToast('Помилка відправки: ' + err.message, 'error');
+  }
+};
+
+async function loadNotificationSettings() {
+  try {
+    const s = await api('/notifications/settings');
+    const setCheck = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+    const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+
+    setCheck('notifMasterEnabled', s.notifications_enabled);
+    setCheck('notifStartEnabled', s.notify_generator_start);
+    setCheck('notifStopEnabled', s.notify_generator_stop);
+    setCheck('notifLowFuelEnabled', s.notify_low_fuel);
+    setVal('notifLowFuelThreshold', s.low_fuel_threshold_l);
+    setCheck('notifMaintEnabled', s.notify_maintenance);
+    setVal('notifMaxMaintPerDay', s.max_maintenance_notifications_per_day);
+    setCheck('notifFaultsEnabled', s.notify_critical_faults);
+  } catch (_) {}
+}
+
+window.saveNotificationSettings = async function(e) {
+  if (e) e.preventDefault();
+  const body = {
+    notifications_enabled: document.getElementById('notifMasterEnabled')?.checked ?? true,
+    notify_generator_start: document.getElementById('notifStartEnabled')?.checked ?? true,
+    notify_generator_stop: document.getElementById('notifStopEnabled')?.checked ?? true,
+    notify_low_fuel: document.getElementById('notifLowFuelEnabled')?.checked ?? true,
+    low_fuel_threshold_l: parseFloat(document.getElementById('notifLowFuelThreshold')?.value || '5.0'),
+    notify_maintenance: document.getElementById('notifMaintEnabled')?.checked ?? true,
+    max_maintenance_notifications_per_day: parseInt(document.getElementById('notifMaxMaintPerDay')?.value || '2', 10),
+    notify_critical_faults: document.getElementById('notifFaultsEnabled')?.checked ?? true
+  };
+
+  try {
+    await api('/notifications/settings', {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+    showToast('Налаштування сповіщень успішно збережено!', 'success');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+};
+
+async function loadNotificationLogs() {
+  try {
+    const logs = await api('/notifications/logs?limit=30');
+    const tbody = document.querySelector('#notifLogsTable tbody');
+    if (!tbody) return;
+
+    const eventIcons = {
+      'GENERATOR_START': '🟢 Пуск',
+      'GENERATOR_STOP': '🔴 Зупинка',
+      'LOW_FUEL': '⚠️ Паливо',
+      'MAINTENANCE_DUE': '🔧 ТО',
+      'CRITICAL_FAULT': '🚨 Аварія',
+      'TEST': '📲 Тест'
+    };
+
+    tbody.innerHTML = logs.map(l => `
+      <tr>
+        <td>${formatDateTime(l.created_at)}</td>
+        <td><b>${eventIcons[l.event_type] || l.event_type}</b></td>
+        <td><b>${escapeHtml(l.title)}</b></td>
+        <td>${escapeHtml(l.body)}</td>
+        <td>${l.recipients_count} пристр.</td>
+        <td>
+          <span style="color: ${l.success_count > 0 ? '#4ade80' : 'var(--text-muted)'};">
+            ${l.success_count > 0 ? `✅ Доставлено (${l.success_count})` : (l.recipients_count === 0 ? 'ℹ️ Без підписників' : '⚠️ Помилка')}
+          </span>
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Журнал сповіщень порожній</td></tr>';
+  } catch (_) {}
+}
+
 // Initialization on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   startClock();
@@ -1944,6 +2201,7 @@ document.addEventListener('DOMContentLoaded', () => {
   checkAuth();
   refreshServerStatus();
   setInterval(refreshServerStatus, 30000);
+  setTimeout(checkPushSubscriptionStatus, 1500);
 });
 
 
