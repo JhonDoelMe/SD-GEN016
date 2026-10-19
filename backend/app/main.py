@@ -180,6 +180,13 @@ if FRONTEND_DIR.exists():
     async def get_robots():
         return PlainTextResponse("User-agent: *\nDisallow: /api/\n")
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def get_favicon():
+        fav_path = FRONTEND_DIR / "favicon.ico"
+        if fav_path.exists():
+            return FileResponse(fav_path, media_type="image/x-icon")
+        return JSONResponse({"error": "Favicon not found"}, status_code=404)
+
     @app.api_route("/", methods=["GET", "HEAD"])
     async def serve_index():
         index_path = FRONTEND_DIR / "index.html"

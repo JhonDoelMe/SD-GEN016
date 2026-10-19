@@ -46,6 +46,16 @@ self.addEventListener('fetch', (event) => {
         if (response.status === 200) {
           const resClone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, resClone));
+          return response;
+        }
+        if (response.status >= 500) {
+          return caches.match(event.request).then((cachedResponse) => {
+            if (cachedResponse) return cachedResponse;
+            if (event.request.mode === 'navigate') {
+              return caches.match('/').then((rootCache) => rootCache || response);
+            }
+            return response;
+          });
         }
         return response;
       })
