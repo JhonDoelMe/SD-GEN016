@@ -32,13 +32,13 @@ def utc_now() -> datetime.datetime:
 def fmt_dt(dt: Optional[datetime.datetime]) -> str:
     if not dt:
         return "-"
-    return to_facility_time(dt).strftime("%Y-%m-%d %H:%M:%S")
+    return to_facility_time(dt).strftime("%d.%m.%Y, %H:%M:%S")
 
 
 def fmt_date(dt: Optional[datetime.datetime]) -> str:
     if not dt:
         return "-"
-    return to_facility_time(dt).strftime("%Y-%m-%d")
+    return to_facility_time(dt).strftime("%d.%m.%Y")
 
 
 def fmt_time(dt: Optional[datetime.datetime]) -> str:
@@ -60,6 +60,25 @@ def fmt_duration(seconds: Optional[int], hours: Optional[float]) -> str:
         s = tot_sec % 60
         return f"{h:02d}:{m:02d}:{s:02d}"
     return "00:00:00"
+
+
+def fmt_duration_human(seconds: Optional[int], hours: Optional[float]) -> str:
+    if seconds is None and hours is not None:
+        seconds = int(round(hours * 3600))
+    if seconds is None or seconds <= 0:
+        return "0 хв"
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    if h > 0:
+        if m > 0:
+            return f"{h} год {m:02d} хв"
+        return f"{h} год"
+    if m > 0:
+        if s > 0:
+            return f"{m} хв {s:02d} с"
+        return f"{m} хв"
+    return f"{s} с"
 
 
 MONTHS_UA_SHORT = {
@@ -390,6 +409,12 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
         k_ua = key_translations.get(k, k)
         if isinstance(v, str):
             v_ua = val_translations.get(v.upper(), v)
+            if len(v_ua) == 19 and v_ua[4] == '-' and v_ua[7] == '-' and v_ua[10] == ' ':
+                try:
+                    dt_p = datetime.datetime.strptime(v_ua, "%Y-%m-%d %H:%M:%S")
+                    v_ua = dt_p.strftime("%d.%m.%Y, %H:%M:%S")
+                except Exception:
+                    pass
         elif isinstance(v, dict):
             sub_parts = [f"{key_translations.get(sk, sk)}: {val_translations.get(str(sv).upper(), sv)}" for sk, sv in v.items()]
             v_ua = "{" + ", ".join(sub_parts) + "}"
@@ -886,13 +911,15 @@ async def generate_excel_report(
     ws1.row_dimensions[1].height = 28
 
     # Metadata Block
-    export_now_str = now_facility().strftime("%Y-%m-%d %H:%M:%S")
+    export_now_str = fmt_dt(now_facility())
+    start_fmt = fmt_date(start_date)
+    end_fmt = fmt_date(end_date)
     current_status_ua = GENERATOR_STATUS_UA.get(str(generator.status).upper(), str(generator.status)) if generator else "-"
     meta_info = [
-        ("Об'єкт (локація):", facility_name, "Період звіту:", f"{op_report.start_date} — {op_report.end_date}"),
+        ("Об'єкт (локація):", facility_name, "Період звіту:", f"{start_fmt} — {end_fmt}"),
         ("Генератор:", f"{generator_name} ({gen_model})", "Дата експорту:", export_now_str),
         ("Серійний номер:", gen_serial, "Поточний статус:", current_status_ua),
-        ("Поточні мотогодини:", f"{current_hours:.1f} год", "Запас палива в баку:", f"{generator.fuel_tank_level_l if generator else 0.0:.1f} л"),
+        ("Поточні мотогодини:", f"{current_hours:.2f} год", "Запас палива в баку:", f"{generator.fuel_tank_level_l if generator else 0.0:.2f} л"),
     ]
     for row_idx, (k1, v1, k2, v2) in enumerate(meta_info, start=3):
         ws1.cell(row=row_idx, column=1, value=k1).font = BOLD_FONT
@@ -902,27 +929,30 @@ async def generate_excel_report(
         ws1.row_dimensions[row_idx].height = 20
 
     # Summary KPI Tables
+    tot_hours_val = op_report.total_operating_hours_human or fmt_duration_human(None, op_report.total_operating_hours)
+    tot_hours_exact = f"({fmt_duration(None, op_report.total_operating_hours)})"
+
     kpi_sections = [
         (
             "1. Експлуатація та напрацювання",
             SECTION_FILL,
             [
                 ("Кількість робочих циклів (пусків)", op_report.total_runs_count, "шт"),
-                ("Відпрацьовано мотогодин за період", op_report.total_operating_hours, "год"),
-                ("Розрахункова витрата бензину", op_report.total_calculated_consumption_l, "л"),
-                ("Поточні загальні мотогодини генератора", current_hours, "год"),
+                ("Відпрацьовано мотогодин за період", tot_hours_val, tot_hours_exact),
+                ("Розрахункова витрата бензину", round(op_report.total_calculated_consumption_l, 2), "л"),
+                ("Поточні загальні мотогодини генератора", round(current_hours, 2), "год"),
             ]
         ),
         (
             "2. Паливо та запаси",
             PRIMARY_FILL,
             [
-                ("Оприбутковано палива на склад", op_report.total_fuel_received_l, "л"),
-                ("Загальна вартість закупленого палива", op_report.total_fuel_receipts_cost_uah, "грн"),
-                ("Середня закупівельна ціна літра", op_report.avg_fuel_price_per_liter, "грн/л"),
-                ("Заправлено з складу в бак генератора", op_report.total_fuel_transferred_to_tank_l, "л"),
-                ("Поточний залишок на складі ГСМ", op_report.current_stock_balance_l, "л"),
-                ("Поточний рівень у паливному баку", op_report.current_tank_level_l, "л"),
+                ("Оприбутковано палива на склад", round(op_report.total_fuel_received_l, 2), "л"),
+                ("Загальна вартість закупленого палива", round(op_report.total_fuel_receipts_cost_uah, 2), "грн"),
+                ("Середня закупівельна ціна літра", round(op_report.avg_fuel_price_per_liter, 2), "грн/л"),
+                ("Заправлено з складу в бак генератора", round(op_report.total_fuel_transferred_to_tank_l, 2), "л"),
+                ("Поточний залишок на складі ГСМ", round(op_report.current_stock_balance_l, 2), "л"),
+                ("Поточний рівень у паливному баку", round(op_report.current_tank_level_l, 2), "л"),
             ]
         ),
         (
@@ -931,11 +961,11 @@ async def generate_excel_report(
             [
                 ("Проведено планових регламентних ТО", op_report.scheduled_maintenance_count, "шт"),
                 ("Проведено проміжних (додаткових) ТО", op_report.intermediate_maintenance_count, "шт"),
-                ("Загальні витрати на ТО та матеріали", op_report.total_maintenance_cost_uah, "грн"),
-                ("Нормативний інтервал ТО", interval_hours, "год"),
-                ("Останнє пройдене ТО на відмітці", last_maint_hours, "год"),
-                ("Наступне планове ТО на відмітці", next_due_hours, "год"),
-                ("Залишилося мотогодин до наступного ТО", hours_remaining, "год"),
+                ("Загальні витрати на ТО та матеріали", round(op_report.total_maintenance_cost_uah, 2), "грн"),
+                ("Нормативний інтервал ТО", round(interval_hours, 1), "год"),
+                ("Останнє пройдене ТО на відмітці", round(last_maint_hours, 2), "год"),
+                ("Наступне планове ТО на відмітці", round(next_due_hours, 2), "год"),
+                ("Залишилося мотогодин до наступного ТО", round(hours_remaining, 2), "год"),
             ]
         ),
         (
@@ -972,7 +1002,9 @@ async def generate_excel_report(
             c1.alignment = ALIGN_LEFT
             c2.alignment = ALIGN_RIGHT
             c3.alignment = ALIGN_CENTER
-            if isinstance(val, float):
+            if unit in ("грн", "грн/л"):
+                c2.number_format = "#,##0.00"
+            elif isinstance(val, float):
                 c2.number_format = "#,##0.00"
             elif isinstance(val, int):
                 c2.number_format = "#,##0"
@@ -990,8 +1022,8 @@ async def generate_excel_report(
     ws2.freeze_panes = "A2"
 
     headers2 = [
-        "№", "Дата (РРРР-ММ-ДД)", "Час старту", "Час зупинки",
-        "Тривалість (год)", "Тривалість (ГГ:ХХ:СС)",
+        "№", "Дата (ДД.ММ.РРРР)", "Час старту", "Час зупинки",
+        "Тривалість (ГГ:ХХ:СС)", "Тривалість (год, хв)",
         "Початкові мотогодини", "Кінцеві мотогодини",
         "Початкове паливо в баку (л)", "Кінцеве паливо в баку (л)",
         "Витрата палива (л)", "Заправка в бак (л)", "Приход на склад (л)",
@@ -1029,14 +1061,14 @@ async def generate_excel_report(
         seen_dates.add(date_str)
         start_t = fmt_time(r.start_time)
         end_t = fmt_time(r.end_time) if r.end_time else "-"
-        dur_h = round(r.duration_hours or 0.0, 2)
         dur_str = getattr(r, "duration_formatted", None) or fmt_duration(r.duration_seconds, r.duration_hours)
+        dur_human = getattr(r, "duration_human", None) or fmt_duration_human(r.duration_seconds, r.duration_hours)
         consumption = round(r.calculated_consumption_l or 0.0, 2)
         fuel_added = round(transfers_by_date.pop(date_str, 0.0), 2)
         fuel_rec = round(receipts_by_date.pop(date_str, 0.0), 2)
         op_name = r.user.full_name if r.user else "Оператор"
 
-        tot_dur_hours += dur_h
+        tot_dur_hours += (r.duration_hours or 0.0)
         tot_cons_l += consumption
         tot_fuel_added += fuel_added
         tot_fuel_received += fuel_rec
@@ -1045,12 +1077,12 @@ async def generate_excel_report(
             date_str,
             start_t,
             end_t,
-            dur_h,
             dur_str,
-            r.start_hours,
-            r.end_hours if r.end_hours is not None else "-",
-            r.start_fuel_level_l if r.start_fuel_level_l is not None else "-",
-            r.end_fuel_level_l if r.end_fuel_level_l is not None else "-",
+            dur_human,
+            round(r.start_hours, 3) if r.start_hours is not None else "-",
+            round(r.end_hours, 3) if r.end_hours is not None else "-",
+            round(r.start_fuel_level_l, 2) if r.start_fuel_level_l is not None else "-",
+            round(r.end_fuel_level_l, 2) if r.end_fuel_level_l is not None else "-",
             consumption,
             fuel_added if fuel_added > 0 else "-",
             fuel_rec if fuel_rec > 0 else "-",
@@ -1071,7 +1103,7 @@ async def generate_excel_report(
             d_str,
             "-",
             "-",
-            0.0,
+            "-",
             "-",
             "-",
             "-",
@@ -1105,9 +1137,9 @@ async def generate_excel_report(
             if fill.fill_type:
                 cell.fill = fill
 
-            if c_offset in [2, 3, 4, 6, 15]:
+            if c_offset in [2, 3, 4, 5, 6, 15]:
                 cell.alignment = ALIGN_CENTER
-            elif c_offset in [5, 7, 8, 9, 10, 11, 12, 13]:
+            elif c_offset in [7, 8, 9, 10, 11, 12, 13]:
                 cell.alignment = ALIGN_RIGHT
                 if isinstance(val, (int, float)):
                     cell.number_format = "#,##0.00"
@@ -1124,15 +1156,18 @@ async def generate_excel_report(
         cell.font = TOTAL_FONT
 
     ws2.cell(row=last_r, column=1, value="РАЗОМ").alignment = ALIGN_CENTER
-    c_tot_dur = ws2.cell(row=last_r, column=5, value=round(tot_dur_hours, 2))
-    c_tot_dur.alignment = ALIGN_RIGHT
-    c_tot_dur.number_format = "#,##0.00"
-
     tot_dur_formatted = fmt_duration(None, tot_dur_hours)
-    ws2.cell(row=last_r, column=6, value=tot_dur_formatted).alignment = ALIGN_CENTER
+    tot_dur_human = fmt_duration_human(None, tot_dur_hours)
+
+    c_tot_exact = ws2.cell(row=last_r, column=5, value=tot_dur_formatted)
+    c_tot_exact.alignment = ALIGN_CENTER
+
+    c_tot_human = ws2.cell(row=last_r, column=6, value=tot_dur_human)
+    c_tot_human.alignment = ALIGN_CENTER
 
     c_tot_cons = ws2.cell(row=last_r, column=11, value=round(tot_cons_l, 2))
     c_tot_cons.alignment = ALIGN_RIGHT
+    c_tot_cons.number_format = "#,##0.00"
     c_tot_cons.number_format = "#,##0.00"
 
     if tot_fuel_added > 0:

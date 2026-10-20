@@ -232,7 +232,7 @@ async def test_dynamic_excel_report_generation(client, superadmin_auth, operator
     ws2 = wb["Звіт по днях"]
     assert ws2.freeze_panes == "A2"
     assert ws2["A1"].value == "№"
-    assert ws2["B1"].value == "Дата (РРРР-ММ-ДД)"
+    assert ws2["B1"].value == "Дата (ДД.ММ.РРРР)"
     ws2_text = " ".join(str(cell.value) for row in ws2.iter_rows() for cell in row if cell.value)
     assert "Тестовий цикл для звіту Excel" in ws2_text
 
