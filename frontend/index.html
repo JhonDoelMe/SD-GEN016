@@ -758,7 +758,6 @@
         <div class="panel-header">
           <h3>👥 Користувачі системи та Генератор</h3>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button type="button" id="btnOpenWizardModal" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalWizard')">🧙 Майстер налаштування генератора</button>
             <button type="button" id="btnOpenUserCreateModal" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalUserCreate')">+ Створити користувача</button>
           </div>
         </div>
@@ -1238,69 +1237,7 @@
     </div>
   </div>
 
-  <!-- Modal: Generator Wizard Setup -->
-  <div id="modalWizard" class="modal-overlay">
-    <div class="modal-content" style="max-width: 600px;">
-      <div class="modal-header">
-        <h3>Майстер налаштування генератора</h3>
-        <button class="close-btn" onclick="closeModal('modalWizard')">&times;</button>
-      </div>
-      <form id="wizardForm">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-          <div class="form-group">
-            <label>Назва</label>
-            <input type="text" id="wizName" required value="Бензогенератор об'єкта 5.5кВт">
-          </div>
-          <div class="form-group">
-            <label>Модель</label>
-            <input type="text" id="wizModel" required value="KSB-6000">
-          </div>
-          <div class="form-group">
-            <label>Виробник</label>
-            <input type="text" id="wizManufacturer" required value="K&S">
-          </div>
-          <div class="form-group">
-            <label>Серійний номер</label>
-            <input type="text" id="wizSerial" required value="SN-2026-001">
-          </div>
-          <div class="form-group">
-            <label>Потужність (кВт)</label>
-            <input type="number" step="0.1" id="wizPower" required value="5.5">
-          </div>
-          <div class="form-group">
-            <label>Ємність бака (л)</label>
-            <input type="number" step="0.1" id="wizTankCap" required value="25.0">
-          </div>
-          <div class="form-group">
-            <label>Норм. розхід (л/год)</label>
-            <input type="number" step="0.1" id="wizConsumption" required value="2.2">
-          </div>
-          <div class="form-group">
-            <label>Початкові мотогодини</label>
-            <input type="number" step="0.1" id="wizInitHours" required value="0.0">
-          </div>
-          <div class="form-group">
-            <label>Початковий бак (л)</label>
-            <input type="number" step="0.1" id="wizInitFuel" required value="10.0">
-          </div>
-          <div class="form-group">
-            <label>Інтервал ТО (мотогодин)</label>
-            <input type="number" step="1" id="wizMaintInterval" required value="300">
-          </div>
-          <div class="form-group">
-            <label>Останнє виконане ТО (мотогодин)</label>
-            <input type="number" step="0.1" id="wizLastMaintHours" placeholder="За замовчуванням: 0 або кратно інтервалу">
-          </div>
-          <div class="form-group">
-            <label>Початок графіка роботи</label>
-            <input type="time" id="wizSchedStart" required value="08:00">
-          </div>
-          <div class="form-group">
-            <label>Кінець графіка роботи</label>
-            <input type="time" id="wizSchedEnd" required value="20:00">
-          </div>
-        </div>
-        <button type="submit" class="btn-primary" style="margin-top: 1rem;">Зберегти налаштування генератора</button>
+<button type="submit" class="btn-primary" style="margin-top: 1rem;">Зберегти налаштування генератора</button>
       </form>
     </div>
   </div>
@@ -1339,6 +1276,102 @@
         </div>
         <button type="submit" class="btn-primary">Створити акаунт</button>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: Edit User -->
+  <div id="modalUserEdit" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>✏️ Редагування користувача</h3>
+        <button class="close-btn" onclick="closeModal('modalUserEdit')">&times;</button>
+      </div>
+      <form id="userEditForm">
+        <input type="hidden" id="editUserId">
+        <div class="form-group">
+          <label>Логін *</label>
+          <input type="text" id="editUserLogin" required minlength="3" maxlength="50" pattern="^[a-zA-Z0-9_.\-]+$" autocapitalize="none" spellcheck="false">
+        </div>
+        <div class="form-group">
+          <label>ПІБ *</label>
+          <input type="text" id="editUserName" required maxlength="150">
+        </div>
+        <div class="form-group">
+          <label>Email / Контакти</label>
+          <input type="email" id="editUserEmail" maxlength="150" placeholder="user@domain.com">
+        </div>
+        <div class="form-group">
+          <label>Роль</label>
+          <select id="editUserRole">
+            <option value="3">Оператор</option>
+            <option value="2">Адміністратор</option>
+            <option value="4">Спостерігач</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-top: 0.5rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" id="editUserActive">
+            <span>Обліковий запис активний (дозволено вхід)</span>
+          </label>
+        </div>
+        <div class="form-group" style="margin-top: 0.75rem;">
+          <label>Новий пароль (залиште порожнім, якщо пароль не змінюється)</label>
+          <input type="password" id="editUserPassword" minlength="8" maxlength="128" placeholder="•••••••• (без змін)">
+        </div>
+        <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
+          <button type="submit" class="btn-primary" style="flex: 1;">Зберегти зміни</button>
+          <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalUserEdit')">Скасувати</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Reset User Password -->
+  <div id="modalUserResetPassword" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>🔑 Встановлення нового пароля</h3>
+        <button class="close-btn" onclick="closeModal('modalUserResetPassword')">&times;</button>
+      </div>
+      <form id="userResetPasswordForm">
+        <input type="hidden" id="resetUserId">
+        <div style="margin-bottom: 1rem; color: var(--text-muted); font-size: 0.9rem;">
+          Зміна пароля для користувача: <b id="resetUserDisplayLogin" style="color: var(--text-primary);"></b> (<span id="resetUserDisplayName"></span>)
+        </div>
+        <div class="form-group">
+          <label>Новий пароль * (мін. 8 символів, літери та цифри)</label>
+          <input type="password" id="resetNewPassword" required minlength="8" maxlength="128" autocomplete="new-password" placeholder="Введіть новий надійний пароль">
+        </div>
+        <div class="form-group">
+          <label>Підтвердження нового пароля *</label>
+          <input type="password" id="resetConfirmPassword" required minlength="8" maxlength="128" autocomplete="new-password" placeholder="Повторіть новий пароль">
+        </div>
+        <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
+          <button type="submit" class="btn-primary" style="flex: 1;">Оновити пароль</button>
+          <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalUserResetPassword')">Скасувати</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Delete User Confirmation -->
+  <div id="modalUserDelete" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>🗑️ Видалення користувача</h3>
+        <button class="close-btn" onclick="closeModal('modalUserDelete')">&times;</button>
+      </div>
+      <div style="margin-bottom: 1.25rem; line-height: 1.5;">
+        Ви дійсно бажаєте видалити користувача <b id="deleteUserDisplayLogin" style="color: #ef4444;"></b> (<span id="deleteUserDisplayName"></span>)?
+        <div style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">
+          Якщо користувач має пов'язані робочі цикли чи журнали, його акаунт буде назавжди деактивовано для збереження аудиту.
+        </div>
+      </div>
+      <input type="hidden" id="deleteUserId">
+      <div style="display: flex; gap: 0.75rem;">
+        <button type="button" id="confirmDeleteUserBtn" class="btn-primary" style="background: #dc2626; flex: 1;">Видалити користувача</button>
+        <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalUserDelete')">Скасувати</button>
+      </div>
     </div>
   </div>
 

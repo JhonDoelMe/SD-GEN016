@@ -308,3 +308,101 @@ async def test_viewer_strictly_dashboard_only(client, viewer_auth):
 
     # Viewer CANNOT access notifications settings
     assert (await client.get("/api/v1/notifications/settings", headers=viewer_auth)).status_code == 403
+
+
+
+@pytest.mark.asyncio
+async def test_superadmin_full_user_crud_and_protections(client, superadmin_auth, admin_auth):
+    # 1. SuperAdmin creates a user
+    create_res = await client.post(
+        "/api/v1/users",
+        headers=superadmin_auth,
+        json={
+            "login": "test_operator_crud",
+            "password": "Password123!",
+            "full_name": "Тестовий Оператор КРУД",
+            "email": "testop@example.com",
+            "role_ids": [3]
+        }
+    )
+    assert create_res.status_code == 201
+    user_id = create_res.json()["id"]
+
+    # 2. SuperAdmin updates user (login, full_name, email, role, status)
+    update_res = await client.put(
+        f"/api/v1/users/{user_id}",
+        headers=superadmin_auth,
+        json={
+            "login": "test_operator_renamed",
+            "full_name": "Перейменований Оператор",
+            "email": "updated@example.com",
+            "role_ids": [4],  # switch to viewer
+            "is_active": True
+        }
+    )
+    assert update_res.status_code == 200
+    updated_data = update_res.json()
+    assert updated_data["login"] == "test_operator_renamed"
+    assert updated_data["full_name"] == "Перейменований Оператор"
+    assert updated_data["email"] == "updated@example.com"
+    assert any(r["name"] == "viewer" for r in updated_data["roles"])
+
+    # 3. SuperAdmin resets password
+    reset_res = await client.post(
+        f"/api/v1/users/{user_id}/reset-password",
+        headers=superadmin_auth,
+        json={"new_password": "NewSecretPass456!"}
+    )
+    assert reset_res.status_code == 200
+
+    # Verify login with new credentials
+    login_new = await client.post(
+        "/api/v1/auth/login",
+        json={"login": "test_operator_renamed", "password": "NewSecretPass456!"}
+    )
+    assert login_new.status_code == 200
+
+    # 4. SuperAdmin deletes user
+    del_res = await client.delete(
+        f"/api/v1/users/{user_id}",
+        headers=superadmin_auth
+    )
+    assert del_res.status_code == 200
+
+    # 5. Admin CANNOT create, edit, reset password, or delete user
+    assert (await client.post(
+        "/api/v1/users",
+        headers=admin_auth,
+        json={"login": "admin_fail", "password": "Password123!", "full_name": "Fail"}
+    )).status_code == 403
+
+    # Admin CAN view users
+    assert (await client.get("/api/v1/users", headers=admin_auth)).status_code == 200
+
+    # 6. Protections: SuperAdmin CANNOT be modified, blocked, or deleted
+    users_list = (await client.get("/api/v1/users", headers=superadmin_auth)).json()
+    superadmin_user = next(u for u in users_list if u["is_superadmin"])
+    super_id = superadmin_user["id"]
+
+    # Attempt to edit superadmin
+    edit_super_res = await client.put(
+        f"/api/v1/users/{super_id}",
+        headers=superadmin_auth,
+        json={"full_name": "Зломити Суперадміна"}
+    )
+    assert edit_super_res.status_code == 400
+
+    # Attempt to reset password of superadmin via user endpoint
+    reset_super_res = await client.post(
+        f"/api/v1/users/{super_id}/reset-password",
+        headers=superadmin_auth,
+        json={"new_password": "HackedPass123!"}
+    )
+    assert reset_super_res.status_code == 400
+
+    # Attempt to delete superadmin
+    del_super_res = await client.delete(
+        f"/api/v1/users/{super_id}",
+        headers=superadmin_auth
+    )
+    assert del_super_res.status_code == 400
