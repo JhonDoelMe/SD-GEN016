@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.0">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.1">
 </head>
 <body>
 
@@ -60,6 +60,9 @@
 
         <div id="loginError" style="display: none; color: #f87171; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 0.5rem; padding: 0.85rem; margin-top: 1rem; font-size: 0.95rem; text-align: left; line-height: 1.4;"></div>
         <button type="submit" id="loginSubmitBtn" class="btn-primary" style="padding: 1rem; font-size: 1.15rem; margin-top: 1.25rem; width: 100%; border-radius: 0.65rem;">Увійти в систему</button>
+        <div style="margin-top: 1.15rem; font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; text-align: center;">
+          Входячи до системи, ви погоджуєтесь з <a href="javascript:void(0)" onclick="openModal('modalTermsOfService')" style="color: #38bdf8; text-decoration: underline;">Умовами використання</a> та <a href="javascript:void(0)" onclick="openModal('modalPrivacyPolicy')" style="color: #38bdf8; text-decoration: underline;">Політикою конфіденційності</a>
+        </div>
       </form>
     </div>
   </div>
@@ -949,6 +952,10 @@
         <span class="footer-dot">•</span>
         <button type="button" class="footer-link-btn" onclick="openModal('modalTermsOfService')">📄 Умови використання</button>
         <span class="footer-dot">•</span>
+        <button type="button" class="footer-link-btn" onclick="openModal('modalOperationalSafety')">🦺 Безпека праці</button>
+        <span class="footer-dot">•</span>
+        <button type="button" class="footer-link-btn" onclick="openModal('modalDataGovernance')">🛡️ Управління даними</button>
+        <span class="footer-dot">•</span>
         <a href="https://github.com/JhonDoelMe/SD-GEN016" target="_blank" rel="noopener noreferrer" class="footer-link-a" title="Перейти до вихідного репозиторію на GitHub">🐙 GitHub Репозиторій</a>
       </div>
 
@@ -1737,25 +1744,43 @@
 
   <!-- Modal: Privacy Policy -->
   <div id="modalPrivacyPolicy" class="modal-overlay">
-    <div class="modal-content" style="max-width: 700px;">
+    <div class="modal-content" style="max-width: 750px;">
       <div class="modal-header">
-        <h3>🔒 Політика конфіденційності</h3>
+        <h3>🔒 Політика конфіденційності (Версія 4.1.0)</h3>
         <button class="close-btn" onclick="closeModal('modalPrivacyPolicy')">&times;</button>
       </div>
-      <div style="font-size: 0.92rem; line-height: 1.6; max-height: 60vh; overflow-y: auto; padding: 0.5rem 0.5rem 0.5rem 0;">
-        <p><b>Останнє оновлення:</b> 19 жовтня 2026 року | <b>MAXI-UA LLC</b></p>
-        <p style="margin-top: 0.5rem;">Ця Політика конфіденційності визначає порядок обробки та захисту даних користувачів системи оперативного обліку бензинових генераторів <b>SD-GEN016</b>.</p>
-        <h4 style="margin: 1rem 0 0.4rem; color: #38bdf8;">1. Які дані обробляються</h4>
+      <div style="font-size: 0.92rem; line-height: 1.6; max-height: 65vh; overflow-y: auto; padding: 0.5rem 0.5rem 0.5rem 0;">
+        <div style="background: rgba(56, 189, 248, 0.08); border-left: 3px solid #38bdf8; padding: 0.6rem 0.85rem; border-radius: 4px; margin-bottom: 0.85rem;">
+          <b>Останнє оновлення:</b> 20 жовтня 2026 року | <b>MAXI-UA LLC</b><br>
+          <span style="font-size: 0.82rem; color: var(--text-muted);">Відповідність Закону України «Про захист персональних даних» № 2297-VI та нормам GDPR</span>
+        </div>
+
+        <p>Ця Політика конфіденційності визначає порядок обробки, використання та захисту даних користувачів спеціалізованого веб-додатку та PWA-системи <b>SD-GEN016 v4.1.0</b> (Service Desk генераторів).</p>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">1. Категорії та обсяг даних, що обробляються</h4>
         <ul style="padding-left: 1.25rem;">
-          <li>Службові облікові записи (логін, адреса e-mail, ПІБ, хеш пароля bcrypt, призначені ролі).</li>
-          <li>Технічні параметри сесії (безпечні HTTP-only cookie, стан авторизації «Запам'ятати мене», вибір активного об'єкта та генератора).</li>
-          <li>Журнал аудиту (час входу, дії з пуску/зупинки, приходу палива та IP-адреси для забезпечення безпеки).</li>
+          <li><b>Службові облікові записи персоналу:</b> логін, робочий e-mail, повне ім'я (ПІБ), посада, призначені ролі (SuperAdmin, Admin, Operator, Viewer), криптографічний хеш пароля (Bcrypt з індивідуальною сіллю). Відкриті паролі ніколи не зберігаються і не логуються.</li>
+          <li><b>Технічні параметри сесій та PWA:</b> мережева IP-адреса, User-Agent браузера, захищені кукі <code>access_token</code> (HTTP-Only, Secure, SameSite=Lax) з терміном дії 60 діб («Запам'ятати мене») або 24 год, збережений стан останнього обраного об'єкта та генератора в <code>localStorage</code>.</li>
+          <li><b>Службові підписки Web Push (протокол VAPID):</b> публічні криптографічні ключі клієнтського браузера (endpoint, p256dh, auth) для сповіщень про старт/стоп генератора, регламентне ТО та аварії.</li>
+          <li><b>Незмінний журнал системного аудиту (Audit Trail):</b> детальний запис усіх операцій (пуск, зупинка, прихід палива, зміна статусів, коригування) з мітками часу за київським часовим поясом (<code>Europe/Kyiv</code>).</li>
+          <li><b>Фотографічні матеріали та первинна документація:</b> фотографії паливних накладних/чеків та фотофіксація дефектів обладнання.</li>
         </ul>
-        <h4 style="margin: 1rem 0 0.4rem; color: #38bdf8;">2. Мета використання</h4>
-        <p>Дані використовуються виключно для надійного обліку мотогодин, палива та регламентного ТО, а також запобігання несанкціонованому доступу.</p>
-        <h4 style="margin: 1rem 0 0.4rem; color: #38bdf8;">3. Захист та безпека</h4>
-        <p>Усі паролі захищені хешуванням bcrypt, запити захищені політиками CSP, CORS та обмеженнями частоти звернень (Rate Limiting). Дані не передаються стороннім особам.</p>
-        <p style="margin-top: 1rem; color: var(--text-muted); font-size: 0.85rem;">Офіційний GitHub: <a href="https://github.com/JhonDoelMe/SD-GEN016" target="_blank" rel="noopener noreferrer" style="color: #38bdf8;">https://github.com/JhonDoelMe/SD-GEN016</a> | E-mail: maxiuallc@gmail.com</p>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">2. Мета та правові підстави обробки</h4>
+        <p>Дані обробляються виключно в межах службових обов'язків для: оперативного диспетчерського обліку мотогодин, контролю безпеки праці, запобігання пожежам та аваріям, планування регламентних ТО та достовірного списання паливно-мастильних матеріалів.</p>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">3. Комплекс заходів кібербезпеки</h4>
+        <p>Система захищена на рівні сучасних enterprise-стандартів: шифрування каналів зв'язку (TLS 1.3 / HTTPS), захисні заголовки CSP (Content-Security-Policy), X-Frame-Options: DENY, X-Content-Type-Options: nosniff, захист від брутфорсу (автоблокування при 5 невдалих спробах входу на 300 сек), параметризовані SQL-запити та фільтрація формульних ін'єкцій у звітах Excel.</p>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">4. Строки зберігання та видалення</h4>
+        <p>Журнали напрацювання генераторів та аудиту дій операторів зберігаються протягом <b>від 3 до 7 років</b> відповідно до вимог виробничого та бухгалтерського обліку. Повне видалення даних виконується за процедурою Clean DB виключно головним системним адміністратором.</p>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">5. Права користувачів та відкликання згоди</h4>
+        <p>Користувач має право переглядати свої персональні дані, вимагати уточнення, а також керувати отриманням сповіщень або відписатися від них у будь-який момент у вкладці «🔔 Сповіщення».</p>
+
+        <p style="margin-top: 1rem; color: var(--text-muted); font-size: 0.85rem; border-top: 1px solid var(--border-color); padding-top: 0.6rem;">
+          Офіційний репозиторій: <a href="https://github.com/JhonDoelMe/SD-GEN016" target="_blank" rel="noopener noreferrer" style="color: #38bdf8;">github.com/JhonDoelMe/SD-GEN016</a> | Повна документація: <code>docs/PRIVACY_POLICY.md</code> | E-mail: maxiuallc@gmail.com
+        </p>
       </div>
       <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
         <button type="button" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem;" onclick="closeModal('modalPrivacyPolicy')">Зрозуміло</button>
@@ -1765,28 +1790,128 @@
 
   <!-- Modal: Terms of Service -->
   <div id="modalTermsOfService" class="modal-overlay">
-    <div class="modal-content" style="max-width: 700px;">
+    <div class="modal-content" style="max-width: 750px;">
       <div class="modal-header">
-        <h3>📄 Умови використання (Terms of Service)</h3>
+        <h3>📄 Умови використання (Terms of Service v4.1.0)</h3>
         <button class="close-btn" onclick="closeModal('modalTermsOfService')">&times;</button>
       </div>
-      <div style="font-size: 0.92rem; line-height: 1.6; max-height: 60vh; overflow-y: auto; padding: 0.5rem 0.5rem 0.5rem 0;">
-        <p><b>Останнє оновлення:</b> 19 жовтня 2026 року | <b>MAXI-UA LLC</b></p>
-        <p style="margin-top: 0.5rem;">Використання системи <b>SD-GEN016</b> регулюється цими Умовами використання та ліцензією MIT.</p>
-        <h4 style="margin: 1rem 0 0.4rem; color: #38bdf8;">1. Права інтелектуальної власності</h4>
-        <p>Програмне забезпечення розроблено компанією <b>MAXI-UA LLC</b>. Усі права захищені. Вихідний код є відкритим та доступним в офіційному репозиторії: <a href="https://github.com/JhonDoelMe/SD-GEN016" target="_blank" rel="noopener noreferrer" style="color: #38bdf8;">https://github.com/JhonDoelMe/SD-GEN016</a>.</p>
-        <h4 style="margin: 1rem 0 0.4rem; color: #38bdf8;">2. Обов'язки користувача</h4>
+      <div style="font-size: 0.92rem; line-height: 1.6; max-height: 65vh; overflow-y: auto; padding: 0.5rem 0.5rem 0.5rem 0;">
+        <div style="background: rgba(56, 189, 248, 0.08); border-left: 3px solid #38bdf8; padding: 0.6rem 0.85rem; border-radius: 4px; margin-bottom: 0.85rem;">
+          <b>Останнє оновлення:</b> 20 жовтня 2026 року | <b>MAXI-UA LLC</b><br>
+          <span style="font-size: 0.82rem; color: var(--text-muted);">Відкрита ліцензія MIT | Обов'язкова для всіх операторів та адміністраторів</span>
+        </div>
+
+        <p>Ці Умови регулюють використання комплексу <b>SD-GEN016 v4.1.0</b>. Використовуючи систему, ви підтверджуєте повну згоду з цими правилами.</p>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">1. Правовий статус та межі функціоналу</h4>
+        <p>SD-GEN016 є інформаційно-довідковим та диспетчерським Service Desk комплексом. <b>Система НЕ є приладом автоматичного введення резерву (АВР), автоматичним захисним вимикачем чи реле прямої дії.</b> Система фіксує та розраховує події, тоді як фізичний контроль і безпека генератора покладаються виключно на людину-оператора.</p>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">2. Недоторканність лічильників та заборона фальсифікацій</h4>
         <ul style="padding-left: 1.25rem;">
-          <li>Дотримуватися правил безпеки праці під час обслуговування генераторів та роботи з паливом.</li>
-          <li>Вносити достовірні показники лічильників та чеків.</li>
-          <li>Не передавати облікові дані стороннім особам.</li>
+          <li><b>Сувора заборона маніпуляцій:</b> категорично забороняється навмисне спотворення показників фізичного лічильника мотогодин, оприбуткування безтоварних накладних чи внесення неіснуючих залишків пального.</li>
+          <li><b>Регламент системних коригувань:</b> будь-яка зміна напрацювання чи залишків палива виконується виключно роллю SuperAdmin на підставі офіційного Акта інвентаризації із зазначенням номера документа в системному аудиті.</li>
         </ul>
-        <h4 style="margin: 1rem 0 0.4rem; color: #38bdf8;">3. Обмеження відповідальності</h4>
-        <p>Програмний комплекс надається «ЯК Є» («AS IS»). Розробник не несе відповідальності за фізичні несправності обладнання внаслідок порушення оператором регламентів виробника.</p>
-        <p style="margin-top: 1rem; color: var(--text-muted); font-size: 0.85rem;">© 2026 MAXI-UA LLC. E-mail: maxiuallc@gmail.com</p>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">3. Ретроспективне внесення сесій (Офлайн-режим)</h4>
+        <p>У разі аварійних відключень зв'язку, інтернету або блекаутів допускається ретроспективне внесення циклів роботи генератора (<code>POST /api/v1/generator/manual-run</code>). Запис вноситься виключно на основі записів у паперовому журналі чергового з обов'язковим зазначенням причини.</p>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">4. Обов'язки персоналу та безпека праці</h4>
+        <p>Оператор зобов'язаний дотримуватися правил безпеки: категорично заборонено дозаправляти генератор при працюючому або гарячому двигуні; заборонено роботу в закритих приміщеннях без примусової витяжки вихлопних газів. При реєстрації критичної несправності (<code>CRITICAL</code>) запуск генератора блокується до усунення дефекту.</p>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">5. Відмова від гарантій та обмеження відповідальності</h4>
+        <p>Програмне забезпечення надається на умовах «ЯК Є» («AS IS»). Розробник (MAXI-UA LLC) не несе цивільної, фінансової чи кримінальної відповідальності за фізичні пошкодження двигунів, порушення регламентів ТО оператором, недотримання правил пожежної безпеки або збитки через знеструмлення об'єкта.</p>
+
+        <p style="margin-top: 1rem; color: var(--text-muted); font-size: 0.85rem; border-top: 1px solid var(--border-color); padding-top: 0.6rem;">
+          © 2026 MAXI-UA LLC. Усі права захищені. Документ: <code>docs/TERMS_OF_SERVICE.md</code> | E-mail: maxiuallc@gmail.com
+        </p>
       </div>
       <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
         <button type="button" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem;" onclick="closeModal('modalTermsOfService')">Погоджуюсь</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Operational Safety Policy -->
+  <div id="modalOperationalSafety" class="modal-overlay">
+    <div class="modal-content" style="max-width: 750px;">
+      <div class="modal-header">
+        <h3>🦺 Політика безпеки праці та пожежної безпеки (v4.1.0)</h3>
+        <button class="close-btn" onclick="closeModal('modalOperationalSafety')">&times;</button>
+      </div>
+      <div style="font-size: 0.92rem; line-height: 1.6; max-height: 65vh; overflow-y: auto; padding: 0.5rem 0.5rem 0.5rem 0;">
+        <div style="background: rgba(234, 179, 8, 0.1); border-left: 3px solid #eab308; padding: 0.6rem 0.85rem; border-radius: 4px; margin-bottom: 0.85rem;">
+          <b>Обов'язковий регламент безпеки праці</b> | Версія 4.1.0 (20.10.2026)<br>
+          <span style="font-size: 0.82rem; color: var(--text-muted);">Правила поводження з паливом, пожежної безпеки та дій при аваріях</span>
+        </div>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #facc15;">1. Пожежна безпека та поводження з ПММ</h4>
+        <ul style="padding-left: 1.25rem;">
+          <li><b>Категорично заборонено:</b> паління, використання відкритого вогню, іскроутворювального інструменту ближче 10 метрів від генератора чи складу ГСМ.</li>
+          <li><b>Заборона гарячої дозаправки:</b> заправка бака генератора паливом при працюючому або гарячому двигуні суворо заборонена. Перед заправкою двигун повинен бути зупинений та охолоджений не менше 10–15 хвилин.</li>
+          <li><b>Засоби пожежогасіння:</b> біля генератора та складу палива обов'язково повинні знаходитися справні вогнегасники (порошкові ОП-5 або вуглекислотні ВВК-3), ящик з піском та лопата.</li>
+        </ul>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #facc15;">2. Вентиляція та захист від чадного газу (CO)</h4>
+        <ul style="padding-left: 1.25rem;">
+          <li>Заборонено експлуатувати генератор усередині житлових приміщень, підвалів чи загальних коридорів без герметичного газовідводу.</li>
+          <li>Вихлопна магістраль повинна виводитися на відкрите повітря на висоту та відстань не менше 1.5 м від вікон і повітрозабірників.</li>
+          <li>У приміщенні генераторної обов'язкове встановлення справного детектора чадного газу (CO-сенсора).</li>
+        </ul>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #facc15;">3. Електробезпека та заземлення</h4>
+        <ul style="padding-left: 1.25rem;">
+          <li>Металевий корпус генератора повинен бути приєднаний до штатного контуру заземлення об'єкта опором не більше 4 Ом.</li>
+          <li>Підключення навантаження дозволяється лише після виходу двигуна на стабільні робочі оберти (50 Гц / 230/400 В).</li>
+        </ul>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #facc15;">4. Порядок дій при аварійних подіях</h4>
+        <p>При виявленні диму, запаху палива, витоку оливи або перегріву: негайно натиснути кнопку аварійної зупинки (Emergency STOP), перекрити паливний кран, знеструмити автомат генератора та зареєструвати інцидент у розділі «⚠️ Несправності» зі статусом <code>CRITICAL</code>.</p>
+
+        <p style="margin-top: 1rem; color: var(--text-muted); font-size: 0.85rem; border-top: 1px solid var(--border-color); padding-top: 0.6rem;">
+          Повна документація: <code>docs/OPERATIONAL_SAFETY_POLICY.md</code> | MAXI-UA LLC, 2026
+        </p>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+        <button type="button" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem;" onclick="closeModal('modalOperationalSafety')">Ознайомлений</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Data Governance & Audit Policy -->
+  <div id="modalDataGovernance" class="modal-overlay">
+    <div class="modal-content" style="max-width: 750px;">
+      <div class="modal-header">
+        <h3>🛡️ Управління даними, аудит та регламент SLA (v4.1.0)</h3>
+        <button class="close-btn" onclick="closeModal('modalDataGovernance')">&times;</button>
+      </div>
+      <div style="font-size: 0.92rem; line-height: 1.6; max-height: 65vh; overflow-y: auto; padding: 0.5rem 0.5rem 0.5rem 0;">
+        <div style="background: rgba(34, 197, 94, 0.08); border-left: 3px solid #22c55e; padding: 0.6rem 0.85rem; border-radius: 4px; margin-bottom: 0.85rem;">
+          <b>Політика управління даними та SLA</b> | Версія 4.1.0 (20.10.2026)<br>
+          <span style="font-size: 0.82rem; color: var(--text-muted);">Регламент незмінного аудиту, щомісячних інвентаризацій та резервного копіювання</span>
+        </div>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #4ade80;">1. Незмінність журналу аудиту (Audit Trail)</h4>
+        <p>Кожна дія оператора та адміністратора (пуск, зупинка, прихід палива, заправка бака, списання, зміна статусу дефекту, зміна ролі) фіксується у незмінній системній таблиці аудиту. Запис містить точну мітку часу (Europe/Kyiv), ID користувача, IP-адресу, сутність та попередні/нові значення полів. Видалення окремих аудит-записів технічно заблоковано.</p>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #4ade80;">2. Щомісячні інвентаризації та системні коригування</h4>
+        <p>Наприкінці кожного звітного місяця відповідальна комісія проводить фізичне зняття показників лічильників мотогодин та фактичний замір залишків палива у резервуарах. У разі розбіжностей коригування проводиться виключно суперадміністратором через розділ «Системні коригування» з обов'язковою фіксацією номера акта звірки.</p>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #4ade80;">3. Стандарти надійності та резервного копіювання (RPO/RTO)</h4>
+        <ul style="padding-left: 1.25rem;">
+          <li><b>RPO (Recovery Point Objective):</b> $\le 24$ годин (щоденний повний бекап бази даних та завантажених фотозвітів).</li>
+          <li><b>RTO (Recovery Time Objective):</b> $\le 2$ годин (максимальний час відновлення системи після збою сервера).</li>
+          <li>Архіви зберігаються у форматі <code>tar.gz</code> на ізольованому відмовостійкому сховищі.</li>
+        </ul>
+
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #4ade80;">4. Рівень обслуговування та доступність (SLA)</h4>
+        <p>Для промислових інсталяцій цільова доступність сервісу становить <b>99.5%</b>. Регламентні технічні оновлення виконуються у неробочі години з попереднім повідомленням адміністратора за 24 години.</p>
+
+        <p style="margin-top: 1rem; color: var(--text-muted); font-size: 0.85rem; border-top: 1px solid var(--border-color); padding-top: 0.6rem;">
+          Документація: <code>docs/DATA_GOVERNANCE_AND_AUDIT.md</code> та <code>docs/SLA_AND_SUPPORT.md</code> | MAXI-UA LLC, 2026
+        </p>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+        <button type="button" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem;" onclick="closeModal('modalDataGovernance')">Зрозуміло</button>
       </div>
     </div>
   </div>
