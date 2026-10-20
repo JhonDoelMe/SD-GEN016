@@ -22,8 +22,8 @@ async def test_subscribe_and_unsubscribe_push(client: AsyncClient, superadmin_au
     sub_payload = {
         "endpoint": "https://fcm.googleapis.com/fcm/send/test-token-12345",
         "keys": {
-            "p256dh": "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QT9AcUbVYOISxkzquVmtXHGChTLnWqTxBXBkQ-NuCP5yZlXY",
-            "auth": "tBHItJI5svbpez7KI4CCXg"
+            "p256dh": "BFdHB8a7vG8vNjOXCXHJ0cz0Diwh2fGJ42wpnMS5YWwdZlOMGaKEhiW1Gm8BeTBnE8xC9SoAkRlyD55ynQ_0pPE",
+            "auth": "MDEyMzQ1Njc4OWFiY2RlZg"
         },
         "user_agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) TestBrowser",
         "facility_id": 1
@@ -179,25 +179,38 @@ async def test_maintenance_rate_limiting_max_2_per_day(db_session: AsyncSession)
 
 
 @pytest.mark.asyncio
-async def test_push_notifications_routing_and_vapid_error_handling(client, superadmin_auth, operator_auth, db_session):
+async def test_push_notifications_routing_and_vapid_error_handling(client, superadmin_auth, operator_auth, db_session, monkeypatch):
     """
     Перевірка:
     1. Підписки суперадмінів завжди включаються до списку отримувачів незалежно від facility_id
-    2. Помилки доставки (окрім 404/410) не деактивують підписку помилково
+    2. Тимчасові помилки мережі (HTTP 500/503) НЕ деактивують підписку
+    3. Помилки 404/410 коректно деактивують застарілу підписку
     """
+    import pywebpush
+
     # Subscribe superadmin to facility 2
     sub_payload = {
         "endpoint": "https://fcm.googleapis.com/fcm/send/superadmin-test-token-777",
         "keys": {
-            "p256dh": "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QT9AcUbVYOISxkzquVmtXHGChTLnWqTxBXBkQ-NuCP5yZlXY",
-            "auth": "tBHItJI5svbpez7KI4CCXg"
+            "p256dh": "BFdHB8a7vG8vNjOXCXHJ0cz0Diwh2fGJ42wpnMS5YWwdZlOMGaKEhiW1Gm8BeTBnE8xC9SoAkRlyD55ynQ_0pPE",
+            "auth": "MDEyMzQ1Njc4OWFiY2RlZg"
         },
         "user_agent": "Pixel 8 SuperAdmin",
         "facility_id": 2
     }
     await client.post("/api/v1/notifications/subscribe", json=sub_payload, headers=superadmin_auth)
 
-    # Trigger notification for facility 1
+    # 1. Mock transient server error (HTTP 500) -> should NOT deactivate
+    class FakeResponse500:
+        status_code = 500
+        reason = "Internal Server Error"
+        text = "FCM temporary outage"
+
+    def mock_webpush_500(*args, **kwargs):
+        raise pywebpush.WebPushException("Server error", response=FakeResponse500())
+
+    monkeypatch.setattr("pywebpush.webpush", mock_webpush_500)
+
     res = await send_push_notification(
         db=db_session,
         title="Запуск генератора",
@@ -208,8 +221,32 @@ async def test_push_notifications_routing_and_vapid_error_handling(client, super
     # Superadmin MUST be included in recipients_count even though facility_id=1 and subscription has facility_id=2
     assert res["recipients"] >= 1
 
-    # Verify subscription is STILL ACTIVE (not deactivated due to fake endpoint)
+    # Verify subscription is STILL ACTIVE after 500 error
     db_res = await db_session.execute(select(PushSubscription).where(PushSubscription.endpoint == sub_payload["endpoint"]))
     sub = db_res.scalars().first()
     assert sub is not None
     assert sub.is_active is True
+
+    # 2. Mock 410 Gone -> subscription MUST be deactivated
+    class FakeResponse410:
+        status_code = 410
+        reason = "Gone"
+        text = "Subscription expired"
+
+    def mock_webpush_410(*args, **kwargs):
+        raise pywebpush.WebPushException("Gone", response=FakeResponse410())
+
+    monkeypatch.setattr("pywebpush.webpush", mock_webpush_410)
+
+    res_expired = await send_push_notification(
+        db=db_session,
+        title="Зупинка генератора",
+        body="Генератор зупинено",
+        event_type="GENERATOR_STOP",
+        facility_id=1
+    )
+    assert res_expired["recipients"] >= 1
+
+    # Verify subscription is now marked inactive
+    await db_session.refresh(sub)
+    assert sub.is_active is False

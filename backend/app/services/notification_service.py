@@ -22,6 +22,27 @@ def utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
 
+def _clean_sub_claim(raw_val: Any) -> str:
+    """Normalize and validate VAPID claims 'sub' into a strict RFC-compliant mailto: URI."""
+    default_sub = "mailto:maxiuallc@gmail.com"
+    if not raw_val:
+        return default_sub
+    val = raw_val
+    try:
+        val = json.loads(val)
+    except Exception:
+        pass
+    val = str(val).strip().strip('"\'').strip()
+    if not val:
+        return default_sub
+    if not val.startswith("mailto:") and not val.startswith("https://"):
+        if "@" in val:
+            val = f"mailto:{val}"
+        else:
+            return default_sub
+    return val
+
+
 async def get_or_create_vapid_keys(db: AsyncSession) -> Tuple[str, str, str]:
     """Retrieve existing VAPID keys from system_settings or generate and persist new ones."""
     q = select(SystemSetting).where(SystemSetting.key.in_(["vapid_public_key", "vapid_private_key_pem", "vapid_claims_sub"]))
@@ -30,7 +51,7 @@ async def get_or_create_vapid_keys(db: AsyncSession) -> Tuple[str, str, str]:
 
     pub_b64 = rows.get("vapid_public_key")
     priv_pem = rows.get("vapid_private_key_pem")
-    sub_claim = rows.get("vapid_claims_sub") or "mailto:maxiuallc@gmail.com"
+    sub_claim = _clean_sub_claim(rows.get("vapid_claims_sub"))
 
     if pub_b64 and priv_pem:
         # Strip quotes if stored as JSON string
@@ -147,11 +168,13 @@ def _send_single_webpush_sync(sub_info: Dict[str, Any], payload_str: str, vapid_
     Returns: (success: bool, is_expired: bool)
     """
     try:
+        # Use copy of claims to avoid cross-request mutation of 'aud' by pywebpush
+        claims_copy = dict(claims)
         pywebpush.webpush(
             subscription_info=sub_info,
             data=payload_str,
             vapid_private_key=vapid_obj,
-            vapid_claims=claims,
+            vapid_claims=claims_copy,
             ttl=3600
         )
         return True, False
@@ -303,7 +326,7 @@ async def send_push_notification(
 
     # 6. Prepare VAPID keys and payload
     pub_b64, priv_pem, sub_claim = await get_or_create_vapid_keys(db)
-    claims = {"sub": sub_claim}
+    claims = {"sub": _clean_sub_claim(sub_claim)}
 
     try:
         vapid_obj = Vapid.from_pem(priv_pem.encode("utf-8"))
