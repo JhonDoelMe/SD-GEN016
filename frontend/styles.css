@@ -361,7 +361,8 @@ body {
   background-color: #0b1120;
   display: flex;
   overflow-x: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.45) transparent;
   border-bottom: 1px solid var(--border-color);
   padding: 0 0.5rem;
   position: sticky;
@@ -371,7 +372,16 @@ body {
 }
 
 .nav-bar::-webkit-scrollbar {
-  display: none;
+  height: 3px;
+}
+
+.nav-bar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nav-bar::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.45);
+  border-radius: 3px;
 }
 
 .nav-item {
