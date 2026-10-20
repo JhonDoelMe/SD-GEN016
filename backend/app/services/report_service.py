@@ -102,6 +102,13 @@ ALIGN_CENTER = Alignment(horizontal="center", vertical="center")
 ALIGN_RIGHT = Alignment(horizontal="right", vertical="center")
 
 # Українські мапування статусів та системних дій для звітів Excel
+GENERATOR_STATUS_UA = {
+    "STOPPED": "Зупинено",
+    "RUNNING": "В роботі",
+    "MAINTENANCE": "На обслуговуванні",
+    "FAULT": "Несправність / Аварія",
+}
+
 RUN_STATUS_UA = {
     "ACTIVE": "В роботі",
     "COMPLETED": "Завершено",
@@ -122,21 +129,64 @@ FAULT_PRIORITY_UA = {
 }
 
 AUDIT_ACTION_UA = {
+    # Generator
     "GENERATOR_START": "Запуск генератора",
     "GENERATOR_STOP": "Зупинка генератора",
-    "FUEL_RECEIPT_ADDED": "Оприбуткування палива",
-    "FUEL_TRANSFERRED": "Заправка бака генератора",
-    "MAINTENANCE_RECORDED": "Фіксація ТО",
-    "FAULT_REPORTED": "Повідомлення про несправність",
-    "FAULT_RESOLVED": "Усунення несправності",
-    "SYSTEM_SETTINGS_UPDATED": "Оновлення системних налаштувань",
+    "GENERATOR_CREATED": "Створення генератора",
+    "GENERATOR_UPDATED": "Оновлення параметрів генератора",
+    "GENERATOR_DELETED": "Видалення генератора",
+    "GENERATOR_MANUAL_RUN_ADDED": "Ручне внесення мотогодин",
+    "GENERATOR_WIZARD_CONFIGURED": "Первинне налаштування генератора",
+
+    # Fuel
+    "FUEL_RECEIPT": "Оприбуткування палива на склад",
+    "FUEL_RECEIPT_ADDED": "Оприбуткування палива на склад",
+    "FUEL_TRANSFER_TO_TANK": "Заправка бака зі складу",
+    "FUEL_TRANSFERRED": "Заправка бака зі складу",
+    "FUEL_STOCK_CREATED": "Створення складу ГСМ",
+    "FUEL_STOCK_UPDATED": "Оновлення складу ГСМ",
+    "FUEL_STOCK_DELETED": "Видалення складу ГСМ",
     "FUEL_PRICES_REFRESHED": "Оновлення цін АЗК WOG",
-    "SYSTEM_RESET": "Очищення / скидання даних",
+
+    # Maintenance
+    "MAINTENANCE_RECORDED": "Запис ТО",
+    "MAINTENANCE_INTERMEDIATE": "Проміжне ТО",
+    "MAINTENANCE_SCHEDULED": "Регламентне ТО",
+    "MAINTENANCE_SCHEDULE_RECALCULATED": "Перерахунок графіка ТО",
+    "SCHEDULE_RECALCULATED": "Перерахунок графіка ТО",
+
+    # Faults
+    "FAULT_REPORTED": "Повідомлення про несправність",
+    "FAULT_STATUS_UPDATED": "Зміна статусу несправності",
+    "FAULT_RESOLVED": "Усунення несправності",
+
+    # Auth
+    "AUTH_LOGIN_SUCCESS": "Успішний вхід у систему",
+    "AUTH_LOGIN_FAILED": "Невдала спроба входу",
+    "AUTH_LOGIN_LOCKED": "Тимчасове блокування входу",
+    "AUTH_LOGIN_BLOCKED": "Блокування входу",
+    "AUTH_LOGOUT": "Вихід із системи",
     "USER_LOGIN": "Вхід у систему",
     "USER_LOGOUT": "Вихід із системи",
+
+    # Users
+    "USER_CREATED": "Створення користувача",
+    "USER_UPDATED": "Редагування користувача",
+    "USER_DELETED": "Видалення користувача",
+    "USER_PASSWORD_RESET": "Скидання пароля користувача",
+
+    # System & Adjustments
+    "SYSTEM_ADJUSTMENT": "Системне коригування лічильників",
     "ADJUSTMENT_APPLIED": "Системне коригування лічильників",
-    "SCHEDULE_RECALCULATED": "Перерахунок графіка ТО",
-    "GENERATOR_UPDATED": "Оновлення параметрів генератора",
+    "NOTIFICATION_SETTINGS_UPDATED": "Оновлення налаштувань сповіщень",
+    "SYSTEM_SETTINGS_UPDATED": "Оновлення системних налаштувань",
+    "SYSTEM_SETTINGS_RESET": "Скидання системних налаштувань",
+    "SYSTEM_FACILITY_CLEAN": "Очищення даних об'єкта",
+    "SYSTEM_REPORTS_CLEAN": "Очищення звітів",
+    "SYSTEM_FACTORY_RESET": "Повне заводське скидання",
+    "SYSTEM_RESET": "Очищення / скидання даних",
+
+    # Facility
     "FACILITY_CREATED": "Створення об'єкта",
     "FACILITY_UPDATED": "Оновлення об'єкта",
     "FACILITY_DELETED": "Видалення об'єкта",
@@ -154,6 +204,159 @@ AUDIT_ENTITY_UA = {
     "User": "Користувач",
     "SystemSetting": "Системні налаштування",
 }
+
+
+def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
+    """Перетворює JSON деталей аудиту на зрозумілий людині україномовний опис для звіту."""
+    import json
+    if not details_obj:
+        return ""
+    if isinstance(details_obj, str):
+        try:
+            details = json.loads(details_obj)
+        except Exception:
+            return details_obj
+    elif isinstance(details_obj, dict):
+        details = details_obj
+    else:
+        return str(details_obj)
+
+    if not isinstance(details, dict):
+        return str(details)
+
+    # 1. Зупинка генератора (підсумок роботи)
+    if "duration_seconds" in details or "calculated_consumption_l" in details:
+        parts = []
+        if "duration_formatted" in details:
+            parts.append(f"Час роботи: {details['duration_formatted']}")
+        elif "duration_hours" in details:
+            parts.append(f"Час роботи: {details['duration_hours']} год")
+        if "calculated_consumption_l" in details:
+            parts.append(f"Витрата: {details['calculated_consumption_l']} л")
+        if "end_fuel_level_l" in details:
+            parts.append(f"Залишок у баку: {details['end_fuel_level_l']} л")
+        if "end_hours" in details:
+            parts.append(f"Мотогодини: {details['end_hours']} год")
+        return " | ".join(parts) if parts else str(details)
+
+    # 2. Запуск генератора
+    if "start_hours" in details and "start_fuel" in details:
+        return f"Початкові мотогодини: {details.get('start_hours', '-')} год | Паливо в баку: {details.get('start_fuel', '-')} л"
+
+    # 3. Системне коригування (Audit adjustments)
+    if "field" in details:
+        field_map = {
+            "current_operating_hours": "Мотогодини",
+            "fuel_tank_level_l": "Бак генератора",
+            "stock_balance_l": "Залишок на складі",
+        }
+        field_name = field_map.get(details.get("field"), details.get("field"))
+        old_val = details.get("old_value", "-")
+        new_val = details.get("new_value", "-")
+        reason = details.get("reason", "")
+        res = f"Коригування '{field_name}': {old_val} ➔ {new_val}"
+        if reason:
+            res += f" (Причина: {reason})"
+        return res
+
+    # 4. Оприбуткування палива на склад
+    if "receipt_id" in details and "cost_total" in details:
+        st_name = details.get("stock_name", "")
+        st_str = f" ({st_name})" if st_name else ""
+        return f"Оприбутковано {details.get('liters', '-')} л на суму {details.get('cost_total', '-')} грн{st_str}"
+
+    # 5. Заправка в бак зі складу
+    if "liters" in details and ("stock_before" in details or "tank_before" in details):
+        return f"Заправлено в бак: {details.get('liters')} л"
+
+    # 6. Керування користувачами
+    if "login" in details and ("roles" in details or action in ("USER_CREATED", "USER_UPDATED", "USER_DELETED")):
+        role_map = {
+            "superadmin": "Суперадміністратор",
+            "admin": "Адміністратор",
+            "operator": "Оператор",
+            "viewer": "Спостерігач",
+        }
+        login = details.get("login")
+        roles = details.get("roles", [])
+        if roles:
+            roles_ua = ", ".join(role_map.get(r, r) for r in roles)
+            return f"Користувач: {login} (Роль: {roles_ua})"
+        return f"Користувач: {login}"
+
+    # 7. Налаштування сповіщень
+    if "updated_keys" in details:
+        return "Оновлено параметри та перемикачі сповіщень"
+
+    # 8. Перерахунок регламенту ТО
+    if "next_due_hours" in details and "interval_hours" in details:
+        return f"Мотогодини: {details.get('current_hours', '-')} год | Наступне планове ТО: {details.get('next_due_hours')} год"
+
+    # 9. Запис ТО
+    if "work" in details and "type" in details:
+        m_type = "Регламентне ТО" if details.get("type") == "SCHEDULED" else "Проміжне ТО"
+        return f"{m_type} | Роботи: {details.get('work', '')} | Вартість: {details.get('cost', 0)} грн"
+
+    # 10. Загальний переклад словника
+    key_translations = {
+        "title": "Назва",
+        "description": "Опис",
+        "priority": "Пріоритет",
+        "status": "Статус",
+        "operating_hours": "Мотогодини",
+        "generator_status_after": "Статус генератора",
+        "liters": "Літри",
+        "cost": "Вартість",
+        "cost_total": "Загальна сума",
+        "price_per_l": "Ціна за літр",
+        "source": "Джерело",
+        "updated_at": "Оновлено",
+        "name": "Назва",
+        "tank_capacity_l": "Місткість бака",
+        "initial_hours": "Початкові мотогодини",
+        "initial_balance_l": "Початковий залишок",
+        "facility_timezone": "Часовий пояс",
+        "work_schedule_start": "Початок зміни",
+        "work_schedule_end": "Кінець зміни",
+        "organization_name": "Організація",
+        "work": "Виконані роботи",
+        "type": "Тип",
+        "fuel_type": "Тип палива",
+        "field": "Поле",
+        "old_value": "Старе значення",
+        "new_value": "Нове значення",
+        "reason": "Причина",
+    }
+    val_translations = {
+        "STOPPED": "Зупинено",
+        "RUNNING": "В роботі",
+        "MAINTENANCE": "На обслуговуванні",
+        "FAULT": "Несправність",
+        "LOW": "Низький",
+        "MEDIUM": "Середній",
+        "HIGH": "Високий",
+        "CRITICAL": "Критичний",
+        "OPEN": "Відкрито",
+        "RESOLVED": "Усунено",
+        "CLOSED": "Закрито",
+        "SCHEDULED": "Регламентне ТО",
+        "INTERMEDIATE": "Проміжне ТО",
+    }
+
+    parts = []
+    for k, v in details.items():
+        if k in ("facility_id", "generator_id", "run_id", "stock_id", "user_id", "receipt_id"):
+            continue
+        k_ua = key_translations.get(k, k)
+        if isinstance(v, str):
+            v_ua = val_translations.get(v.upper(), v)
+        elif isinstance(v, dict):
+            sub_parts = [f"{key_translations.get(sk, sk)}: {val_translations.get(str(sv).upper(), sv)}" for sk, sv in v.items()]
+            v_ua = "{" + ", ".join(sub_parts) + "}"
+        else:
+            v_ua = str(v)
+        parts.append(f"{k_ua}: {v_ua}")
+    return " | ".join(parts) if parts else str(details)
 
 
 async def generate_operational_report(
@@ -496,17 +699,18 @@ async def generate_excel_report(
     # Title
     ws1.merge_cells("A1:F1")
     title_cell = ws1["A1"]
-    title_cell.value = "SERVICE DESK БЕНЗИНОВОГО ГЕНЕРАТОРА — ЗАГАЛЬНИЙ ЗВІТ"
+    title_cell.value = "SERVICE DESK (СЕРВІС ДЕСК) БЕНЗИНОВОГО ГЕНЕРАТОРА — ЗАГАЛЬНИЙ ЗВІТ"
     title_cell.font = TITLE_FONT
     title_cell.alignment = ALIGN_LEFT
     ws1.row_dimensions[1].height = 28
 
     # Metadata Block
     export_now_str = now_facility().strftime("%Y-%m-%d %H:%M:%S")
+    current_status_ua = GENERATOR_STATUS_UA.get(str(generator.status).upper(), str(generator.status)) if generator else "-"
     meta_info = [
         ("Об'єкт (локація):", facility_name, "Період звіту:", f"{op_report.start_date} — {op_report.end_date}"),
         ("Генератор:", f"{generator_name} ({gen_model})", "Дата експорту:", export_now_str),
-        ("Серійний номер:", gen_serial, "Поточний статус:", generator.status if generator else "-"),
+        ("Серійний номер:", gen_serial, "Поточний статус:", current_status_ua),
         ("Поточні мотогодини:", f"{current_hours:.1f} год", "Запас палива в баку:", f"{generator.fuel_tank_level_l if generator else 0.0:.1f} л"),
     ]
     for row_idx, (k1, v1, k2, v2) in enumerate(meta_info, start=3):
@@ -544,8 +748,8 @@ async def generate_excel_report(
             "3. Технічне обслуговування (ТО)",
             SECONDARY_FILL,
             [
-                ("Проведено регламентних ТО (SCHEDULED)", op_report.scheduled_maintenance_count, "шт"),
-                ("Проведено проміжних ТО (INTERMEDIATE)", op_report.intermediate_maintenance_count, "шт"),
+                ("Проведено планових регламентних ТО", op_report.scheduled_maintenance_count, "шт"),
+                ("Проведено проміжних (додаткових) ТО", op_report.intermediate_maintenance_count, "шт"),
                 ("Загальні витрати на ТО та матеріали", op_report.total_maintenance_cost_uah, "грн"),
                 ("Нормативний інтервал ТО", interval_hours, "год"),
                 ("Останнє пройдене ТО на відмітці", last_maint_hours, "год"),
@@ -1153,7 +1357,7 @@ async def generate_excel_report(
 
     for idx, al in enumerate(audit_logs, start=1):
         a_user = al.user.full_name if al.user else "Система"
-        details_str = str(al.details_json) if al.details_json else ""
+        details_str = format_audit_details_ua(al.details_json, str(al.action))
         act_ua = AUDIT_ACTION_UA.get(str(al.action), str(al.action))
         ent_ua = AUDIT_ENTITY_UA.get(str(al.entity_type), str(al.entity_type))
         vals = [

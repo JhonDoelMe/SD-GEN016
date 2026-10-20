@@ -1680,46 +1680,86 @@ async function loadRunsData() {
 
 // 6. Audit & System Adjustments
 const AUDIT_ACTION_MAP_UA = {
+  // Auth
   'LOGIN': 'Вхід у систему',
   'LOGIN_FAIL': 'Невдала спроба входу',
   'LOGOUT': 'Вихід із системи',
+  'AUTH_LOGIN_SUCCESS': 'Успішний вхід у систему',
+  'AUTH_LOGIN_FAILED': 'Невдала спроба входу',
+  'AUTH_LOGIN_LOCKED': 'Тимчасове блокування входу',
+  'AUTH_LOGIN_BLOCKED': 'Блокування входу',
+  'AUTH_LOGOUT': 'Вихід із системи',
+  'USER_LOGIN': 'Вхід у систему',
+  'USER_LOGOUT': 'Вихід із системи',
+
+  // Generator
   'GENERATOR_START': 'Запуск генератора',
   'GENERATOR_STOP': 'Зупинка генератора',
-  'FUEL_RECEIPT': 'Оприбуткування палива',
-  'FUEL_RECEIPT_ADDED': 'Оприбуткування палива',
+  'GENERATOR_CREATE': 'Створення генератора',
+  'GENERATOR_CREATED': 'Створення генератора',
+  'GENERATOR_UPDATED': 'Оновлення параметрів генератора',
+  'GENERATOR_DELETE': 'Видалення генератора',
+  'GENERATOR_DELETED': 'Видалення генератора',
+  'GENERATOR_MANUAL_RUN_ADDED': 'Ручне внесення мотогодин',
+  'GENERATOR_QUICK_CONFIG': 'Швидке налаштування генератора',
+  'GENERATOR_WIZARD_CONFIGURED': 'Первинне налаштування генератора',
+  'WIZARD_SETUP': 'Налаштування через майстер',
+
+  // Fuel
+  'FUEL_RECEIPT': 'Оприбуткування палива на склад',
+  'FUEL_RECEIPT_ADDED': 'Оприбуткування палива на склад',
   'FUEL_DISPENSE': 'Заправка генератора',
-  'FUEL_TRANSFERRED': 'Заправка бака генератора',
+  'FUEL_TRANSFER_TO_TANK': 'Заправка бака зі складу',
+  'FUEL_TRANSFERRED': 'Заправка бака зі складу',
+  'FUEL_STOCK_CREATED': 'Створення складу ГСМ',
+  'FUEL_STOCK_UPDATED': 'Оновлення складу ГСМ',
+  'FUEL_STOCK_DELETED': 'Видалення складу ГСМ',
+  'FUEL_PRICES_REFRESHED': 'Оновлення цін АЗК WOG',
+
+  // Maintenance
   'MAINTENANCE_RECORD': 'Технічне обслуговування',
-  'MAINTENANCE_RECORDED': 'Фіксація ТО',
+  'MAINTENANCE_RECORDED': 'Запис ТО',
+  'MAINTENANCE_INTERMEDIATE': 'Проміжне ТО',
+  'MAINTENANCE_SCHEDULED': 'Регламентне ТО',
+  'MAINTENANCE_SCHEDULE_RECALCULATED': 'Перерахунок графіка ТО',
+  'SCHEDULE_RECALCULATED': 'Перерахунок графіка ТО',
+
+  // Faults
   'FAULT_CREATE': 'Реєстрація несправності',
   'FAULT_REPORTED': 'Повідомлення про несправність',
   'FAULT_UPDATE': 'Оновлення несправності',
+  'FAULT_STATUS_UPDATED': 'Зміна статусу несправності',
   'FAULT_RESOLVED': 'Усунення несправності',
-  'ADJUSTMENT': 'Коригування даних',
+
+  // Adjustments & Settings
+  'ADJUSTMENT': 'Коригування лічильників',
   'ADJUSTMENT_APPLIED': 'Системне коригування лічильників',
-  'USER_CREATE': 'Створення користувача',
-  'USER_UPDATE': 'Оновлення користувача',
-  'USER_TOGGLE_ACTIVE': 'Зміна активності користувача',
+  'SYSTEM_ADJUSTMENT': 'Системне коригування лічильників',
+  'NOTIFICATION_SETTINGS_UPDATED': 'Оновлення налаштувань сповіщень',
   'SETTINGS_UPDATE': 'Зміна налаштувань',
   'SYSTEM_SETTINGS_UPDATED': 'Оновлення налаштувань',
-  'WIZARD_SETUP': 'Налаштування через майстер',
-  'FACILITY_CREATE': 'Створення об\'єкту',
-  'FACILITY_CREATED': 'Створення об\'єкту',
-  'FACILITY_UPDATED': 'Оновлення об\'єкту',
-  'FACILITY_DELETED': 'Видалення об\'єкту',
-  'GENERATOR_CREATE': 'Створення генератора',
-  'GENERATOR_UPDATED': 'Оновлення параметрів генератора',
-  'GENERATOR_DELETE': 'Видалення генератора',
+  'SYSTEM_SETTINGS_RESET': 'Скидання системних налаштувань',
   'SYSTEM_FACTORY_RESET': 'Скидання до заводських налаштувань',
   'SYSTEM_CLEAR_DATA': 'Очищення робочих даних',
+  'SYSTEM_FACILITY_CLEAN': 'Очищення даних об\'єкта',
+  'SYSTEM_REPORTS_CLEAN': 'Очищення звітів',
   'SYSTEM_RESET': 'Очищення / скидання даних',
-  'FACILITY_SETTINGS_UPDATE': 'Оновлення налаштувань об\'єкту',
-  'GENERATOR_QUICK_CONFIG': 'Швидке налаштування генератора',
-  'FUEL_PRICES_REFRESHED': 'Оновлення цін АЗК WOG',
-  'SCHEDULE_RECALCULATED': 'Перерахунок графіка ТО',
-  'FUEL_STOCK_UPDATED': 'Оновлення складу ГСМ',
-  'FUEL_STOCK_DELETED': 'Видалення складу ГСМ',
-  'GENERATOR_MANUAL_RUN_ADDED': 'Внесення роботи генератора вручну'
+
+  // Users
+  'USER_CREATE': 'Створення користувача',
+  'USER_CREATED': 'Створення користувача',
+  'USER_UPDATE': 'Редагування користувача',
+  'USER_UPDATED': 'Редагування користувача',
+  'USER_DELETED': 'Видалення користувача',
+  'USER_PASSWORD_RESET': 'Скидання пароля користувача',
+  'USER_TOGGLE_ACTIVE': 'Зміна активності користувача',
+
+  // Facility
+  'FACILITY_CREATE': 'Створення об\'єкта',
+  'FACILITY_CREATED': 'Створення об\'єкта',
+  'FACILITY_UPDATED': 'Оновлення об\'єкта',
+  'FACILITY_DELETED': 'Видалення об\'єкта',
+  'FACILITY_SETTINGS_UPDATE': 'Оновлення налаштувань об\'єкта'
 };
 
 const AUDIT_ENTITY_MAP_UA = {
@@ -1754,6 +1794,102 @@ const ADJUSTMENT_FIELD_MAP_UA = {
   'address': 'Адреса'
 };
 
+function formatAuditDetailsUa(detailsRaw, action) {
+  if (!detailsRaw) return '-';
+  let details = detailsRaw;
+  if (typeof detailsRaw === 'string') {
+    try {
+      details = JSON.parse(detailsRaw);
+    } catch (_) {
+      return detailsRaw;
+    }
+  }
+  if (!details || typeof details !== 'object') return String(details);
+
+  // 1. Зупинка генератора
+  if (details.duration_seconds !== undefined || details.calculated_consumption_l !== undefined) {
+    const parts = [];
+    if (details.duration_formatted) parts.push(`Час: ${details.duration_formatted}`);
+    if (details.calculated_consumption_l !== undefined) parts.push(`Витрата: ${details.calculated_consumption_l} л`);
+    if (details.end_fuel_level_l !== undefined) parts.push(`Залишок: ${details.end_fuel_level_l} л`);
+    if (details.end_hours !== undefined) parts.push(`Мотогодини: ${details.end_hours} год`);
+    return parts.join(' | ') || JSON.stringify(details);
+  }
+
+  // 2. Запуск генератора
+  if (details.start_hours !== undefined && details.start_fuel !== undefined) {
+    return `Початкові мотогодини: ${details.start_hours} год | Паливо в баку: ${details.start_fuel} л`;
+  }
+
+  // 3. Системне коригування
+  if (details.field) {
+    const fieldMap = {
+      current_operating_hours: 'Мотогодини',
+      fuel_tank_level_l: 'Бак генератора',
+      stock_balance_l: 'Залишок на складі'
+    };
+    const fName = fieldMap[details.field] || details.field;
+    let res = `Коригування '${fName}': ${details.old_value !== undefined ? details.old_value : '-'} ➔ ${details.new_value !== undefined ? details.new_value : '-'}`;
+    if (details.reason) res += ` (${details.reason})`;
+    return res;
+  }
+
+  // 4. Оприбуткування палива
+  if (details.receipt_id !== undefined && details.cost_total !== undefined) {
+    const stName = details.stock_name ? ` (${details.stock_name})` : '';
+    return `Оприбутковано ${details.liters !== undefined ? details.liters : '-'} л на суму ${details.cost_total !== undefined ? details.cost_total : '-'} грн${stName}`;
+  }
+
+  // 5. Заправка в бак
+  if (details.liters !== undefined && (details.stock_before !== undefined || details.tank_before !== undefined)) {
+    return `Заправлено в бак: ${details.liters} л`;
+  }
+
+  // 6. Користувачі
+  if (details.login && (details.roles || action === 'USER_CREATED' || action === 'USER_DELETED' || action === 'USER_UPDATED')) {
+    const roleMap = { superadmin: 'Суперадміністратор', admin: 'Адміністратор', operator: 'Оператор', viewer: 'Спостерігач' };
+    const rolesUa = Array.isArray(details.roles) ? details.roles.map(r => roleMap[r] || r).join(', ') : '';
+    return `Користувач: ${details.login}${rolesUa ? ` (Роль: ${rolesUa})` : ''}`;
+  }
+
+  // 7. Сповіщення
+  if (details.updated_keys) {
+    return 'Оновлено параметри та перемикачі сповіщень';
+  }
+
+  // 8. Перерахунок регламенту ТО
+  if (details.next_due_hours !== undefined && details.interval_hours !== undefined) {
+    return `Мотогодини: ${details.current_hours !== undefined ? details.current_hours : '-'} год | Наступне планове ТО: ${details.next_due_hours} год`;
+  }
+
+  // 9. Запис ТО
+  if (details.work && details.type) {
+    const mType = details.type === 'SCHEDULED' ? 'Регламентне ТО' : 'Проміжне ТО';
+    return `${mType} | Роботи: ${details.work} | Вартість: ${details.cost || 0} грн`;
+  }
+
+  // 10. Загальний переклад
+  const keyTrans = {
+    title: 'Назва', description: 'Опис', priority: 'Пріоритет', status: 'Статус', operating_hours: 'Мотогодини',
+    liters: 'Літри', cost: 'Вартість', cost_total: 'Загальна сума', source: 'Джерело', updated_at: 'Оновлено',
+    name: 'Назва', fuel_type: 'Тип палива', reason: 'Причина', field: 'Поле', old_value: 'Було', new_value: 'Стало'
+  };
+  const valTrans = {
+    STOPPED: 'Зупинено', RUNNING: 'В роботі', MAINTENANCE: 'На обслуговуванні', FAULT: 'Несправність',
+    LOW: 'Низький', MEDIUM: 'Середній', HIGH: 'Високий', CRITICAL: 'Критичний',
+    SCHEDULED: 'Регламентне ТО', INTERMEDIATE: 'Проміжне ТО'
+  };
+
+  const parts = [];
+  for (const [k, v] of Object.entries(details)) {
+    if (['facility_id', 'generator_id', 'run_id', 'stock_id', 'user_id'].includes(k)) continue;
+    const kUa = keyTrans[k] || k;
+    const vUa = typeof v === 'string' ? (valTrans[v.toUpperCase()] || v) : (typeof v === 'object' ? JSON.stringify(v) : v);
+    parts.push(`${kUa}: ${vUa}`);
+  }
+  return parts.join(' | ') || JSON.stringify(details);
+}
+
 // ROLE_MAP_UA defined at the top
 
 async function loadAuditData() {
@@ -1763,13 +1899,14 @@ async function loadAuditData() {
     tbody.innerHTML = logs.map((l) => {
       const actionUa = AUDIT_ACTION_MAP_UA[l.action] || l.action;
       const entityUa = AUDIT_ENTITY_MAP_UA[l.entity_type] || l.entity_type;
+      const detailsUa = formatAuditDetailsUa(l.details_json, l.action);
       return `
         <tr>
           <td>${formatDateTime(l.created_at)}</td>
           <td>${escapeHtml(l.user_name || 'Система')}</td>
           <td><b>${escapeHtml(actionUa)}</b></td>
           <td>${escapeHtml(entityUa)} #${escapeHtml(l.entity_id || '')}</td>
-          <td style="font-family:monospace; font-size:0.75rem;">${escapeHtml(l.details_json || '-')}</td>
+          <td style="font-size:0.82rem; line-height:1.4;">${escapeHtml(detailsUa)}</td>
           <td>${escapeHtml(l.ip_address || '-')}</td>
         </tr>
       `;

@@ -226,7 +226,7 @@ async def test_dynamic_excel_report_generation(client, superadmin_auth, operator
 
     # Verify Sheet 1 content
     ws1 = wb["Загальний звіт"]
-    assert "SERVICE DESK" in ws1["A1"].value
+    assert "SERVICE DESK" in ws1["A1"].value or "СЕРВІС ДЕСК" in ws1["A1"].value
 
     # Verify Sheet 2 freeze panes, headers, and populated GeneratorRun row
     ws2 = wb["Звіт по днях"]
