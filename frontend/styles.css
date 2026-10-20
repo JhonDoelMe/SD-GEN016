@@ -1301,35 +1301,56 @@ input[type="checkbox"], input[type="radio"] {
    RBAC Role-Based UI Styles (Disabled tabs and buttons)
    ========================================================================== */
 .nav-item.nav-item-disabled {
-  opacity: 0.38 !important;
+  opacity: 0.35 !important;
   cursor: not-allowed !important;
   color: #64748b !important;
-  border-bottom-color: transparent !important;
-  background: transparent !important;
-  pointer-events: auto !important;
-  filter: grayscale(1) !important;
+  border-bottom: 2px solid transparent !important;
+  background: rgba(15, 23, 42, 0.4) !important;
+  filter: grayscale(0.85) !important;
+  user-select: none !important;
+  box-shadow: none !important;
 }
 
 .nav-item.nav-item-disabled:hover {
   color: #64748b !important;
-  background: transparent !important;
-  border-bottom-color: transparent !important;
+  background: rgba(15, 23, 42, 0.4) !important;
+  border-bottom: 2px solid transparent !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+.nav-lock-badge {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.8rem;
+  filter: none !important;
 }
 
 .btn-disabled-role {
-  opacity: 0.38 !important;
+  opacity: 0.35 !important;
   cursor: not-allowed !important;
-  filter: grayscale(1) !important;
-  pointer-events: auto !important;
+  filter: grayscale(0.9) !important;
   border-color: rgba(255, 255, 255, 0.12) !important;
-  color: var(--text-muted) !important;
+  color: #94a3b8 !important;
   background: rgba(15, 23, 42, 0.5) !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
-.btn-disabled-role:hover {
-  opacity: 0.38 !important;
-  filter: grayscale(1) !important;
+.btn-disabled-role:hover,
+.btn-disabled-role:active,
+.btn-disabled-role:focus {
+  opacity: 0.35 !important;
+  filter: grayscale(0.9) !important;
   border-color: rgba(255, 255, 255, 0.12) !important;
-  color: var(--text-muted) !important;
+  color: #94a3b8 !important;
   background: rgba(15, 23, 42, 0.5) !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+button:disabled,
+button[disabled] {
+  cursor: not-allowed !important;
 }

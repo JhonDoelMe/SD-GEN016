@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sd-gen016-v3.5';
+const CACHE_NAME = 'sd-gen016-v3.6';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
