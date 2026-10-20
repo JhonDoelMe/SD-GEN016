@@ -81,8 +81,7 @@ def format_uptime(seconds: float) -> str:
 
 @router.get("/status")
 async def get_system_status(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db)
 ) -> Dict[str, Any]:
     """
     Повертає реальний статус стану сервера:

@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=3.6">
+  <link rel="stylesheet" href="/frontend/styles.css?v=3.7">
 </head>
 <body>
 
@@ -34,7 +34,7 @@
   </div>
 
   <!-- Auth Screen (Shown when logged out) -->
-  <div id="authOverlay" class="modal-overlay" style="display: flex;">
+  <div id="authOverlay" class="modal-overlay" style="display: none;">
     <div class="modal-content auth-modal-content" style="max-width: 420px; text-align: center;">
       <div style="font-size: 3.2rem; margin-bottom: 0.5rem;">⚡</div>
       <h2 style="margin-bottom: 0.35rem; font-size: 1.5rem;">Service Desk Генератора</h2>
@@ -1237,10 +1237,7 @@
     </div>
   </div>
 
-<button type="submit" class="btn-primary" style="margin-top: 1rem;">Зберегти налаштування генератора</button>
-      </form>
-    </div>
-  </div>
+
 
   <!-- Modal: Create User -->
   <div id="modalUserCreate" class="modal-overlay">
@@ -1715,14 +1712,17 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=3.6"></script>
+  <script src="/frontend/app.js?v=3.7"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js')
-          .then((reg) => console.log('ServiceWorker registered:', reg.scope))
+          .then((reg) => {
+            console.log('ServiceWorker registered:', reg.scope);
+            reg.update();
+          })
           .catch((err) => console.warn('ServiceWorker error:', err));
       });
     }
