@@ -21,6 +21,22 @@ router = APIRouter(prefix="/adjustments", tags=["Системні коригув
 ALLOWED_GENERATOR_STATUSES = {"STOPPED", "RUNNING", "MAINTENANCE_REQUIRED", "FAULTY", "BLOCKED"}
 
 
+def _parse_float(raw: str, field_name: str) -> float:
+    try:
+        val = float(str(raw).replace(",", ".").strip())
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Некоректне числове значення для поля '{field_name}'"
+        )
+    if not math.isfinite(val):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Значення поля '{field_name}' повинно бути скінченним числом"
+        )
+    return round(val, 3)
+
+
 def _parse_non_negative_float(raw: str, field_name: str) -> float:
     try:
         val = float(raw)
@@ -105,7 +121,7 @@ async def perform_adjustment(
             gen.current_operating_hours = _parse_non_negative_float(data.new_value, data.field_name)
         elif data.field_name == "fuel_tank_level_l":
             old_val_str = str(gen.fuel_tank_level_l)
-            gen.fuel_tank_level_l = _parse_non_negative_float(data.new_value, data.field_name)
+            gen.fuel_tank_level_l = _parse_float(data.new_value, data.field_name)
         elif data.field_name == "status":
             new_status = str(data.new_value).strip().upper()
             if new_status not in ALLOWED_GENERATOR_STATUSES:

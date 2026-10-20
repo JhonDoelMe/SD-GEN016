@@ -5,6 +5,7 @@ import asyncio
 from typing import Dict, Any, Optional, Tuple, List
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from py_vapid import Vapid
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 import pywebpush
@@ -140,25 +141,30 @@ async def get_notification_settings_data(db: AsyncSession) -> Dict[str, Any]:
     }
 
 
-def _send_single_webpush_sync(sub_info: Dict[str, Any], payload_str: str, priv_pem: str, claims: Dict[str, str]) -> bool:
-    """Synchronous WebPush sender executed in threadpool."""
+def _send_single_webpush_sync(sub_info: Dict[str, Any], payload_str: str, vapid_obj: Vapid, claims: Dict[str, str]) -> Tuple[bool, bool]:
+    """
+    Synchronous WebPush sender executed in threadpool.
+    Returns: (success: bool, is_expired: bool)
+    """
     try:
         pywebpush.webpush(
             subscription_info=sub_info,
             data=payload_str,
-            vapid_private_key=priv_pem,
+            vapid_private_key=vapid_obj,
             vapid_claims=claims,
             ttl=3600
         )
-        return True
+        return True, False
     except pywebpush.WebPushException as ex:
-        # Check if subscription expired or is no longer valid
-        if hasattr(ex, "response") and ex.response is not None:
-            if ex.response.status_code in (404, 410):
-                return False
-        return False
-    except Exception:
-        return False
+        status_code = getattr(getattr(ex, "response", None), "status_code", None)
+        print(f"[WEBPUSH] WebPushException (status={status_code}): {ex}", flush=True)
+        # Only 404 or 410 mean the subscription is definitively expired or unsubscribed
+        if status_code in (404, 410):
+            return False, True
+        return False, False
+    except Exception as ex:
+        print(f"[WEBPUSH] Unexpected error sending push: {ex}", flush=True)
+        return False, False
 
 
 async def send_push_notification(
@@ -253,13 +259,30 @@ async def send_push_notification(
                 "reason": "Сповіщення про низький рівень палива вже надсилалося нещодавно"
             }
 
-    # 5. Fetch active subscriptions (optionally filtered by facility if set)
-    sub_query = select(PushSubscription).where(PushSubscription.is_active == True)
-    if facility_id:
-        # Match subscriptions of that facility or global subscriptions (facility_id is NULL)
-        sub_query = sub_query.where((PushSubscription.facility_id == facility_id) | (PushSubscription.facility_id.is_(None)))
+    # 5. Fetch active subscriptions (with User eagerly loaded)
+    sub_query = select(PushSubscription).options(selectinload(PushSubscription.user)).where(PushSubscription.is_active == True)
     sub_res = await db.execute(sub_query)
-    subscriptions = sub_res.scalars().all()
+    all_active = sub_res.scalars().all()
+
+    # Routing rules:
+    # - Admins and SuperAdmins ALWAYS receive start, stop, critical fault, low fuel and maintenance notifications!
+    # - Other roles (e.g. operators) receive notifications matching their facility or global.
+    subscriptions = []
+    seen_endpoints = set()
+    for s in all_active:
+        if s.endpoint in seen_endpoints:
+            continue
+        user = s.user
+        if not user or not user.is_active:
+            continue
+
+        is_admin_or_super = user.is_superadmin or any(r.name.lower() in ("admin", "superadmin") for r in (user.roles or []))
+        if is_admin_or_super:
+            subscriptions.append(s)
+            seen_endpoints.add(s.endpoint)
+        elif not facility_id or s.facility_id is None or s.facility_id == facility_id:
+            subscriptions.append(s)
+            seen_endpoints.add(s.endpoint)
 
     if not subscriptions:
         # Log notification attempt even with 0 subscribers
@@ -282,6 +305,11 @@ async def send_push_notification(
     pub_b64, priv_pem, sub_claim = await get_or_create_vapid_keys(db)
     claims = {"sub": sub_claim}
 
+    try:
+        vapid_obj = Vapid.from_pem(priv_pem.encode("utf-8"))
+    except Exception:
+        vapid_obj = Vapid.from_string(priv_pem)
+
     payload = json.dumps({
         "title": title,
         "body": body,
@@ -293,7 +321,7 @@ async def send_push_notification(
 
     success_count = 0
     failure_count = 0
-    inactive_sub_ids = []
+    expired_sub_ids = []
 
     for s in subscriptions:
         sub_info = {
@@ -303,16 +331,17 @@ async def send_push_notification(
                 "auth": s.auth
             }
         }
-        ok = await asyncio.to_thread(_send_single_webpush_sync, sub_info, payload, priv_pem, claims)
+        ok, is_expired = await asyncio.to_thread(_send_single_webpush_sync, sub_info, payload, vapid_obj, claims)
         if ok:
             success_count += 1
         else:
             failure_count += 1
-            inactive_sub_ids.append(s.id)
+            if is_expired:
+                expired_sub_ids.append(s.id)
 
-    # Deactivate expired/failing subscriptions
-    if inactive_sub_ids:
-        for sid in inactive_sub_ids:
+    # Deactivate ONLY subscriptions explicitly rejected with 404/410 by push service
+    if expired_sub_ids:
+        for sid in expired_sub_ids:
             for s in subscriptions:
                 if s.id == sid:
                     s.is_active = False

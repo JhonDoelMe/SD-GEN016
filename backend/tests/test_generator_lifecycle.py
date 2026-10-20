@@ -189,3 +189,53 @@ async def test_generator_manual_run_entry(client, superadmin_auth, operator_auth
     assert audit_res.status_code == 200
     actions = [a["action"] for a in audit_res.json()]
     assert "GENERATOR_MANUAL_RUN_ADDED" in actions
+
+
+@pytest.mark.asyncio
+async def test_generator_fuel_deficit_goes_negative(client, superadmin_auth, operator_auth):
+    """Перевірка того, що при перевитраті палива бак іде в мінус, а не обрізається до 0.0"""
+    # 1. Fetch generator
+    gen_res = await client.get("/api/v1/generator", headers=superadmin_auth)
+    assert gen_res.status_code == 200
+    gen_id = gen_res.json()["id"]
+
+    # Set fuel to 5.0 L via adjustment
+    await client.post(
+        "/api/v1/adjustments",
+        headers=superadmin_auth,
+        json={
+            "entity_type": "Generator",
+            "entity_id": gen_id,
+            "field_name": "fuel_tank_level_l",
+            "new_value": "5.0",
+            "reason": "Встановлення низького рівня для перевірки дефіциту"
+        }
+    )
+
+    # 2. Add manual run consuming 10.0 L (deficit: 5.0 - 10.0 = -5.0 L)
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    start_time = (now - datetime.timedelta(hours=6)).isoformat()
+    end_time = (now - datetime.timedelta(hours=1)).isoformat()
+
+    manual_res = await client.post(
+        "/api/v1/generator/manual-run",
+        headers=operator_auth,
+        json={
+            "generator_id": gen_id,
+            "start_time": start_time,
+            "end_time": end_time,
+            "start_hours": 100.0,
+            "end_hours": 105.0,
+            "fuel_consumed_l": 10.0,
+            "note": "Робота довше за залишок у баку"
+        }
+    )
+    assert manual_res.status_code == 201
+    run_data = manual_res.json()
+    assert run_data["end_fuel_level_l"] == -5.0
+
+    # 3. Check generator state
+    gen_after = await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=operator_auth)
+    assert gen_after.status_code == 200
+    assert gen_after.json()["fuel_tank_level_l"] == -5.0

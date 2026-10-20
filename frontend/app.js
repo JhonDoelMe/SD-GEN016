@@ -711,10 +711,34 @@ async function loadGeneratorData() {
     document.getElementById('genName').innerText = currentGenerator.name;
     document.getElementById('genModel').innerText = `Модель: ${currentGenerator.model} | Серійний: ${currentGenerator.serial_number} | Потужність: ${currentGenerator.rated_power_kw} кВт`;
     document.getElementById('cardHours').innerText = currentGenerator.current_operating_hours.toFixed(1);
-    document.getElementById('cardTank').innerText = currentGenerator.fuel_tank_level_l.toFixed(1);
 
-    const pct = Math.min(100, Math.round((currentGenerator.fuel_tank_level_l / currentGenerator.tank_capacity_l) * 100));
-    document.getElementById('tankProgress').style.width = `${pct}%`;
+    const fuelL = currentGenerator.fuel_tank_level_l;
+    const cardTank = document.getElementById('cardTank');
+    const tankProgress = document.getElementById('tankProgress');
+    const cardTankHoursRem = document.getElementById('cardTankHoursRem');
+
+    cardTank.innerText = fuelL.toFixed(1);
+    if (fuelL < 0) {
+      cardTank.style.color = '#ef4444';
+      if (tankProgress) tankProgress.style.width = '0%';
+      if (cardTankHoursRem) {
+        cardTankHoursRem.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ Дефіцит: ${Math.abs(fuelL).toFixed(1)} л (потрібна заправка!)</span>`;
+      }
+    } else {
+      cardTank.style.color = 'inherit';
+      const cap = currentGenerator.tank_capacity_l || 25.0;
+      const pct = Math.min(100, Math.max(0, Math.round((fuelL / cap) * 100)));
+      if (tankProgress) tankProgress.style.width = `${pct}%`;
+      const nominal = currentGenerator.nominal_consumption_l_per_h || 2.2;
+      const hoursLeft = nominal > 0 ? (fuelL / nominal) : 0;
+      if (cardTankHoursRem) {
+        if (fuelL === 0) {
+          cardTankHoursRem.innerHTML = `<span style="color: var(--text-muted);">вистачить на 0 год (бак порожній)</span>`;
+        } else {
+          cardTankHoursRem.innerHTML = `вистачить на ~<b>${hoursLeft.toFixed(1)}</b> год (при ${nominal} л/год)`;
+        }
+      }
+    }
 
     // Status Badge & Action Button
     const badge = document.getElementById('genStatusBadge');
@@ -771,6 +795,8 @@ async function loadGeneratorData() {
 
 let runTimerInterval = null;
 
+let cachedMaintenanceSchedule = null;
+
 function updateRunStopwatchDisplay() {
   if (!activeRun || !activeRun.start_time) return;
   const startDt = parseUTCDate(activeRun.start_time);
@@ -785,10 +811,69 @@ function updateRunStopwatchDisplay() {
   const modalDur = document.getElementById('stopDurationDisplay');
   if (modalDur) modalDur.innerText = durFormatted;
 
+  const elapsedHours = elapsedSeconds / 3600.0;
+  const nominal = (currentGenerator && currentGenerator.nominal_consumption_l_per_h) || 2.2;
+  const estConsumed = elapsedHours * nominal;
+
   const modalEstFuel = document.getElementById('stopEstFuelDisplay');
-  if (modalEstFuel && currentGenerator) {
-    const estLiters = (elapsedSeconds / 3600.0) * (currentGenerator.nominal_consumption_l_per_h || 2.2);
-    modalEstFuel.innerText = (estLiters < 0.1 && estLiters > 0 ? estLiters.toFixed(3) : estLiters.toFixed(2)) + ' л';
+  if (modalEstFuel) {
+    modalEstFuel.innerText = (estConsumed < 0.1 && estConsumed > 0 ? estConsumed.toFixed(3) : estConsumed.toFixed(2)) + ' л';
+  }
+
+  // Live dynamic update of the 4 dashboard tiles during active run
+  if (currentGenerator && currentGenerator.status === 'RUNNING') {
+    // 1. Live Operating Hours (accumulative)
+    const startH = activeRun.start_hours ?? currentGenerator.current_operating_hours;
+    const liveHours = startH + elapsedHours;
+    const cardHours = document.getElementById('cardHours');
+    if (cardHours) cardHours.innerText = liveHours.toFixed(1);
+
+    // 2. Live Tank Level & 'вистачить на ... год' (can go negative into deficit!)
+    const startFuel = activeRun.start_fuel_level_l ?? activeRun.start_fuel ?? currentGenerator.fuel_tank_level_l;
+    const liveTank = startFuel - estConsumed;
+    const cardTank = document.getElementById('cardTank');
+    const tankProgress = document.getElementById('tankProgress');
+    const cardTankHoursRem = document.getElementById('cardTankHoursRem');
+
+    if (cardTank) {
+      cardTank.innerText = liveTank.toFixed(1);
+      if (liveTank < 0) {
+        cardTank.style.color = '#ef4444';
+        if (tankProgress) tankProgress.style.width = '0%';
+        if (cardTankHoursRem) {
+          cardTankHoursRem.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ Дефіцит: ${Math.abs(liveTank).toFixed(1)} л (потрібна заправка!)</span>`;
+        }
+      } else {
+        cardTank.style.color = 'inherit';
+        const cap = currentGenerator.tank_capacity_l || 25.0;
+        const pct = Math.min(100, Math.max(0, Math.round((liveTank / cap) * 100)));
+        if (tankProgress) tankProgress.style.width = `${pct}%`;
+        const remHours = nominal > 0 ? (liveTank / nominal) : 0;
+        if (cardTankHoursRem) {
+          if (liveTank === 0) {
+            cardTankHoursRem.innerHTML = `<span style="color: var(--text-muted);">вистачить на 0 год (бак порожній)</span>`;
+          } else {
+            cardTankHoursRem.innerHTML = `вистачить на ~<b>${remHours.toFixed(1)}</b> год (при ${nominal} л/год)`;
+          }
+        }
+      }
+    }
+
+    // 3. Live Maintenance countdown
+    const cardMaintRem = document.getElementById('cardMaintRem');
+    const cardMaintSub = document.getElementById('cardMaintSub');
+    if (cardMaintRem && cachedMaintenanceSchedule) {
+      const dueH = cachedMaintenanceSchedule.next_due_hours;
+      const remMaint = dueH - liveHours;
+      cardMaintRem.innerHTML = `${remMaint.toFixed(1)} <small style="font-size: 0.9rem;">год</small>`;
+      if (remMaint <= 0) {
+        cardMaintRem.style.color = '#ef4444';
+        if (cardMaintSub) cardMaintSub.innerText = 'ПОТРІБНЕ ТО!';
+      } else {
+        cardMaintRem.style.color = 'inherit';
+        if (cardMaintSub) cardMaintSub.innerText = `план: ${dueH.toFixed(0)} год`;
+      }
+    }
   }
 }
 
@@ -1367,6 +1452,7 @@ async function loadMaintenanceSummary() {
     }
     const q = `?generator_id=${currentGeneratorId}`;
     const m = await api(`/maintenance/schedule${q}`);
+    cachedMaintenanceSchedule = m;
     document.getElementById('cardMaintRem').innerHTML = `${m.hours_remaining.toFixed(1)} <small style="font-size:0.9rem;">год</small>`;
     document.getElementById('cardMaintSub').innerText = `план: ${m.next_due_hours.toFixed(0)} год`;
     document.getElementById('maintInterval').innerText = `${m.interval_hours.toFixed(0)} год`;
@@ -1826,7 +1912,7 @@ window.onAdjFacilityOrEntityChange = async function() {
     targetSel.innerHTML = '<option value="" disabled selected>Завантаження генераторів...</option>';
     try {
       const q = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : '';
-      const gens = await api(`/generators${q}`);
+      const gens = await api(`/generator/list${q}`);
       if (gens && gens.length > 0) {
         targetSel.innerHTML = gens.map((g) => `
           <option value="${g.id}" data-type="Generator" data-hours="${g.current_operating_hours}" data-fuel="${g.fuel_tank_level_l}" data-status="${g.status}" data-consumption="${g.nominal_consumption_l_per_h}">
@@ -1837,7 +1923,7 @@ window.onAdjFacilityOrEntityChange = async function() {
         targetSel.innerHTML = `<option value="" disabled selected>Немає генераторів на цьому об'єкті</option>`;
       }
     } catch (_) {
-      targetSel.innerHTML = `<option value="1">Основний генератор (за замовчуванням)</option>`;
+      targetSel.innerHTML = `<option value="" disabled selected>Помилка завантаження генераторів</option>`;
     }
   } else if (entity === 'MaintenanceSchedule') {
     if (targetLabel) targetLabel.innerText = 'Цільовий регламент ТО';
@@ -1849,7 +1935,7 @@ window.onAdjFacilityOrEntityChange = async function() {
     targetSel.innerHTML = '<option value="" disabled selected>Завантаження графіків ТО...</option>';
     try {
       const q = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : '';
-      const gens = await api(`/generators${q}`);
+      const gens = await api(`/generator/list${q}`);
       const genIds = (gens || []).map(g => g.id);
       const scheds = await api('/maintenance/schedules');
       const filtered = (scheds || []).filter(s => genIds.length === 0 || genIds.includes(s.generator_id));
@@ -3146,6 +3232,19 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshServerStatus();
   setInterval(refreshServerStatus, 30000);
   setTimeout(checkPushSubscriptionStatus, 1500);
+
+  // Periodic background refresh for dashboard tiles (updates metrics live without manual F5)
+  setInterval(() => {
+    if (token && currentUser) {
+      loadGeneratorData();
+      if (!isViewerOnly() && hasPermission('fuel:view')) {
+        loadFuelSummary();
+      }
+      if (!isViewerOnly() && hasPermission('maintenance:view')) {
+        loadMaintenanceSummary();
+      }
+    }
+  }, 15000);
 });
 
 

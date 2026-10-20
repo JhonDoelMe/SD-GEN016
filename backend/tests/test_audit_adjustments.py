@@ -137,3 +137,33 @@ async def test_system_adjustments_and_audit(client, superadmin_auth, operator_au
     actions = [l["action"] for l in logs]
     assert "SYSTEM_ADJUSTMENT" in actions
     assert "GENERATOR_WIZARD_CONFIGURED" in actions
+
+
+@pytest.mark.asyncio
+async def test_adjustments_negative_fuel_and_generator_lookup(client, superadmin_auth):
+    # Fetch existing generator via /generator/list
+    list_res = await client.get("/api/v1/generator/list", headers=superadmin_auth)
+    assert list_res.status_code == 200
+    gens = list_res.json()
+    assert len(gens) > 0
+    gen_id = gens[0]["id"]
+
+    # SuperAdmin adjusts fuel level to negative (e.g. -5.5 l to record deficit)
+    adj_res = await client.post(
+        "/api/v1/adjustments",
+        headers=superadmin_auth,
+        json={
+            "entity_type": "Generator",
+            "entity_id": gen_id,
+            "field_name": "fuel_tank_level_l",
+            "new_value": "-5.5",
+            "reason": "Фіксація реального дефіциту палива після вичерпання бака"
+        }
+    )
+    assert adj_res.status_code == 201
+    assert adj_res.json()["new_value"] == "-5.5"
+
+    # Verify generator fuel level in DB is now -5.5
+    gen_check = await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=superadmin_auth)
+    assert gen_check.status_code == 200
+    assert gen_check.json()["fuel_tank_level_l"] == -5.5

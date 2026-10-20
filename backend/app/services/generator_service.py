@@ -353,11 +353,11 @@ async def stop_generator(
     generator.updated_at = end_time
 
     if stop_data.end_fuel_level_l is not None:
-        generator.fuel_tank_level_l = max(0.0, min(stop_data.end_fuel_level_l, generator.tank_capacity_l))
+        generator.fuel_tank_level_l = min(stop_data.end_fuel_level_l, generator.tank_capacity_l)
         run.end_fuel_level_l = generator.fuel_tank_level_l
     else:
-        # Deduct calculated consumption from tank level
-        new_level = max(0.0, generator.fuel_tank_level_l - calculated_consumption)
+        # Deduct calculated consumption from tank level (allows negative balance to show real fuel deficit)
+        new_level = generator.fuel_tank_level_l - calculated_consumption
         generator.fuel_tank_level_l = round(new_level, 3)
         run.end_fuel_level_l = generator.fuel_tank_level_l
 
@@ -700,7 +700,8 @@ async def add_manual_run(
         calculated_consumption = round(duration_hours * generator.nominal_consumption_l_per_h, 3)
 
     start_fuel = generator.fuel_tank_level_l
-    new_fuel_level = max(0.0, round(generator.fuel_tank_level_l - calculated_consumption, 2))
+    # Deduct consumption from tank level (allows negative balance to show real fuel deficit)
+    new_fuel_level = round(generator.fuel_tank_level_l - calculated_consumption, 2)
 
     # Create run record
     run = GeneratorRun(

@@ -176,3 +176,40 @@ async def test_maintenance_rate_limiting_max_2_per_day(db_session: AsyncSession)
     )
     assert res3.get("skipped") is True
     assert "Денний ліміт нагадувань про ТО" in res3.get("reason", "")
+
+
+@pytest.mark.asyncio
+async def test_push_notifications_routing_and_vapid_error_handling(client, superadmin_auth, operator_auth, db_session):
+    """
+    Перевірка:
+    1. Підписки суперадмінів завжди включаються до списку отримувачів незалежно від facility_id
+    2. Помилки доставки (окрім 404/410) не деактивують підписку помилково
+    """
+    # Subscribe superadmin to facility 2
+    sub_payload = {
+        "endpoint": "https://fcm.googleapis.com/fcm/send/superadmin-test-token-777",
+        "keys": {
+            "p256dh": "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QT9AcUbVYOISxkzquVmtXHGChTLnWqTxBXBkQ-NuCP5yZlXY",
+            "auth": "tBHItJI5svbpez7KI4CCXg"
+        },
+        "user_agent": "Pixel 8 SuperAdmin",
+        "facility_id": 2
+    }
+    await client.post("/api/v1/notifications/subscribe", json=sub_payload, headers=superadmin_auth)
+
+    # Trigger notification for facility 1
+    res = await send_push_notification(
+        db=db_session,
+        title="Запуск генератора",
+        body="Генератор запущено на об'єкті 1",
+        event_type="GENERATOR_START",
+        facility_id=1
+    )
+    # Superadmin MUST be included in recipients_count even though facility_id=1 and subscription has facility_id=2
+    assert res["recipients"] >= 1
+
+    # Verify subscription is STILL ACTIVE (not deactivated due to fake endpoint)
+    db_res = await db_session.execute(select(PushSubscription).where(PushSubscription.endpoint == sub_payload["endpoint"]))
+    sub = db_res.scalars().first()
+    assert sub is not None
+    assert sub.is_active is True
