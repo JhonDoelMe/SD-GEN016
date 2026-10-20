@@ -23,9 +23,10 @@ class Settings(BaseSettings):
     # Uploads
     UPLOAD_DIR: str = "./uploads"
 
-    # Security, CORS & Host Protection
-    CORS_ORIGINS: str = "http://localhost:8000,http://127.0.0.1:8000,https://generator-016.pp.ua,https://www.generator-016.pp.ua"
-    ALLOWED_HOSTS: str = "generator-016.pp.ua,www.generator-016.pp.ua,localhost,127.0.0.1,testserver,test,app,nginx"
+    # Domain, Host Protection & CORS (Configured via .env)
+    PRIMARY_DOMAIN: str = "generator-016.pp.ua"
+    ALLOWED_HOSTS: str = ""
+    CORS_ORIGINS: str = ""
     LOGIN_MAX_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_SECONDS: int = 300
 
@@ -38,6 +39,44 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return "sqlite" in self.DATABASE_URL
+
+    @property
+    def effective_allowed_hosts(self) -> list[str]:
+        """
+        Dynamically derives trusted hosts list from PRIMARY_DOMAIN and ALLOWED_HOSTS.
+        Always includes localhost, loopback, docker service names and test harnesses.
+        """
+        if self.ALLOWED_HOSTS.strip():
+            hosts = [h.strip() for h in self.ALLOWED_HOSTS.split(",") if h.strip()]
+        else:
+            domain = self.PRIMARY_DOMAIN.strip()
+            hosts = [
+                domain,
+                f"www.{domain}",
+                "localhost",
+                "127.0.0.1",
+            ]
+        # Always guarantee system, container, and test runners can resolve
+        for def_host in ("testserver", "test", "app", "nginx"):
+            if def_host not in hosts:
+                hosts.append(def_host)
+        return hosts
+
+    @property
+    def effective_cors_origins(self) -> list[str]:
+        """
+        Dynamically derives allowed CORS origins from PRIMARY_DOMAIN and CORS_ORIGINS.
+        """
+        if self.CORS_ORIGINS.strip():
+            return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        domain = self.PRIMARY_DOMAIN.strip()
+        return [
+            f"https://{domain}",
+            f"https://www.{domain}",
+            f"http://{domain}",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+        ]
 
 
 @lru_cache

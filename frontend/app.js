@@ -2,9 +2,13 @@
 // 🛡️ Anti-Phishing & Unauthorized Mirror Protection
 // ==========================================
 (function checkDomainIntegrity() {
+  // Read dynamic primary domain injected from .env via meta tag or global config
+  const metaDomain = document.querySelector('meta[name="app-primary-domain"]')?.getAttribute('content');
+  const primaryDomain = (metaDomain || window.__APP_PRIMARY_DOMAIN__ || 'generator-016.pp.ua').toLowerCase().trim();
+
   const allowedHosts = [
-    'generator-016.pp.ua',
-    'www.generator-016.pp.ua',
+    primaryDomain,
+    `www.${primaryDomain}`,
     'localhost',
     '127.0.0.1'
   ];
@@ -27,6 +31,8 @@
       sessionStorage.clear();
     } catch (e) {}
 
+    const officialUrl = `https://${primaryDomain}`;
+
     // 2. Render blocking alert and auto-redirect to official domain
     const renderAlert = () => {
       document.body.innerHTML = `
@@ -40,8 +46,8 @@
             <p style="color: #94a3b8; font-size: 13.5px; line-height: 1.5; margin: 0 0 24px;">
               Введення будь-яких логінів та паролів на цьому дзеркалі суворо заблоковано для запобігання перехопленню конфіденційних даних та облікових записів.
             </p>
-            <a href="https://generator-016.pp.ua" style="display: inline-block; background: #2563eb; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);">
-              Перейти на офіційний сайт generator-016.pp.ua
+            <a href="${officialUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);">
+              Перейти на офіційний сайт ${primaryDomain}
             </a>
             <div style="margin-top: 16px; font-size: 12px; color: #64748b;">
               Автоматичне перенаправлення через 4 секунди...
@@ -50,7 +56,7 @@
         </div>
       `;
       setTimeout(() => {
-        window.location.replace('https://generator-016.pp.ua');
+        window.location.replace(officialUrl);
       }, 4000);
     };
 

@@ -45,6 +45,10 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    env_file:
+      - .env
+    environment:
+      - PRIMARY_DOMAIN=${PRIMARY_DOMAIN:-generator-016.pp.ua}
     volumes:
       - ./docker/nginx.conf:/tmp/nginx.conf:ro
       - ./docker/ssl:/etc/nginx/ssl:ro
@@ -54,7 +58,8 @@ services:
       - /bin/sh
       - -c
       - |
-        cp /tmp/nginx.conf /etc/nginx/conf.d/default.conf
+        DOMAIN="$${PRIMARY_DOMAIN:-generator-016.pp.ua}"
+        sed "s/__PRIMARY_DOMAIN__/$$DOMAIN/g" /tmp/nginx.conf > /etc/nginx/conf.d/default.conf
         mkdir -p /tmp/ssl
         if [ -f /etc/nginx/ssl/fullchain.pem ] && [ -f /etc/nginx/ssl/privkey.pem ]; then
           cp /etc/nginx/ssl/fullchain.pem /tmp/ssl/fullchain.pem

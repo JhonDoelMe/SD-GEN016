@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.config import settings
@@ -116,17 +116,15 @@ app = FastAPI(
 )
 
 # 1. Restrict trusted hosts (prevents Host header attacks, rogue clone domains and unauthorized proxies)
-allowed_hosts = [h.strip() for h in settings.ALLOWED_HOSTS.split(",") if h.strip()]
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=allowed_hosts,
+    allowed_hosts=settings.effective_allowed_hosts,
 )
 
 # 2. Restrict CORS origins based on configuration
-cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=settings.effective_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
@@ -165,6 +163,7 @@ async def health_check():
     return {
         "status": "healthy",
         "facility_timezone": settings.FACILITY_TIMEZONE,
+        "primary_domain": settings.PRIMARY_DOMAIN,
         "database": "connected"
     }
 
@@ -205,8 +204,13 @@ if FRONTEND_DIR.exists():
     async def serve_index():
         index_path = FRONTEND_DIR / "index.html"
         if index_path.exists():
-            return FileResponse(
-                index_path,
+            content = index_path.read_text(encoding="utf-8")
+            # Inject dynamic primary domain from .env configuration
+            meta_tag = f'<meta name="app-primary-domain" content="{settings.PRIMARY_DOMAIN}">'
+            if "</head>" in content and 'name="app-primary-domain"' not in content:
+                content = content.replace("</head>", f"  {meta_tag}\n</head>", 1)
+            return HTMLResponse(
+                content=content,
                 headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
             )
         return {"message": "Service Desk API is running. Frontend index.html not found."}
