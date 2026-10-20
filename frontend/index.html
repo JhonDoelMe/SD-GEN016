@@ -187,19 +187,19 @@
       <!-- Quick Operator Actions Grid (Section 26 & 27) -->
       <h3 style="font-size: 1rem; color: var(--text-muted); margin-bottom: 0.75rem;">Швидкі дії оператора</h3>
       <div class="quick-actions">
-        <button class="btn-action" onclick="openModal('modalTransfer')">
+        <button type="button" id="btnQuickTransfer" class="btn-action" onclick="openModal('modalTransfer')">
           <span class="icon">⛽</span>
           <span>Заправити бак</span>
         </button>
-        <button class="btn-action" onclick="openModal('modalReceipt')">
+        <button type="button" id="btnQuickReceipt" class="btn-action" onclick="openModal('modalReceipt')">
           <span class="icon">📥</span>
           <span>+ Прийняти паливо</span>
         </button>
-        <button class="btn-action" onclick="openModal('modalMaintenance')">
+        <button type="button" id="btnQuickMaint" class="btn-action" onclick="openModal('modalMaintenance')">
           <span class="icon">🛠️</span>
           <span>Зафіксувати ТО</span>
         </button>
-        <button class="btn-action" onclick="openModal('modalFault')">
+        <button type="button" id="btnQuickFault" class="btn-action" onclick="openModal('modalFault')">
           <span class="icon">⚠️</span>
           <span>Несправність</span>
         </button>
@@ -236,9 +236,9 @@
         <div class="panel-header">
           <h3>Управління паливом (Склади ГСМ ↔ Баки генераторів)</h3>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalReceipt')">+ Оприбуткувати (Бензовоз)</button>
-            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalTransfer')">⛽ Заправити бак</button>
-            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalNewStock')">📦 + Додати склад ГСМ</button>
+            <button type="button" id="btnFuelReceipt" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalReceipt')">+ Оприбуткувати (Бензовоз)</button>
+            <button type="button" id="btnFuelTransfer" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalTransfer')">⛽ Заправити бак</button>
+            <button type="button" id="btnFuelNewStock" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalNewStock')">📦 + Додати склад ГСМ</button>
           </div>
         </div>
 
@@ -328,7 +328,7 @@
           <h3>Технічне обслуговування генератора</h3>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
             <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; background: #0284c7;" id="btnRecalculateMaint" onclick="recalculateMaintenanceSchedule()">🔄 Перерахувати за нормативом</button>
-            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalMaintenance')">+ Зафіксувати ТО</button>
+            <button type="button" id="btnOpenMaintModal" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalMaintenance')">+ Зафіксувати ТО</button>
           </div>
         </div>
 
@@ -373,7 +373,7 @@
       <div class="panel">
         <div class="panel-header">
           <h3>Журнал несправностей та дефектів</h3>
-          <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalFault')">+ Повідомити про несправність</button>
+          <button type="button" id="btnOpenFaultModal" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalFault')">+ Повідомити про несправність</button>
         </div>
 
         <div class="table-wrapper">
@@ -641,8 +641,8 @@
             </p>
           </div>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button type="button" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #22c55e; color: #4ade80;" onclick="refreshFuelPricesFromInternet()">🟢 Оновити ціни АЗК WOG</button>
-            <button type="button" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #ef4444; color: #f87171;" onclick="openSystemResetModal()">🧹 Очищення даних / Скидання БД</button>
+            <button type="button" id="btnRefreshFuelPrices" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #22c55e; color: #4ade80;" onclick="refreshFuelPricesFromInternet()">🟢 Оновити ціни АЗК WOG</button>
+            <button type="button" id="btnSystemReset" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #ef4444; color: #f87171;" onclick="openSystemResetModal()">🧹 Очищення даних / Скидання БД</button>
           </div>
         </div>
 
@@ -758,8 +758,8 @@
         <div class="panel-header">
           <h3>👥 Користувачі системи та Генератор</h3>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalWizard')">🧙 Майстер налаштування генератора</button>
-            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalUserCreate')">+ Створити користувача</button>
+            <button type="button" id="btnOpenWizardModal" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalWizard')">🧙 Майстер налаштування генератора</button>
+            <button type="button" id="btnOpenUserCreateModal" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalUserCreate')">+ Створити користувача</button>
           </div>
         </div>
 

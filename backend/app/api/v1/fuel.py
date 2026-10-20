@@ -28,7 +28,7 @@ async def fuel_summary(
     facility_id: Optional[int] = None,
     generator_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("fuel:view"))
 ):
     return await get_fuel_balances_summary(db, facility_id=facility_id, generator_id=generator_id)
 
@@ -37,7 +37,7 @@ async def fuel_summary(
 async def get_stocks_list(
     facility_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("fuel:view"))
 ):
     """Список усіх складів ГСМ (за об'єктом або загальний)"""
     stocks = await list_fuel_stocks(db, facility_id=facility_id)
@@ -61,7 +61,7 @@ async def create_stock_api(
     data: FuelStockCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("fuel:receipt"))
+    current_user: User = Depends(require_permission("fuel:configure"))
 ):
     """Створити новий склад ГСМ для обраного об'єкта"""
     client_ip = get_client_ip(request)
@@ -83,7 +83,7 @@ async def update_stock_api(
     data: FuelStockUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("fuel:receipt"))
+    current_user: User = Depends(require_permission("fuel:configure"))
 ):
     """Редагувати склад ГСМ (назву, тип палива, об'єкт)"""
     client_ip = get_client_ip(request)
@@ -104,7 +104,7 @@ async def delete_stock_api(
     stock_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("fuel:receipt"))
+    current_user: User = Depends(require_permission("fuel:configure"))
 ):
     """Видалити склад ГСМ із безпечним перенесенням залишків та історії на інший склад об'єкта"""
     client_ip = get_client_ip(request)
@@ -115,7 +115,7 @@ async def delete_stock_api(
 async def get_stock(
     facility_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("fuel:view"))
 ):
     stock = await get_or_create_default_stock(db, facility_id=facility_id)
     return FuelStockOut(
@@ -181,7 +181,7 @@ async def list_receipts(
     facility_id: Optional[int] = None,
     limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("fuel:view"))
 ):
     q = select(FuelReceipt).options(
         selectinload(FuelReceipt.user),

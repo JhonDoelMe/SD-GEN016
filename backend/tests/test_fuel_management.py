@@ -108,10 +108,25 @@ async def test_fuel_stock_update_and_delete(client, superadmin_auth, operator_au
     stock1 = stocks[0]
     stock1_id = stock1['id']
 
-    # 1. Update stock
-    upd_res = await client.put(
+    # Invariant: Operator CANNOT modify fuel stocks (403 Forbidden)
+    op_upd = await client.put(
         f'/api/v1/fuel/stocks/{stock1_id}',
         headers=operator_auth,
+        json={'name': 'Спроба оператора', 'fuel_type': 'А-95'}
+    )
+    assert op_upd.status_code == 403
+
+    op_post = await client.post(
+        '/api/v1/fuel/stocks',
+        headers=operator_auth,
+        json={'facility_id': fac_id, 'name': 'Склад', 'fuel_type': 'А-95'}
+    )
+    assert op_post.status_code == 403
+
+    # 1. Admin/SuperAdmin updates stock
+    upd_res = await client.put(
+        f'/api/v1/fuel/stocks/{stock1_id}',
+        headers=superadmin_auth,
         json={'name': 'Оновлений Склад 1', 'fuel_type': 'А-95 Mustang'}
     )
     assert upd_res.status_code == 200
@@ -120,14 +135,14 @@ async def test_fuel_stock_update_and_delete(client, superadmin_auth, operator_au
 
     # 2. Cannot delete single warehouse on facility
     if len(stocks) == 1:
-        del_fail = await client.delete(f'/api/v1/fuel/stocks/{stock1_id}', headers=operator_auth)
+        del_fail = await client.delete(f'/api/v1/fuel/stocks/{stock1_id}', headers=superadmin_auth)
         assert del_fail.status_code == 400
         assert 'єдиний склад' in del_fail.json()['detail']
 
     # 3. Create second stock
     stock2_res = await client.post(
         '/api/v1/fuel/stocks',
-        headers=operator_auth,
+        headers=superadmin_auth,
         json={
             'facility_id': fac_id,
             'name': 'Резервний склад 2',
@@ -141,7 +156,7 @@ async def test_fuel_stock_update_and_delete(client, superadmin_auth, operator_au
     assert stock2['current_balance_l'] == 50.0
 
     # Delete stock2
-    del_res = await client.delete(f'/api/v1/fuel/stocks/{stock2_id}', headers=operator_auth)
+    del_res = await client.delete(f'/api/v1/fuel/stocks/{stock2_id}', headers=superadmin_auth)
     assert del_res.status_code == 200
     assert 'успішно видалено' in del_res.json()['detail']
 

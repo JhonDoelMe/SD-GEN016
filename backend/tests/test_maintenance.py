@@ -73,10 +73,23 @@ async def test_maintenance_scheduled_vs_intermediate(client, superadmin_auth, op
     gen_overdue = await client.get("/api/v1/generator", headers=operator_auth)
     assert gen_overdue.json()["status"] == "MAINTENANCE_REQUIRED"
 
-    # 3. Perform Scheduled maintenance (Регламентне ТО)
-    sched_record_res = await client.post(
+    # 3. Invariant: Operator CANNOT perform Scheduled maintenance (403 Forbidden)
+    op_sched = await client.post(
         "/api/v1/maintenance/record",
         headers=operator_auth,
+        json={
+            "maintenance_type": "SCHEDULED",
+            "work_description": "Спроба оператора",
+            "consumables_used": "Масло",
+            "cost": 100.0
+        }
+    )
+    assert op_sched.status_code == 403
+
+    # SuperAdmin performs Scheduled maintenance (Регламентне ТО)
+    sched_record_res = await client.post(
+        "/api/v1/maintenance/record",
+        headers=superadmin_auth,
         json={
             "maintenance_type": "SCHEDULED",
             "work_description": "Регламентне ТО: заміна моторної оливи, масляного та повітряного фільтрів",

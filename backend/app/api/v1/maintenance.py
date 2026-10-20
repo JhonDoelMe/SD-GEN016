@@ -21,7 +21,7 @@ router = APIRouter(prefix="/maintenance", tags=["Технічне обслуго
 async def get_schedule(
     generator_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("maintenance:view"))
 ):
     return await get_maintenance_schedule_status(db, generator_id)
 
@@ -81,7 +81,7 @@ async def list_maintenance_records(
     generator_id: Optional[int] = None,
     limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("maintenance:view"))
 ):
     q = select(MaintenanceRecord).order_by(MaintenanceRecord.id.desc()).limit(limit)
     if generator_id:
