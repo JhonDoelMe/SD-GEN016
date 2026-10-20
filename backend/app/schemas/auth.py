@@ -100,10 +100,22 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    login: Optional[str] = Field(None, min_length=3, max_length=50)
     full_name: Optional[str] = Field(None, max_length=150)
     email: Optional[str] = Field(None, max_length=150)
     is_active: Optional[bool] = None
     role_ids: Optional[List[int]] = None
+    password: Optional[str] = Field(None, min_length=8, max_length=128)
+
+    @field_validator("login")
+    @classmethod
+    def validate_login(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if len(v) < 3 or len(v) > 50 or not LOGIN_REGEX.match(v):
+            raise ValueError("Логін повинен містити 3–50 символів (латинські літери, цифри, '_', '.', '-')")
+        return v
 
     @field_validator("full_name")
     @classmethod
@@ -118,12 +130,19 @@ class UserUpdate(BaseModel):
     @field_validator("email")
     @classmethod
     def validate_email(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
+        if v is None or v == "":
             return None
         v = v.strip()
-        if "<" in v or ">" in v or "\x00" in v or " " in v:
+        if "<" in v or ">" in v or "\x00" in v or " " in v or "@" not in v:
             raise ValueError("Некоректний формат email")
         return v
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        return validate_password_complexity(v)
 
 
 class UserPasswordReset(BaseModel):

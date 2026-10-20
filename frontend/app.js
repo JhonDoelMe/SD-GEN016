@@ -196,8 +196,7 @@ function applyRolePermissionsUI() {
 
   // Admin tab buttons
   setBtnState('btnSystemReset', superadmin, 'Очищення даних та скидання БД доступне виключно Головному Суперадміністратору 🔒', '⚠️ Очищення та скидання БД 🔒');
-  setBtnState('btnOpenWizardModal', canConfigGen, 'Майстер налаштування доступний лише Адміністратору 🔒', '⚡ Майстер генератора 🔒');
-  setBtnState('btnOpenUserCreateModal', hasPermission('users:manage'), 'Керування користувачами доступне лише Адміністратору 🔒', '+ Створити користувача 🔒');
+  setBtnState('btnOpenUserCreateModal', superadmin, 'Створення користувачів доступне виключно Головному Суперадміністратору 🔒', '+ Створити користувача 🔒');
   setBtnState('btnRefreshFuelPrices', hasPermission('settings:manage'), 'Оновлення цін доступне лише Адміністратору 🔒', '🔄 Оновити ціни 🔒');
 }
 
@@ -2057,13 +2056,36 @@ window.downloadReportExcel = async function () {
   }
 };
 
-// 8. Admin (Users & Wizard)
+// 8. Admin (Users Management - SuperAdmin Only)
+let allUsersCache = [];
+
 async function loadUsersData() {
   try {
     const users = await api('/users');
+    allUsersCache = users || [];
     const tbody = document.querySelector('#usersTable tbody');
-    tbody.innerHTML = users.map((u) => {
-      const rolesUa = u.roles.map((r) => ROLE_MAP_UA[r.name] || r.name).join(', ') || '-';
+    if (!tbody) return;
+    const canManage = isSuperAdmin();
+
+    tbody.innerHTML = allUsersCache.map((u) => {
+      const rolesUa = (u.roles || []).map((r) => ROLE_MAP_UA[r.name] || r.name).join(', ') || '-';
+      const isSuper = u.is_superadmin;
+
+      let actionsHtml = '';
+      if (isSuper) {
+        actionsHtml = `<span class="badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); font-size: 0.75rem;">⭐ Головний адмін (захищено)</span>`;
+      } else if (canManage) {
+        actionsHtml = `
+          <div style="display: flex; gap: 0.35rem; align-items: center;">
+            <button type="button" class="btn-action" style="padding: 0.25rem 0.5rem; min-height: auto; font-size: 0.8rem;" onclick="openEditUserModal(${Number(u.id)})" title="Редагувати користувача (ПІБ, логін, email, роль, статус)">✏️</button>
+            <button type="button" class="btn-action" style="padding: 0.25rem 0.5rem; min-height: auto; font-size: 0.8rem;" onclick="openResetPasswordModal(${Number(u.id)})" title="Встановити новий пароль">🔑</button>
+            <button type="button" class="btn-action" style="padding: 0.25rem 0.5rem; min-height: auto; font-size: 0.8rem; color: #ef4444;" onclick="openDeleteUserModal(${Number(u.id)})" title="Видалити користувача">🗑️</button>
+          </div>
+        `;
+      } else {
+        actionsHtml = `<span style="color: var(--text-muted); font-size: 0.75rem;">Тільки Суперадмін 🔒</span>`;
+      }
+
       return `
         <tr>
           <td>#${Number(u.id)}</td>
@@ -2072,33 +2094,20 @@ async function loadUsersData() {
           <td>${escapeHtml(u.email || '-')}</td>
           <td><span class="badge ${u.is_active ? 'badge-running' : 'badge-faulty'}">${u.is_active ? 'Активний' : 'Заблокований'}</span></td>
           <td>${escapeHtml(rolesUa)}</td>
-          <td>
-            ${!u.is_superadmin ? `
-              <button onclick="toggleUserActive(${Number(u.id)}, ${!u.is_active})" style="background:none; border:1px solid var(--border-color); color:var(--text-primary); border-radius:4px; padding:0.25rem 0.5rem; cursor:pointer; font-size:0.75rem;">
-                ${u.is_active ? 'Блокувати' : 'Розблокувати'}
-              </button>
-            ` : '<small style="color:#a855f7;">Головний адміністратор</small>'}
-          </td>
+          <td>${actionsHtml}</td>
         </tr>
       `;
     }).join('');
   } catch (_) {}
 }
 
-window.toggleUserActive = async function(id, active) {
-  try {
-    await api(`/users/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ is_active: active })
-    });
-    showToast(`Статус користувача змінено на: ${active ? 'Активний' : 'Заблокований'}`, 'success');
-    loadUsersData();
-  } catch (_) {}
-};
-
 // User Create Form Submit
-document.getElementById('userCreateForm').addEventListener('submit', async (e) => {
+document.getElementById('userCreateForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (!isSuperAdmin()) {
+    showToast('Створення користувачів доступне лише Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
   const loginVal = document.getElementById('newLogin').value.trim();
   const fullNameVal = document.getElementById('newName').value.trim();
   const emailVal = document.getElementById('newEmail').value.trim() || null;
@@ -2129,32 +2138,179 @@ document.getElementById('userCreateForm').addEventListener('submit', async (e) =
   } catch (_) {}
 });
 
-// Generator Wizard Setup Submit
-document.getElementById('wizardForm').addEventListener('submit', async (e) => {
+// Edit User Modal & Form
+window.openEditUserModal = function(id) {
+  if (!isSuperAdmin()) {
+    showToast('Редагування користувачів доступне лише Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+  const u = allUsersCache.find((user) => user.id === id);
+  if (!u) {
+    showToast('Користувача не знайдено', 'error');
+    return;
+  }
+  if (u.is_superadmin) {
+    showToast('Редагування облікового запису головного суперадміністратора заборонено', 'warning');
+    return;
+  }
+
+  document.getElementById('editUserId').value = u.id;
+  document.getElementById('editUserLogin').value = u.login;
+  document.getElementById('editUserName').value = u.full_name;
+  document.getElementById('editUserEmail').value = u.email || '';
+  document.getElementById('editUserActive').checked = Boolean(u.is_active);
+  document.getElementById('editUserPassword').value = '';
+
+  const roleSelect = document.getElementById('editUserRole');
+  if (roleSelect) {
+    const primaryRole = (u.roles && u.roles[0]) ? u.roles[0].name.toLowerCase() : '';
+    if (primaryRole === 'admin') roleSelect.value = '2';
+    else if (primaryRole === 'viewer') roleSelect.value = '4';
+    else roleSelect.value = '3';
+  }
+
+  openModal('modalUserEdit');
+};
+
+document.getElementById('userEditForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const body = {
-    name: document.getElementById('wizName').value,
-    model: document.getElementById('wizModel').value,
-    manufacturer: document.getElementById('wizManufacturer').value,
-    serial_number: document.getElementById('wizSerial').value,
-    rated_power_kw: parseFloat(document.getElementById('wizPower').value),
-    tank_capacity_l: parseFloat(document.getElementById('wizTankCap').value),
-    nominal_consumption_l_per_h: parseFloat(document.getElementById('wizConsumption').value),
-    initial_operating_hours: parseFloat(document.getElementById('wizInitHours').value),
-    initial_fuel_tank_level_l: parseFloat(document.getElementById('wizInitFuel').value),
-    maintenance_interval_hours: parseFloat(document.getElementById('wizMaintInterval').value),
-    last_maintenance_performed_hours: document.getElementById('wizLastMaintHours').value ? parseFloat(document.getElementById('wizLastMaintHours').value) : null,
-    work_schedule_start: document.getElementById('wizSchedStart').value,
-    work_schedule_end: document.getElementById('wizSchedEnd').value,
-    fuel_type: 'А-95',
-    timezone: 'Europe/Kyiv'
+  if (!isSuperAdmin()) {
+    showToast('Дія доступна лише Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+  const userId = parseInt(document.getElementById('editUserId').value);
+  const loginVal = document.getElementById('editUserLogin').value.trim();
+  const nameVal = document.getElementById('editUserName').value.trim();
+  const emailVal = document.getElementById('editUserEmail').value.trim() || null;
+  const roleVal = parseInt(document.getElementById('editUserRole').value);
+  const activeVal = document.getElementById('editUserActive').checked;
+  const passVal = document.getElementById('editUserPassword').value;
+
+  if (!/^[a-zA-Z0-9_.\-]{3,50}$/.test(loginVal)) {
+    showToast("Логін повинен містити 3–50 символів (латинські літери, цифри, '_', '.', '-')", 'error');
+    return;
+  }
+  if (!nameVal) {
+    showToast("ПІБ є обов'язковим", 'error');
+    return;
+  }
+  if (passVal && (passVal.length < 8 || !/[a-zA-Zа-яА-ЯіїєґІЇЄҐ]/.test(passVal) || !/\d/.test(passVal))) {
+    showToast('Новий пароль повинен містити щонайменше 8 символів, літери та цифри', 'error');
+    return;
+  }
+
+  const payload = {
+    login: loginVal,
+    full_name: nameVal,
+    email: emailVal,
+    role_ids: [roleVal],
+    is_active: activeVal
   };
+  if (passVal) {
+    payload.password = passVal;
+  }
 
   try {
-    await api('/generator/wizard', { method: 'POST', body: JSON.stringify(body) });
-    closeModal('modalWizard');
-    showToast('Параметри генератора успішно налаштовані через майстер!', 'success');
-    loadAllData();
+    await api(`/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+    closeModal('modalUserEdit');
+    showToast('Дані користувача успішно оновлено!', 'success');
+    loadUsersData();
+  } catch (_) {}
+});
+
+// Reset Password Modal & Form
+window.openResetPasswordModal = function(id) {
+  if (!isSuperAdmin()) {
+    showToast('Скидання паролів доступне лише Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+  const u = allUsersCache.find((user) => user.id === id);
+  if (!u) {
+    showToast('Користувача не знайдено', 'error');
+    return;
+  }
+  if (u.is_superadmin) {
+    showToast('Скидання пароля головного суперадміністратора заборонено', 'warning');
+    return;
+  }
+
+  document.getElementById('resetUserId').value = u.id;
+  document.getElementById('resetUserDisplayLogin').innerText = u.login;
+  document.getElementById('resetUserDisplayName').innerText = u.full_name;
+  document.getElementById('resetNewPassword').value = '';
+  document.getElementById('resetConfirmPassword').value = '';
+
+  openModal('modalUserResetPassword');
+};
+
+document.getElementById('userResetPasswordForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!isSuperAdmin()) {
+    showToast('Дія доступна лише Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+  const userId = parseInt(document.getElementById('resetUserId').value);
+  const p1 = document.getElementById('resetNewPassword').value;
+  const p2 = document.getElementById('resetConfirmPassword').value;
+
+  if (p1 !== p2) {
+    showToast('Введені паролі не співпадають', 'error');
+    return;
+  }
+  if (p1.length < 8 || !/[a-zA-Zа-яА-ЯіїєґІЇЄҐ]/.test(p1) || !/\d/.test(p1)) {
+    showToast('Пароль повинен містити щонайменше 8 символів, літери та цифри', 'error');
+    return;
+  }
+
+  try {
+    const res = await api(`/users/${userId}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ new_password: p1 })
+    });
+    closeModal('modalUserResetPassword');
+    showToast(res.message || 'Пароль успішно змінено!', 'success');
+  } catch (_) {}
+});
+
+// Delete User Modal
+window.openDeleteUserModal = function(id) {
+  if (!isSuperAdmin()) {
+    showToast('Видалення користувачів доступне лише Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+  const u = allUsersCache.find((user) => user.id === id);
+  if (!u) {
+    showToast('Користувача не знайдено', 'error');
+    return;
+  }
+  if (u.is_superadmin) {
+    showToast('Видалення головного суперадміністратора заборонено', 'warning');
+    return;
+  }
+
+  document.getElementById('deleteUserId').value = u.id;
+  document.getElementById('deleteUserDisplayLogin').innerText = u.login;
+  document.getElementById('deleteUserDisplayName').innerText = u.full_name;
+
+  openModal('modalUserDelete');
+};
+
+document.getElementById('confirmDeleteUserBtn')?.addEventListener('click', async () => {
+  if (!isSuperAdmin()) {
+    showToast('Дія доступна лише Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+  const userId = parseInt(document.getElementById('deleteUserId').value);
+  if (!userId) return;
+
+  try {
+    const res = await api(`/users/${userId}`, { method: 'DELETE' });
+    closeModal('modalUserDelete');
+    showToast(res.message || 'Користувача успішно видалено!', 'success');
+    loadUsersData();
   } catch (_) {}
 });
 
