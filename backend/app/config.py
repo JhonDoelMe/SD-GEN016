@@ -20,8 +20,9 @@ class Settings(BaseSettings):
     # Timezone of the facility (handles Kyiv DST winter/summer shifts)
     FACILITY_TIMEZONE: str = "Europe/Kyiv"
 
-    # Uploads
+    # Uploads & Backups
     UPLOAD_DIR: str = "./uploads"
+    BACKUP_DIR: str = "./backups"
 
     # Domain, Host Protection & CORS (Configured via .env)
     PRIMARY_DOMAIN: str = "generator-016.pp.ua"

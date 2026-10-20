@@ -34,7 +34,8 @@ htmlcov/
 service_desk.db
 uploads/*
 !uploads/.gitkeep
-backups/*.tar.gz
+backups/*
+!backups/.gitkeep
 
 # Environment variables & custom SSL certificates
 .env

@@ -271,6 +271,14 @@ function applyRolePermissionsUI() {
   setBtnState('btnSystemReset', superadmin, 'Очищення даних та скидання БД доступне виключно Головному Суперадміністратору 🔒', '⚠️ Очищення та скидання БД 🔒');
   setBtnState('btnOpenUserCreateModal', superadmin, 'Створення користувачів доступне виключно Головному Суперадміністратору 🔒', '+ Створити користувача 🔒');
   setBtnState('btnRefreshFuelPrices', hasPermission('settings:manage'), 'Оновлення цін доступне лише Адміністратору 🔒', '🔄 Оновити ціни 🔒');
+
+  // Backup panel and buttons (SuperAdmin only!)
+  const panelBackups = document.getElementById('panelBackups');
+  if (panelBackups) {
+    panelBackups.style.display = superadmin ? 'block' : 'none';
+  }
+  setBtnState('btnOpenCreateBackup', superadmin, 'Створення резервних копій доступне виключно Головному Суперадміністратору 🔒', '➕ Створити бекап зараз 🔒');
+  setBtnState('btnOpenBackupSettings', superadmin, 'Налаштування розкладу доступні виключно Головному Суперадміністратору 🔒', '⚙️ Розклад автобекапу 🔒');
 }
 
 
@@ -351,6 +359,10 @@ window.openModal = function (id) {
   }
   if (id === 'modalAdjustment' && !isSuperAdmin()) {
     showToast('Системне коригування лічильників доступне виключно Головному Суперадміністратору', 'warning');
+    return;
+  }
+  if ((id === 'modalCreateBackup' || id === 'modalBackupSettings' || id === 'modalDeleteBackup') && !isSuperAdmin()) {
+    showToast('Керування резервними копіями доступне виключно Головному Суперадміністратору', 'warning');
     return;
   }
   if ((id === 'modalCreateFacility' || id === 'modalQuickEditFacility') && !hasPermission('facility:configure')) {
@@ -708,6 +720,9 @@ document.querySelectorAll('.nav-item').forEach((tab) => {
     if (paneId === 'tab-admin') {
       loadUsersData();
       loadAdminSystemSettings();
+      if (isSuperAdmin()) {
+        loadBackupsList();
+      }
     }
   });
 });
@@ -1507,7 +1522,7 @@ if (editStockForm) {
 window.deleteFuelStock = async function(id, name, balance) {
   let msg = `Ви впевнені, що хочете видалити склад "${name}"?`;
   if (balance > 0) {
-    msg += `\n\nУвага: на складі є залишок ${balance.toFixed(1)} л. Його буде автоматично перенесено на основний склад об'єкта, щоб уникнути втрати даних обліку.`;
+    msg += `\r\n\r\nУвага: на складі є залишок ${balance.toFixed(1)} л. Його буде автоматично перенесено на основний склад об'єкта, щоб уникнути втрати даних обліку.`;
   }
   if (!confirm(msg)) return;
   try {
@@ -3440,6 +3455,302 @@ document.getElementById('systemResetForm')?.addEventListener('submit', async (e)
     await loadAdminSystemSettings();
     await loadUsersData();
   } catch (_) {}
+});
+
+// ==========================================
+// 8.1 System Backups Management (SuperAdmin Only)
+// ==========================================
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 Б';
+  const k = 1024;
+  const sizes = ['Б', 'КБ', 'МБ', 'ГБ'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const val = (bytes / Math.pow(k, i)).toFixed(i === 0 ? 0 : 2);
+  return `${val} ${sizes[i]}`;
+}
+
+let backupsCache = [];
+
+window.loadBackupsList = async function (isUserTriggered = false) {
+  if (!isSuperAdmin()) return;
+
+  try {
+    const res = await api('/backups');
+    backupsCache = res.backups || [];
+
+    // Update statistics badges
+    const statCount = document.getElementById('backupStatCount');
+    if (statCount) statCount.textContent = res.total_count ?? backupsCache.length;
+
+    const statSize = document.getElementById('backupStatSize');
+    if (statSize) statSize.textContent = formatBytes(res.total_size_bytes || 0);
+
+    // Fetch and display schedule status
+    try {
+      const settRes = await api('/backups/settings');
+      const sett = settRes.settings || {};
+      const statSchedule = document.getElementById('backupStatSchedule');
+      if (statSchedule) {
+        if (sett.backup_auto_enabled) {
+          const freqUa = sett.backup_frequency === 'weekly' ? 'щотижня' : 'щодня';
+          statSchedule.innerHTML = `<span style="color: #4ade80;">Увімкнено (${freqUa} о ${escapeHtml(sett.backup_schedule_time || '03:00')}, ротація: ${Number(sett.backup_retention_count || 7)})</span>`;
+        } else {
+          statSchedule.innerHTML = `<span style="color: #94a3b8;">Вимкнено (лише вручну)</span>`;
+        }
+      }
+    } catch (_) {}
+
+    // Render table rows
+    const tbody = document.querySelector('#backupsTable tbody');
+    if (tbody) {
+      if (backupsCache.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Резервних копій ще не створено. Натисніть «➕ Створити бекап зараз» для першого збереження.</td></tr>';
+      } else {
+        tbody.innerHTML = backupsCache.map((b) => {
+          const typeLabel = b.type === 'full' ? '📦 Повний' : '🗄️ Тільки БД';
+          const badgeClass = b.type === 'full' ? 'badge-running' : 'badge-blocked';
+          const fileSafe = escapeHtml(b.filename).replace(/'/g, "\\'");
+
+          return `
+            <tr>
+              <td style="white-space: nowrap;">${formatDateTime(b.created_at)}</td>
+              <td><span class="badge ${badgeClass}">${typeLabel}</span></td>
+              <td><code style="font-size: 0.82rem; color: #38bdf8;">${escapeHtml(b.filename)}</code></td>
+              <td style="white-space: nowrap;"><b>${formatBytes(b.size_bytes)}</b></td>
+              <td style="font-size: 0.85rem;">
+                Таблиць: <b>${Number(b.tables_count || 0)}</b> | Записів: <b>${Number(b.records_count || 0)}</b>${b.type === 'full' ? ` | Файлів: <b>${Number(b.files_count || 0)}</b>` : ''}
+              </td>
+              <td>
+                <div style="font-weight: 600;">${escapeHtml(b.created_by || 'system')}</div>
+                ${b.note ? `<div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.15rem;">${escapeHtml(b.note)}</div>` : ''}
+              </td>
+              <td style="text-align: center; white-space: nowrap;">
+                <div style="display: flex; gap: 0.4rem; justify-content: center; align-items: center;">
+                  <button type="button" class="btn-action" style="padding: 0.3rem 0.65rem; min-height: auto; font-size: 0.8rem; border-color: #38bdf8; color: #38bdf8;" onclick="downloadBackup('${fileSafe}')" title="Завантажити архів бекапу (.zip)">
+                    📥 Завантажити
+                  </button>
+                  <button type="button" class="btn-action" style="padding: 0.3rem 0.6rem; min-height: auto; font-size: 0.8rem; border-color: #ef4444; color: #f87171;" onclick="openDeleteBackupModal('${fileSafe}')" title="Видалити бекап">
+                    🗑️
+                  </button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    if (isUserTriggered) {
+      showToast('Список резервних копій оновлено!', 'success');
+    }
+  } catch (err) {
+    if (isUserTriggered) {
+      showToast(`Помилка завантаження бекапів: ${err.message || 'Невідома помилка'}`, 'error');
+    }
+  }
+};
+
+window.openCreateBackupModal = function () {
+  if (!isSuperAdmin()) {
+    showToast('Створення бекапів доступне виключно Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+  const noteInput = document.getElementById('backupNote');
+  if (noteInput) noteInput.value = '';
+  const radioFull = document.querySelector('input[name="backupTypeChoice"][value="full"]');
+  if (radioFull) radioFull.checked = true;
+  openModal('modalCreateBackup');
+};
+
+document.getElementById('createBackupForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!isSuperAdmin()) {
+    showToast('Створення бекапів доступне виключно Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+
+  const submitBtn = document.getElementById('btnSubmitCreateBackup');
+  const typeVal = document.querySelector('input[name="backupTypeChoice"]:checked')?.value || 'full';
+  const noteVal = document.getElementById('backupNote')?.value.trim() || null;
+
+  try {
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerText = '⏳ Створення архіву...';
+    }
+    showToast('Формування резервної копії системи. Зачекайте...', 'info');
+
+    const res = await api('/backups', {
+      method: 'POST',
+      body: JSON.stringify({ type: typeVal, note: noteVal })
+    });
+
+    closeModal('modalCreateBackup');
+    showToast(res.message || 'Резервну копію успішно створено!', 'success');
+    await loadBackupsList();
+  } catch (err) {
+    showToast(err.message || 'Помилка створення резервної копії', 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = '🚀 Запустити створення';
+    }
+  }
+});
+
+window.downloadBackup = async function (filename) {
+  if (!isSuperAdmin()) {
+    showToast('Завантаження бекапів доступне виключно Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+
+  try {
+    showToast(`Завантаження резервної копії ${filename}...`, 'info');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`/api/v1/backups/${encodeURIComponent(filename)}/download`, {
+      headers,
+      credentials: 'same-origin'
+    });
+    if (!res.ok) {
+      let errMsg = `Помилка сервера при завантаженні (${res.status})`;
+      try {
+        const errJson = await res.json();
+        errMsg = extractErrorMessage(errJson, errMsg);
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = window.URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast(`Файл ${filename} успішно завантажено!`, 'success');
+  } catch (err) {
+    showToast(err.message || 'Помилка завантаження резервної копії', 'error');
+  }
+};
+
+window.openDeleteBackupModal = function (filename) {
+  if (!isSuperAdmin()) {
+    showToast('Видалення бекапів доступне виключно Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+  const disp = document.getElementById('deleteBackupFilenameDisplay');
+  if (disp) disp.textContent = filename;
+  const hid = document.getElementById('deleteBackupFilenameHidden');
+  if (hid) hid.value = filename;
+  openModal('modalDeleteBackup');
+};
+
+window.confirmDeleteCurrentBackup = async function () {
+  if (!isSuperAdmin()) {
+    showToast('Видалення бекапів доступне виключно Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+  const hid = document.getElementById('deleteBackupFilenameHidden');
+  const filename = hid?.value;
+  if (!filename) return;
+
+  const btn = document.getElementById('confirmDeleteBackupBtn');
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = '⏳ Видалення...';
+    }
+    const res = await api(`/backups/${encodeURIComponent(filename)}`, {
+      method: 'DELETE'
+    });
+    closeModal('modalDeleteBackup');
+    showToast(res.message || `Бекап ${filename} успішно видалено!`, 'success');
+    await loadBackupsList();
+  } catch (err) {
+    showToast(err.message || 'Помилка видалення резервної копії', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = 'Підтвердити видалення';
+    }
+  }
+};
+
+window.openBackupSettingsModal = async function () {
+  if (!isSuperAdmin()) {
+    showToast('Налаштування розкладу доступні виключно Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+
+  try {
+    const res = await api('/backups/settings');
+    const s = res.settings || {};
+
+    const chkAuto = document.getElementById('cfgBackupAutoEnabled');
+    if (chkAuto) chkAuto.checked = !!s.backup_auto_enabled;
+
+    const inpTime = document.getElementById('cfgBackupScheduleTime');
+    if (inpTime) inpTime.value = s.backup_schedule_time || '03:00';
+
+    const selFreq = document.getElementById('cfgBackupFrequency');
+    if (selFreq) selFreq.value = s.backup_frequency || 'daily';
+
+    const selType = document.getElementById('cfgBackupDefaultType');
+    if (selType) selType.value = s.backup_default_type || 'full';
+
+    const inpRet = document.getElementById('cfgBackupRetentionCount');
+    if (inpRet) inpRet.value = s.backup_retention_count ?? 7;
+
+    openModal('modalBackupSettings');
+  } catch (err) {
+    showToast(`Помилка отримання налаштувань: ${err.message || 'Невідома помилка'}`, 'error');
+  }
+};
+
+document.getElementById('backupSettingsForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!isSuperAdmin()) {
+    showToast('Налаштування розкладу доступні виключно Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+
+  const btn = document.getElementById('btnSubmitSaveBackupSettings');
+  const autoEnabled = document.getElementById('cfgBackupAutoEnabled')?.checked ?? false;
+  const schedTime = document.getElementById('cfgBackupScheduleTime')?.value || '03:00';
+  const freq = document.getElementById('cfgBackupFrequency')?.value || 'daily';
+  const defType = document.getElementById('cfgBackupDefaultType')?.value || 'full';
+  const retCount = parseInt(document.getElementById('cfgBackupRetentionCount')?.value || '7', 10);
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = '⏳ Збереження...';
+    }
+    const res = await api('/backups/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        backup_auto_enabled: autoEnabled,
+        backup_schedule_time: schedTime,
+        backup_frequency: freq,
+        backup_default_type: defType,
+        backup_retention_count: retCount
+      })
+    });
+
+    closeModal('modalBackupSettings');
+    showToast(res.message || 'Налаштування автобекапу успішно збережено!', 'success');
+    await loadBackupsList();
+  } catch (err) {
+    showToast(err.message || 'Помилка збереження налаштувань автобекапу', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = '💾 Зберегти налаштування';
+    }
+  }
 });
 
 // ==========================================

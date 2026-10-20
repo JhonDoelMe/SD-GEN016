@@ -1,4 +1,5 @@
 import os
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request
@@ -11,6 +12,7 @@ from backend.app.config import settings
 from backend.app.database import engine, Base, AsyncSessionLocal
 from backend.app.models import *  # noqa: F401, F403 Ensure all models loaded
 from backend.app.services.init_service import seed_initial_data
+from backend.app.services.backup_service import run_backup_scheduler
 from backend.app.api.v1 import api_v1_router
 
 
@@ -99,12 +101,17 @@ async def lifespan(app: FastAPI):
         print(f"[ERROR] Failed to seed initial data: {e}")
         traceback.print_exc()
 
-    # 3. Ensure uploads directory exists
+    # 3. Ensure uploads and backups directories exist
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    os.makedirs(settings.BACKUP_DIR, exist_ok=True)
+
+    # 4. Start background backup scheduler
+    backup_scheduler_task = asyncio.create_task(run_backup_scheduler())
 
     yield
 
     # Shutdown
+    backup_scheduler_task.cancel()
     await engine.dispose()
 
 

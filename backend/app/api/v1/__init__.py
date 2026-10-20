@@ -11,6 +11,7 @@ from backend.app.api.v1.reports import router as reports_router
 from backend.app.api.v1.facilities import router as facilities_router
 from backend.app.api.v1.system import router as system_router
 from backend.app.api.v1.notifications import router as notifications_router
+from backend.app.api.v1.backups import router as backups_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(auth_router)
@@ -25,5 +26,6 @@ api_v1_router.include_router(reports_router)
 api_v1_router.include_router(facilities_router)
 api_v1_router.include_router(system_router)
 api_v1_router.include_router(notifications_router)
+api_v1_router.include_router(backups_router)
 
 __all__ = ["api_v1_router"]

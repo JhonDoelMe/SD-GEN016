@@ -907,6 +907,78 @@
           </table>
         </div>
       </div>
+
+      <!-- Panel: Резервні копії та Відновлення (SuperAdmin only) -->
+      <div id="panelBackups" class="panel" style="margin-top: 1.5rem; display: none;">
+        <div class="panel-header" style="flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <h3 style="margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.5rem;">
+              <span>💾</span> <span>Резервні копії системи (Бекапи)</span>
+              <span class="badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); font-size: 0.75rem;">Суперадмін</span>
+            </h3>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0;">
+              Створення повних та базових snapshot-копій (БД, медіа-файли, маніфест), автобекап за розкладом та збереження архівів
+            </p>
+          </div>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" id="btnOpenCreateBackup" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #38bdf8; color: #38bdf8; font-weight: 600;" onclick="openCreateBackupModal()">
+              ➕ Створити бекап зараз
+            </button>
+            <button type="button" id="btnOpenBackupSettings" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #a855f7; color: #c084fc; font-weight: 600;" onclick="openBackupSettingsModal()">
+              ⚙️ Розклад автобекапу
+            </button>
+            <button type="button" class="btn-action" style="padding: 0.55rem 0.85rem; min-height: auto; flex-direction: row;" onclick="loadBackupsList(true)" title="Оновити список бекапів">
+              🔄
+            </button>
+          </div>
+        </div>
+
+        <!-- Backup Status Summary Badges -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem;">
+          <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 0.6rem; padding: 0.85rem 1rem; display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.8rem;">📦</span>
+            <div>
+              <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Всього бекапів</div>
+              <div id="backupStatCount" style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">0</div>
+            </div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 0.6rem; padding: 0.85rem 1rem; display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.8rem;">💽</span>
+            <div>
+              <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Загальний обсяг</div>
+              <div id="backupStatSize" style="font-size: 1.25rem; font-weight: 700; color: #38bdf8;">0 Б</div>
+            </div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 0.6rem; padding: 0.85rem 1rem; display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.8rem;">🕒</span>
+            <div>
+              <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Статус автобекапу</div>
+              <div id="backupStatSchedule" style="font-size: 0.95rem; font-weight: 600; color: #94a3b8;">Вимкнено</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table id="backupsTable">
+            <thead>
+              <tr>
+                <th>Дата та час</th>
+                <th>Тип</th>
+                <th>Назва файлу</th>
+                <th>Розмір</th>
+                <th>Таблиці / Записи</th>
+                <th>Автор / Примітки</th>
+                <th style="text-align: center;">Дії</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td colspan="7" style="text-align: center; color: var(--text-muted);">Завантаження списку бекапів...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
   </main>
@@ -1955,6 +2027,141 @@
 
         <button type="submit" class="btn-primary" style="background: #dc2626;">Підтвердити та виконати очищення</button>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create Backup (SuperAdmin) -->
+  <div id="modalCreateBackup" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3>💾 Створення резервної копії (Бекап)</h3>
+        <button class="close-btn" onclick="closeModal('modalCreateBackup')">&times;</button>
+      </div>
+      <form id="createBackupForm">
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1.2rem; line-height: 1.5;">
+          Оберіть тип створення архіву. Резервна копія зберігається у форматі <code>.zip</code> із контрольними сумами SHA-256 та маніфестом даних.
+        </p>
+
+        <div class="form-group">
+          <label style="font-weight: 600; margin-bottom: 0.5rem; display: block;">Тип резервної копії *</label>
+          <div style="display: flex; flex-direction: column; gap: 0.65rem;">
+            <label style="display: flex; align-items: flex-start; gap: 0.75rem; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.75rem; cursor: pointer;">
+              <input type="radio" name="backupTypeChoice" value="full" checked style="margin-top: 0.25rem; accent-color: #38bdf8;">
+              <div>
+                <div style="font-weight: 600; color: var(--text-primary); font-size: 0.95rem;">📦 Повний бекап (База даних + Файли / Фото)</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+                  Включає повний дамп усіх 20 таблиць БД (JSON + SQLite DB) та всі завантажені фотографії чеків і несправностей (папка <code>uploads/</code>). Рекомендовано для архівування.
+                </div>
+              </div>
+            </label>
+            <label style="display: flex; align-items: flex-start; gap: 0.75rem; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.75rem; cursor: pointer;">
+              <input type="radio" name="backupTypeChoice" value="db_only" style="margin-top: 0.25rem; accent-color: #38bdf8;">
+              <div>
+                <div style="font-weight: 600; color: var(--text-primary); font-size: 0.95rem;">🗄️ Тільки база даних (Швидкий зліпок)</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+                  Включає лише реляційні дані (таблиці, користувачі, лічильники, аудит) без медіафайлів. Створюється миттєво, має мінімальний розмір.
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+          <label>Коментар / Примітка до бекапу (необов'язково)</label>
+          <input type="text" id="backupNote" maxlength="255" placeholder="напр. Перед оновленням сервера або плановим ТО">
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
+          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalCreateBackup')">Скасувати</button>
+          <button type="submit" id="btnSubmitCreateBackup" class="btn-primary" style="min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
+            🚀 Запустити створення
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Backup Schedule Settings (SuperAdmin) -->
+  <div id="modalBackupSettings" class="modal-overlay">
+    <div class="modal-content" style="max-width: 540px;">
+      <div class="modal-header">
+        <h3>⚙️ Налаштування автоматичного резервного копіювання</h3>
+        <button class="close-btn" onclick="closeModal('modalBackupSettings')">&times;</button>
+      </div>
+      <form id="backupSettingsForm">
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1.2rem; line-height: 1.5;">
+          Автоматичне створення бекапів виконується фоновим демоном сервера за київським часом (Europe/Kyiv) із автоматичною ротацією застарілих копій.
+        </p>
+
+        <div class="settings-toggle-list" style="margin-bottom: 1.25rem;">
+          <label class="settings-toggle-item" for="cfgBackupAutoEnabled" style="border-color: rgba(168, 85, 247, 0.35);">
+            <input type="checkbox" id="cfgBackupAutoEnabled" style="accent-color: #a855f7;">
+            <div class="settings-toggle-content">
+              <span class="settings-toggle-title" style="color: #c084fc;">🕒 Увімкнути автоматичний бекап за розкладом</span>
+              <span class="settings-toggle-desc">Регулярно створювати архів системи у фоновому режимі без участі оператора.</span>
+            </div>
+          </label>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Час запуску (Europe/Kyiv) *</label>
+            <input type="time" id="cfgBackupScheduleTime" required value="03:00">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Періодичність *</label>
+            <select id="cfgBackupFrequency" required>
+              <option value="daily">Щодня (Daily)</option>
+              <option value="weekly">Щотижня (Weekly)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Тип автобекапу *</label>
+            <select id="cfgBackupDefaultType" required>
+              <option value="full">Повний (БД + фото)</option>
+              <option value="db_only">Тільки база даних</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Зберігати останніх копій (ротація) *</label>
+            <input type="number" id="cfgBackupRetentionCount" min="1" max="100" required value="7">
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
+          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalBackupSettings')">Скасувати</button>
+          <button type="submit" id="btnSubmitSaveBackupSettings" class="btn-primary" style="min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
+            💾 Зберегти налаштування
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Delete Backup Confirmation -->
+  <div id="modalDeleteBackup" class="modal-overlay">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 style="color: #ef4444;">🗑️ Видалення бекапу</h3>
+        <button class="close-btn" onclick="closeModal('modalDeleteBackup')">&times;</button>
+      </div>
+      <div style="padding: 0.5rem 0 1rem;">
+        <p style="font-size: 0.95rem; line-height: 1.5; color: var(--text-color);">
+          Ви дійсно бажаєте безповоротно видалити файл резервної копії:
+        </p>
+        <div id="deleteBackupFilenameDisplay" style="font-weight: 700; color: #f87171; word-break: break-all; margin: 0.5rem 0; font-family: monospace; background: rgba(239, 68, 68, 0.1); padding: 0.5rem; border-radius: 4px;"></div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">
+          Цю дію неможливо скасувати. Файл архіву буде видалено з сервера.
+        </p>
+      </div>
+      <input type="hidden" id="deleteBackupFilenameHidden">
+      <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+        <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalDeleteBackup')">Скасувати</button>
+        <button type="button" class="btn-primary" id="confirmDeleteBackupBtn" style="background: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentBackup()">Підтвердити видалення</button>
+      </div>
     </div>
   </div>
 

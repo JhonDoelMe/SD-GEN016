@@ -76,6 +76,12 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "max_maintenance_notifications_per_day": 2,
     "notify_critical_faults": True,
     "vapid_claims_sub": "mailto:maxiuallc@gmail.com",
+    # Automated Backups configuration
+    "backup_auto_enabled": False,
+    "backup_schedule_time": "03:00",
+    "backup_frequency": "daily",
+    "backup_retention_count": 7,
+    "backup_default_type": "full",
 }
 
 # In-memory cache of runtime settings for fast synchronous reads (e.g. timezone.py)
