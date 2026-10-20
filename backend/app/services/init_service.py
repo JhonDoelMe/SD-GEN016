@@ -1,5 +1,6 @@
 import logging
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.config import settings
 from backend.app.core.security import get_password_hash
@@ -83,23 +84,39 @@ async def seed_initial_data(db: AsyncSession) -> None:
             existing_perms[code] = perm
     await db.flush()
 
-    # 2. Seed Roles
-    existing_roles_res = await db.execute(select(Role))
-    existing_roles = {r.name: r for r in existing_roles_res.scalars().all()}
+    # 2. Seed Roles (Case-insensitive deduplication and strict permission sync)
+    existing_roles_res = await db.execute(
+        select(Role).options(selectinload(Role.permissions), selectinload(Role.users))
+    )
+    roles_list = existing_roles_res.scalars().all()
+    existing_roles = {}
+    for r in roles_list:
+        low = r.name.lower()
+        if low not in existing_roles:
+            r.name = low
+            existing_roles[low] = r
+        else:
+            primary_role = existing_roles[low]
+            for u in list(r.users):
+                if primary_role not in u.roles:
+                    u.roles.append(primary_role)
+            await db.delete(r)
+    await db.flush()
 
     for role_name, perm_codes in ROLE_PERMISSIONS_MAP.items():
-        if role_name not in existing_roles:
+        role_key = role_name.lower()
+        if role_key not in existing_roles:
             role = Role(
-                name=role_name,
+                name=role_key,
                 description=f"Роль {role_name.capitalize()}"
             )
             for p_code in perm_codes:
                 if p_code in existing_perms:
                     role.permissions.append(existing_perms[p_code])
             db.add(role)
-            existing_roles[role_name] = role
+            existing_roles[role_key] = role
         else:
-            role = existing_roles[role_name]
+            role = existing_roles[role_key]
             # Ensure permissions are exactly synchronized with ROLE_PERMISSIONS_MAP
             target_perms = [existing_perms[c] for c in perm_codes if c in existing_perms]
             role.permissions = target_perms

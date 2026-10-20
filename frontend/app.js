@@ -71,90 +71,106 @@ function applyRolePermissionsUI() {
   document.querySelectorAll('.nav-item').forEach((tab) => {
     const paneId = tab.getAttribute('data-tab');
     const isAllowed = tabRules[paneId] ?? true;
+    let orig = tab.getAttribute('data-orig-html');
+    if (!orig) {
+      orig = tab.innerHTML;
+      tab.setAttribute('data-orig-html', orig);
+    }
     if (!isAllowed) {
       tab.classList.add('nav-item-disabled');
-      let orig = tab.getAttribute('data-orig-text');
-      if (!orig) {
-        orig = tab.innerText.replace('🔒', '').trim();
-        tab.setAttribute('data-orig-text', orig);
-      }
-      if (!tab.innerHTML.includes('🔒')) {
-        tab.innerHTML = `${orig} <span style="font-size:0.75rem; margin-left:2px;">🔒</span>`;
-      }
-      tab.setAttribute('title', viewer ? 'Недоступно для Спостерігача (лише Головна)' : 'Недоступно для Оператора (тільки для Адміністратора)');
+      tab.setAttribute('aria-disabled', 'true');
+      const cleanText = orig.replace(/<span class="nav-lock-badge".*?<\/span>/g, '').trim();
+      tab.innerHTML = `${cleanText} <span class="nav-lock-badge">🔒</span>`;
+      tab.setAttribute('title', viewer ? 'Розділ заблоковано для ролі Спостерігач 🔒' : 'Розділ заблоковано для ролі Оператор (потрібні права Адміністратора) 🔒');
     } else {
       tab.classList.remove('nav-item-disabled');
-      const orig = tab.getAttribute('data-orig-text');
-      if (orig) tab.innerText = orig;
+      tab.removeAttribute('aria-disabled');
+      tab.innerHTML = orig;
       tab.removeAttribute('title');
     }
   });
 
-  // If user is currently in a forbidden tab, switch to dashboard
+  // If user is currently in a forbidden tab, switch to dashboard immediately
   const activeTab = document.querySelector('.nav-item.active');
   if (activeTab && activeTab.classList.contains('nav-item-disabled')) {
     const dashTab = document.querySelector('.nav-item[data-tab="tab-dashboard"]');
-    if (dashTab) dashTab.click();
+    if (dashTab) {
+      document.querySelectorAll('.nav-item').forEach((t) => t.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach((p) => (p.style.display = 'none'));
+      dashTab.classList.add('active');
+      const dashPane = document.getElementById('tab-dashboard');
+      if (dashPane) dashPane.style.display = 'block';
+    }
   }
 
-  // 2. Helper to set button state
-  const setBtnState = (btnId, isAllowed, reason) => {
+  // 2. Helper to set button state with visual lock
+  const setBtnState = (btnId, isAllowed, reason, lockedHtml = null) => {
     const b = document.getElementById(btnId);
     if (!b) return;
+    let orig = b.getAttribute('data-orig-html');
+    if (!orig) {
+      orig = b.innerHTML;
+      b.setAttribute('data-orig-html', orig);
+    }
     if (!isAllowed) {
       b.disabled = true;
       b.classList.add('btn-disabled-role');
       b.title = reason;
+      if (lockedHtml) {
+        b.innerHTML = lockedHtml;
+      } else if (!b.innerHTML.includes('🔒')) {
+        b.innerHTML = `${orig} <span class="nav-lock-badge">🔒</span>`;
+      }
     } else {
       b.disabled = false;
       b.classList.remove('btn-disabled-role');
       b.removeAttribute('title');
+      b.innerHTML = orig;
     }
   };
 
-  // 3. Dashboard buttons
+  // 3. Facilities management buttons (Admin/Superadmin only)
+  const canConfigFacility = hasPermission('facility:configure');
+  setBtnState('addFacilityBtn', canConfigFacility, "Додавання об'єктів доступне лише Адміністратору 🔒", "+ Об'єкт 🔒");
+  setBtnState('quickEditFacilityBtn', canConfigFacility, "Редагування об'єктів доступне лише Адміністратору 🔒", "⚙️🔒");
+
+  // 4. Generators management buttons (Admin/Superadmin only)
+  const canConfigGen = hasPermission('generator:configure');
+  setBtnState('addGeneratorBtn', canConfigGen, 'Створення генераторів доступне лише Адміністратору 🔒', '+ Генератор 🔒');
+  setBtnState('quickEditGeneratorBtn', canConfigGen, 'Редагування генераторів доступне лише Адміністратору 🔒', '⚙️🔒');
+  setBtnState('deleteGeneratorBtn', canConfigGen, 'Видалення генераторів доступне лише Адміністратору 🔒', '🗑️🔒');
+
+  // 5. Dashboard main buttons
   if (viewer) {
     const mainBtn = document.getElementById('mainActionBtn');
     if (mainBtn) {
       mainBtn.disabled = true;
-      mainBtn.classList.add('btn-disabled-role');
-      mainBtn.title = 'Запуск та зупинка генератора недоступні для ролі Спостерігач';
+      mainBtn.className = 'btn-hero btn-disabled-role';
+      mainBtn.innerHTML = '<span>🔒</span><span>ЗАПУСК ЗАБЛОКОВАНО (СПОСТЕРІГАЧ)</span>';
+      mainBtn.title = 'Запуск та зупинка генератора недоступні для ролі Спостерігач 🔒';
     }
     const manualBtn = document.getElementById('btnOpenManualRun');
     if (manualBtn) {
-      manualBtn.disabled = true;
-      manualBtn.classList.add('btn-disabled-role');
-      manualBtn.title = 'Внесення мотогодин вручну недоступне для ролі Спостерігач';
+      manualBtn.style.display = 'none';
     }
   }
 
   // Quick Action Buttons on Dashboard
-  setBtnState('btnQuickTransfer', !viewer && hasPermission('fuel:transfer'), 'Заправка генератора недоступна для вашої ролі');
-  setBtnState('btnQuickReceipt', !viewer && hasPermission('fuel:receipt'), 'Оприбуткування палива недоступне для вашої ролі');
-  setBtnState('btnQuickMaint', !viewer && (hasPermission('maintenance:create_intermediate') || hasPermission('maintenance:perform_scheduled')), 'Фіксація ТО недоступна для вашої ролі');
-  setBtnState('btnQuickFault', !viewer && hasPermission('faults:create'), 'Реєстрація несправності недоступна для вашої ролі');
-
-  // Facilities management buttons (Admin/Superadmin only)
-  const canConfigFacility = hasPermission('facility:configure');
-  setBtnState('addFacilityBtn', canConfigFacility, 'Додавання об'єктів доступне лише Адміністратору');
-  setBtnState('quickEditFacilityBtn', canConfigFacility, 'Редагування об'єктів доступне лише Адміністратору');
-
-  // Generators management buttons (Admin/Superadmin only)
-  const canConfigGen = hasPermission('generator:configure');
-  setBtnState('addGeneratorBtn', canConfigGen, 'Створення генераторів доступне лише Адміністратору');
-  setBtnState('quickEditGeneratorBtn', canConfigGen, 'Редагування генераторів доступне лише Адміністратору');
-  setBtnState('deleteGeneratorBtn', canConfigGen, 'Видалення генераторів доступне лише Адміністратору');
+  setBtnState('btnQuickTransfer', !viewer && hasPermission('fuel:transfer'), 'Заправка генератора недоступна для вашої ролі 🔒', '<span class="icon">⛽</span><span>Заправити бак 🔒</span>');
+  setBtnState('btnQuickReceipt', !viewer && hasPermission('fuel:receipt'), 'Оприбуткування палива недоступне для вашої ролі 🔒', '<span class="icon">📥</span><span>+ Прийняти паливо 🔒</span>');
+  setBtnState('btnQuickMaint', !viewer && (hasPermission('maintenance:create_intermediate') || hasPermission('maintenance:perform_scheduled')), 'Фіксація ТО недоступна для вашої ролі 🔒', '<span class="icon">🛠️</span><span>Зафіксувати ТО 🔒</span>');
+  setBtnState('btnQuickFault', !viewer && hasPermission('faults:create'), 'Реєстрація несправності недоступна для вашої ролі 🔒', '<span class="icon">⚠️</span><span>Несправність 🔒</span>');
 
   // Fuel stock creation button (Admin/Superadmin only)
   const canConfigFuel = hasPermission('fuel:configure');
-  setBtnState('btnFuelNewStock', canConfigFuel, 'Створення складу ГСМ доступне лише Адміністратору');
-  setBtnState('btnFuelReceipt', hasPermission('fuel:receipt'), 'Оприбуткування палива недоступне для вашої ролі');
-  setBtnState('btnFuelTransfer', hasPermission('fuel:transfer'), 'Заправка бака недоступна для вашої ролі');
+  setBtnState('btnFuelNewStock', canConfigFuel, 'Створення складу ГСМ доступне лише Адміністратору 🔒', '📦 + Додати склад ГСМ 🔒');
+  setBtnState('btnFuelReceipt', hasPermission('fuel:receipt'), 'Оприбуткування палива недоступне для вашої ролі 🔒', '+ Оприбуткувати 🔒');
+  setBtnState('btnFuelTransfer', hasPermission('fuel:transfer'), 'Заправка бака недоступна для вашої ролі 🔒', '⛽ Заправити бак 🔒');
 
   // Maintenance buttons
   const canPerformSched = hasPermission('maintenance:perform_scheduled');
-  setBtnState('btnRecalculateMaint', canPerformSched, 'Перерахунок нормативу ТО доступний лише Адміністратору');
-  setBtnState('btnOpenMaintModal', hasPermission('maintenance:create_intermediate') || canPerformSched, 'Фіксація ТО недоступна для вашої ролі');
+  setBtnState('btnRecalculateMaint', canPerformSched, 'Перерахунок нормативу ТО доступний лише Адміністратору 🔒', '🔄 Перерахувати 🔒');
+  setBtnState('btnOpenMaintModal', hasPermission('maintenance:create_intermediate') || canPerformSched, 'Фіксація ТО недоступна для вашої ролі 🔒', '+ Зафіксувати ТО 🔒');
 
   // Maintenance Type selector in modal
   const maintTypeSel = document.getElementById('maintType');
@@ -173,16 +189,16 @@ function applyRolePermissionsUI() {
   }
 
   // Faults button
-  setBtnState('btnOpenFaultModal', hasPermission('faults:create'), 'Реєстрація несправностей недоступна для вашої ролі');
+  setBtnState('btnOpenFaultModal', hasPermission('faults:create'), 'Реєстрація несправностей недоступна для вашої ролі 🔒', '+ Зафіксувати дефект 🔒');
 
   // Audit adjustments button (SuperAdmin only!)
-  setBtnState('btnOpenAdjustment', superadmin, 'Системні коригування лічильників доступні виключно Головному Суперадміністратору');
+  setBtnState('btnOpenAdjustment', superadmin, 'Системні коригування лічильників доступні виключно Головному Суперадміністратору 🔒', '⚙️ Системне коригування 🔒');
 
   // Admin tab buttons
-  setBtnState('btnSystemReset', superadmin, 'Очищення даних та скидання БД доступне виключно Головному Суперадміністратору');
-  setBtnState('btnOpenWizardModal', canConfigGen, 'Майстер налаштування доступний лише Адміністратору');
-  setBtnState('btnOpenUserCreateModal', hasPermission('users:manage'), 'Керування користувачами доступне лише Адміністратору');
-  setBtnState('btnRefreshFuelPrices', hasPermission('settings:manage'), 'Оновлення цін доступне лише Адміністратору');
+  setBtnState('btnSystemReset', superadmin, 'Очищення даних та скидання БД доступне виключно Головному Суперадміністратору 🔒', '⚠️ Очищення та скидання БД 🔒');
+  setBtnState('btnOpenWizardModal', canConfigGen, 'Майстер налаштування доступний лише Адміністратору 🔒', '⚡ Майстер генератора 🔒');
+  setBtnState('btnOpenUserCreateModal', hasPermission('users:manage'), 'Керування користувачами доступне лише Адміністратору 🔒', '+ Створити користувача 🔒');
+  setBtnState('btnRefreshFuelPrices', hasPermission('settings:manage'), 'Оновлення цін доступне лише Адміністратору 🔒', '🔄 Оновити ціни 🔒');
 }
 
 
@@ -505,14 +521,12 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 
 // Tab Navigation
 document.querySelectorAll('.nav-item').forEach((tab) => {
-  tab.addEventListener('click', () => {
+  tab.addEventListener('click', (e) => {
     if (tab.classList.contains('nav-item-disabled')) {
-      if (isViewerOnly()) {
-        showToast('Цей розділ недоступний для ролі Спостерігач (дозволено лише перегляд головної сторінки)', 'warning');
-      } else {
-        showToast('Цей розділ недоступний для вашої ролі (потрібні права Адміністратора)', 'warning');
-      }
-      return;
+      e.preventDefault();
+      e.stopPropagation();
+      showToast('Розділ заблоковано для вашої ролі 🔒', 'warning');
+      return false;
     }
 
     document.querySelectorAll('.nav-item').forEach((t) => t.classList.remove('active'));
@@ -615,8 +629,20 @@ async function loadAllData() {
     await loadGeneratorsList(currentFacilityId);
   }
   await loadGeneratorData();
-  await loadFuelSummary();
-  await loadMaintenanceSummary();
+  if (!isViewerOnly() && hasPermission('fuel:view')) {
+    await loadFuelSummary();
+  } else {
+    const cardStock = document.getElementById('cardStock');
+    if (cardStock) cardStock.innerText = '-';
+  }
+  if (!isViewerOnly() && hasPermission('maintenance:view')) {
+    await loadMaintenanceSummary();
+  } else {
+    const cardMaintRem = document.getElementById('cardMaintRem');
+    if (cardMaintRem) cardMaintRem.innerHTML = `- <small style="font-size:0.9rem;">год</small>`;
+    const cardMaintSub = document.getElementById('cardMaintSub');
+    if (cardMaintSub) cardMaintSub.innerText = `доступно для оператора`;
+  }
   await loadRecentRuns();
   applyRolePermissionsUI();
 }
@@ -1059,6 +1085,7 @@ async function setupTransferModal() {
 }
 
 async function loadFuelSummary() {
+  if (isViewerOnly() || !hasPermission('fuel:view')) return;
   try {
     const params = [];
     if (currentFacilityId) params.push(`facility_id=${encodeURIComponent(currentFacilityId)}`);
@@ -1282,6 +1309,7 @@ document.getElementById('transferForm').addEventListener('submit', async (e) => 
 
 // 3. Maintenance (ТО)
 async function loadMaintenanceSummary() {
+  if (isViewerOnly() || !hasPermission('maintenance:view')) return;
   try {
     if (!currentGeneratorId) {
       document.getElementById('cardMaintRem').innerHTML = `0.0 <small style="font-size:0.9rem;">год</small>`;
@@ -1596,12 +1624,7 @@ const ADJUSTMENT_FIELD_MAP_UA = {
   'address': 'Адреса'
 };
 
-const ROLE_MAP_UA = {
-  'SuperAdmin': 'Головний адміністратор',
-  'Admin': 'Адміністратор',
-  'Operator': 'Оператор',
-  'Viewer': 'Спостерігач'
-};
+// ROLE_MAP_UA defined at the top
 
 async function loadAuditData() {
   try {
