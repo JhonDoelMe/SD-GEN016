@@ -12,45 +12,61 @@ logger = logging.getLogger("init_service")
 ALL_PERMISSIONS = [
     # Generator
     ("generator:view", "Перегляд генератора та його статусу"),
-    ("generator:start", "Запуск генератора"),
+    ("generator:start", "Запуск генератора та ручне внесення мотогодин"),
     ("generator:stop", "Зупинка генератора"),
-    ("generator:configure", "Налаштування параметрів та графіка генератора"),
+    ("generator:configure", "Налаштування параметрів, характеристик та графіка генератора"),
+    # Facilities
+    ("facility:configure", "Створення, редагування та видалення об'єктів"),
     # Fuel
     ("fuel:view", "Перегляд залишків та історії палива"),
     ("fuel:receipt", "Оприбуткування палива на склад ГСМ"),
     ("fuel:transfer", "Заправка бака генератора зі складу"),
+    ("fuel:configure", "Керування складами палива (створення, редагування, видалення)"),
     # Maintenance
     ("maintenance:view", "Перегляд планів та історії ТО"),
     ("maintenance:create_intermediate", "Фіксація проміжного ТО"),
-    ("maintenance:perform_scheduled", "Виконання регламентного ТО"),
+    ("maintenance:perform_scheduled", "Виконання та перерахунок регламентного ТО"),
     # Faults
     ("faults:view", "Перегляд несправностей"),
     ("faults:create", "Реєстрація несправності"),
     ("faults:manage", "Керування статусом та закриттям несправностей"),
+    # Notifications
+    ("notifications:view", "Перегляд сповіщень та журналів"),
+    ("notifications:configure", "Налаштування параметрів сповіщень"),
     # Reports & Audit
     ("reports:view", "Перегляд експлуатаційних звітів"),
     ("reports:export", "Експорт звітів"),
     ("audit:view", "Перегляд журналу аудиту"),
+    # System
     ("system:adjust", "Виконання системних коригувань лічильників (SuperAdmin)"),
-    # Users
+    ("system:reset", "Очищення даних та скидання БД (SuperAdmin)"),
+    # Users & Settings
     ("users:manage", "Керування користувачами та призначення ролей"),
+    ("settings:manage", "Керування системними налаштуваннями"),
 ]
 
 ROLE_PERMISSIONS_MAP = {
     "superadmin": [code for code, _ in ALL_PERMISSIONS],
     "admin": [
         code for code, _ in ALL_PERMISSIONS
-        if code not in ("system:adjust",)
+        if code not in ("system:adjust", "system:reset")
     ],
     "operator": [
-        "generator:view", "generator:start", "generator:stop",
-        "fuel:view", "fuel:receipt", "fuel:transfer",
-        "maintenance:view", "maintenance:create_intermediate", "maintenance:perform_scheduled",
-        "faults:view", "faults:create", "faults:manage",
-        "reports:view", "reports:export"
+        "generator:view",
+        "generator:start",
+        "generator:stop",
+        "fuel:view",
+        "fuel:receipt",
+        "fuel:transfer",
+        "maintenance:view",
+        "maintenance:create_intermediate",
+        "faults:view",
+        "faults:create",
+        "notifications:view",
+        "notifications:configure",
     ],
     "viewer": [
-        "generator:view", "fuel:view", "maintenance:view", "faults:view", "reports:view", "reports:export"
+        "generator:view",
     ],
 }
 
@@ -84,11 +100,9 @@ async def seed_initial_data(db: AsyncSession) -> None:
             existing_roles[role_name] = role
         else:
             role = existing_roles[role_name]
-            # Ensure permissions are up to date
-            current_codes = {p.code for p in role.permissions}
-            for p_code in perm_codes:
-                if p_code not in current_codes and p_code in existing_perms:
-                    role.permissions.append(existing_perms[p_code])
+            # Ensure permissions are exactly synchronized with ROLE_PERMISSIONS_MAP
+            target_perms = [existing_perms[c] for c in perm_codes if c in existing_perms]
+            role.permissions = target_perms
     await db.flush()
 
     # 3. Seed Default Facility if none exists

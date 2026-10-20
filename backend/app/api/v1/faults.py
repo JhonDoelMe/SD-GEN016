@@ -20,7 +20,7 @@ async def list_faults(
     status_filter: Optional[str] = None,
     limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("faults:view"))
 ):
     q = (
         select(Fault)

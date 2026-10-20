@@ -28,7 +28,7 @@ async def add_facility(
     data: FacilityCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("generator:configure"))
+    current_user: User = Depends(require_permission("facility:configure"))
 ):
     """Створити новий об'єкт (локацію)"""
     client_ip = get_client_ip(request)
@@ -51,7 +51,7 @@ async def edit_facility(
     data: FacilityUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("generator:configure"))
+    current_user: User = Depends(require_permission("facility:configure"))
 ):
     """Оновити параметри об'єкту"""
     client_ip = get_client_ip(request)
@@ -63,7 +63,7 @@ async def remove_facility(
     facility_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("generator:configure"))
+    current_user: User = Depends(require_permission("facility:configure"))
 ):
     """Видалити об'єкт"""
     client_ip = get_client_ip(request)

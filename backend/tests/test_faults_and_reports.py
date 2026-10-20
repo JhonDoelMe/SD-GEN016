@@ -50,10 +50,18 @@ async def test_fault_lifecycle_and_generator_safety(client, superadmin_auth, ope
     assert start_try.status_code == 400
     assert "має критичну несправність" in start_try.json()["detail"]
 
-    # 2. Advance fault lifecycle: IN_PROGRESS -> RESOLVED (by operator)
-    in_prog = await client.put(
+    # 2. Invariant: Operator CANNOT change status or resolve faults (forbidden 403)
+    op_in_prog = await client.put(
         f"/api/v1/faults/{fault_id}/status",
         headers=operator_auth,
+        json={"status": "IN_PROGRESS"}
+    )
+    assert op_in_prog.status_code == 403
+
+    # Admin / SuperAdmin advances fault lifecycle: IN_PROGRESS -> RESOLVED
+    in_prog = await client.put(
+        f"/api/v1/faults/{fault_id}/status",
+        headers=superadmin_auth,
         json={"status": "IN_PROGRESS"}
     )
     assert in_prog.status_code == 200
@@ -61,7 +69,7 @@ async def test_fault_lifecycle_and_generator_safety(client, superadmin_auth, ope
 
     resolve_res = await client.put(
         f"/api/v1/faults/{fault_id}/status",
-        headers=operator_auth,
+        headers=superadmin_auth,
         json={
             "status": "RESOLVED",
             "resolution_notes": "Замінено паливний шланг та затискний хомут. Герметичність перевірена."
@@ -98,8 +106,14 @@ async def test_operational_reports_and_csv_export(client, superadmin_auth, opera
     assert csv_res.status_code == 400
     assert "CSV вимкнено" in csv_res.json()["detail"]
 
-    # Excel export must succeed (both for superadmin and operator)
-    excel_res = await client.get("/api/v1/reports/export-excel", headers=operator_auth)
+    # Invariant: Operator CANNOT view or export reports (forbidden 403)
+    op_rep = await client.get("/api/v1/reports/summary", headers=operator_auth)
+    assert op_rep.status_code == 403
+    op_excel = await client.get("/api/v1/reports/export-excel", headers=operator_auth)
+    assert op_excel.status_code == 403
+
+    # SuperAdmin export must succeed
+    excel_res = await client.get("/api/v1/reports/export-excel", headers=superadmin_auth)
     assert excel_res.status_code == 200
     assert "spreadsheetml.sheet" in excel_res.headers["content-type"]
     assert len(excel_res.content) > 1000

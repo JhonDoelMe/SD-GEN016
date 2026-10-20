@@ -77,7 +77,7 @@ async def unsubscribe_push_notifications(
 @router.get("/settings", response_model=NotificationSettingsOut)
 async def get_notification_settings(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("notifications:view"))
 ):
     """Get active notification settings and VAPID key."""
     data = await get_notification_settings_data(db)
@@ -88,15 +88,9 @@ async def get_notification_settings(
 async def update_notification_settings(
     settings_in: NotificationSettingsIn,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("notifications:configure"))
 ):
-    """Update notification settings (Admin or SuperAdmin only)."""
-    user_roles_names = [r.name for r in current_user.roles]
-    if not current_user.is_superadmin and "Admin" not in user_roles_names:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Тільки адміністратор може змінювати системні налаштування сповіщень"
-        )
+    """Update notification settings."""
 
     updates = settings_in.model_dump()
     await update_system_settings(db, updates)
@@ -119,7 +113,7 @@ async def update_notification_settings(
 async def send_test_notification(
     payload: TestNotificationIn,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("notifications:configure"))
 ):
     """Send an immediate test push notification to verify sound, vibration and system drawer banner."""
     title = payload.title or "🔔 Тестове сповіщення Service Desk"
@@ -144,7 +138,7 @@ async def send_test_notification(
 async def get_notification_logs(
     limit: int = 30,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("notifications:view"))
 ):
     """Get history of dispatched notifications."""
     q = select(NotificationLog).order_by(NotificationLog.created_at.desc()).limit(limit)

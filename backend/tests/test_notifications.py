@@ -59,7 +59,8 @@ async def test_subscribe_and_unsubscribe_push(client: AsyncClient, superadmin_au
 async def test_notification_settings_access_and_update(
     client: AsyncClient,
     superadmin_auth: dict,
-    operator_auth: dict
+    operator_auth: dict,
+    viewer_auth: dict
 ):
     # 1. Retrieve current settings
     res = await client.get("/api/v1/notifications/settings", headers=superadmin_auth)
@@ -69,7 +70,7 @@ async def test_notification_settings_access_and_update(
     assert "vapid_public_key" in settings_data
     assert settings_data["max_maintenance_notifications_per_day"] == 2
 
-    # 2. Operator attempt to update settings -> forbidden
+    # 2. Viewer attempt to update settings -> forbidden (403)
     update_payload = {
         "notifications_enabled": True,
         "notify_generator_start": True,
@@ -80,10 +81,16 @@ async def test_notification_settings_access_and_update(
         "max_maintenance_notifications_per_day": 2,
         "notify_critical_faults": True
     }
-    res_op = await client.put("/api/v1/notifications/settings", json=update_payload, headers=operator_auth)
-    assert res_op.status_code == 403
+    res_viewer = await client.put("/api/v1/notifications/settings", json=update_payload, headers=viewer_auth)
+    assert res_viewer.status_code == 403
 
-    # 3. SuperAdmin update settings -> success
+    # 3. Operator can update notification settings per business rules (200)
+    res_op = await client.put("/api/v1/notifications/settings", json=update_payload, headers=operator_auth)
+    assert res_op.status_code == 200
+    updated_op = res_op.json()
+    assert updated_op["low_fuel_threshold_l"] == 6.5
+
+    # 4. SuperAdmin update settings -> success
     res_admin = await client.put("/api/v1/notifications/settings", json=update_payload, headers=superadmin_auth)
     assert res_admin.status_code == 200
     updated = res_admin.json()

@@ -184,3 +184,127 @@ async def test_security_headers_and_minimal_health(client):
     assert "Content-Security-Policy" in res.headers
 
 
+
+
+@pytest.mark.asyncio
+async def test_admin_cannot_clean_db_or_reset(client, admin_auth, superadmin_auth):
+    # Admin tries to call system reset
+    admin_res = await client.post(
+        "/api/v1/system/reset",
+        headers=admin_auth,
+        json={
+            "mode": "reports_clean",
+            "admin_password": "AdminPass123!",
+            "confirm_code": "RESET"
+        }
+    )
+    assert admin_res.status_code == 403
+    assert "головному системному адміністратору" in admin_res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_admin_cannot_perform_system_adjustments(client, admin_auth):
+    # Admin tries to call system adjustment
+    admin_res = await client.post(
+        "/api/v1/adjustments",
+        headers=admin_auth,
+        json={
+            "facility_id": 1,
+            "generator_id": 1,
+            "adjustment_type": "HOURS",
+            "delta_value": 5.0,
+            "reason": "Test"
+        }
+    )
+    assert admin_res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_operator_strict_rbac_matrix(client, operator_auth, superadmin_auth):
+    # 1. Setup default generator if needed
+    await client.get("/api/v1/generator", headers=operator_auth)
+
+    # 2. Operator CANNOT manage facilities
+    fac_res = await client.post("/api/v1/facilities", headers=operator_auth, json={"name": "Новий об'єкт"})
+    assert fac_res.status_code == 403
+
+    # 3. Operator CANNOT create/edit/delete fuel stocks
+    stock_res = await client.post("/api/v1/fuel/stock/new", headers=operator_auth, json={"name": "Склад", "fuel_type": "А-95"})
+    assert stock_res.status_code == 403
+
+    # 4. Operator CANNOT recalculate maintenance schedule or do SCHEDULED maintenance
+    recalc_res = await client.post("/api/v1/maintenance/schedule/recalculate", headers=operator_auth)
+    assert recalc_res.status_code == 403
+
+    maint_sched_res = await client.post(
+        "/api/v1/maintenance/record",
+        headers=operator_auth,
+        json={
+            "maintenance_type": "SCHEDULED",
+            "operating_hours": 10.0,
+            "work_description": "Регламент"
+        }
+    )
+    assert maint_sched_res.status_code == 403
+
+    # Operator CAN do INTERMEDIATE maintenance
+    maint_inter_res = await client.post(
+        "/api/v1/maintenance/record",
+        headers=operator_auth,
+        json={
+            "maintenance_type": "INTERMEDIATE",
+            "operating_hours": 10.0,
+            "work_description": "Заміна масла"
+        }
+    )
+    assert maint_inter_res.status_code == 201
+
+    # 5. Operator CANNOT view Audit, Reports, Users or Settings
+    audit_res = await client.get("/api/v1/audit", headers=operator_auth)
+    assert audit_res.status_code == 403
+
+    rep_res = await client.get("/api/v1/reports/summary", headers=operator_auth)
+    assert rep_res.status_code == 403
+
+    users_res = await client.get("/api/v1/users", headers=operator_auth)
+    assert users_res.status_code == 403
+
+    settings_res = await client.get("/api/v1/system/settings", headers=operator_auth)
+    assert settings_res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_viewer_strictly_dashboard_only(client, viewer_auth):
+    # Viewer CAN view generator status on dashboard
+    gen_res = await client.get("/api/v1/generator", headers=viewer_auth)
+    assert gen_res.status_code == 200
+
+    # Viewer CANNOT start/stop/manual-run generator
+    assert (await client.post("/api/v1/generator/start", headers=viewer_auth, json={})).status_code == 403
+    assert (await client.post("/api/v1/generator/stop", headers=viewer_auth, json={})).status_code == 403
+    assert (await client.post("/api/v1/generator/manual-run", headers=viewer_auth, json={
+        "start_time": "2026-10-20T08:00:00Z",
+        "end_time": "2026-10-20T10:00:00Z"
+    })).status_code == 403
+
+    # Viewer CANNOT access fuel balances, receipts, transfers
+    assert (await client.get("/api/v1/fuel/stocks", headers=viewer_auth)).status_code == 403
+    assert (await client.get("/api/v1/fuel/summary", headers=viewer_auth)).status_code == 403
+    assert (await client.post("/api/v1/fuel/receipt", headers=viewer_auth, json={
+        "fuel_type": "А-95", "liters": 10.0, "cost_total": 500.0, "price_per_liter": 50.0
+    })).status_code == 403
+
+    # Viewer CANNOT record maintenance or view maintenance schedule
+    assert (await client.get("/api/v1/maintenance/schedule", headers=viewer_auth)).status_code == 403
+    assert (await client.post("/api/v1/maintenance/record", headers=viewer_auth, json={
+        "maintenance_type": "INTERMEDIATE", "operating_hours": 10.0, "work_description": "Тест"
+    })).status_code == 403
+
+    # Viewer CANNOT report faults or view faults tab
+    assert (await client.get("/api/v1/faults", headers=viewer_auth)).status_code == 403
+    assert (await client.post("/api/v1/faults", headers=viewer_auth, json={
+        "generator_id": 1, "title": "Дефект", "description": "Опис", "priority": "LOW"
+    })).status_code == 403
+
+    # Viewer CANNOT access notifications settings
+    assert (await client.get("/api/v1/notifications/settings", headers=viewer_auth)).status_code == 403

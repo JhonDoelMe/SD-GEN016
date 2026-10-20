@@ -106,7 +106,7 @@ def require_permission(perm_code: str) -> Callable:
         current_user: User = Depends(get_current_user)
     ) -> User:
         # SuperAdmin has full bypass for all permissions
-        if current_user.is_superadmin:
+        if current_user.is_superadmin or any(r.name.lower() == 'superadmin' for r in current_user.roles):
             return current_user
 
         # Check permissions from assigned roles

@@ -12,7 +12,7 @@ from backend.app.database import get_db
 from backend.app.config import settings
 from backend.app.core.timezone import now_facility
 from backend.app.core.security import verify_password
-from backend.app.api.deps import get_current_user, get_current_admin, get_client_ip
+from backend.app.api.deps import get_current_user, get_current_admin, get_current_superadmin, require_permission, get_client_ip
 from backend.app.models.user import User
 from backend.app.models.facility import Facility
 from backend.app.models.generator import Generator
@@ -80,7 +80,10 @@ def format_uptime(seconds: float) -> str:
 
 
 @router.get("/status")
-async def get_system_status(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
+async def get_system_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Повертає реальний статус стану сервера:
     CPU, оперативна пам'ять, диск, час безвідмовної роботи (uptime), статус бази даних.
@@ -287,7 +290,7 @@ async def reset_system_or_clean_db(
     payload: SystemResetRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    current_user: User = Depends(get_current_superadmin)
 ) -> Dict[str, Any]:
     """
     Очищення журналів/звітів або повне заводське скидання бази даних (тільки для Адміністратора з підтвердженням пароля).

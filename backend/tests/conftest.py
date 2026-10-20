@@ -117,3 +117,27 @@ async def viewer_auth(client, superadmin_auth):
     assert login_res.status_code == 200
     token = login_res.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture(scope="function")
+async def admin_auth(client, superadmin_auth):
+    # Create admin user
+    res = await client.post(
+        "/api/v1/users",
+        headers=superadmin_auth,
+        json={
+            "login": "admin1",
+            "password": "AdminPass123!",
+            "full_name": "Петро Адміністратор",
+            "role_ids": [2]  # admin role
+        }
+    )
+    assert res.status_code == 201, res.text
+
+    login_res = await client.post(
+        "/api/v1/auth/login",
+        json={"login": "admin1", "password": "AdminPass123!"}
+    )
+    assert login_res.status_code == 200
+    token = login_res.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}

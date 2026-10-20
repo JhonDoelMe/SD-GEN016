@@ -1296,3 +1296,40 @@ input[type="checkbox"], input[type="radio"] {
   line-height: 1.4;
 }
 
+
+/* ==========================================================================
+   RBAC Role-Based UI Styles (Disabled tabs and buttons)
+   ========================================================================== */
+.nav-item.nav-item-disabled {
+  opacity: 0.38 !important;
+  cursor: not-allowed !important;
+  color: #64748b !important;
+  border-bottom-color: transparent !important;
+  background: transparent !important;
+  pointer-events: auto !important;
+  filter: grayscale(1) !important;
+}
+
+.nav-item.nav-item-disabled:hover {
+  color: #64748b !important;
+  background: transparent !important;
+  border-bottom-color: transparent !important;
+}
+
+.btn-disabled-role {
+  opacity: 0.38 !important;
+  cursor: not-allowed !important;
+  filter: grayscale(1) !important;
+  pointer-events: auto !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: var(--text-muted) !important;
+  background: rgba(15, 23, 42, 0.5) !important;
+}
+
+.btn-disabled-role:hover {
+  opacity: 0.38 !important;
+  filter: grayscale(1) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: var(--text-muted) !important;
+  background: rgba(15, 23, 42, 0.5) !important;
+}
