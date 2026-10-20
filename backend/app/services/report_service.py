@@ -597,9 +597,9 @@ async def generate_operational_report(
             created_at=fmt_dt(m.created_at),
             maintenance_type="Регламентне ТО" if m.maintenance_type == "SCHEDULED" else "Проміжне ТО",
             operating_hours=round(m.operating_hours or 0.0, 2),
-            work_description=m.work_performed or "-",
+            work_description=m.work_description or "-",
             cost=round(m.cost or 0.0, 2),
-            technician=m.technician or "-",
+            technician=m.user.full_name if (m.user and m.user.full_name) else (m.comment or "-"),
             operator_name=m.user.login if m.user else "Система"
         )
         for m in m_rows

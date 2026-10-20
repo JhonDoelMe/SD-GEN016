@@ -94,12 +94,57 @@ async def test_fault_lifecycle_and_generator_safety(client, superadmin_auth, ope
 
 @pytest.mark.asyncio
 async def test_operational_reports_and_csv_export(client, superadmin_auth, operator_auth):
+    # Setup generator
+    gen_res = await client.post(
+        "/api/v1/generator/wizard",
+        headers=superadmin_auth,
+        json={
+            "name": "Генератор Звітів",
+            "model": "ZR-1",
+            "manufacturer": "PG",
+            "serial_number": "SN-REP-01",
+            "rated_power_kw": 5.0,
+            "tank_capacity_l": 25.0,
+            "fuel_type": "А-95",
+            "nominal_consumption_l_per_h": 2.0,
+            "initial_operating_hours": 100.0,
+            "initial_fuel_tank_level_l": 15.0,
+            "work_schedule_start": "00:00",
+            "work_schedule_end": "23:59",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv"
+        }
+    )
+    assert gen_res.status_code in (200, 201)
+    gen_id = gen_res.json()["id"]
+
+    # Create a maintenance record to verify detailed reports formatting
+    maint_rec = await client.post(
+        "/api/v1/maintenance/record",
+        headers=superadmin_auth,
+        json={
+            "generator_id": gen_id,
+            "maintenance_type": "SCHEDULED",
+            "work_description": "Заміна моторного мастила 10W-40 та масляного фільтра",
+            "consumables_used": "Мастило 1.1 л, фільтр 1 шт",
+            "cost": 650.0,
+            "comment": "Планове регламентне ТО"
+        }
+    )
+    assert maint_rec.status_code == 201
+
     # Fetch summary
-    rep_res = await client.get("/api/v1/reports/summary", headers=superadmin_auth)
+    rep_res = await client.get(f"/api/v1/reports/summary?generator_id={gen_id}", headers=superadmin_auth)
     assert rep_res.status_code == 200
     rep_data = rep_res.json()
     assert "total_operating_hours" in rep_data
     assert "total_fuel_received_l" in rep_data
+    assert "maintenance_records" in rep_data
+    assert len(rep_data["maintenance_records"]) >= 1
+    assert rep_data["maintenance_records"][0]["work_description"] == "Заміна моторного мастила 10W-40 та масляного фільтра"
+    assert "runs" in rep_data
+    assert "fuel_receipts" in rep_data
+    assert "fuel_transfers" in rep_data
 
     # CSV export must be disabled per business requirements
     csv_res = await client.get("/api/v1/reports/export", headers=superadmin_auth)
