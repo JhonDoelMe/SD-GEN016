@@ -334,21 +334,44 @@ window.closeModal = function (id) {
   if (modal) modal.style.display = 'none';
 };
 
-// Kyiv Live Clock
+// Kyiv Live Clock & Universal Formatters
+let kyivTz = 'Europe/Kyiv';
+try {
+  new Intl.DateTimeFormat('uk-UA', { timeZone: kyivTz }).format(new Date());
+} catch (_) {
+  try {
+    kyivTz = 'Europe/Kiev';
+    new Intl.DateTimeFormat('uk-UA', { timeZone: kyivTz }).format(new Date());
+  } catch (_) {
+    kyivTz = undefined;
+  }
+}
+
+function updateKyivClock() {
+  try {
+    const el = document.getElementById('clockKyiv');
+    if (!el) return;
+    const now = new Date();
+    const kyivTime = new Intl.DateTimeFormat('uk-UA', {
+      timeZone: kyivTz,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).format(now);
+    el.innerText = `${kyivTime} (Київ)`;
+  } catch (_) {
+    const el = document.getElementById('clockKyiv');
+    if (el) {
+      const d = new Date();
+      el.innerText = d.toTimeString().slice(0, 8) + ' (Київ)';
+    }
+  }
+}
+
 function startClock() {
-  setInterval(() => {
-    try {
-      const now = new Date();
-      const kyivTime = new Intl.DateTimeFormat('uk-UA', {
-        timeZone: 'Europe/Kyiv',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      }).format(now);
-      document.getElementById('clockKyiv').innerText = `${kyivTime} (Київ)`;
-    } catch (_) {}
-  }, 1000);
+  updateKyivClock();
+  setInterval(updateKyivClock, 1000);
 }
 
 // Universal UTC & Kyiv Date/Time Formatters
@@ -367,39 +390,51 @@ function parseUTCDate(val) {
 function formatDateTime(val) {
   const d = parseUTCDate(val);
   if (!d || isNaN(d.getTime())) return '-';
-  return new Intl.DateTimeFormat('uk-UA', {
-    timeZone: 'Europe/Kyiv',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }).format(d);
+  try {
+    return new Intl.DateTimeFormat('uk-UA', {
+      timeZone: kyivTz,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).format(d);
+  } catch (_) {
+    return d.toLocaleString('uk-UA');
+  }
 }
 
 function formatDateOnly(val) {
   const d = parseUTCDate(val);
   if (!d || isNaN(d.getTime())) return '-';
-  return new Intl.DateTimeFormat('uk-UA', {
-    timeZone: 'Europe/Kyiv',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  }).format(d);
+  try {
+    return new Intl.DateTimeFormat('uk-UA', {
+      timeZone: kyivTz,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    }).format(d);
+  } catch (_) {
+    return d.toLocaleDateString('uk-UA');
+  }
 }
 
 function formatTime(val) {
   const d = parseUTCDate(val);
   if (!d || isNaN(d.getTime())) return '-';
-  return new Intl.DateTimeFormat('uk-UA', {
-    timeZone: 'Europe/Kyiv',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }).format(d);
+  try {
+    return new Intl.DateTimeFormat('uk-UA', {
+      timeZone: kyivTz,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).format(d);
+  } catch (_) {
+    return d.toLocaleTimeString('uk-UA');
+  }
 }
 
 function formatDuration(totalSeconds) {
@@ -424,18 +459,28 @@ async function checkAuth() {
   if (!token) {
     token = localStorage.getItem('sd_token') || sessionStorage.getItem('sd_token');
   }
+
   try {
     currentUser = await api('/auth/me');
-    const rolesUa = (currentUser.roles || []).map(r => ROLE_MAP_UA[r] || ROLE_MAP_UA[r.toLowerCase()] || r).join(', ') || 'користувач';
-    document.getElementById('userGreeting').innerText = `${currentUser.full_name} (${rolesUa})`;
-    hideAuthScreen();
-    applyRolePermissionsUI();
-    loadAllData();
-  } catch (_) {
+  } catch (err) {
+    // Only real auth error redirects to login modal
     token = null;
     localStorage.removeItem('sd_token');
     sessionStorage.removeItem('sd_token');
     showAuthScreen();
+    return;
+  }
+
+  // User is authenticated
+  hideAuthScreen();
+  try {
+    const rolesUa = (currentUser.roles || []).map(r => ROLE_MAP_UA[r] || ROLE_MAP_UA[r.toLowerCase()] || r).join(', ') || 'користувач';
+    const greetEl = document.getElementById('userGreeting');
+    if (greetEl) greetEl.innerText = `${currentUser.full_name} (${rolesUa})`;
+    applyRolePermissionsUI();
+    await loadAllData();
+  } catch (dataErr) {
+    console.error('Error loading initial dashboard data:', dataErr);
   }
 }
 
@@ -2642,7 +2687,11 @@ function setupPwaInstall() {
 // Live Server Status in Footer
 async function refreshServerStatus() {
   try {
-    const res = await fetch('/api/v1/system/status');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch('/api/v1/system/status', { headers });
     if (!res.ok) return;
     const data = await res.json();
 
