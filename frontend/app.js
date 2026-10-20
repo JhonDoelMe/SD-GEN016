@@ -1,3 +1,70 @@
+// ==========================================
+// 🛡️ Anti-Phishing & Unauthorized Mirror Protection
+// ==========================================
+(function checkDomainIntegrity() {
+  const allowedHosts = [
+    'generator-016.pp.ua',
+    'www.generator-016.pp.ua',
+    'localhost',
+    '127.0.0.1'
+  ];
+  const currentHost = (window.location.hostname || '').toLowerCase();
+
+  // If accessed via unauthorized domain mirror / rogue clone
+  if (
+    currentHost &&
+    !allowedHosts.includes(currentHost) &&
+    !currentHost.endsWith('.local') &&
+    !currentHost.startsWith('192.168.') &&
+    !currentHost.startsWith('10.') &&
+    !currentHost.startsWith('172.')
+  ) {
+    console.error('🚨 CRITICAL SECURITY ALERT: Unauthorized Mirror / Phishing Domain detected:', currentHost);
+
+    // 1. Immediately wipe all local credentials to protect user tokens from phishing
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch (e) {}
+
+    // 2. Render blocking alert and auto-redirect to official domain
+    const renderAlert = () => {
+      document.body.innerHTML = `
+        <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; box-sizing: border-box; text-align: center;">
+          <div style="max-width: 520px; width: 100%; background: #1e293b; border: 2px solid #ef4444; border-radius: 16px; padding: 36px 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);">
+            <div style="font-size: 56px; margin-bottom: 16px; line-height: 1;">🚨</div>
+            <h1 style="color: #ef4444; font-size: 22px; font-weight: 700; margin: 0 0 12px;">УВАГА: НЕБЕЗПЕЧНИЙ САЙТ-КЛОН!</h1>
+            <p style="color: #cbd5e1; font-size: 15px; line-height: 1.6; margin: 0 0 14px;">
+              Ви перейшли за сторонньою несанкціонованою адресою (<span style="color: #f87171; font-weight: 600;">${currentHost}</span>).
+            </p>
+            <p style="color: #94a3b8; font-size: 13.5px; line-height: 1.5; margin: 0 0 24px;">
+              Введення будь-яких логінів та паролів на цьому дзеркалі суворо заблоковано для запобігання перехопленню конфіденційних даних та облікових записів.
+            </p>
+            <a href="https://generator-016.pp.ua" style="display: inline-block; background: #2563eb; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);">
+              Перейти на офіційний сайт generator-016.pp.ua
+            </a>
+            <div style="margin-top: 16px; font-size: 12px; color: #64748b;">
+              Автоматичне перенаправлення через 4 секунди...
+            </div>
+          </div>
+        </div>
+      `;
+      setTimeout(() => {
+        window.location.replace('https://generator-016.pp.ua');
+      }, 4000);
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderAlert);
+    } else {
+      renderAlert();
+    }
+
+    // 3. Stop all further application execution
+    throw new Error('Script execution halted: Unauthorized domain mirror detected.');
+  }
+})();
+
 // Service Desk Бензинового Генератора - Frontend Application Logic
 
 let token = localStorage.getItem('sd_token') || sessionStorage.getItem('sd_token');

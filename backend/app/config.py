@@ -23,8 +23,9 @@ class Settings(BaseSettings):
     # Uploads
     UPLOAD_DIR: str = "./uploads"
 
-    # Security & CORS
-    CORS_ORIGINS: str = "http://localhost:8000,http://127.0.0.1:8000"
+    # Security, CORS & Host Protection
+    CORS_ORIGINS: str = "http://localhost:8000,http://127.0.0.1:8000,https://generator-016.pp.ua,https://www.generator-016.pp.ua"
+    ALLOWED_HOSTS: str = "generator-016.pp.ua,www.generator-016.pp.ua,localhost,127.0.0.1,testserver,test,app,nginx"
     LOGIN_MAX_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_SECONDS: int = 300
 
