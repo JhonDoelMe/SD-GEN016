@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
@@ -35,7 +36,7 @@ def run_to_out(run: GeneratorRun, user_name: Optional[str] = None) -> GeneratorR
         id=run.id,
         generator_id=run.generator_id,
         user_id=run.user_id,
-        user_name=user_name or (run.user.full_name if run.user else None),
+        user_name=user_name or ((run.user.full_name or run.user.login) if run.user else None),
         start_time=run.start_time,
         end_time=run.end_time,
         start_hours=run.start_hours,
@@ -192,7 +193,7 @@ async def get_active_run(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    query = select(GeneratorRun).where(GeneratorRun.status == "RUNNING")
+    query = select(GeneratorRun).options(selectinload(GeneratorRun.user)).where(GeneratorRun.status == "RUNNING")
     if generator_id:
         query = query.where(GeneratorRun.generator_id == generator_id)
     query = query.order_by(GeneratorRun.id.desc())
@@ -210,7 +211,7 @@ async def list_runs(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    query = select(GeneratorRun)
+    query = select(GeneratorRun).options(selectinload(GeneratorRun.user))
     if generator_id:
         query = query.where(GeneratorRun.generator_id == generator_id)
     query = query.order_by(GeneratorRun.id.desc()).limit(limit)

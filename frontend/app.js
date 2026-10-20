@@ -393,8 +393,8 @@ function formatDateTime(val) {
   try {
     return new Intl.DateTimeFormat('uk-UA', {
       timeZone: kyivTz,
-      day: '2-digit',
-      month: '2-digit',
+      day: 'numeric',
+      month: 'short',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
@@ -412,8 +412,8 @@ function formatDateOnly(val) {
   try {
     return new Intl.DateTimeFormat('uk-UA', {
       timeZone: kyivTz,
-      day: '2-digit',
-      month: '2-digit',
+      day: 'numeric',
+      month: 'short',
       year: 'numeric'
     }).format(d);
   } catch (_) {
@@ -444,6 +444,45 @@ function formatDuration(totalSeconds) {
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function formatHoursToHms(hours) {
+  if (hours == null || isNaN(hours) || Number(hours) < 0) return '00:00:00';
+  const totalSeconds = Math.round(Number(hours) * 3600);
+  return formatDuration(totalSeconds);
+}
+
+function formatHoursToHuman(hours) {
+  if (hours == null || isNaN(hours) || Number(hours) <= 0) return '0 хв';
+  const totalMinutes = Math.round(Number(hours) * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0) return `${m} хв`;
+  return `${h} год ${String(m).padStart(2, '0')} хв`;
+}
+
+function formatHoursCounter(hours) {
+  if (hours == null || isNaN(hours)) return '0,0 год';
+  const n = Number(hours);
+  return `${new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n)} год`;
+}
+
+function formatMoney(amount) {
+  if (amount == null || isNaN(amount)) return '0,00 грн';
+  const n = Number(amount);
+  return `${new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)} грн`;
+}
+
+function formatLiters(liters, decimals = 2) {
+  if (liters == null || isNaN(liters)) return `0,${'0'.repeat(decimals)} л`;
+  const n = Number(liters);
+  return `${new Intl.NumberFormat('uk-UA', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(n)} л`;
+}
+
+function formatPricePerLiter(price) {
+  if (price == null || isNaN(price)) return '0,00 грн/л';
+  const n = Number(price);
+  return `${new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)} грн/л`;
 }
 
 // Auth Lifecycle
@@ -710,19 +749,19 @@ async function loadGeneratorData() {
 
     document.getElementById('genName').innerText = currentGenerator.name;
     document.getElementById('genModel').innerText = `Модель: ${currentGenerator.model} | Серійний: ${currentGenerator.serial_number} | Потужність: ${currentGenerator.rated_power_kw} кВт`;
-    document.getElementById('cardHours').innerText = currentGenerator.current_operating_hours.toFixed(1);
+    document.getElementById('cardHours').innerText = currentGenerator.current_operating_hours.toFixed(1).replace('.', ',');
 
     const fuelL = currentGenerator.fuel_tank_level_l;
     const cardTank = document.getElementById('cardTank');
     const tankProgress = document.getElementById('tankProgress');
     const cardTankHoursRem = document.getElementById('cardTankHoursRem');
 
-    cardTank.innerText = fuelL.toFixed(1);
+    cardTank.innerText = fuelL.toFixed(1).replace('.', ',');
     if (fuelL < 0) {
       cardTank.style.color = '#ef4444';
       if (tankProgress) tankProgress.style.width = '0%';
       if (cardTankHoursRem) {
-        cardTankHoursRem.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ Дефіцит: ${Math.abs(fuelL).toFixed(1)} л (потрібна заправка!)</span>`;
+        cardTankHoursRem.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ Дефіцит: ${formatLiters(Math.abs(fuelL))} (потрібна заправка!)</span>`;
       }
     } else {
       cardTank.style.color = 'inherit';
@@ -735,7 +774,7 @@ async function loadGeneratorData() {
         if (fuelL === 0) {
           cardTankHoursRem.innerHTML = `<span style="color: var(--text-muted);">вистачить на 0 год (бак порожній)</span>`;
         } else {
-          cardTankHoursRem.innerHTML = `вистачить на ~<b>${hoursLeft.toFixed(1)}</b> год (при ${nominal} л/год)`;
+          cardTankHoursRem.innerHTML = `вистачить на ~<b>${hoursLeft.toFixed(1).replace('.', ',')}</b> год (при ${nominal} л/год)`;
         }
       }
     }
@@ -783,7 +822,7 @@ async function loadGeneratorData() {
     if (activeRun) {
       banner.style.display = 'block';
       document.getElementById('activeRunStart').innerText = formatTime(activeRun.start_time);
-      document.getElementById('activeRunHours').innerText = activeRun.start_hours.toFixed(1);
+      document.getElementById('activeRunHours').innerText = activeRun.start_hours.toFixed(1).replace('.', ',');
       startRunStopwatch();
     } else {
       banner.style.display = 'none';
@@ -817,7 +856,7 @@ function updateRunStopwatchDisplay() {
 
   const modalEstFuel = document.getElementById('stopEstFuelDisplay');
   if (modalEstFuel) {
-    modalEstFuel.innerText = (estConsumed < 0.1 && estConsumed > 0 ? estConsumed.toFixed(3) : estConsumed.toFixed(2)) + ' л';
+    modalEstFuel.innerText = formatLiters(estConsumed);
   }
 
   // Live dynamic update of the 4 dashboard tiles during active run
@@ -826,7 +865,7 @@ function updateRunStopwatchDisplay() {
     const startH = activeRun.start_hours ?? currentGenerator.current_operating_hours;
     const liveHours = startH + elapsedHours;
     const cardHours = document.getElementById('cardHours');
-    if (cardHours) cardHours.innerText = liveHours.toFixed(1);
+    if (cardHours) cardHours.innerText = liveHours.toFixed(1).replace('.', ',');
 
     // 2. Live Tank Level & 'вистачить на ... год' (can go negative into deficit!)
     const startFuel = activeRun.start_fuel_level_l ?? activeRun.start_fuel ?? currentGenerator.fuel_tank_level_l;
@@ -836,12 +875,12 @@ function updateRunStopwatchDisplay() {
     const cardTankHoursRem = document.getElementById('cardTankHoursRem');
 
     if (cardTank) {
-      cardTank.innerText = liveTank.toFixed(1);
+      cardTank.innerText = liveTank.toFixed(1).replace('.', ',');
       if (liveTank < 0) {
         cardTank.style.color = '#ef4444';
         if (tankProgress) tankProgress.style.width = '0%';
         if (cardTankHoursRem) {
-          cardTankHoursRem.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ Дефіцит: ${Math.abs(liveTank).toFixed(1)} л (потрібна заправка!)</span>`;
+          cardTankHoursRem.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ Дефіцит: ${formatLiters(Math.abs(liveTank))} (потрібна заправка!)</span>`;
         }
       } else {
         cardTank.style.color = 'inherit';
@@ -853,7 +892,7 @@ function updateRunStopwatchDisplay() {
           if (liveTank === 0) {
             cardTankHoursRem.innerHTML = `<span style="color: var(--text-muted);">вистачить на 0 год (бак порожній)</span>`;
           } else {
-            cardTankHoursRem.innerHTML = `вистачить на ~<b>${remHours.toFixed(1)}</b> год (при ${nominal} л/год)`;
+            cardTankHoursRem.innerHTML = `вистачить на ~<b>${remHours.toFixed(1).replace('.', ',')}</b> год (при ${nominal} л/год)`;
           }
         }
       }
@@ -865,7 +904,7 @@ function updateRunStopwatchDisplay() {
     if (cardMaintRem && cachedMaintenanceSchedule) {
       const dueH = cachedMaintenanceSchedule.next_due_hours;
       const remMaint = dueH - liveHours;
-      cardMaintRem.innerHTML = `${remMaint.toFixed(1)} <small style="font-size: 0.9rem;">год</small>`;
+      cardMaintRem.innerHTML = `${remMaint.toFixed(1).replace('.', ',')} <small style="font-size: 0.9rem;">год</small>`;
       if (remMaint <= 0) {
         cardMaintRem.style.color = '#ef4444';
         if (cardMaintSub) cardMaintSub.innerText = 'ПОТРІБНЕ ТО!';
@@ -1222,12 +1261,12 @@ async function loadFuelSummary() {
     const q = params.length ? '?' + params.join('&') : '';
 
     const s = await api(`/fuel/summary${q}`);
-    document.getElementById('cardStock').innerText = s.warehouse_balance_l.toFixed(1);
-    document.getElementById('fuelStockBal').innerText = `${s.warehouse_balance_l.toFixed(1)} л`;
-    document.getElementById('fuelTankBal').innerText = `${s.tank_balance_l.toFixed(1)} л`;
-    document.getElementById('fuelTotalBought').innerText = `${s.total_received_l.toFixed(1)} л`;
-    document.getElementById('fuelTotalSpent').innerText = `${s.total_spent_uah.toFixed(2)} грн`;
-    document.getElementById('fuelAvgPrice').innerText = `${s.avg_price_per_liter.toFixed(2)} грн/л`;
+    document.getElementById('cardStock').innerText = s.warehouse_balance_l.toFixed(1).replace('.', ',');
+    document.getElementById('fuelStockBal').innerText = formatLiters(s.warehouse_balance_l);
+    document.getElementById('fuelTankBal').innerText = formatLiters(s.tank_balance_l);
+    document.getElementById('fuelTotalBought').innerText = formatLiters(s.total_received_l);
+    document.getElementById('fuelTotalSpent').innerText = formatMoney(s.total_spent_uah);
+    document.getElementById('fuelAvgPrice').innerText = formatPricePerLiter(s.avg_price_per_liter);
   } catch (_) {}
 }
 
@@ -1246,7 +1285,7 @@ async function loadFuelData() {
           <td><b>${escapeHtml(s.name)}</b></td>
           <td>${escapeHtml(s.facility_name || '-')}</td>
           <td><span class="badge badge-stopped">${escapeHtml(s.fuel_type)}</span></td>
-          <td><b style="color:#38bdf8;">${s.current_balance_l.toFixed(1)} л</b></td>
+          <td><b style="color:#38bdf8;">${formatLiters(s.current_balance_l)}</b></td>
           <td>${formatDateTime(s.updated_at)}</td>
           <td style="white-space:nowrap; text-align:center;">
             ${hasPermission('fuel:configure') ? `
@@ -1270,9 +1309,9 @@ async function loadFuelData() {
           <td>${formatDateTime(r.created_at)}</td>
           <td>${escapeHtml(r.facility_name || '-')}</td>
           <td><b>${escapeHtml(r.stock_name || '-')}</b></td>
-          <td><b>${r.liters.toFixed(1)} л</b></td>
-          <td>${r.cost_total.toFixed(2)}</td>
-          <td>${r.price_per_liter.toFixed(2)}</td>
+          <td><b>${formatLiters(r.liters)}</b></td>
+          <td>${formatMoney(r.cost_total)}</td>
+          <td>${formatPricePerLiter(r.price_per_liter)}</td>
           <td>${escapeHtml(r.driver_name)}</td>
           <td>${escapeHtml(r.receipt_number)}</td>
           <td>${escapeHtml(r.user_name || '-')}</td>
@@ -1289,9 +1328,9 @@ async function loadFuelData() {
           <td>${formatDateTime(t.created_at)}</td>
           <td>${escapeHtml(t.stock_name || '-')}</td>
           <td><b>${escapeHtml(t.generator_name || '-')}</b></td>
-          <td><b style="color:#38bdf8;">+${t.liters.toFixed(1)} л</b></td>
-          <td>${t.source_balance_before.toFixed(1)} → ${t.source_balance_after.toFixed(1)} л</td>
-          <td>${t.tank_balance_before.toFixed(1)} → ${t.tank_balance_after.toFixed(1)} л</td>
+          <td><b style="color:#38bdf8;">+${formatLiters(t.liters)}</b></td>
+          <td>${formatLiters(t.source_balance_before)} → ${formatLiters(t.source_balance_after)}</td>
+          <td>${formatLiters(t.tank_balance_before)} → ${formatLiters(t.tank_balance_after)}</td>
           <td>${escapeHtml(t.comment || '-')}</td>
           <td>${escapeHtml(t.user_name || '-')}</td>
         </tr>
@@ -1453,12 +1492,12 @@ async function loadMaintenanceSummary() {
     const q = `?generator_id=${currentGeneratorId}`;
     const m = await api(`/maintenance/schedule${q}`);
     cachedMaintenanceSchedule = m;
-    document.getElementById('cardMaintRem').innerHTML = `${m.hours_remaining.toFixed(1)} <small style="font-size:0.9rem;">год</small>`;
-    document.getElementById('cardMaintSub').innerText = `план: ${m.next_due_hours.toFixed(0)} год`;
-    document.getElementById('maintInterval').innerText = `${m.interval_hours.toFixed(0)} год`;
-    document.getElementById('maintLast').innerText = `${m.last_performed_hours.toFixed(1)} год`;
-    document.getElementById('maintNext').innerText = `${m.next_due_hours.toFixed(1)} год`;
-    document.getElementById('maintRemaining').innerText = `${m.hours_remaining.toFixed(1)} год`;
+    document.getElementById('cardMaintRem').innerHTML = `${m.hours_remaining.toFixed(1).replace('.', ',')} <small style="font-size:0.9rem;">год</small>`;
+    document.getElementById('cardMaintSub').innerText = `план: ${formatHoursCounter(m.next_due_hours)}`;
+    document.getElementById('maintInterval').innerText = `${formatHoursCounter(m.interval_hours)}`;
+    document.getElementById('maintLast').innerText = `${formatHoursCounter(m.last_performed_hours)}`;
+    document.getElementById('maintNext').innerText = `${formatHoursCounter(m.next_due_hours)}`;
+    document.getElementById('maintRemaining').innerText = `${formatHoursCounter(m.hours_remaining)}`;
 
     const remSpan = document.getElementById('maintRemaining');
     if (m.is_overdue) {
@@ -1499,10 +1538,10 @@ async function loadMaintenanceData() {
       <tr>
         <td>${formatDateTime(r.created_at)}</td>
         <td><span class="badge ${r.maintenance_type === 'SCHEDULED' ? 'badge-running' : 'badge-stopped'}">${r.maintenance_type === 'SCHEDULED' ? 'Регламентне' : 'Проміжне'}</span></td>
-        <td><b>${r.operating_hours.toFixed(1)} год</b></td>
+        <td><b>${formatHoursCounter(r.operating_hours)}</b></td>
         <td>${escapeHtml(r.work_description)}</td>
         <td>${escapeHtml(r.consumables_used || '-')}</td>
-        <td>${r.cost.toFixed(2)} грн</td>
+        <td>${formatMoney(r.cost)}</td>
         <td>${escapeHtml(r.user_name || '-')}</td>
       </tr>
     `).join('') || '<tr><td colspan="7" style="text-align:center; color:var(--text-muted)">Записів ТО не знайдено</td></tr>';
@@ -1556,7 +1595,7 @@ async function loadFaultsData() {
           <td><span class="badge ${isResolved ? 'badge-running' : 'badge-stopped'}" title="${resolvedInfo}">${escapeHtml(statMap[f.status] || f.status)}</span></td>
           <td><b>${escapeHtml(f.title)}</b></td>
           <td>${escapeHtml(f.description)}</td>
-          <td>${f.operating_hours.toFixed(1)} год</td>
+          <td>${formatHoursCounter(f.operating_hours)}</td>
           <td>${formatDateOnly(f.created_at)}</td>
           <td>
             ${!isResolved ? (hasPermission('faults:manage') ? `
@@ -1636,13 +1675,13 @@ async function loadRecentRuns() {
     const runs = await api('/generator/runs?limit=5' + q);
     const tbody = document.querySelector('#recentRunsTable tbody');
     tbody.innerHTML = runs.map((r) => {
-      const durText = r.duration_formatted || (r.duration_seconds != null ? formatDuration(r.duration_seconds) : (r.duration_hours ? r.duration_hours.toFixed(2) + ' год' : '-'));
-      const consText = r.calculated_consumption_l != null ? (r.calculated_consumption_l < 0.1 && r.calculated_consumption_l > 0 ? r.calculated_consumption_l.toFixed(3) : r.calculated_consumption_l.toFixed(2)) + ' л' : '-';
+      const durText = r.duration_formatted || (r.duration_seconds != null ? formatDuration(r.duration_seconds) : (r.duration_hours ? formatHoursToHms(r.duration_hours) : '-'));
+      const consText = r.calculated_consumption_l != null ? formatLiters(r.calculated_consumption_l) : '-';
       return `
         <tr>
           <td>${formatDateTime(r.start_time)}</td>
-          <td>${r.start_hours.toFixed(1)} год</td>
-          <td>${r.end_hours != null ? r.end_hours.toFixed(1) + ' год' : '<i>працює...</i>'}</td>
+          <td>${formatHoursCounter(r.start_hours)}</td>
+          <td>${r.end_hours != null ? formatHoursCounter(r.end_hours) : '<i>працює...</i>'}</td>
           <td><b style="color: #38bdf8; font-family: monospace;">${escapeHtml(durText)}</b></td>
           <td>${escapeHtml(consText)}</td>
           <td>${escapeHtml(r.user_name || '-')}</td>
@@ -1658,18 +1697,20 @@ async function loadRunsData() {
     const runs = await api('/generator/runs?limit=50' + q);
     const tbody = document.querySelector('#allRunsTable tbody');
     tbody.innerHTML = runs.map((r) => {
-      const durText = r.duration_formatted || (r.duration_seconds != null ? formatDuration(r.duration_seconds) : (r.duration_hours ? r.duration_hours.toFixed(2) + ' год' : '-'));
-      const consText = r.calculated_consumption_l != null ? (r.calculated_consumption_l < 0.1 && r.calculated_consumption_l > 0 ? r.calculated_consumption_l.toFixed(3) : r.calculated_consumption_l.toFixed(2)) + ' л' : '-';
+      const durText = r.duration_formatted || (r.duration_seconds != null ? formatDuration(r.duration_seconds) : (r.duration_hours ? formatHoursToHms(r.duration_hours) : '-'));
+      const consText = r.calculated_consumption_l != null ? formatLiters(r.calculated_consumption_l) : '-';
+      const startFuel = r.start_fuel_level_l != null ? formatLiters(r.start_fuel_level_l) : '-';
+      const endFuel = r.end_fuel_level_l != null ? formatLiters(r.end_fuel_level_l) : '-';
       return `
         <tr>
           <td>#${Number(r.id)}</td>
           <td>${formatDateTime(r.start_time)}</td>
           <td>${r.end_time ? formatDateTime(r.end_time) : '<i>в процесі...</i>'}</td>
-          <td>${r.start_hours.toFixed(1)}</td>
-          <td>${r.end_hours != null ? r.end_hours.toFixed(1) : '-'}</td>
+          <td>${formatHoursCounter(r.start_hours)}</td>
+          <td>${r.end_hours != null ? formatHoursCounter(r.end_hours) : '-'}</td>
           <td><b style="color: #38bdf8; font-family: monospace;">${escapeHtml(durText)}</b></td>
           <td>${escapeHtml(consText)}</td>
-          <td>${escapeHtml(r.start_fuel_level_l ?? '-')} → ${escapeHtml(r.end_fuel_level_l ?? '-')} л</td>
+          <td>${startFuel} → ${endFuel}</td>
           <td>${escapeHtml(r.user_name || '-')}</td>
           <td>${escapeHtml(r.note || '-')}</td>
         </tr>
@@ -1810,15 +1851,15 @@ function formatAuditDetailsUa(detailsRaw, action) {
   if (details.duration_seconds !== undefined || details.calculated_consumption_l !== undefined) {
     const parts = [];
     if (details.duration_formatted) parts.push(`Час: ${details.duration_formatted}`);
-    if (details.calculated_consumption_l !== undefined) parts.push(`Витрата: ${details.calculated_consumption_l} л`);
-    if (details.end_fuel_level_l !== undefined) parts.push(`Залишок: ${details.end_fuel_level_l} л`);
-    if (details.end_hours !== undefined) parts.push(`Мотогодини: ${details.end_hours} год`);
+    if (details.calculated_consumption_l !== undefined) parts.push(`Витрата: ${formatLiters(details.calculated_consumption_l)}`);
+    if (details.end_fuel_level_l !== undefined) parts.push(`Залишок: ${formatLiters(details.end_fuel_level_l)}`);
+    if (details.end_hours !== undefined) parts.push(`Мотогодини: ${formatHoursCounter(details.end_hours)}`);
     return parts.join(' | ') || JSON.stringify(details);
   }
 
   // 2. Запуск генератора
   if (details.start_hours !== undefined && details.start_fuel !== undefined) {
-    return `Початкові мотогодини: ${details.start_hours} год | Паливо в баку: ${details.start_fuel} л`;
+    return `Початкові мотогодини: ${formatHoursCounter(details.start_hours)} | Паливо в баку: ${formatLiters(details.start_fuel)}`;
   }
 
   // 3. Системне коригування
@@ -1837,12 +1878,14 @@ function formatAuditDetailsUa(detailsRaw, action) {
   // 4. Оприбуткування палива
   if (details.receipt_id !== undefined && details.cost_total !== undefined) {
     const stName = details.stock_name ? ` (${details.stock_name})` : '';
-    return `Оприбутковано ${details.liters !== undefined ? details.liters : '-'} л на суму ${details.cost_total !== undefined ? details.cost_total : '-'} грн${stName}`;
+    const lit = details.liters !== undefined ? formatLiters(details.liters) : '-';
+    const cst = details.cost_total !== undefined ? formatMoney(details.cost_total) : '-';
+    return `Оприбутковано ${lit} на суму ${cst}${stName}`;
   }
 
   // 5. Заправка в бак
   if (details.liters !== undefined && (details.stock_before !== undefined || details.tank_before !== undefined)) {
-    return `Заправлено в бак: ${details.liters} л`;
+    return `Заправлено в бак: ${formatLiters(details.liters)}`;
   }
 
   // 6. Користувачі
@@ -2301,7 +2344,9 @@ async function loadReport(isUserTriggered = false) {
         const diffDays = Math.round(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
         daysCount = ` (${diffDays} ${diffDays === 1 ? 'день' : (diffDays < 5 ? 'дні' : 'днів')})`;
       }
-      statusPeriod.textContent = `Період звітності: ${r.start_date} — ${r.end_date}${daysCount}`;
+      const periodStart = r.start_date_human || formatDateOnly(r.start_date);
+      const periodEnd = r.end_date_human || formatDateOnly(r.end_date);
+      statusPeriod.textContent = `Період звітності: ${periodStart} — ${periodEnd}${daysCount}`;
       const facName = r.facility_name || (facilitySelect?.selectedOptions?.[0]?.text || 'Основний об\'єкт');
       const genName = r.generator_name || (generatorSelect?.selectedOptions?.[0]?.text || 'Генератор');
       statusTarget.textContent = `Об'єкт: ${facName} | Обладнання: ${genName}`;
@@ -2318,37 +2363,40 @@ async function loadReport(isUserTriggered = false) {
 
     const avgCons = (r.avg_consumption_l_per_hour !== undefined && r.avg_consumption_l_per_hour !== null)
       ? r.avg_consumption_l_per_hour
-      : (r.total_operating_hours > 0 ? (r.total_calculated_consumption_l / r.total_operating_hours).toFixed(2) : '0.00');
+      : (r.total_operating_hours > 0 ? (r.total_calculated_consumption_l / r.total_operating_hours).toFixed(2) : 0);
 
     const avgRunDur = (r.avg_run_duration_hours !== undefined && r.avg_run_duration_hours !== null)
       ? r.avg_run_duration_hours
-      : (r.total_runs_count > 0 ? (r.total_operating_hours / r.total_runs_count).toFixed(2) : '0.00');
+      : (r.total_runs_count > 0 ? (r.total_operating_hours / r.total_runs_count) : 0);
+
+    const totalOperatingHoursDisplay = r.total_operating_hours_human || formatHoursToHuman(r.total_operating_hours);
+    const avgRunDurationDisplay = r.avg_run_duration_human || formatHoursToHuman(avgRunDur);
 
     container.innerHTML = `
       <div class="metric-card">
         <div class="metric-label">Відпрацьовано мотогодин</div>
-        <div class="metric-value">${escapeHtml(r.total_operating_hours)} год</div>
-        <div class="metric-sub">${escapeHtml(r.total_runs_count)} пусків (сер. ${escapeHtml(avgRunDur)} год/пуск)</div>
+        <div class="metric-value">${escapeHtml(totalOperatingHoursDisplay)}</div>
+        <div class="metric-sub">${escapeHtml(r.total_runs_count)} пусків (сер. ${escapeHtml(avgRunDurationDisplay)})</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Розрахунковий розхід палива</div>
-        <div class="metric-value">${escapeHtml(r.total_calculated_consumption_l)} л</div>
-        <div class="metric-sub">Сер. розхід: ${escapeHtml(avgCons)} л/год</div>
+        <div class="metric-value">${escapeHtml(formatLiters(r.total_calculated_consumption_l))}</div>
+        <div class="metric-sub">Сер. розхід: ${escapeHtml(formatLiters(avgCons))}/год</div>
       </div>
       <div class="metric-card" style="border-color: rgba(34, 197, 94, 0.4);">
         <div class="metric-label">Загальні витрати за період</div>
-        <div class="metric-value" style="color: #4ade80;">${escapeHtml(totalCosts)} грн</div>
-        <div class="metric-sub">Паливо: ${escapeHtml(r.total_fuel_receipts_cost_uah)} грн | ТО: ${escapeHtml(r.total_maintenance_cost_uah)} грн</div>
+        <div class="metric-value" style="color: #4ade80;">${escapeHtml(formatMoney(totalCosts))}</div>
+        <div class="metric-sub">Паливо: ${escapeHtml(formatMoney(r.total_fuel_receipts_cost_uah))} | ТО: ${escapeHtml(formatMoney(r.total_maintenance_cost_uah))}</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Оприбутковано на склад</div>
-        <div class="metric-value">${escapeHtml(r.total_fuel_received_l)} л</div>
-        <div class="metric-sub">${escapeHtml(r.total_fuel_receipts_cost_uah)} грн (${escapeHtml(r.avg_fuel_price_per_liter)} грн/л)</div>
+        <div class="metric-value">${escapeHtml(formatLiters(r.total_fuel_received_l))}</div>
+        <div class="metric-sub">${escapeHtml(formatMoney(r.total_fuel_receipts_cost_uah))} (${escapeHtml(formatPricePerLiter(r.avg_fuel_price_per_liter))})</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Заправлено в бак</div>
-        <div class="metric-value">${escapeHtml(r.total_fuel_transferred_to_tank_l)} л</div>
-        <div class="metric-sub">Залишок у баку: ${escapeHtml(r.current_tank_level_l)} л</div>
+        <div class="metric-value">${escapeHtml(formatLiters(r.total_fuel_transferred_to_tank_l))}</div>
+        <div class="metric-sub">Залишок у баку: ${escapeHtml(formatLiters(r.current_tank_level_l))}</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Виконано ТО</div>
@@ -2357,7 +2405,7 @@ async function loadReport(isUserTriggered = false) {
       </div>
       <div class="metric-card">
         <div class="metric-label">Витрати на сервіс / ТО</div>
-        <div class="metric-value">${escapeHtml(r.total_maintenance_cost_uah)} грн</div>
+        <div class="metric-value">${escapeHtml(formatMoney(r.total_maintenance_cost_uah))}</div>
         <div class="metric-sub">${escapeHtml(r.total_maintenance_count)} операцій обслуговування</div>
       </div>
       <div class="metric-card">
@@ -2397,9 +2445,9 @@ async function loadReport(isUserTriggered = false) {
             <tr>
               <td><b>${escapeHtml(row.start_time)}</b></td>
               <td>${escapeHtml(row.end_time || 'В роботі')}</td>
-              <td>${escapeHtml(row.duration_hours)} год</td>
-              <td>${escapeHtml(row.start_hours)} ➔ ${escapeHtml(row.end_hours !== null && row.end_hours !== undefined ? row.end_hours : '-')}</td>
-              <td style="color:#38bdf8; font-weight:600;">${escapeHtml(row.calculated_consumption_l)} л</td>
+              <td><b style="color: #38bdf8; font-family: monospace;">${escapeHtml(row.duration_formatted || formatHoursToHms(row.duration_hours))}</b></td>
+              <td>${formatHoursCounter(row.start_hours)} ➔ ${row.end_hours !== null && row.end_hours !== undefined ? formatHoursCounter(row.end_hours) : '-'}</td>
+              <td style="color:#38bdf8; font-weight:600;">${formatLiters(row.calculated_consumption_l)}</td>
               <td>${escapeHtml(row.operator_name || '-')}</td>
             </tr>
           `).join('');
@@ -2415,7 +2463,7 @@ async function loadReport(isUserTriggered = false) {
           trTbody.innerHTML = transfers.map(row => `
             <tr>
               <td><b>${escapeHtml(row.created_at)}</b></td>
-              <td style="color:#4ade80; font-weight:700;">${escapeHtml(row.liters)} л</td>
+              <td style="color:#4ade80; font-weight:700;">${formatLiters(row.liters)}</td>
               <td>${escapeHtml(row.stock_name || 'Склад ГСМ')}</td>
               <td>${escapeHtml(row.generator_name || 'Генератор')}</td>
               <td>${escapeHtml(row.operator_name || '-')}</td>
@@ -2433,9 +2481,9 @@ async function loadReport(isUserTriggered = false) {
           recTbody.innerHTML = receipts.map(row => `
             <tr>
               <td><b>${escapeHtml(row.created_at)}</b></td>
-              <td style="color:#4ade80; font-weight:700;">${escapeHtml(row.liters)} л</td>
-              <td>${escapeHtml(row.price_per_liter)} грн/л</td>
-              <td style="font-weight:600;">${escapeHtml(row.cost_total)} грн</td>
+              <td style="color:#4ade80; font-weight:700;">${formatLiters(row.liters)}</td>
+              <td>${formatPricePerLiter(row.price_per_liter)}</td>
+              <td style="font-weight:600;">${formatMoney(row.cost_total)}</td>
               <td>${escapeHtml(row.supplier || '-')}</td>
               <td>${escapeHtml(row.stock_name || 'Склад ГСМ')}</td>
               <td>${escapeHtml(row.operator_name || '-')}</td>
@@ -2454,9 +2502,9 @@ async function loadReport(isUserTriggered = false) {
             <tr>
               <td><b>${escapeHtml(row.created_at)}</b></td>
               <td><span class="badge" style="background: rgba(6,182,212,0.15); color: var(--accent-cyan);">${escapeHtml(row.maintenance_type)}</span></td>
-              <td>${escapeHtml(row.operating_hours)} год</td>
+              <td>${formatHoursCounter(row.operating_hours)}</td>
               <td>${escapeHtml(row.work_description || '-')}</td>
-              <td style="font-weight:600;">${escapeHtml(row.cost)} грн</td>
+              <td style="font-weight:600;">${formatMoney(row.cost)}</td>
               <td>${escapeHtml(row.technician || '-')}</td>
               <td>${escapeHtml(row.operator_name || '-')}</td>
             </tr>
@@ -2466,7 +2514,9 @@ async function loadReport(isUserTriggered = false) {
     }
 
     if (isUserTriggered) {
-      showToast(`Звіт за період ${r.start_date} — ${r.end_date} успішно сформовано!`, 'success');
+      const periodStart = r.start_date_human || formatDateOnly(r.start_date);
+      const periodEnd = r.end_date_human || formatDateOnly(r.end_date);
+      showToast(`Звіт за період ${periodStart} — ${periodEnd} успішно сформовано!`, 'success');
     }
   } catch (err) {
     const container = document.getElementById('reportContainer');

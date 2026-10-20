@@ -39,7 +39,7 @@ async def list_faults(
             id=f.id,
             generator_id=f.generator_id,
             user_id=f.user_id,
-            user_name=f.user.full_name if (f.user and hasattr(f.user, "full_name")) else None,
+            user_name=(f.user.full_name or f.user.login) if f.user else None,
             title=f.title,
             description=f.description,
             operating_hours=f.operating_hours,
@@ -47,7 +47,7 @@ async def list_faults(
             status=f.status,
             photo_urls=f.photo_urls,
             resolved_by_id=f.resolved_by_id,
-            resolved_by_name=f.resolved_by.full_name if (f.resolved_by and hasattr(f.resolved_by, "full_name")) else None,
+            resolved_by_name=(f.resolved_by.full_name or f.resolved_by.login) if f.resolved_by else None,
             resolution_notes=f.resolution_notes,
             resolved_at=f.resolved_at,
             created_at=f.created_at,
@@ -105,7 +105,7 @@ async def change_fault_status(
         user_id=current_user.id,
         ip_address=get_client_ip(request)
     )
-    user_name = fault.user.full_name if (fault.user and hasattr(fault.user, "full_name")) else None
+    user_name = (fault.user.full_name or fault.user.login) if fault.user else None
     resolved_by_name = None
     if fault.resolved_by and hasattr(fault.resolved_by, "full_name"):
         resolved_by_name = fault.resolved_by.full_name

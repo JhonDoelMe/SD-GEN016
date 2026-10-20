@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
@@ -83,7 +84,7 @@ async def list_maintenance_records(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("maintenance:view"))
 ):
-    q = select(MaintenanceRecord).order_by(MaintenanceRecord.id.desc()).limit(limit)
+    q = select(MaintenanceRecord).options(selectinload(MaintenanceRecord.user)).order_by(MaintenanceRecord.id.desc()).limit(limit)
     if generator_id:
         q = q.where(MaintenanceRecord.generator_id == generator_id)
     res = await db.execute(q)
@@ -93,7 +94,7 @@ async def list_maintenance_records(
             id=r.id,
             generator_id=r.generator_id,
             user_id=r.user_id,
-            user_name=r.user.full_name if r.user else None,
+            user_name=(r.user.full_name or r.user.login) if r.user else None,
             maintenance_type=r.maintenance_type,
             operating_hours=r.operating_hours,
             work_description=r.work_description,

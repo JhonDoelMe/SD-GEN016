@@ -74,7 +74,7 @@ async def list_adjustments(
         SystemAdjustmentOut(
             id=i.id,
             user_id=i.user_id,
-            user_name=i.user.full_name if i.user else None,
+            user_name=(i.user.full_name or i.user.login) if i.user else None,
             facility_id=i.facility_id,
             facility_name=i.facility.name if i.facility else None,
             target_name=i.target_name,

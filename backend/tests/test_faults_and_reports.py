@@ -138,13 +138,26 @@ async def test_operational_reports_and_csv_export(client, superadmin_auth, opera
     assert rep_res.status_code == 200
     rep_data = rep_res.json()
     assert "total_operating_hours" in rep_data
+    assert "total_operating_hours_human" in rep_data
+    assert "avg_run_duration_human" in rep_data
+    assert "start_date_human" in rep_data
+    assert "end_date_human" in rep_data
     assert "total_fuel_received_l" in rep_data
     assert "maintenance_records" in rep_data
     assert len(rep_data["maintenance_records"]) >= 1
     assert rep_data["maintenance_records"][0]["work_description"] == "Заміна моторного мастила 10W-40 та масляного фільтра"
+    assert rep_data["maintenance_records"][0]["operator_name"] is not None
     assert "runs" in rep_data
     assert "fuel_receipts" in rep_data
     assert "fuel_transfers" in rep_data
+
+    # Formatting unit tests
+    from backend.app.services.report_service import fmt_hours_human, fmt_date_ua, fmt_duration
+    assert fmt_hours_human(7.033) == "7 год 02 хв"
+    assert fmt_hours_human(0.88) == "53 хв"
+    assert fmt_hours_human(0.0) == "0 хв"
+    assert fmt_duration(24, 0.0066) == "00:00:24"
+    assert fmt_duration(10755, 2.9875) == "02:59:15"
 
     # CSV export must be disabled per business requirements
     csv_res = await client.get("/api/v1/reports/export", headers=superadmin_auth)

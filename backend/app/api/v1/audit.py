@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
@@ -20,7 +21,7 @@ async def list_audit_logs(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("audit:view"))
 ):
-    q = select(AuditLog).order_by(AuditLog.id.desc()).limit(limit)
+    q = select(AuditLog).options(selectinload(AuditLog.user)).order_by(AuditLog.id.desc()).limit(limit)
     if action:
         q = q.where(AuditLog.action == action)
     if entity_type:
@@ -32,7 +33,7 @@ async def list_audit_logs(
         AuditLogOut(
             id=log.id,
             user_id=log.user_id,
-            user_name=log.user.full_name if log.user else "Система",
+            user_name=(log.user.full_name or log.user.login) if log.user else "Система",
             action=log.action,
             entity_type=log.entity_type,
             entity_id=log.entity_id,

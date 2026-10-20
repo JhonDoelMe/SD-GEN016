@@ -62,6 +62,40 @@ def fmt_duration(seconds: Optional[int], hours: Optional[float]) -> str:
     return "00:00:00"
 
 
+MONTHS_UA_SHORT = {
+    1: "січ.", 2: "лют.", 3: "бер.", 4: "квіт.", 5: "трав.", 6: "черв.",
+    7: "лип.", 8: "серп.", 9: "вер.", 10: "жовт.", 11: "лист.", 12: "груд."
+}
+
+
+def fmt_dt_ua(dt: Optional[datetime.datetime]) -> str:
+    if not dt:
+        return "-"
+    d = to_facility_time(dt)
+    m = MONTHS_UA_SHORT.get(d.month, "")
+    return f"{d.day} {m} {d.year} р., {d.strftime('%H:%M:%S')}"
+
+
+def fmt_date_ua(dt: Optional[datetime.datetime]) -> str:
+    if not dt:
+        return "-"
+    d = to_facility_time(dt)
+    m = MONTHS_UA_SHORT.get(d.month, "")
+    return f"{d.day} {m} {d.year} р."
+
+
+def fmt_hours_human(hours: Optional[float]) -> str:
+    if hours is None or hours <= 0:
+        return "0 хв"
+    total_minutes = int(round(hours * 60))
+    h = total_minutes // 60
+    m = total_minutes % 60
+    if h == 0:
+        return f"{m} хв"
+    return f"{h} год {m:02d} хв"
+
+
+
 def sanitize_spreadsheet_cell(val):
     """Sanitize string values against CSV/Excel Formula Injection (=, +, -, @, tab, CR)."""
     if isinstance(val, str) and val and val[0] in ("=", "+", "-", "@", "\t", "\r"):
@@ -504,13 +538,15 @@ async def generate_operational_report(
     runs_list = [
         ReportRunItem(
             id=r.id,
-            start_time=fmt_dt(r.start_time),
-            end_time=fmt_dt(r.end_time) if r.end_time else None,
+            start_time=fmt_dt_ua(r.start_time),
+            end_time=fmt_dt_ua(r.end_time) if r.end_time else None,
             duration_hours=round(r.duration_hours or 0.0, 2),
+            duration_formatted=fmt_duration(r.duration_seconds, r.duration_hours),
+            duration_human=fmt_hours_human(r.duration_hours),
             calculated_consumption_l=round(r.calculated_consumption_l or 0.0, 2),
             start_hours=round(r.start_hours or 0.0, 2),
             end_hours=round(r.end_hours or 0.0, 2) if r.end_hours is not None else None,
-            operator_name=r.user.login if r.user else "Система",
+            operator_name=(r.user.full_name or r.user.login) if r.user else "Система",
             status=r.status or "COMPLETED"
         )
         for r in runs_rows
@@ -537,7 +573,7 @@ async def generate_operational_report(
     receipts_list = [
         ReportFuelReceiptItem(
             id=rec.id,
-            created_at=fmt_dt(rec.created_at),
+            created_at=fmt_dt_ua(rec.created_at),
             liters=round(rec.liters or 0.0, 2),
             price_per_liter=round(rec.price_per_liter or 0.0, 2),
             cost_total=round(rec.cost_total or 0.0, 2),
@@ -545,7 +581,7 @@ async def generate_operational_report(
             driver_name=rec.driver_name or "-",
             supplier=rec.receipt_number or "-",
             stock_name=rec.stock.name if rec.stock else "Склад ГСМ",
-            operator_name=rec.user.login if rec.user else "Система"
+            operator_name=(rec.user.full_name or rec.user.login) if rec.user else "Система"
         )
         for rec in receipts_rows
     ]
@@ -570,11 +606,11 @@ async def generate_operational_report(
     transfers_list = [
         ReportFuelTransferItem(
             id=tr.id,
-            created_at=fmt_dt(tr.created_at),
+            created_at=fmt_dt_ua(tr.created_at),
             liters=round(tr.liters or 0.0, 2),
             stock_name=tr.stock.name if tr.stock else "Склад ГСМ",
             generator_name=tr.generator.name if tr.generator else (gen_name or "Генератор"),
-            operator_name=tr.user.login if tr.user else "Система"
+            operator_name=(tr.user.full_name or tr.user.login) if tr.user else "Система"
         )
         for tr in transfers_rows
     ]
@@ -594,13 +630,13 @@ async def generate_operational_report(
     maintenance_list = [
         ReportMaintenanceItem(
             id=m.id,
-            created_at=fmt_dt(m.created_at),
+            created_at=fmt_dt_ua(m.created_at),
             maintenance_type="Регламентне ТО" if m.maintenance_type == "SCHEDULED" else "Проміжне ТО",
             operating_hours=round(m.operating_hours or 0.0, 2),
             work_description=m.work_description or "-",
             cost=round(m.cost or 0.0, 2),
             technician=m.user.full_name if (m.user and m.user.full_name) else (m.comment or "-"),
-            operator_name=m.user.login if m.user else "Система"
+            operator_name=(m.user.full_name or m.user.login) if m.user else "Система"
         )
         for m in m_rows
     ]
@@ -613,10 +649,13 @@ async def generate_operational_report(
     return OperationalReportOut(
         start_date=start_date.strftime("%Y-%m-%d"),
         end_date=end_date.strftime("%Y-%m-%d"),
+        start_date_human=fmt_date_ua(start_date),
+        end_date_human=fmt_date_ua(end_date),
         generator_name=gen_name,
         facility_name=facility_name,
         total_runs_count=total_runs,
         total_operating_hours=round(total_hours, 2),
+        total_operating_hours_human=fmt_hours_human(total_hours),
         total_calculated_consumption_l=round(total_cons, 2),
         total_fuel_received_l=round(fuel_rec_l, 2),
         total_fuel_receipts_cost_uah=round(fuel_rec_cost, 2),
@@ -634,6 +673,7 @@ async def generate_operational_report(
         total_costs_uah=total_costs,
         avg_consumption_l_per_hour=avg_cons,
         avg_run_duration_hours=avg_run_dur,
+        avg_run_duration_human=fmt_hours_human(avg_run_dur),
         runs=runs_list,
         fuel_receipts=receipts_list,
         fuel_transfers=transfers_list,

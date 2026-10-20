@@ -14,6 +14,8 @@ class ReportRunItem(BaseModel):
     start_time: str
     end_time: Optional[str] = None
     duration_hours: float
+    duration_formatted: str = "00:00:00"
+    duration_human: str = "0 хв"
     calculated_consumption_l: float
     start_hours: float
     end_hours: Optional[float] = None
@@ -57,12 +59,15 @@ class ReportMaintenanceItem(BaseModel):
 class OperationalReportOut(BaseModel):
     start_date: str
     end_date: str
+    start_date_human: Optional[str] = None
+    end_date_human: Optional[str] = None
     generator_name: str
     facility_name: Optional[str] = None
 
     # Operating Metrics
     total_runs_count: int
     total_operating_hours: float
+    total_operating_hours_human: str = "0 хв"
     total_calculated_consumption_l: float
 
     # Fuel Metrics
@@ -88,6 +93,7 @@ class OperationalReportOut(BaseModel):
     total_costs_uah: float = 0.0
     avg_consumption_l_per_hour: float = 0.0
     avg_run_duration_hours: float = 0.0
+    avg_run_duration_human: str = "0 хв"
 
     # Detailed records for the selected period
     runs: List[ReportRunItem] = []
