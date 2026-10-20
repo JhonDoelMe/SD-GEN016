@@ -2210,14 +2210,69 @@ window.setReportPeriod = function(preset) {
     start = new Date(2020, 0, 1);
   }
 
-  document.getElementById('repStartDate').value = fmt(start);
-  document.getElementById('repEndDate').value = fmt(end);
-  loadReport();
+  // Highlight active preset button
+  const presetButtons = document.querySelectorAll('#reportPresetGroup button');
+  presetButtons.forEach(btn => {
+    if (btn.getAttribute('data-preset') === preset) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
+  const startEl = document.getElementById('repStartDate');
+  const endEl = document.getElementById('repEndDate');
+  if (startEl) startEl.value = fmt(start);
+  if (endEl) endEl.value = fmt(end);
+
+  loadReport(true);
 };
 
-async function loadReport() {
-  const startInput = document.getElementById('repStartDate').value;
-  const endInput = document.getElementById('repEndDate').value;
+window.onReportCustomDateChange = function() {
+  const presetButtons = document.querySelectorAll('#reportPresetGroup button');
+  presetButtons.forEach(btn => btn.classList.remove('active'));
+};
+
+window.switchReportSubtab = function(tabKey) {
+  const tabs = ['runs', 'transfers', 'receipts', 'maint'];
+  const tabBtnMap = {
+    runs: 'btnRepTabRuns',
+    transfers: 'btnRepTabTransfers',
+    receipts: 'btnRepTabReceipts',
+    maint: 'btnRepTabMaint'
+  };
+  const paneMap = {
+    runs: 'repPaneRuns',
+    transfers: 'repPaneTransfers',
+    receipts: 'repPaneReceipts',
+    maint: 'repPaneMaint'
+  };
+
+  tabs.forEach(key => {
+    const btn = document.getElementById(tabBtnMap[key]);
+    const pane = document.getElementById(paneMap[key]);
+    if (btn) {
+      if (key === tabKey) btn.classList.add('active');
+      else btn.classList.remove('active');
+    }
+    if (pane) {
+      pane.style.display = (key === tabKey) ? 'block' : 'none';
+    }
+  });
+};
+
+async function loadReport(isUserTriggered = false) {
+  const startInput = document.getElementById('repStartDate')?.value;
+  const endInput = document.getElementById('repEndDate')?.value;
+  const btn = document.getElementById('btnGenerateReport');
+  const iconEl = document.getElementById('btnGenerateReportIcon');
+  const textEl = document.getElementById('btnGenerateReportText');
+
+  if (isUserTriggered && btn) {
+    btn.disabled = true;
+    if (iconEl) iconEl.textContent = '⏳';
+    if (textEl) textEl.textContent = 'Формування...';
+  }
 
   const params = [];
   if (currentGeneratorId) params.push(`generator_id=${encodeURIComponent(currentGeneratorId)}`);
@@ -2232,16 +2287,58 @@ async function loadReport() {
     const endEl = document.getElementById('repEndDate');
     if (startEl && !startEl.value && r.start_date) startEl.value = String(r.start_date).slice(0, 10);
     if (endEl && !endEl.value && r.end_date) endEl.value = String(r.end_date).slice(0, 10);
+
+    // 1. Update Status Banner
+    const banner = document.getElementById('reportStatusBanner');
+    const statusPeriod = document.getElementById('reportStatusPeriod');
+    const statusTarget = document.getElementById('reportStatusTarget');
+    const statusGenAt = document.getElementById('reportStatusGeneratedAt');
+    if (banner && statusPeriod && statusTarget && statusGenAt) {
+      let daysCount = '';
+      if (r.start_date && r.end_date) {
+        const d1 = new Date(r.start_date);
+        const d2 = new Date(r.end_date);
+        const diffDays = Math.round(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
+        daysCount = ` (${diffDays} ${diffDays === 1 ? 'день' : (diffDays < 5 ? 'дні' : 'днів')})`;
+      }
+      statusPeriod.textContent = `Період звітності: ${r.start_date} — ${r.end_date}${daysCount}`;
+      const facName = r.facility_name || (facilitySelect?.selectedOptions?.[0]?.text || 'Основний об\'єкт');
+      const genName = r.generator_name || (generatorSelect?.selectedOptions?.[0]?.text || 'Генератор');
+      statusTarget.textContent = `Об'єкт: ${facName} | Обладнання: ${genName}`;
+      const nowStr = formatDateTime(new Date());
+      statusGenAt.textContent = `Сформовано: ${nowStr}`;
+      banner.style.display = 'flex';
+    }
+
+    // 2. Metrics Cards
     const container = document.getElementById('reportContainer');
+    const totalCosts = (r.total_costs_uah !== undefined && r.total_costs_uah !== null)
+      ? r.total_costs_uah
+      : (Number(r.total_fuel_receipts_cost_uah || 0) + Number(r.total_maintenance_cost_uah || 0)).toFixed(2);
+
+    const avgCons = (r.avg_consumption_l_per_hour !== undefined && r.avg_consumption_l_per_hour !== null)
+      ? r.avg_consumption_l_per_hour
+      : (r.total_operating_hours > 0 ? (r.total_calculated_consumption_l / r.total_operating_hours).toFixed(2) : '0.00');
+
+    const avgRunDur = (r.avg_run_duration_hours !== undefined && r.avg_run_duration_hours !== null)
+      ? r.avg_run_duration_hours
+      : (r.total_runs_count > 0 ? (r.total_operating_hours / r.total_runs_count).toFixed(2) : '0.00');
+
     container.innerHTML = `
       <div class="metric-card">
         <div class="metric-label">Відпрацьовано мотогодин</div>
         <div class="metric-value">${escapeHtml(r.total_operating_hours)} год</div>
-        <div class="metric-sub">${escapeHtml(r.total_runs_count)} пусків</div>
+        <div class="metric-sub">${escapeHtml(r.total_runs_count)} пусків (сер. ${escapeHtml(avgRunDur)} год/пуск)</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Розрахунковий розхід палива</div>
         <div class="metric-value">${escapeHtml(r.total_calculated_consumption_l)} л</div>
+        <div class="metric-sub">Сер. розхід: ${escapeHtml(avgCons)} л/год</div>
+      </div>
+      <div class="metric-card" style="border-color: rgba(34, 197, 94, 0.4);">
+        <div class="metric-label">Загальні витрати за період</div>
+        <div class="metric-value" style="color: #4ade80;">${escapeHtml(totalCosts)} грн</div>
+        <div class="metric-sub">Паливо: ${escapeHtml(r.total_fuel_receipts_cost_uah)} грн | ТО: ${escapeHtml(r.total_maintenance_cost_uah)} грн</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Оприбутковано на склад</div>
@@ -2251,6 +2348,7 @@ async function loadReport() {
       <div class="metric-card">
         <div class="metric-label">Заправлено в бак</div>
         <div class="metric-value">${escapeHtml(r.total_fuel_transferred_to_tank_l)} л</div>
+        <div class="metric-sub">Залишок у баку: ${escapeHtml(r.current_tank_level_l)} л</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Виконано ТО</div>
@@ -2258,15 +2356,118 @@ async function loadReport() {
         <div class="metric-sub">Регламентних: ${escapeHtml(r.scheduled_maintenance_count)} | Проміжних: ${escapeHtml(r.intermediate_maintenance_count)}</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">Витрати на ТО</div>
+        <div class="metric-label">Витрати на сервіс / ТО</div>
         <div class="metric-value">${escapeHtml(r.total_maintenance_cost_uah)} грн</div>
+        <div class="metric-sub">${escapeHtml(r.total_maintenance_count)} операцій обслуговування</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">Несправності</div>
+        <div class="metric-label">Несправності / Інциденти</div>
         <div class="metric-value">${escapeHtml(r.total_faults_count)}</div>
         <div class="metric-sub">Усунено: ${escapeHtml(r.resolved_faults_count)} | Відкрито: ${escapeHtml(r.open_faults_count)}</div>
       </div>
     `;
+
+    // 3. Detailed Logs & Subtabs
+    const detailsSection = document.getElementById('reportDetailsSection');
+    if (detailsSection) {
+      detailsSection.style.display = 'block';
+
+      const runs = r.runs || [];
+      const transfers = r.fuel_transfers || [];
+      const receipts = r.fuel_receipts || [];
+      const maint = r.maintenance_records || [];
+
+      // Badges
+      const bRuns = document.getElementById('repBadgeRuns');
+      const bTr = document.getElementById('repBadgeTransfers');
+      const bRec = document.getElementById('repBadgeReceipts');
+      const bMaint = document.getElementById('repBadgeMaint');
+      if (bRuns) bRuns.textContent = runs.length;
+      if (bTr) bTr.textContent = transfers.length;
+      if (bRec) bRec.textContent = receipts.length;
+      if (bMaint) bMaint.textContent = maint.length;
+
+      // Table 1: Runs
+      const runsTbody = document.getElementById('repRunsTableBody');
+      if (runsTbody) {
+        if (!runs.length) {
+          runsTbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Немає зафіксованих пусків за обраний період</td></tr>`;
+        } else {
+          runsTbody.innerHTML = runs.map(row => `
+            <tr>
+              <td><b>${escapeHtml(row.start_time)}</b></td>
+              <td>${escapeHtml(row.end_time || 'В роботі')}</td>
+              <td>${escapeHtml(row.duration_hours)} год</td>
+              <td>${escapeHtml(row.start_hours)} ➔ ${escapeHtml(row.end_hours !== null && row.end_hours !== undefined ? row.end_hours : '-')}</td>
+              <td style="color:#38bdf8; font-weight:600;">${escapeHtml(row.calculated_consumption_l)} л</td>
+              <td>${escapeHtml(row.operator_name || '-')}</td>
+            </tr>
+          `).join('');
+        }
+      }
+
+      // Table 2: Fuel Transfers
+      const trTbody = document.getElementById('repTransfersTableBody');
+      if (trTbody) {
+        if (!transfers.length) {
+          trTbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Немає заправок бака за обраний період</td></tr>`;
+        } else {
+          trTbody.innerHTML = transfers.map(row => `
+            <tr>
+              <td><b>${escapeHtml(row.created_at)}</b></td>
+              <td style="color:#4ade80; font-weight:700;">${escapeHtml(row.liters)} л</td>
+              <td>${escapeHtml(row.stock_name || 'Склад ГСМ')}</td>
+              <td>${escapeHtml(row.generator_name || 'Генератор')}</td>
+              <td>${escapeHtml(row.operator_name || '-')}</td>
+            </tr>
+          `).join('');
+        }
+      }
+
+      // Table 3: Fuel Receipts
+      const recTbody = document.getElementById('repReceiptsTableBody');
+      if (recTbody) {
+        if (!receipts.length) {
+          recTbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Немає надходжень на склад за обраний період</td></tr>`;
+        } else {
+          recTbody.innerHTML = receipts.map(row => `
+            <tr>
+              <td><b>${escapeHtml(row.created_at)}</b></td>
+              <td style="color:#4ade80; font-weight:700;">${escapeHtml(row.liters)} л</td>
+              <td>${escapeHtml(row.price_per_liter)} грн/л</td>
+              <td style="font-weight:600;">${escapeHtml(row.cost_total)} грн</td>
+              <td>${escapeHtml(row.supplier || '-')}</td>
+              <td>${escapeHtml(row.stock_name || 'Склад ГСМ')}</td>
+              <td>${escapeHtml(row.operator_name || '-')}</td>
+            </tr>
+          `).join('');
+        }
+      }
+
+      // Table 4: Maintenance
+      const maintTbody = document.getElementById('repMaintTableBody');
+      if (maintTbody) {
+        if (!maint.length) {
+          maintTbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Немає записів обслуговування за обраний період</td></tr>`;
+        } else {
+          maintTbody.innerHTML = maint.map(row => `
+            <tr>
+              <td><b>${escapeHtml(row.created_at)}</b></td>
+              <td><span class="badge" style="background: rgba(6,182,212,0.15); color: var(--accent-cyan);">${escapeHtml(row.maintenance_type)}</span></td>
+              <td>${escapeHtml(row.operating_hours)} год</td>
+              <td>${escapeHtml(row.work_description || '-')}</td>
+              <td style="font-weight:600;">${escapeHtml(row.cost)} грн</td>
+              <td>${escapeHtml(row.technician || '-')}</td>
+              <td>${escapeHtml(row.operator_name || '-')}</td>
+            </tr>
+          `).join('');
+        }
+      }
+    }
+
+    if (isUserTriggered) {
+      showToast(`Звіт за період ${r.start_date} — ${r.end_date} успішно сформовано!`, 'success');
+    }
   } catch (err) {
     const container = document.getElementById('reportContainer');
     if (container) {
@@ -2276,6 +2477,15 @@ async function loadReport() {
           <div style="font-size: 0.95rem;">${escapeHtml(err.message || 'Помилка отримання зведених даних')}</div>
         </div>
       `;
+    }
+    if (isUserTriggered) {
+      showToast(`Помилка формування звіту: ${err.message || 'Невідома помилка'}`, 'error');
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      if (iconEl) iconEl.textContent = '🔄';
+      if (textEl) textEl.textContent = 'Сформувати звіт';
     }
   }
 }

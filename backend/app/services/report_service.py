@@ -16,7 +16,13 @@ from backend.app.models.maintenance import MaintenanceRecord, MaintenanceSchedul
 from backend.app.models.fault import Fault
 from backend.app.models.audit import AuditLog
 from backend.app.models.facility import Facility
-from backend.app.schemas.report import OperationalReportOut
+from backend.app.schemas.report import (
+    OperationalReportOut,
+    ReportRunItem,
+    ReportFuelReceiptItem,
+    ReportFuelTransferItem,
+    ReportMaintenanceItem,
+)
 
 
 def utc_now() -> datetime.datetime:
@@ -366,7 +372,7 @@ async def generate_operational_report(
     start_date: Optional[datetime.datetime] = None,
     end_date: Optional[datetime.datetime] = None
 ) -> OperationalReportOut:
-    gen_query = select(Generator)
+    gen_query = select(Generator).options(selectinload(Generator.facility))
     if generator_id:
         gen_query = gen_query.where(Generator.id == generator_id)
     elif facility_id:
@@ -374,6 +380,11 @@ async def generate_operational_report(
     gen_res = await db.execute(gen_query)
     generator = gen_res.scalars().first()
     gen_name = generator.name if generator else "Генератор"
+    facility_name = generator.facility.name if generator and generator.facility else None
+    if not facility_name and facility_id:
+        fac = (await db.execute(select(Facility).where(Facility.id == facility_id))).scalars().first()
+        if fac:
+            facility_name = fac.name
 
     now = utc_now()
     if not end_date:
@@ -477,10 +488,133 @@ async def generate_operational_report(
         f_res_q = f_res_q.where(Fault.generator_id == generator.id)
     f_resolved = (await db.execute(f_res_q)).scalar_one()
 
+    # 6. Detailed records for the period
+    # 6a. Generator runs
+    runs_detail_q = select(GeneratorRun).options(selectinload(GeneratorRun.user)).where(
+        GeneratorRun.start_time >= start_date,
+        GeneratorRun.start_time <= end_date,
+        GeneratorRun.status == "COMPLETED"
+    )
+    if generator:
+        runs_detail_q = runs_detail_q.where(GeneratorRun.generator_id == generator.id)
+    elif facility_id:
+        runs_detail_q = runs_detail_q.join(Generator).where(Generator.facility_id == facility_id)
+    runs_detail_q = runs_detail_q.order_by(GeneratorRun.start_time.desc()).limit(200)
+    runs_rows = (await db.execute(runs_detail_q)).scalars().all()
+    runs_list = [
+        ReportRunItem(
+            id=r.id,
+            start_time=fmt_dt(r.start_time),
+            end_time=fmt_dt(r.end_time) if r.end_time else None,
+            duration_hours=round(r.duration_hours or 0.0, 2),
+            calculated_consumption_l=round(r.calculated_consumption_l or 0.0, 2),
+            start_hours=round(r.start_hours or 0.0, 2),
+            end_hours=round(r.end_hours or 0.0, 2) if r.end_hours is not None else None,
+            operator_name=r.user.login if r.user else "Система",
+            status=r.status or "COMPLETED"
+        )
+        for r in runs_rows
+    ]
+
+    # 6b. Fuel receipts
+    rec_detail_q = select(FuelReceipt).options(
+        selectinload(FuelReceipt.user),
+        selectinload(FuelReceipt.stock)
+    ).where(
+        FuelReceipt.created_at >= start_date,
+        FuelReceipt.created_at <= end_date
+    )
+    if facility_id:
+        rec_detail_q = rec_detail_q.outerjoin(FuelStock, FuelReceipt.stock_id == FuelStock.id).where(
+            or_(
+                FuelReceipt.facility_id == facility_id,
+                FuelStock.facility_id == facility_id,
+                and_(facility_id == 1, FuelReceipt.facility_id.is_(None), FuelStock.facility_id.is_(None))
+            )
+        )
+    rec_detail_q = rec_detail_q.order_by(FuelReceipt.created_at.desc()).limit(200)
+    receipts_rows = (await db.execute(rec_detail_q)).scalars().all()
+    receipts_list = [
+        ReportFuelReceiptItem(
+            id=rec.id,
+            created_at=fmt_dt(rec.created_at),
+            liters=round(rec.liters or 0.0, 2),
+            price_per_liter=round(rec.price_per_liter or 0.0, 2),
+            cost_total=round(rec.cost_total or 0.0, 2),
+            receipt_number=rec.receipt_number or "-",
+            driver_name=rec.driver_name or "-",
+            supplier=rec.receipt_number or "-",
+            stock_name=rec.stock.name if rec.stock else "Склад ГСМ",
+            operator_name=rec.user.login if rec.user else "Система"
+        )
+        for rec in receipts_rows
+    ]
+
+    # 6c. Fuel transfers
+    tr_detail_q = select(FuelTransfer).options(
+        selectinload(FuelTransfer.user),
+        selectinload(FuelTransfer.stock),
+        selectinload(FuelTransfer.generator)
+    ).where(
+        FuelTransfer.created_at >= start_date,
+        FuelTransfer.created_at <= end_date
+    )
+    if generator:
+        tr_detail_q = tr_detail_q.where(FuelTransfer.generator_id == generator.id)
+    elif facility_id:
+        tr_detail_q = tr_detail_q.outerjoin(Generator, FuelTransfer.generator_id == Generator.id).where(
+            or_(FuelTransfer.facility_id == facility_id, Generator.facility_id == facility_id)
+        )
+    tr_detail_q = tr_detail_q.order_by(FuelTransfer.created_at.desc()).limit(200)
+    transfers_rows = (await db.execute(tr_detail_q)).scalars().all()
+    transfers_list = [
+        ReportFuelTransferItem(
+            id=tr.id,
+            created_at=fmt_dt(tr.created_at),
+            liters=round(tr.liters or 0.0, 2),
+            stock_name=tr.stock.name if tr.stock else "Склад ГСМ",
+            generator_name=tr.generator.name if tr.generator else (gen_name or "Генератор"),
+            operator_name=tr.user.login if tr.user else "Система"
+        )
+        for tr in transfers_rows
+    ]
+
+    # 6d. Maintenance records
+    m_detail_q = select(MaintenanceRecord).options(
+        selectinload(MaintenanceRecord.user),
+        selectinload(MaintenanceRecord.generator)
+    ).where(
+        MaintenanceRecord.created_at >= start_date,
+        MaintenanceRecord.created_at <= end_date
+    )
+    if generator:
+        m_detail_q = m_detail_q.where(MaintenanceRecord.generator_id == generator.id)
+    m_detail_q = m_detail_q.order_by(MaintenanceRecord.created_at.desc()).limit(200)
+    m_rows = (await db.execute(m_detail_q)).scalars().all()
+    maintenance_list = [
+        ReportMaintenanceItem(
+            id=m.id,
+            created_at=fmt_dt(m.created_at),
+            maintenance_type="Регламентне ТО" if m.maintenance_type == "SCHEDULED" else "Проміжне ТО",
+            operating_hours=round(m.operating_hours or 0.0, 2),
+            work_description=m.work_performed or "-",
+            cost=round(m.cost or 0.0, 2),
+            technician=m.technician or "-",
+            operator_name=m.user.login if m.user else "Система"
+        )
+        for m in m_rows
+    ]
+
+    # 7. Additional calculations
+    total_costs = round((fuel_rec_cost or 0.0) + (m_cost or 0.0), 2)
+    avg_cons = round(total_cons / total_hours, 2) if total_hours > 0 else 0.0
+    avg_run_dur = round(total_hours / total_runs, 2) if total_runs > 0 else 0.0
+
     return OperationalReportOut(
         start_date=start_date.strftime("%Y-%m-%d"),
         end_date=end_date.strftime("%Y-%m-%d"),
         generator_name=gen_name,
+        facility_name=facility_name,
         total_runs_count=total_runs,
         total_operating_hours=round(total_hours, 2),
         total_calculated_consumption_l=round(total_cons, 2),
@@ -496,7 +630,14 @@ async def generate_operational_report(
         total_maintenance_cost_uah=round(m_cost, 2),
         total_faults_count=f_total,
         resolved_faults_count=f_resolved,
-        open_faults_count=(f_total - f_resolved)
+        open_faults_count=(f_total - f_resolved),
+        total_costs_uah=total_costs,
+        avg_consumption_l_per_hour=avg_cons,
+        avg_run_duration_hours=avg_run_dur,
+        runs=runs_list,
+        fuel_receipts=receipts_list,
+        fuel_transfers=transfers_list,
+        maintenance_records=maintenance_list
     )
 
 

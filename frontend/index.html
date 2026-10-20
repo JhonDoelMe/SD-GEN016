@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=3.9">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.0">
 </head>
 <body>
 
@@ -604,29 +604,153 @@
         </div>
 
         <!-- Quick Period Presets -->
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center;">
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.25rem; align-items: center;">
           <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Швидкий період:</span>
-          <button type="button" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; min-height: auto;" onclick="setReportPeriod('today')">Сьогодні</button>
-          <button type="button" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; min-height: auto;" onclick="setReportPeriod('week')">Тиждень</button>
-          <button type="button" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; min-height: auto;" onclick="setReportPeriod('month')">Місяць</button>
-          <button type="button" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; min-height: auto;" onclick="setReportPeriod('quarter')">3 Місяці</button>
-          <button type="button" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.8rem; min-height: auto;" onclick="setReportPeriod('all')">Весь час</button>
+          <div id="reportPresetGroup" style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+            <button type="button" class="btn-preset" data-preset="today" onclick="setReportPeriod('today')">Сьогодні</button>
+            <button type="button" class="btn-preset" data-preset="week" onclick="setReportPeriod('week')">Тиждень</button>
+            <button type="button" class="btn-preset" data-preset="month" onclick="setReportPeriod('month')">Місяць</button>
+            <button type="button" class="btn-preset" data-preset="quarter" onclick="setReportPeriod('quarter')">3 Місяці</button>
+            <button type="button" class="btn-preset" data-preset="all" onclick="setReportPeriod('all')">Весь час</button>
+          </div>
         </div>
 
-        <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; align-items: flex-end;">
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; align-items: flex-end;">
           <div>
-            <label>Початок періоду</label>
-            <input type="date" id="repStartDate">
+            <label for="repStartDate" style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem; display: block;">Початок періоду</label>
+            <input type="date" id="repStartDate" onchange="onReportCustomDateChange()">
           </div>
           <div>
-            <label>Кінець періоду</label>
-            <input type="date" id="repEndDate">
+            <label for="repEndDate" style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem; display: block;">Кінець періоду</label>
+            <input type="date" id="repEndDate" onchange="onReportCustomDateChange()">
           </div>
-          <button class="btn-primary" style="width: auto; padding: 0.75rem 1.5rem;" onclick="loadReport()">Сформувати звіт</button>
+          <button type="button" id="btnGenerateReport" class="btn-primary" style="width: auto; padding: 0.75rem 1.6rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem;" onclick="loadReport(true)">
+            <span id="btnGenerateReportIcon">🔄</span> <span id="btnGenerateReportText">Сформувати звіт</span>
+          </button>
         </div>
 
+        <!-- Report Status Banner (Dynamic Summary) -->
+        <div id="reportStatusBanner" class="report-status-banner" style="display: none;">
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.4rem;">📊</span>
+            <div>
+              <div id="reportStatusPeriod" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">-</div>
+              <div id="reportStatusTarget" style="font-size: 0.8rem; color: var(--text-muted);">-</div>
+            </div>
+          </div>
+          <div id="reportStatusGeneratedAt" style="font-size: 0.8rem; color: var(--accent-cyan); font-weight: 600; background: rgba(6, 182, 212, 0.12); padding: 0.35rem 0.75rem; border-radius: 0.45rem; border: 1px solid rgba(6, 182, 212, 0.25);">
+            Сформовано: щойно
+          </div>
+        </div>
+
+        <!-- Metrics Cards Container -->
         <div id="reportContainer" class="metrics-grid">
           <!-- Filled by JS -->
+        </div>
+
+        <!-- Detailed Period Records (Mini-Excel in UI) -->
+        <div id="reportDetailsSection" class="panel" style="margin-top: 1.5rem; display: none; background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border-color); border-radius: 0.85rem; padding: 1.25rem;">
+          <div class="panel-header" style="flex-wrap: wrap; gap: 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.85rem;">
+            <div>
+              <h4 style="margin: 0 0 0.25rem 0; font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem;">
+                <span>📋</span> <span>Деталізація за обраний період</span>
+              </h4>
+              <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted);">
+                Оперативні журнали роботи, руху пального та сервісних робіт
+              </p>
+            </div>
+            <div class="report-subtabs" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button type="button" class="report-subtab-btn active" id="btnRepTabRuns" onclick="switchReportSubtab('runs')">
+                <span>⏱️ Пуски генератора</span> <span class="report-badge" id="repBadgeRuns">0</span>
+              </button>
+              <button type="button" class="report-subtab-btn" id="btnRepTabTransfers" onclick="switchReportSubtab('transfers')">
+                <span>⛽ Заправки бака</span> <span class="report-badge" id="repBadgeTransfers">0</span>
+              </button>
+              <button type="button" class="report-subtab-btn" id="btnRepTabReceipts" onclick="switchReportSubtab('receipts')">
+                <span>📦 Надходження на склад</span> <span class="report-badge" id="repBadgeReceipts">0</span>
+              </button>
+              <button type="button" class="report-subtab-btn" id="btnRepTabMaint" onclick="switchReportSubtab('maint')">
+                <span>🔧 Обслуговування (ТО)</span> <span class="report-badge" id="repBadgeMaint">0</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Subtab 1: Runs -->
+          <div id="repPaneRuns" class="rep-subtab-pane">
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Час запуску</th>
+                    <th>Час зупинки</th>
+                    <th>Тривалість</th>
+                    <th>Мотогодини</th>
+                    <th>Витрата пального</th>
+                    <th>Оператор</th>
+                  </tr>
+                </thead>
+                <tbody id="repRunsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Subtab 2: Fuel Transfers -->
+          <div id="repPaneTransfers" class="rep-subtab-pane" style="display: none;">
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Дата та час</th>
+                    <th>Кількість</th>
+                    <th>Зі складу</th>
+                    <th>Генератор</th>
+                    <th>Оператор</th>
+                  </tr>
+                </thead>
+                <tbody id="repTransfersTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Subtab 3: Fuel Receipts -->
+          <div id="repPaneReceipts" class="rep-subtab-pane" style="display: none;">
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Дата та час</th>
+                    <th>Кількість</th>
+                    <th>Ціна / л</th>
+                    <th>Сума</th>
+                    <th>Постачальник</th>
+                    <th>Склад ГСМ</th>
+                    <th>Оператор</th>
+                  </tr>
+                </thead>
+                <tbody id="repReceiptsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Subtab 4: Maintenance -->
+          <div id="repPaneMaint" class="rep-subtab-pane" style="display: none;">
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Дата та час</th>
+                    <th>Вид ТО</th>
+                    <th>Мотогодини</th>
+                    <th>Опис виконаних робіт</th>
+                    <th>Вартість</th>
+                    <th>Майстер / Фахівець</th>
+                    <th>Вніс запис</th>
+                  </tr>
+                </thead>
+                <tbody id="repMaintTableBody"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -1713,7 +1837,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=3.9"></script>
+  <script src="/frontend/app.js?v=4.0"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>
