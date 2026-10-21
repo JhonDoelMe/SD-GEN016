@@ -27,8 +27,19 @@ router = APIRouter(prefix="/backups", tags=["Резервне копіюванн
 
 
 class CreateBackupRequest(BaseModel):
-    backup_type: str = Field(default="full", pattern=r"^(full|db_only)$")
+    backup_type: Optional[str] = None
+    type: Optional[str] = None
     notes: Optional[str] = Field(default="", max_length=255)
+    note: Optional[str] = Field(default="", max_length=255)
+
+    def get_backup_type(self) -> str:
+        raw = (self.backup_type or self.type or "full").strip().lower()
+        if raw in ("partial", "db_only"):
+            return "partial"
+        return "full"
+
+    def get_notes(self) -> str:
+        return (self.notes or self.note or "").strip()
 
 
 class BackupSettingsUpdateRequest(BaseModel):
@@ -36,7 +47,7 @@ class BackupSettingsUpdateRequest(BaseModel):
     backup_schedule_time: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
     backup_frequency: Optional[str] = Field(default=None, pattern=r"^(daily|weekly)$")
     backup_retention_count: Optional[int] = Field(default=None, ge=1, le=100)
-    backup_default_type: Optional[str] = Field(default=None, pattern=r"^(full|db_only)$")
+    backup_default_type: Optional[str] = Field(default=None, pattern=r"^(full|partial|db_only)$")
 
 
 @router.get("", response_model=Dict[str, Any])
@@ -48,6 +59,7 @@ async def get_backups_list(
     total_size_bytes = sum(b.get("size_bytes", 0) for b in backups)
     return {
         "count": len(backups),
+        "total_count": len(backups),
         "total_size_bytes": total_size_bytes,
         "total_size_formatted": format_file_size(total_size_bytes),
         "backups": backups,
@@ -63,14 +75,22 @@ async def trigger_manual_backup(
 ):
     """Створити нову резервну копію системи вручну (Лише для SuperAdmin)."""
     client_ip = get_client_ip(request)
+    chosen_type = payload.get_backup_type()
+    chosen_notes = payload.get_notes()
+
     manifest = await create_backup(
         session=db,
-        backup_type=payload.backup_type,
+        backup_type=chosen_type,
         creator=current_user.login,
         creator_ip=client_ip,
-        notes=payload.notes or "",
+        notes=chosen_notes,
     )
-    return manifest
+    return {
+        **manifest,
+        "message": f"{manifest.get('backup_type_ua', 'Резервну копію')} успішно створено!",
+        "backup": manifest,
+        "manifest": manifest,
+    }
 
 
 @router.get("/settings", response_model=Dict[str, Any])
@@ -80,12 +100,18 @@ async def get_backup_settings(
 ):
     """Отримати налаштування автоматичного створення бекапів."""
     settings_dict = await load_system_settings(db)
-    return {
+    raw_type = settings_dict.get("backup_default_type", "full")
+    clean_type = "partial" if raw_type in ("partial", "db_only") else "full"
+    data = {
         "backup_auto_enabled": settings_dict.get("backup_auto_enabled", False),
         "backup_schedule_time": settings_dict.get("backup_schedule_time", "03:00"),
         "backup_frequency": settings_dict.get("backup_frequency", "daily"),
         "backup_retention_count": settings_dict.get("backup_retention_count", 7),
-        "backup_default_type": settings_dict.get("backup_default_type", "full"),
+        "backup_default_type": clean_type,
+    }
+    return {
+        **data,
+        "settings": data,
     }
 
 

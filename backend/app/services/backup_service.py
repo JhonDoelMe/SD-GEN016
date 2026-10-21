@@ -116,18 +116,22 @@ async def create_backup(
     notes: str = ""
 ) -> Dict[str, Any]:
     """
-    Creates a full or DB-only backup packaged as a .zip archive.
-    Includes database_export.json, raw db file (if SQLite), uploads/ (if full), and manifest.json.
+    Creates a full or partial backup packaged as a .zip archive:
+    - 'full': Complete copy of the server (all files, code, configs, uploads, scripts) + DB dump.
+    - 'partial' (or 'db_only'): Dump of database tables + SQLite DB + system configs + .env.
     """
     backup_dir = get_backup_dir()
     now = now_facility()
     timestamp_str = now.strftime("%Y%m%d_%H%M%S")
-    backup_id = f"backup_{backup_type}_{timestamp_str}"
+    clean_type = "partial" if backup_type in ("partial", "db_only") else "full"
+    backup_id = f"backup_{clean_type}_{timestamp_str}"
     zip_filename = f"{backup_id}.zip"
     zip_path = backup_dir / zip_filename
 
     staging_dir = backup_dir / f"_staging_{backup_id}"
     staging_dir.mkdir(parents=True, exist_ok=True)
+
+    project_root = Path(__file__).resolve().parents[3]
 
     try:
         # 1. Export DB data to JSON (portable across SQLite and PostgreSQL)
@@ -136,54 +140,102 @@ async def create_backup(
         with open(db_dump_file, "w", encoding="utf-8") as f:
             json.dump(db_dump["tables"], f, ensure_ascii=False, indent=2)
 
-        included_files = ["database_export.json"]
+        included_components = ["database_export.json (дамп 20 таблиць БД)"]
 
         # 2. If SQLite, copy service_desk.db directly as well
         if settings.is_sqlite:
-            root_db = Path("service_desk.db").resolve()
+            root_db = (project_root / "service_desk.db").resolve()
             if root_db.exists():
                 shutil.copy2(root_db, staging_dir / "service_desk.db")
-                included_files.append("service_desk.db")
+                included_components.append("service_desk.db (фізична база даних)")
 
-        # 3. If Full backup, copy uploads folder
-        uploads_count = 0
-        if backup_type == "full":
-            uploads_src = Path(settings.UPLOAD_DIR).resolve()
-            if uploads_src.exists() and uploads_src.is_dir():
-                uploads_dest = staging_dir / "uploads"
-                uploads_dest.mkdir(exist_ok=True)
-                for root, _, files in os.walk(uploads_src):
-                    rel_dir = Path(root).relative_to(uploads_src)
-                    target_dir = uploads_dest / rel_dir
-                    target_dir.mkdir(parents=True, exist_ok=True)
-                    for file in files:
-                        src_file = Path(root) / file
-                        shutil.copy2(src_file, target_dir / file)
-                        uploads_count += 1
-                included_files.append(f"uploads/ ({uploads_count} файлів)")
+        # 3. Copy configuration files (.env, .env.example, docker-compose.yml, nginx.conf)
+        config_staging = staging_dir / "config"
+        config_staging.mkdir(exist_ok=True)
+        for env_name in [".env", ".env.example"]:
+            env_file = project_root / env_name
+            if env_file.exists():
+                shutil.copy2(env_file, config_staging / env_name)
+                included_components.append(f"config/{env_name}")
 
-        # 4. Generate manifest.json
+        for cfg_rel in ["docker-compose.yml", "alembic.ini", "Dockerfile"]:
+            cfg_file = project_root / cfg_rel
+            if cfg_file.exists():
+                shutil.copy2(cfg_file, config_staging / cfg_rel)
+                included_components.append(f"config/{cfg_rel}")
+
+        nginx_cfg = project_root / "docker" / "nginx.conf"
+        if nginx_cfg.exists():
+            shutil.copy2(nginx_cfg, config_staging / "nginx.conf")
+            included_components.append("config/nginx.conf")
+
+        # 4. If Full backup, copy entire server codebase, uploads, scripts, docs
+        total_server_files = 0
+        if clean_type == "full":
+            server_staging = staging_dir / "server_files"
+            server_staging.mkdir(exist_ok=True)
+
+            exclude_dirs = {
+                ".git", ".pytest_cache", "__pycache__", "backups", "venv", ".venv",
+                ".idea", ".vscode", "node_modules"
+            }
+            exclude_extensions = {".pyc", ".pyo", ".zip"}
+
+            target_dirs = ["backend", "frontend", "docker", "scripts", "docs", "uploads"]
+            for dir_name in target_dirs:
+                src_dir = project_root / dir_name
+                if src_dir.exists() and src_dir.is_dir():
+                    for root_path, dirs, files in os.walk(src_dir):
+                        dirs[:] = [d for d in dirs if d not in exclude_dirs and not d.startswith("_staging_")]
+                        rel = Path(root_path).relative_to(project_root)
+                        cur_dest = server_staging / rel
+                        cur_dest.mkdir(parents=True, exist_ok=True)
+                        for file_name in files:
+                            if any(file_name.endswith(ext) for ext in exclude_extensions):
+                                continue
+                            src_file = Path(root_path) / file_name
+                            try:
+                                shutil.copy2(src_file, cur_dest / file_name)
+                                total_server_files += 1
+                            except Exception:
+                                pass
+
+            # Copy root project files
+            for root_f in project_root.iterdir():
+                if root_f.is_file() and not any(root_f.name.endswith(ext) for ext in exclude_extensions):
+                    try:
+                        shutil.copy2(root_f, server_staging / root_f.name)
+                        total_server_files += 1
+                    except Exception:
+                        pass
+
+            included_components.append(f"server_files/ ({total_server_files} файлів: вихідний код, медіа, скрипти)")
+
+        # 5. Generate manifest.json
         manifest = {
             "app_name": "Service Desk Бензинового Генератора (SD-GEN016)",
             "app_version": "4.1.0",
             "backup_id": backup_id,
             "filename": zip_filename,
-            "backup_type": backup_type,
+            "backup_type": clean_type,
+            "backup_type_ua": "Повний бекап (повна копія сервера, файлів + дамп БД)" if clean_type == "full" else "Частковий бекап (дамп БД, конфігурація, .env)",
             "created_at": now.isoformat(),
             "created_by": creator,
             "created_by_ip": creator_ip,
             "notes": notes,
             "database_dialect": "sqlite" if settings.is_sqlite else "postgresql",
             "table_records_count": db_dump["counts"],
-            "uploads_files_count": uploads_count,
-            "included_components": included_files,
+            "tables_count": len(db_dump["counts"]),
+            "records_count": sum(db_dump["counts"].values()),
+            "server_files_count": total_server_files if clean_type == "full" else len(included_components),
+            "included_components": included_components,
         }
 
         manifest_file = staging_dir / "manifest.json"
         with open(manifest_file, "w", encoding="utf-8") as f:
             json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-        # 5. Build ZIP archive (single pass, perfectly packaged)
+        # 6. Build ZIP archive (single pass, perfectly packaged)
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for root, _, files in os.walk(staging_dir):
                 for file in files:
@@ -191,7 +243,7 @@ async def create_backup(
                     rel_path = abs_path.relative_to(staging_dir)
                     zf.write(abs_path, arcname=str(rel_path))
 
-        # 6. Compute final file stats
+        # 7. Compute final file stats
         size_bytes = zip_path.stat().st_size
         sha256_hash = compute_sha256(zip_path)
 
@@ -199,16 +251,16 @@ async def create_backup(
         manifest["size_formatted"] = format_file_size(size_bytes)
         manifest["sha256"] = sha256_hash
 
-        # 7. Audit Log
+        # 8. Audit Log
         await log_audit(
             db=session,
             action="BACKUP_CREATE",
             entity_type="backup",
             entity_id=backup_id,
             details={
-                "message": f"Створено {backup_type} резервну копію '{zip_filename}' розміром {manifest['size_formatted']}",
+                "message": f"Створено {manifest['backup_type_ua']} '{zip_filename}' розміром {manifest['size_formatted']}",
                 "records_count": sum(db_dump["counts"].values()),
-                "uploads_count": uploads_count,
+                "files_count": total_server_files if clean_type == "full" else len(included_components),
                 "notes": notes,
             },
             ip_address=creator_ip
@@ -244,33 +296,50 @@ def list_backups() -> List[Dict[str, Any]]:
             manifest = None
 
         if manifest:
+            b_type = manifest.get("backup_type", "unknown")
+            if b_type in ("partial", "db_only"):
+                b_type = "partial"
+            elif b_type == "full":
+                b_type = "full"
+
+            table_counts = manifest.get("table_records_count", {})
             entry = {
                 "backup_id": manifest.get("backup_id", item.stem),
                 "filename": item.name,
-                "backup_type": manifest.get("backup_type", "unknown"),
+                "backup_type": b_type,
+                "type": b_type,
+                "backup_type_ua": manifest.get("backup_type_ua", "Повний бекап" if b_type == "full" else "Частковий бекап"),
                 "created_at": manifest.get("created_at", modified_time.isoformat()),
                 "created_by": manifest.get("created_by", "system"),
                 "notes": manifest.get("notes", ""),
+                "note": manifest.get("notes", ""),
                 "size_bytes": size_bytes,
                 "size_formatted": format_file_size(size_bytes),
                 "sha256": manifest.get("sha256", ""),
-                "table_records_count": manifest.get("table_records_count", {}),
-                "uploads_files_count": manifest.get("uploads_files_count", 0),
+                "table_records_count": table_counts,
+                "tables_count": manifest.get("tables_count", len(table_counts) if isinstance(table_counts, dict) else 0),
+                "records_count": manifest.get("records_count", sum(table_counts.values()) if isinstance(table_counts, dict) else 0),
+                "files_count": manifest.get("server_files_count", manifest.get("uploads_files_count", 0)),
             }
         else:
-            b_type = "db_only" if "db_only" in item.name else "full"
+            b_type = "partial" if any(x in item.name for x in ("partial", "db_only")) else "full"
             entry = {
                 "backup_id": item.stem,
                 "filename": item.name,
                 "backup_type": b_type,
+                "type": b_type,
+                "backup_type_ua": "Повний бекап" if b_type == "full" else "Частковий бекап",
                 "created_at": modified_time.isoformat(),
                 "created_by": "unknown",
                 "notes": "",
+                "note": "",
                 "size_bytes": size_bytes,
                 "size_formatted": format_file_size(size_bytes),
                 "sha256": "",
                 "table_records_count": {},
-                "uploads_files_count": 0,
+                "tables_count": 0,
+                "records_count": 0,
+                "files_count": 0,
             }
 
         results.append(entry)

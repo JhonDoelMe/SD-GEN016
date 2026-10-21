@@ -3489,12 +3489,13 @@ window.loadBackupsList = async function (isUserTriggered = false) {
     // Fetch and display schedule status
     try {
       const settRes = await api('/backups/settings');
-      const sett = settRes.settings || {};
+      const sett = settRes.settings || settRes || {};
       const statSchedule = document.getElementById('backupStatSchedule');
       if (statSchedule) {
         if (sett.backup_auto_enabled) {
           const freqUa = sett.backup_frequency === 'weekly' ? 'щотижня' : 'щодня';
-          statSchedule.innerHTML = `<span style="color: #4ade80;">Увімкнено (${freqUa} о ${escapeHtml(sett.backup_schedule_time || '03:00')}, ротація: ${Number(sett.backup_retention_count || 7)})</span>`;
+          const typeUa = sett.backup_default_type === 'full' ? 'повний' : 'частковий';
+          statSchedule.innerHTML = `<span style="color: #4ade80;">Увімкнено (${freqUa} о ${escapeHtml(sett.backup_schedule_time || '03:00')}, тип: ${typeUa}, ротація: ${Number(sett.backup_retention_count || 7)})</span>`;
         } else {
           statSchedule.innerHTML = `<span style="color: #94a3b8;">Вимкнено (лише вручну)</span>`;
         }
@@ -3508,22 +3509,26 @@ window.loadBackupsList = async function (isUserTriggered = false) {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Резервних копій ще не створено. Натисніть «➕ Створити бекап зараз» для першого збереження.</td></tr>';
       } else {
         tbody.innerHTML = backupsCache.map((b) => {
-          const typeLabel = b.type === 'full' ? '📦 Повний' : '🗄️ Тільки БД';
-          const badgeClass = b.type === 'full' ? 'badge-running' : 'badge-blocked';
+          const rawType = b.backup_type || b.type || 'full';
+          const isFull = rawType === 'full';
+          const typeLabel = isFull ? '📦 Повний' : '📑 Частковий';
+          const badgeClass = isFull ? 'badge-running' : 'badge-blocked';
           const fileSafe = escapeHtml(b.filename).replace(/'/g, "\\'");
+          const noteText = b.notes || b.note || '';
+          const infoDetails = isFull
+            ? `Таблиць: <b>${Number(b.tables_count || 0)}</b> | Записів: <b>${Number(b.records_count || 0)}</b> | Файлів сервера: <b>${Number(b.files_count || 0)}</b>`
+            : `Таблиць: <b>${Number(b.tables_count || 0)}</b> | Записів: <b>${Number(b.records_count || 0)}</b> | <span>Конфіг + .env</span>`;
 
           return `
             <tr>
               <td style="white-space: nowrap;">${formatDateTime(b.created_at)}</td>
-              <td><span class="badge ${badgeClass}">${typeLabel}</span></td>
+              <td><span class="badge ${badgeClass}" title="${escapeHtml(b.backup_type_ua || typeLabel)}">${typeLabel}</span></td>
               <td><code style="font-size: 0.82rem; color: #38bdf8;">${escapeHtml(b.filename)}</code></td>
               <td style="white-space: nowrap;"><b>${formatBytes(b.size_bytes)}</b></td>
-              <td style="font-size: 0.85rem;">
-                Таблиць: <b>${Number(b.tables_count || 0)}</b> | Записів: <b>${Number(b.records_count || 0)}</b>${b.type === 'full' ? ` | Файлів: <b>${Number(b.files_count || 0)}</b>` : ''}
-              </td>
+              <td style="font-size: 0.85rem;">${infoDetails}</td>
               <td>
                 <div style="font-weight: 600;">${escapeHtml(b.created_by || 'system')}</div>
-                ${b.note ? `<div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.15rem;">${escapeHtml(b.note)}</div>` : ''}
+                ${noteText ? `<div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.15rem;">${escapeHtml(noteText)}</div>` : ''}
               </td>
               <td style="text-align: center; white-space: nowrap;">
                 <div style="display: flex; gap: 0.4rem; justify-content: center; align-items: center;">
@@ -3583,7 +3588,7 @@ document.getElementById('createBackupForm')?.addEventListener('submit', async (e
 
     const res = await api('/backups', {
       method: 'POST',
-      body: JSON.stringify({ type: typeVal, note: noteVal })
+      body: JSON.stringify({ backup_type: typeVal, type: typeVal, notes: noteVal, note: noteVal })
     });
 
     closeModal('modalCreateBackup');
@@ -3687,7 +3692,7 @@ window.openBackupSettingsModal = async function () {
 
   try {
     const res = await api('/backups/settings');
-    const s = res.settings || {};
+    const s = res.settings || res || {};
 
     const chkAuto = document.getElementById('cfgBackupAutoEnabled');
     if (chkAuto) chkAuto.checked = !!s.backup_auto_enabled;
@@ -3699,7 +3704,10 @@ window.openBackupSettingsModal = async function () {
     if (selFreq) selFreq.value = s.backup_frequency || 'daily';
 
     const selType = document.getElementById('cfgBackupDefaultType');
-    if (selType) selType.value = s.backup_default_type || 'full';
+    if (selType) {
+      const defType = (s.backup_default_type === 'partial' || s.backup_default_type === 'db_only') ? 'partial' : 'full';
+      selType.value = defType;
+    }
 
     const inpRet = document.getElementById('cfgBackupRetentionCount');
     if (inpRet) inpRet.value = s.backup_retention_count ?? 7;

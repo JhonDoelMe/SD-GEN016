@@ -2048,18 +2048,18 @@
             <label style="display: flex; align-items: flex-start; gap: 0.75rem; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.75rem; cursor: pointer;">
               <input type="radio" name="backupTypeChoice" value="full" checked style="margin-top: 0.25rem; accent-color: #38bdf8;">
               <div>
-                <div style="font-weight: 600; color: var(--text-primary); font-size: 0.95rem;">📦 Повний бекап (База даних + Файли / Фото)</div>
+                <div style="font-weight: 600; color: var(--text-primary); font-size: 0.95rem;">📦 Повний бекап (Повна копія сервера: всі файли + дамп бази)</div>
                 <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
-                  Включає повний дамп усіх 20 таблиць БД (JSON + SQLite DB) та всі завантажені фотографії чеків і несправностей (папка <code>uploads/</code>). Рекомендовано для архівування.
+                  Створює повну резервну копію всього сервера: вихідний код, медіафайли, скрипти, документація, конфігурації + повний дамп бази даних (20 таблиць та файл БД).
                 </div>
               </div>
             </label>
             <label style="display: flex; align-items: flex-start; gap: 0.75rem; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.75rem; cursor: pointer;">
-              <input type="radio" name="backupTypeChoice" value="db_only" style="margin-top: 0.25rem; accent-color: #38bdf8;">
+              <input type="radio" name="backupTypeChoice" value="partial" style="margin-top: 0.25rem; accent-color: #38bdf8;">
               <div>
-                <div style="font-weight: 600; color: var(--text-primary); font-size: 0.95rem;">🗄️ Тільки база даних (Швидкий зліпок)</div>
+                <div style="font-weight: 600; color: var(--text-primary); font-size: 0.95rem;">📑 Частковий бекап (Лише дамп бази, конфігурація, .env)</div>
                 <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
-                  Включає лише реляційні дані (таблиці, користувачі, лічильники, аудит) без медіафайлів. Створюється миттєво, має мінімальний розмір.
+                  Включає дамп усіх таблиць бази даних, конфігураційні файли (Docker, Nginx, Alembic) та файл .env без вихідного коду чи медіафайлів.
                 </div>
               </div>
             </label>
@@ -2121,8 +2121,8 @@
           <div class="form-group" style="margin-bottom: 0;">
             <label>Тип автобекапу *</label>
             <select id="cfgBackupDefaultType" required>
-              <option value="full">Повний (БД + фото)</option>
-              <option value="db_only">Тільки база даних</option>
+              <option value="full">📦 Повний (Копія сервера + база даних)</option>
+              <option value="partial">📑 Частковий (Дамп бази + конфіг + .env)</option>
             </select>
           </div>
           <div class="form-group" style="margin-bottom: 0;">

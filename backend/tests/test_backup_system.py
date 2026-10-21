@@ -37,15 +37,15 @@ async def test_backup_system_full_flow(client, superadmin_auth, operator_auth):
     assert full_manifest["filename"].endswith(".zip")
     full_filename = full_manifest["filename"]
 
-    # 5. Create a DB-only Backup
+    # 5. Create a Partial Backup (дамп бази, конфігурація, .env)
     res_db = await client.post(
         "/api/v1/backups",
         headers=superadmin_auth,
-        json={"backup_type": "db_only", "notes": "Тестовий швидкий бекап БД"}
+        json={"backup_type": "partial", "notes": "Тестовий частковий бекап"}
     )
     assert res_db.status_code == 201
     db_manifest = res_db.json()
-    assert db_manifest["backup_type"] == "db_only"
+    assert db_manifest["backup_type"] in ("partial", "db_only")
     db_filename = db_manifest["filename"]
 
     # 6. List backups should now show both
@@ -57,19 +57,29 @@ async def test_backup_system_full_flow(client, superadmin_auth, operator_auth):
     assert full_filename in filenames
     assert db_filename in filenames
 
-    # 7. Download Full Backup and verify zip integrity
+    # 7. Download Full Backup and verify zip integrity & server files presence
     res_dl = await client.get(f"/api/v1/backups/{full_filename}/download", headers=superadmin_auth)
     assert res_dl.status_code == 200
     assert res_dl.headers.get("content-type") == "application/zip"
     assert len(res_dl.content) > 0
 
-    # Inspect zip contents in memory
     zf = zipfile.ZipFile(io.BytesIO(res_dl.content))
     namelist = zf.namelist()
     assert "manifest.json" in namelist
     assert "database_export.json" in namelist
+    assert any(n.startswith("server_files/") for n in namelist)
     manifest_in_zip = json.loads(zf.read("manifest.json").decode("utf-8"))
     assert manifest_in_zip["backup_id"] == full_manifest["backup_id"]
+
+    # Download Partial Backup and verify it has config/ but NOT server_files/
+    res_dl_db = await client.get(f"/api/v1/backups/{db_filename}/download", headers=superadmin_auth)
+    assert res_dl_db.status_code == 200
+    zf_db = zipfile.ZipFile(io.BytesIO(res_dl_db.content))
+    db_namelist = zf_db.namelist()
+    assert "manifest.json" in db_namelist
+    assert "database_export.json" in db_namelist
+    assert any(n.startswith("config/") for n in db_namelist)
+    assert not any(n.startswith("server_files/") for n in db_namelist)
 
     # 8. Get and Update Backup Settings
     res_get_settings = await client.get("/api/v1/backups/settings", headers=superadmin_auth)
@@ -85,7 +95,7 @@ async def test_backup_system_full_flow(client, superadmin_auth, operator_auth):
             "backup_schedule_time": "04:15",
             "backup_frequency": "weekly",
             "backup_retention_count": 10,
-            "backup_default_type": "db_only"
+            "backup_default_type": "partial"
         }
     )
     assert res_put_settings.status_code == 200
@@ -94,7 +104,7 @@ async def test_backup_system_full_flow(client, superadmin_auth, operator_auth):
     assert updated_s["backup_schedule_time"] == "04:15"
     assert updated_s["backup_frequency"] == "weekly"
     assert updated_s["backup_retention_count"] == 10
-    assert updated_s["backup_default_type"] == "db_only"
+    assert updated_s["backup_default_type"] in ("partial", "db_only")
 
     # 9. Delete Backups
     res_del_full = await client.delete(f"/api/v1/backups/{full_filename}", headers=superadmin_auth)
