@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.2">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.3">
 </head>
 <body>
 
@@ -850,7 +850,7 @@
               <span style="font-size: 0.78rem; color: var(--text-muted);">Натисніть на рядок для увімкнення/вимкнення</span>
             </div>
             <div class="settings-toggle-list">
-              <label class="settings-toggle-item" for="sysEnforceSchedule">
+              <label class="settings-toggle-item">
                 <input type="checkbox" id="sysEnforceSchedule" checked>
                 <div class="settings-toggle-content">
                   <span class="settings-toggle-title">🕒 Контроль запуску генераторів за робочим графіком</span>
@@ -858,7 +858,7 @@
                 </div>
               </label>
 
-              <label class="settings-toggle-item" for="sysAutoFetchPrices">
+              <label class="settings-toggle-item">
                 <input type="checkbox" id="sysAutoFetchPrices" checked>
                 <div class="settings-toggle-content">
                   <span class="settings-toggle-title">🌐 Автоматичне оновлення цін пального з табло АЗК WOG</span>
@@ -866,7 +866,7 @@
                 </div>
               </label>
 
-              <label class="settings-toggle-item" for="sysApplyAllGens" style="border-color: rgba(56, 189, 248, 0.35);">
+              <label class="settings-toggle-item" style="border-color: rgba(56, 189, 248, 0.35);">
                 <input type="checkbox" id="sysApplyAllGens" checked>
                 <div class="settings-toggle-content">
                   <span class="settings-toggle-title" style="color: #38bdf8;">🔄 Синхронізувати графік, часовий пояс та інтервал ТО для всіх об'єктів і генераторів</span>
@@ -2097,7 +2097,7 @@
         </p>
 
         <div class="settings-toggle-list" style="margin-bottom: 1.25rem;">
-          <label class="settings-toggle-item" for="cfgBackupAutoEnabled" style="border-color: rgba(168, 85, 247, 0.35);">
+          <label class="settings-toggle-item" style="border-color: rgba(168, 85, 247, 0.35); cursor: pointer;">
             <input type="checkbox" id="cfgBackupAutoEnabled" style="accent-color: #a855f7;">
             <div class="settings-toggle-content">
               <span class="settings-toggle-title" style="color: #c084fc;">🕒 Увімкнути автоматичний бекап за розкладом</span>
@@ -2273,7 +2273,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.2"></script>
+  <script src="/frontend/app.js?v=4.3"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

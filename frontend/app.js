@@ -278,6 +278,7 @@ function applyRolePermissionsUI() {
     panelBackups.style.display = superadmin ? 'block' : 'none';
   }
   setBtnState('btnOpenCreateBackup', superadmin, 'Створення резервних копій доступне виключно Головному Суперадміністратору 🔒', '➕ Створити бекап зараз 🔒');
+  setBtnState('btnOpenUploadRestore', superadmin, 'Відновлення з бекапу доступне виключно Головному Суперадміністратору 🔒', '📤 Завантажити архів та відновити 🔒');
   setBtnState('btnOpenBackupSettings', superadmin, 'Налаштування розкладу доступні виключно Головному Суперадміністратору 🔒', '⚙️ Розклад автобекапу 🔒');
 }
 
@@ -361,8 +362,8 @@ window.openModal = function (id) {
     showToast('Системне коригування лічильників доступне виключно Головному Суперадміністратору', 'warning');
     return;
   }
-  if ((id === 'modalCreateBackup' || id === 'modalBackupSettings' || id === 'modalDeleteBackup') && !isSuperAdmin()) {
-    showToast('Керування резервними копіями доступне виключно Головному Суперадміністратору', 'warning');
+  if ((id === 'modalCreateBackup' || id === 'modalBackupSettings' || id === 'modalDeleteBackup' || id === 'modalConfirmRestore' || id === 'modalUploadRestore') && !isSuperAdmin()) {
+    showToast('Керування резервними копіями та відновлення доступні виключно Головному Суперадміністратору', 'warning');
     return;
   }
   if ((id === 'modalCreateFacility' || id === 'modalQuickEditFacility') && !hasPermission('facility:configure')) {
@@ -3782,6 +3783,11 @@ window.openUploadRestoreModal = function () {
   openModal('modalUploadRestore');
 };
 
+document.getElementById('btnOpenUploadRestore')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  openUploadRestoreModal();
+});
+
 document.getElementById('uploadRestoreForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!isSuperAdmin()) {
@@ -3863,10 +3869,10 @@ window.openBackupSettingsModal = async function () {
     const s = res.settings || res || {};
 
     const chkAuto = document.getElementById('cfgBackupAutoEnabled');
-    if (chkAuto) chkAuto.checked = !!s.backup_auto_enabled;
+    if (chkAuto) chkAuto.checked = Boolean(s.backup_auto_enabled);
 
     const inpTime = document.getElementById('cfgBackupScheduleTime');
-    if (inpTime) inpTime.value = s.backup_schedule_time || '03:00';
+    if (inpTime) inpTime.value = (s.backup_schedule_time || '03:00').slice(0, 5);
 
     const selFreq = document.getElementById('cfgBackupFrequency');
     if (selFreq) selFreq.value = s.backup_frequency || 'daily';
@@ -3894,8 +3900,8 @@ document.getElementById('backupSettingsForm')?.addEventListener('submit', async 
   }
 
   const btn = document.getElementById('btnSubmitSaveBackupSettings');
-  const autoEnabled = document.getElementById('cfgBackupAutoEnabled')?.checked ?? false;
-  const schedTime = document.getElementById('cfgBackupScheduleTime')?.value || '03:00';
+  const autoEnabled = Boolean(document.getElementById('cfgBackupAutoEnabled')?.checked);
+  const schedTime = (document.getElementById('cfgBackupScheduleTime')?.value || '03:00').trim().slice(0, 5);
   const freq = document.getElementById('cfgBackupFrequency')?.value || 'daily';
   const defType = document.getElementById('cfgBackupDefaultType')?.value || 'full';
   const retCount = parseInt(document.getElementById('cfgBackupRetentionCount')?.value || '7', 10);

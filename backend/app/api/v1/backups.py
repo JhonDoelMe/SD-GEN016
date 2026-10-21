@@ -48,7 +48,7 @@ class CreateBackupRequest(BaseModel):
 
 class BackupSettingsUpdateRequest(BaseModel):
     backup_auto_enabled: Optional[bool] = None
-    backup_schedule_time: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+    backup_schedule_time: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$")
     backup_frequency: Optional[str] = Field(default=None, pattern=r"^(daily|weekly)$")
     backup_retention_count: Optional[int] = Field(default=None, ge=1, le=100)
     backup_default_type: Optional[str] = Field(default=None, pattern=r"^(full|partial|db_only)$")
@@ -134,9 +134,9 @@ async def update_backup_settings(
     """Оновити налаштування розкладу автоматичного створення бекапів."""
     update_data = {}
     if payload.backup_auto_enabled is not None:
-        update_data["backup_auto_enabled"] = payload.backup_auto_enabled
+        update_data["backup_auto_enabled"] = bool(payload.backup_auto_enabled)
     if payload.backup_schedule_time is not None:
-        update_data["backup_schedule_time"] = payload.backup_schedule_time
+        update_data["backup_schedule_time"] = payload.backup_schedule_time[:5]
     if payload.backup_frequency is not None:
         update_data["backup_frequency"] = payload.backup_frequency
     if payload.backup_retention_count is not None:
@@ -159,7 +159,11 @@ async def update_backup_settings(
             ip_address=client_ip
         )
 
-    return await get_backup_settings(db=db, current_user=current_user)
+    res = await get_backup_settings(db=db, current_user=current_user)
+    return {
+        **res,
+        "message": "Налаштування автобекапу успішно збережено!"
+    }
 
 
 @router.get("/{filename}/download")
