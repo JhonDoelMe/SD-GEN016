@@ -924,6 +924,9 @@
             <button type="button" id="btnOpenCreateBackup" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #38bdf8; color: #38bdf8; font-weight: 600;" onclick="openCreateBackupModal()">
               ➕ Створити бекап зараз
             </button>
+            <button type="button" id="btnOpenUploadRestore" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #10b981; color: #34d399; font-weight: 600;" onclick="openUploadRestoreModal()">
+              📤 Завантажити архів та відновити
+            </button>
             <button type="button" id="btnOpenBackupSettings" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #a855f7; color: #c084fc; font-weight: 600;" onclick="openBackupSettingsModal()">
               ⚙️ Розклад автобекапу
             </button>
@@ -2135,6 +2138,107 @@
           <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalBackupSettings')">Скасувати</button>
           <button type="submit" id="btnSubmitSaveBackupSettings" class="btn-primary" style="min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
             💾 Зберегти налаштування
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Confirm Restore from Backup -->
+  <div id="modalConfirmRestore" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 style="color: #fb923c;">🔄 Відновлення системи з бекапу</h3>
+        <button class="close-btn" onclick="closeModal('modalConfirmRestore')">&times;</button>
+      </div>
+      <form id="confirmRestoreForm">
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">ОБРАНИЙ АРХІВ:</div>
+          <div id="restoreFilenameDisplay" style="font-weight: 700; color: #38bdf8; font-family: monospace; word-break: break-all;"></div>
+          <div id="restoreDetailsDisplay" style="font-size: 0.85rem; color: var(--text-color); margin-top: 0.4rem;"></div>
+        </div>
+
+        <div style="background: rgba(234, 88, 12, 0.12); border: 1px solid rgba(249, 115, 22, 0.4); border-radius: 0.5rem; padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; color: #fb923c; font-weight: 700; font-size: 0.92rem; margin-bottom: 0.35rem;">
+            <span>⚠️</span> <span>УВАГА: ЗАМІНА ДАНИХ</span>
+          </div>
+          <div style="font-size: 0.82rem; color: #fdba74; line-height: 1.45;">
+            Поточні дані в базі будуть очищені та замінені даними з цього архіву. 
+            <br>
+            <b>🛡️ Безпека:</b> перед початком система автоматично збереже поточний стан у snapshot безпеки.
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.88rem;">
+            <input type="checkbox" id="restoreFilesCheckbox" checked style="accent-color: #f97316;">
+            <span>Відновити також файли та фото чеків/несправностей (uploads)</span>
+          </label>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="font-size: 0.85rem; font-weight: 600;">
+            Для підтвердження введіть слово <span style="color: #f97316; font-family: monospace; letter-spacing: 1px;">ВІДНОВИТИ</span>: *
+          </label>
+          <input type="text" id="restoreConfirmWordInput" required placeholder="ВІДНОВИТИ" autocomplete="off" style="border-color: rgba(249, 115, 22, 0.5); font-weight: 600; text-transform: uppercase;">
+        </div>
+
+        <input type="hidden" id="restoreFilenameHidden">
+
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
+          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalConfirmRestore')">Скасувати</button>
+          <button type="submit" id="btnSubmitRestore" class="btn-primary" style="background: linear-gradient(135deg, #ea580c, #c2410c); border-color: #f97316; min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
+            🔄 Підтвердити та відновити
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Upload and Restore Backup -->
+  <div id="modalUploadRestore" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 style="color: #34d399;">📤 Завантаження архіву та відновлення</h3>
+        <button class="close-btn" onclick="closeModal('modalUploadRestore')">&times;</button>
+      </div>
+      <form id="uploadRestoreForm">
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1.2rem; line-height: 1.5;">
+          Завантажте файл архіву резервної копії (.zip) з вашого комп'ютера. Система збереже його в сховище бекапів та розгорне дані.
+        </p>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="font-weight: 600;">Оберіть файл резервної копії (.zip) *</label>
+          <input type="file" id="uploadRestoreFileInput" accept=".zip" required style="padding: 0.5rem; background: rgba(15, 23, 42, 0.6); border: 1px dashed var(--border-color); border-radius: 0.5rem; width: 100%;">
+        </div>
+
+        <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(52, 211, 153, 0.3); border-radius: 0.5rem; padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; color: #34d399; font-weight: 700; font-size: 0.92rem; margin-bottom: 0.35rem;">
+            <span>🛡️</span> <span>АВТОМАТИЧНИЙ ЗАХИСТ</span>
+          </div>
+          <div style="font-size: 0.82rem; color: #a7f3d0; line-height: 1.45;">
+            Перед імпортом система створить резервний snapshot поточної бази на випадок відкоту.
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.88rem;">
+            <input type="checkbox" id="uploadRestoreFilesCheckbox" checked style="accent-color: #10b981;">
+            <span>Відновити фотографії та медіа-файли з архіву (папка uploads/)</span>
+          </label>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="font-size: 0.85rem; font-weight: 600;">
+            Для підтвердження введіть слово <span style="color: #34d399; font-family: monospace; letter-spacing: 1px;">ВІДНОВИТИ</span>: *
+          </label>
+          <input type="text" id="uploadRestoreConfirmWordInput" required placeholder="ВІДНОВИТИ" autocomplete="off" style="border-color: rgba(52, 211, 153, 0.5); font-weight: 600; text-transform: uppercase;">
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
+          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalUploadRestore')">Скасувати</button>
+          <button type="submit" id="btnSubmitUploadRestore" class="btn-primary" style="background: linear-gradient(135deg, #059669, #047857); border-color: #10b981; min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
+            🚀 Завантажити та відновити
           </button>
         </div>
       </form>

@@ -7,14 +7,14 @@ import shutil
 import asyncio
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from sqlalchemy import select
+from sqlalchemy import select, delete, insert, text, DateTime, Date, Time
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.config import settings
 from backend.app.database import AsyncSessionLocal
 from backend.app.core.timezone import now_facility
 from backend.app.services.audit_service import log_audit
-from backend.app.services.settings_service import get_runtime_setting
+from backend.app.services.settings_service import get_runtime_setting, load_system_settings
 
 # Import all models to serialize data for database-agnostic JSON export
 from backend.app.models.facility import Facility
@@ -53,6 +53,34 @@ def compute_sha256(file_path: Path) -> str:
     return sha.hexdigest()
 
 
+# Strict topological order of tables for data export, import, and cascade-free deletion
+TABLE_ORDER = [
+    ("permissions", Permission),
+    ("roles", Role),
+    ("facilities", Facility),
+    ("users", User),
+    ("system_settings", SystemSetting),
+    ("generators", Generator),
+    ("generator_schedules", GeneratorSchedule),
+    ("generator_runs", GeneratorRun),
+    ("fuel_stocks", FuelStock),
+    ("fuel_receipts", FuelReceipt),
+    ("fuel_transfers", FuelTransfer),
+    ("maintenance_schedules", MaintenanceSchedule),
+    ("maintenance_records", MaintenanceRecord),
+    ("faults", Fault),
+    ("system_adjustments", SystemAdjustment),
+    ("push_subscriptions", PushSubscription),
+    ("notification_logs", NotificationLog),
+    ("audit_logs", AuditLog),
+]
+
+M2M_TABLES = [
+    ("user_roles", user_roles),
+    ("role_permissions", role_permissions),
+]
+
+
 def model_row_to_dict(row: Any) -> Dict[str, Any]:
     """Serialize an SQLAlchemy model instance into JSON-friendly dict."""
     data = {}
@@ -65,33 +93,43 @@ def model_row_to_dict(row: Any) -> Dict[str, Any]:
     return data
 
 
+def prepare_rows_for_insert(model_cls: Any, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Clean and deserialize row dictionaries matching the model column types."""
+    cols = model_cls.__table__.columns
+    cleaned_rows = []
+    for r in rows:
+        cleaned = {}
+        for col in cols:
+            if col.name not in r:
+                continue
+            v = r[col.name]
+            if v is not None and isinstance(v, str):
+                if isinstance(col.type, (DateTime,)):
+                    try:
+                        v = datetime.datetime.fromisoformat(v)
+                    except Exception:
+                        pass
+                elif isinstance(col.type, (Date,)):
+                    try:
+                        v = datetime.date.fromisoformat(v)
+                    except Exception:
+                        pass
+                elif isinstance(col.type, (Time,)):
+                    try:
+                        v = datetime.time.fromisoformat(v)
+                    except Exception:
+                        pass
+            cleaned[col.name] = v
+        cleaned_rows.append(cleaned)
+    return cleaned_rows
+
+
 async def dump_all_tables_to_dict(session: AsyncSession) -> Dict[str, Any]:
     """Database-agnostic export of all tables to dict for JSON serialization."""
-    models_to_export = [
-        ("facilities", Facility),
-        ("generators", Generator),
-        ("generator_schedules", GeneratorSchedule),
-        ("generator_runs", GeneratorRun),
-        ("fuel_stocks", FuelStock),
-        ("fuel_receipts", FuelReceipt),
-        ("fuel_transfers", FuelTransfer),
-        ("maintenance_schedules", MaintenanceSchedule),
-        ("maintenance_records", MaintenanceRecord),
-        ("faults", Fault),
-        ("system_adjustments", SystemAdjustment),
-        ("users", User),
-        ("roles", Role),
-        ("permissions", Permission),
-        ("system_settings", SystemSetting),
-        ("push_subscriptions", PushSubscription),
-        ("notification_logs", NotificationLog),
-        ("audit_logs", AuditLog),
-    ]
-
     export_data = {}
     counts = {}
 
-    for table_name, model_cls in models_to_export:
+    for table_name, model_cls in TABLE_ORDER:
         stmt = select(model_cls)
         result = await session.execute(stmt)
         rows = result.scalars().all()
@@ -99,7 +137,7 @@ async def dump_all_tables_to_dict(session: AsyncSession) -> Dict[str, Any]:
         counts[table_name] = len(rows)
 
     # Export secondary many-to-many tables
-    for m2m_name, m2m_table in [("user_roles", user_roles), ("role_permissions", role_permissions)]:
+    for m2m_name, m2m_table in M2M_TABLES:
         res = await session.execute(select(m2m_table))
         rows = [dict(r._mapping) for r in res.all()]
         export_data[m2m_name] = rows
@@ -279,7 +317,13 @@ def list_backups() -> List[Dict[str, Any]]:
     backup_dir = get_backup_dir()
     results = []
 
-    for item in backup_dir.glob("backup_*.zip"):
+    zip_candidates = sorted(
+        list(backup_dir.glob("backup_*.zip")) + list(backup_dir.glob("uploaded_*.zip")),
+        key=lambda x: x.stat().st_mtime,
+        reverse=True
+    )
+
+    for item in zip_candidates:
         if not item.is_file():
             continue
 
@@ -353,7 +397,7 @@ async def delete_backup(session: AsyncSession, filename: str, user_login: str, i
     """Safely delete a backup file."""
     # Sanitize filename
     safe_name = Path(filename).name
-    if not safe_name.endswith(".zip") or not safe_name.startswith("backup_"):
+    if not safe_name.endswith(".zip") or not (safe_name.startswith("backup_") or safe_name.startswith("uploaded_")):
         raise ValueError("Неприпустима назва файлу резервної копії")
 
     backup_dir = get_backup_dir()
@@ -376,6 +420,210 @@ async def delete_backup(session: AsyncSession, filename: str, user_login: str, i
         ip_address=ip_address
     )
     return True
+
+
+def inspect_backup(zip_path: Path) -> Dict[str, Any]:
+    """Inspects a backup zip archive and extracts manifest and metadata."""
+    if not zip_path.exists() or not zip_path.is_file():
+        raise FileNotFoundError(f"Файл резервної копії не знайдено: {zip_path.name}")
+
+    size_bytes = zip_path.stat().st_size
+    manifest = None
+    namelist = []
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        namelist = zf.namelist()
+        if "manifest.json" in namelist:
+            try:
+                manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+            except Exception:
+                manifest = None
+
+    if not manifest:
+        manifest = {
+            "backup_id": zip_path.stem,
+            "filename": zip_path.name,
+            "backup_type": "full" if "full" in zip_path.name else "partial",
+            "backup_type_ua": "Повний бекап" if "full" in zip_path.name else "Частковий бекап",
+            "created_at": datetime.datetime.fromtimestamp(zip_path.stat().st_mtime).isoformat(),
+            "created_by": "unknown",
+            "notes": "",
+            "table_records_count": {},
+            "tables_count": 0,
+            "records_count": 0,
+            "server_files_count": len([n for n in namelist if n.startswith("server_files/")]),
+        }
+
+    return {
+        "filename": zip_path.name,
+        "size_bytes": size_bytes,
+        "size_formatted": format_file_size(size_bytes),
+        "manifest": manifest,
+        "has_database_export": "database_export.json" in namelist,
+        "has_server_files": any(n.startswith("server_files/") for n in namelist),
+        "has_uploads": any(n.startswith("server_files/uploads/") or n.startswith("uploads/") for n in namelist),
+        "total_files": len(namelist),
+    }
+
+
+async def restore_backup(
+    session: AsyncSession,
+    zip_path: Path,
+    restore_files: bool = True,
+    creator: str = "superadmin",
+    creator_ip: str = "127.0.0.1"
+) -> Dict[str, Any]:
+    """
+    Performs full system restore from backup .zip:
+    1. Validates zip file and manifest.
+    2. Creates an automated safety snapshot before starting.
+    3. Cleans up existing DB tables (handling foreign keys and engines).
+    4. Populates database from database_export.json with proper deserialization.
+    5. Resets sequences (if PostgreSQL).
+    6. Restores uploads/ if present and restore_files is True.
+    7. Refreshes in-memory system settings.
+    8. Records audit log.
+    """
+    if not zip_path.exists() or not zip_path.is_file():
+        raise FileNotFoundError(f"Файл резервної копії не знайдено: {zip_path.name}")
+
+    backup_dir = get_backup_dir()
+    staging_dir = backup_dir / f"_staging_restore_{int(datetime.datetime.now().timestamp())}_{zip_path.stem}"
+    staging_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # 1. Unzip archive into staging
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(staging_dir)
+
+        # 2. Validate manifest and database_export.json
+        manifest_file = staging_dir / "manifest.json"
+        manifest = {}
+        if manifest_file.exists():
+            with open(manifest_file, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+
+        db_export_file = staging_dir / "database_export.json"
+        if not db_export_file.exists():
+            raise ValueError("У резервній копії відсутній обов'язковий файл 'database_export.json'!")
+
+        with open(db_export_file, "r", encoding="utf-8") as f:
+            tables_data = json.load(f)
+
+        # 3. Create automated pre-restore safety backup
+        safety_manifest = await create_backup(
+            session=session,
+            backup_type="partial",
+            creator=f"{creator}_pre_restore",
+            creator_ip=creator_ip,
+            notes=f"Автоматичний snapshot безпеки перед відновленням з {zip_path.name}"
+        )
+
+        # 4. Clear database tables
+        if settings.is_sqlite:
+            await session.execute(text("PRAGMA foreign_keys = OFF;"))
+
+        # Delete in reverse topological order
+        for m2m_name, m2m_table in reversed(M2M_TABLES):
+            await session.execute(delete(m2m_table))
+
+        for table_name, model_cls in reversed(TABLE_ORDER):
+            await session.execute(delete(model_cls))
+
+        # 5. Populate database in forward topological order
+        restored_counts = {}
+        for table_name, model_cls in TABLE_ORDER:
+            rows = tables_data.get(table_name, [])
+            if rows:
+                cleaned_rows = prepare_rows_for_insert(model_cls, rows)
+                await session.execute(insert(model_cls), cleaned_rows)
+            restored_counts[table_name] = len(rows)
+
+        for m2m_name, m2m_table in M2M_TABLES:
+            rows = tables_data.get(m2m_name, [])
+            if rows:
+                await session.execute(insert(m2m_table), rows)
+            restored_counts[m2m_name] = len(rows)
+
+        if settings.is_sqlite:
+            await session.execute(text("PRAGMA foreign_keys = ON;"))
+        else:
+            # PostgreSQL sequence reset for tables with autoincrement ID
+            for table_name, model_cls in TABLE_ORDER:
+                if "id" in model_cls.__table__.columns:
+                    seq_sql = text(f"""
+                        SELECT setval(
+                            pg_get_serial_sequence('{table_name}', 'id'),
+                            COALESCE((SELECT MAX(id) FROM {table_name}), 1),
+                            (SELECT MAX(id) FROM {table_name}) IS NOT NULL
+                        );
+                    """)
+                    try:
+                        await session.execute(seq_sql)
+                    except Exception:
+                        pass
+
+        await session.commit()
+
+        # 6. Refresh in-memory system settings cache
+        await load_system_settings(session)
+
+        # 7. Restore media files (uploads) if requested
+        restored_files_count = 0
+        if restore_files:
+            uploads_dest = Path(settings.UPLOAD_DIR).resolve()
+            uploads_dest.mkdir(parents=True, exist_ok=True)
+
+            potential_sources = [
+                staging_dir / "server_files" / "uploads",
+                staging_dir / "uploads"
+            ]
+            for u_src in potential_sources:
+                if u_src.exists() and u_src.is_dir():
+                    for root, _, files in os.walk(u_src):
+                        rel_dir = Path(root).relative_to(u_src)
+                        cur_target = uploads_dest / rel_dir
+                        cur_target.mkdir(parents=True, exist_ok=True)
+                        for f_name in files:
+                            shutil.copy2(Path(root) / f_name, cur_target / f_name)
+                            restored_files_count += 1
+
+        # 8. Audit log
+        total_records = sum(restored_counts.values())
+        await log_audit(
+            db=session,
+            action="BACKUP_RESTORE",
+            entity_type="backup",
+            entity_id=zip_path.stem,
+            details={
+                "message": f"Успішно відновлено систему з резервної копії '{zip_path.name}'",
+                "filename": zip_path.name,
+                "safety_backup_id": safety_manifest.get("backup_id"),
+                "safety_backup_file": safety_manifest.get("filename"),
+                "records_restored": total_records,
+                "tables_count": len(restored_counts),
+                "media_files_restored": restored_files_count,
+                "restore_files": restore_files,
+            },
+            ip_address=creator_ip
+        )
+
+        return {
+            "status": "success",
+            "message": f"Систему успішно відновлено з резервної копії '{zip_path.name}'!",
+            "filename": zip_path.name,
+            "safety_backup_filename": safety_manifest.get("filename"),
+            "safety_backup_id": safety_manifest.get("backup_id"),
+            "records_restored": total_records,
+            "tables_restored_count": len(restored_counts),
+            "media_files_restored": restored_files_count,
+            "restored_at": now_facility().isoformat(),
+        }
+
+    finally:
+        # Cleanup temporary staging folder
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
 
 
 def rotate_backups(keep_count: int = 7) -> List[str]:

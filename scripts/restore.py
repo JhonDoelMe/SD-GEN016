@@ -1,66 +1,58 @@
 #!/usr/bin/env python3
 """
-Restore Utility for SD-GEN016
-Restores SQLite or PostgreSQL database and uploads from a backup archive.
+Modern Disaster Recovery Utility for SD-GEN016 (Service Desk Бензинового Генератора)
+Restores PostgreSQL / SQLite database and media files from modern .zip backup archives.
 """
-import os
 import sys
-import shutil
-import tarfile
+import asyncio
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from backend.app.config import settings
+from backend.app.database import AsyncSessionLocal
+from backend.app.services.backup_service import restore_backup, inspect_backup
 
 
-def run_restore(archive_path_str: str):
-    archive_path = Path(archive_path_str)
+async def main_restore(archive_path_str: str, restore_files: bool = True):
+    archive_path = Path(archive_path_str).resolve()
     if not archive_path.exists():
-        print(f"[!] Error: Archive file '{archive_path}' does not exist!")
+        print(f"[!] Error: Файл бекапу '{archive_path}' не знайдено!")
         sys.exit(1)
 
-    temp_dir = ROOT_DIR / "backups" / "tmp_restore"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-
+    print(f"[*] Перевірка архіву: {archive_path.name}...")
     try:
-        print(f"[*] Extracting archive {archive_path.name}...")
-        with tarfile.open(archive_path, "r:gz") as tar:
-            tar.extractall(path=temp_dir)
+        info = inspect_backup(archive_path)
+        manifest = info.get("manifest", {})
+        print(f"    - Тип: {manifest.get('backup_type_ua', manifest.get('backup_type'))}")
+        print(f"    - Створено: {manifest.get('created_at')} (автор: {manifest.get('created_by')})")
+        print(f"    - Розмір: {info.get('size_formatted')}")
+        print(f"    - Таблиць: {manifest.get('tables_count')}, Записів: {manifest.get('records_count')}")
+    except Exception as e:
+        print(f"[!] Warning: Не вдалося прочитати маніфест: {e}")
 
-        # 1. Restore SQLite database if present
-        extracted_db = temp_dir / "service_desk.db"
-        if extracted_db.exists() and settings.is_sqlite:
-            target_db = ROOT_DIR / "service_desk.db"
-            shutil.copy2(extracted_db, target_db)
-            print(f"[OK] SQLite database restored to {target_db}")
+    print("\n[*] Запуск процедури відновлення...")
+    async with AsyncSessionLocal() as session:
+        result = await restore_backup(
+            session=session,
+            zip_path=archive_path,
+            restore_files=restore_files,
+            creator="CLI_DISASTER_RECOVERY",
+            creator_ip="127.0.0.1"
+        )
 
-        # 2. Restore PostgreSQL dump if present
-        extracted_dump = temp_dir / "db_dump.sql"
-        if extracted_dump.exists() and not settings.is_sqlite:
-            print("[*] Restoring PostgreSQL dump...")
-            os.system(f"psql {settings.DATABASE_URL.replace('+asyncpg', '')} -f {extracted_dump}")
-            print("[OK] PostgreSQL database restored")
-
-        # 3. Restore Uploads
-        extracted_uploads = temp_dir / "uploads"
-        if extracted_uploads.exists():
-            uploads_dir = Path(settings.UPLOAD_DIR)
-            if not uploads_dir.is_absolute():
-                uploads_dir = ROOT_DIR / uploads_dir
-            shutil.copytree(extracted_uploads, uploads_dir, dirs_exist_ok=True)
-            print(f"[OK] Uploads restored to {uploads_dir}")
-
-        print("[OK] System successfully restored from backup!")
-
-    finally:
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir)
+    print("\n[OK] " + result.get("message", "Відновлення завершено!"))
+    print(f"     - Відновлено записів: {result.get('records_restored')}")
+    print(f"     - Відновлено таблиць: {result.get('tables_restored_count')}")
+    print(f"     - Медіа-файлів відновлено: {result.get('media_files_restored')}")
+    print(f"     - Автоматичний snapshot безпеки: {result.get('safety_backup_filename')}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python scripts/restore.py <path_to_backup_archive.tar.gz>")
+        print("Використання: python scripts/restore.py <шлях_до_архіву_backup_*.zip> [--no-files]")
         sys.exit(1)
-    run_restore(sys.argv[1])
+
+    archive = sys.argv[1]
+    restore_media = "--no-files" not in sys.argv
+    asyncio.run(main_restore(archive, restore_files=restore_media))

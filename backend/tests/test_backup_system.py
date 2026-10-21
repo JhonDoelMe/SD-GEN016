@@ -106,7 +106,47 @@ async def test_backup_system_full_flow(client, superadmin_auth, operator_auth):
     assert updated_s["backup_retention_count"] == 10
     assert updated_s["backup_default_type"] in ("partial", "db_only")
 
-    # 9. Delete Backups
+    # 9. Inspect Backup Metadata
+    res_inspect = await client.get(f"/api/v1/backups/{full_filename}/inspect", headers=superadmin_auth)
+    assert res_inspect.status_code == 200
+    inspect_data = res_inspect.json()
+    assert inspect_data["manifest"]["backup_id"] == full_manifest["backup_id"]
+    assert inspect_data["has_database_export"] is True
+
+    # 10. Test Restore Validation (rejection on wrong confirmation)
+    res_bad_confirm = await client.post(
+        f"/api/v1/backups/{full_filename}/restore",
+        headers=superadmin_auth,
+        json={"confirmation": "WRONG_WORD", "restore_files": True}
+    )
+    assert res_bad_confirm.status_code == 400
+
+    # 11. Test Restore from existing backup (with proper confirmation 'ВІДНОВИТИ')
+    res_restore = await client.post(
+        f"/api/v1/backups/{full_filename}/restore",
+        headers=superadmin_auth,
+        json={"confirmation": "ВІДНОВИТИ", "restore_files": True}
+    )
+    assert res_restore.status_code == 200
+    restore_data = res_restore.json()
+    assert restore_data["status"] == "success"
+    assert restore_data["records_restored"] > 0
+    assert "safety_backup_filename" in restore_data
+    safety_filename = restore_data["safety_backup_filename"]
+
+    # 12. Test Upload and Restore (Multipart/Form-Data)
+    res_upload_restore = await client.post(
+        "/api/v1/backups/upload-restore",
+        headers=superadmin_auth,
+        data={"confirmation": "ВІДНОВИТИ", "restore_files": "true"},
+        files={"file": ("test_upload_backup.zip", res_dl.content, "application/zip")}
+    )
+    assert res_upload_restore.status_code == 200
+    up_restore_data = res_upload_restore.json()
+    assert up_restore_data["status"] == "success"
+    assert up_restore_data["records_restored"] > 0
+
+    # 13. Delete Backups (including safety backup)
     res_del_full = await client.delete(f"/api/v1/backups/{full_filename}", headers=superadmin_auth)
     assert res_del_full.status_code == 200
     assert res_del_full.json()["status"] == "success"
@@ -114,10 +154,13 @@ async def test_backup_system_full_flow(client, superadmin_auth, operator_auth):
     res_del_db = await client.delete(f"/api/v1/backups/{db_filename}", headers=superadmin_auth)
     assert res_del_db.status_code == 200
 
-    # 10. Verify deletion: attempting to download deleted file gives 404
+    if safety_filename:
+        await client.delete(f"/api/v1/backups/{safety_filename}", headers=superadmin_auth)
+
+    # 14. Verify deletion: attempting to download deleted file gives 404
     res_dl_deleted = await client.get(f"/api/v1/backups/{full_filename}/download", headers=superadmin_auth)
     assert res_dl_deleted.status_code == 404
 
-    # 11. Path traversal security check
+    # 15. Path traversal security check
     res_bad = await client.get("/api/v1/backups/..%2F..%2Fpasswd/download", headers=superadmin_auth)
     assert res_bad.status_code in (400, 404)

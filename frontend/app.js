@@ -3535,6 +3535,9 @@ window.loadBackupsList = async function (isUserTriggered = false) {
                   <button type="button" class="btn-action" style="padding: 0.3rem 0.65rem; min-height: auto; font-size: 0.8rem; border-color: #38bdf8; color: #38bdf8;" onclick="downloadBackup('${fileSafe}')" title="Завантажити архів бекапу (.zip)">
                     📥 Завантажити
                   </button>
+                  <button type="button" class="btn-action" style="padding: 0.3rem 0.65rem; min-height: auto; font-size: 0.8rem; border-color: #f97316; color: #fb923c;" onclick="openRestoreModal('${fileSafe}')" title="Відновити систему з цього бекапу">
+                    🔄 Відновити
+                  </button>
                   <button type="button" class="btn-action" style="padding: 0.3rem 0.6rem; min-height: auto; font-size: 0.8rem; border-color: #ef4444; color: #f87171;" onclick="openDeleteBackupModal('${fileSafe}')" title="Видалити бекап">
                     🗑️
                   </button>
@@ -3683,6 +3686,171 @@ window.confirmDeleteCurrentBackup = async function () {
     }
   }
 };
+
+window.openRestoreModal = async function (filename) {
+  if (!isSuperAdmin()) {
+    showToast('Відновлення з бекапу доступне виключно Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+  const dispName = document.getElementById('restoreFilenameDisplay');
+  const dispDetails = document.getElementById('restoreDetailsDisplay');
+  const hidName = document.getElementById('restoreFilenameHidden');
+  const confirmWord = document.getElementById('restoreConfirmWordInput');
+
+  if (dispName) dispName.textContent = filename;
+  if (hidName) hidName.value = filename;
+  if (confirmWord) confirmWord.value = '';
+  if (dispDetails) dispDetails.innerHTML = '<i>Завантаження метаданих архіву...</i>';
+
+  openModal('modalConfirmRestore');
+
+  try {
+    const res = await api(`/backups/${encodeURIComponent(filename)}/inspect`);
+    const m = res.manifest || {};
+    const bType = m.backup_type_ua || (m.backup_type === 'full' ? 'Повний бекап' : 'Частковий бекап');
+    const records = m.records_count ?? 0;
+    const tables = m.tables_count ?? 0;
+    const size = res.size_formatted || '';
+    if (dispDetails) {
+      dispDetails.innerHTML = `
+        <b>Тип:</b> ${escapeHtml(bType)} | <b>Розмір:</b> ${escapeHtml(size)}<br>
+        <b>Створено:</b> ${formatDateTime(m.created_at)} (автор: <b>${escapeHtml(m.created_by || 'system')}</b>)<br>
+        <b>Вміст БД:</b> ${Number(tables)} таблиць (${Number(records)} записів)
+      `;
+    }
+  } catch (err) {
+    if (dispDetails) dispDetails.textContent = `Попередження: не вдалося завантажити розширені метадані: ${err.message}`;
+  }
+};
+
+document.getElementById('confirmRestoreForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!isSuperAdmin()) {
+    showToast('Відновлення системи доступне виключно Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+
+  const filename = document.getElementById('restoreFilenameHidden')?.value;
+  const word = document.getElementById('restoreConfirmWordInput')?.value?.trim() || '';
+  const restoreFiles = document.getElementById('restoreFilesCheckbox')?.checked ?? true;
+  const btn = document.getElementById('btnSubmitRestore');
+
+  if (word.toUpperCase() !== 'ВІДНОВИТИ') {
+    showToast('Введіть точне слово ВІДНОВИТИ для підтвердження!', 'error');
+    return;
+  }
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = '⏳ Відновлення системи... Зачекайте...';
+    }
+    showToast('Розпочато процедуру відновлення бази даних. Створюється snapshot безпеки...', 'info');
+
+    const res = await api(`/backups/${encodeURIComponent(filename)}/restore`, {
+      method: 'POST',
+      body: JSON.stringify({
+        confirmation: word,
+        restore_files: restoreFiles
+      })
+    });
+
+    closeModal('modalConfirmRestore');
+    showToast(res.message || 'Систему успішно відновлено!', 'success');
+    await loadBackupsList();
+
+    if (typeof loadOverviewData === 'function') loadOverviewData();
+  } catch (err) {
+    showToast(err.message || 'Помилка відновлення системи', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = '🔄 Підтвердити та відновити';
+    }
+  }
+});
+
+window.openUploadRestoreModal = function () {
+  if (!isSuperAdmin()) {
+    showToast('Відновлення з бекапу доступне виключно Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+  const fileInput = document.getElementById('uploadRestoreFileInput');
+  const confirmWord = document.getElementById('uploadRestoreConfirmWordInput');
+  if (fileInput) fileInput.value = '';
+  if (confirmWord) confirmWord.value = '';
+  openModal('modalUploadRestore');
+};
+
+document.getElementById('uploadRestoreForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!isSuperAdmin()) {
+    showToast('Відновлення системи доступне виключно Головному Суперадміністратору 🔒', 'warning');
+    return;
+  }
+
+  const fileInput = document.getElementById('uploadRestoreFileInput');
+  const file = fileInput?.files?.[0];
+  if (!file) {
+    showToast('Оберіть zip-файл резервної копії для завантаження!', 'warning');
+    return;
+  }
+
+  const word = document.getElementById('uploadRestoreConfirmWordInput')?.value?.trim() || '';
+  if (word.toUpperCase() !== 'ВІДНОВИТИ') {
+    showToast('Введіть точне слово ВІДНОВИТИ для підтвердження!', 'error');
+    return;
+  }
+
+  const restoreFiles = document.getElementById('uploadRestoreFilesCheckbox')?.checked ?? true;
+  const btn = document.getElementById('btnSubmitUploadRestore');
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('confirmation', word);
+  formData.append('restore_files', restoreFiles ? 'true' : 'false');
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = '⏳ Завантаження та розгортання...';
+    }
+    showToast('Завантаження архіву на сервер та відновлення даних...', 'info');
+
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch('/api/v1/backups/upload-restore', {
+      method: 'POST',
+      headers,
+      body: formData,
+      credentials: 'same-origin'
+    });
+
+    if (!response.ok) {
+      let errMsg = `Помилка відновлення (${response.status})`;
+      try {
+        const errJson = await response.json();
+        errMsg = extractErrorMessage(errJson, errMsg);
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+
+    const res = await response.json();
+    closeModal('modalUploadRestore');
+    showToast(res.message || 'Архів завантажено та систему успішно відновлено!', 'success');
+    await loadBackupsList();
+
+    if (typeof loadOverviewData === 'function') loadOverviewData();
+  } catch (err) {
+    showToast(err.message || 'Помилка завантаження або відновлення архіву', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = '🚀 Завантажити та відновити';
+    }
+  }
+});
 
 window.openBackupSettingsModal = async function () {
   if (!isSuperAdmin()) {

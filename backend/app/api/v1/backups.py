@@ -1,7 +1,9 @@
+import datetime
+import zipfile
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +23,8 @@ from backend.app.services.backup_service import (
     delete_backup,
     rotate_backups,
     format_file_size,
+    inspect_backup,
+    restore_backup,
 )
 
 router = APIRouter(prefix="/backups", tags=["Резервне копіювання та бекапи"])
@@ -48,6 +52,11 @@ class BackupSettingsUpdateRequest(BaseModel):
     backup_frequency: Optional[str] = Field(default=None, pattern=r"^(daily|weekly)$")
     backup_retention_count: Optional[int] = Field(default=None, ge=1, le=100)
     backup_default_type: Optional[str] = Field(default=None, pattern=r"^(full|partial|db_only)$")
+
+
+class RestoreBackupRequest(BaseModel):
+    confirmation: str = Field(description="Must be 'ВІДНОВИТИ'")
+    restore_files: bool = Field(default=True, description="Restore uploaded media files if present")
 
 
 @router.get("", response_model=Dict[str, Any])
@@ -162,7 +171,7 @@ async def download_backup_file(
 ):
     """Завантажити zip-архів резервної копії (Лише для SuperAdmin)."""
     safe_name = Path(filename).name
-    if not safe_name.endswith(".zip") or not safe_name.startswith("backup_"):
+    if not safe_name.endswith(".zip") or not (safe_name.startswith("backup_") or safe_name.startswith("uploaded_")):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Некоректне ім'я файлу резервної копії"
@@ -193,6 +202,159 @@ async def download_backup_file(
         filename=safe_name,
         headers={"Content-Disposition": f'attachment; filename="{safe_name}"'}
     )
+
+
+@router.get("/{filename}/inspect", response_model=Dict[str, Any])
+async def inspect_backup_file(
+    filename: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_superadmin),
+):
+    """Отримати метадані та маніфест резервної копії перед відновленням (Лише для SuperAdmin)."""
+    safe_name = Path(filename).name
+    if not safe_name.endswith(".zip") or not (safe_name.startswith("backup_") or safe_name.startswith("uploaded_")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Некоректне ім'я файлу резервної копії"
+        )
+
+    backup_dir = get_backup_dir()
+    file_path = backup_dir / safe_name
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Файл резервної копії не знайдено"
+        )
+
+    try:
+        return inspect_backup(file_path)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Не вдалося прочитати маніфест резервної копії: {str(e)}"
+        )
+
+
+@router.post("/{filename}/restore", response_model=Dict[str, Any])
+async def restore_from_backup(
+    filename: str,
+    payload: RestoreBackupRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_superadmin),
+):
+    """Відновити систему з наявної резервної копії на сервері (Лише для SuperAdmin)."""
+    if payload.confirmation.strip().upper() != "ВІДНОВИТИ":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Для підтвердження відновлення введіть слово 'ВІДНОВИТИ'"
+        )
+
+    safe_name = Path(filename).name
+    if not safe_name.endswith(".zip") or not (safe_name.startswith("backup_") or safe_name.startswith("uploaded_")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Некоректне ім'я файлу резервної копії"
+        )
+
+    backup_dir = get_backup_dir()
+    file_path = backup_dir / safe_name
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Файл резервної копії не знайдено на сервері"
+        )
+
+    client_ip = get_client_ip(request)
+    try:
+        result = await restore_backup(
+            session=db,
+            zip_path=file_path,
+            restore_files=payload.restore_files,
+            creator=current_user.login,
+            creator_ip=client_ip
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Помилка відновлення системи: {str(e)}"
+        )
+
+
+@router.post("/upload-restore", response_model=Dict[str, Any])
+async def upload_and_restore_backup(
+    request: Request,
+    file: UploadFile = File(...),
+    confirmation: str = Form(...),
+    restore_files: bool = Form(True),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_superadmin),
+):
+    """Завантажити файл архіву (.zip) з комп'ютера та відновити систему (Лише для SuperAdmin)."""
+    if confirmation.strip().upper() != "ВІДНОВИТИ":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Для підтвердження відновлення введіть слово 'ВІДНОВИТИ'"
+        )
+
+    raw_filename = file.filename or "uploaded_backup.zip"
+    if not raw_filename.endswith(".zip"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Підтримуються виключно архіви у форматі .zip"
+        )
+
+    backup_dir = get_backup_dir()
+    timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    clean_base = Path(raw_filename).name.replace(" ", "_")
+    target_name = f"uploaded_{timestamp_str}_{clean_base}"
+    if not target_name.endswith(".zip"):
+        target_name += ".zip"
+
+    saved_path = backup_dir / target_name
+
+    try:
+        content = await file.read()
+        with open(saved_path, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Помилка збереження завантаженого файлу: {str(e)}"
+        )
+
+    # Validate zip integrity
+    try:
+        with zipfile.ZipFile(saved_path, "r") as zf:
+            if "database_export.json" not in zf.namelist():
+                saved_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="В архіві відсутній обов'язковий файл 'database_export.json'"
+                )
+    except zipfile.BadZipFile:
+        saved_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Файл пошкоджений або не є коректним ZIP-архівом"
+        )
+
+    client_ip = get_client_ip(request)
+    try:
+        result = await restore_backup(
+            session=db,
+            zip_path=saved_path,
+            restore_files=restore_files,
+            creator=current_user.login,
+            creator_ip=client_ip
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Помилка відновлення системи: {str(e)}"
+        )
 
 
 @router.delete("/{filename}", response_model=Dict[str, Any])
