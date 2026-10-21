@@ -637,7 +637,7 @@ async def perform_system_reset(
             current_balance_l=0.0,
             updated_at=now
         ))
-        db.add(Generator(
+        factory_gen = Generator(
             facility_id=1,
             name="Бензиновий генератор 5кВт",
             model="PG-6500",
@@ -650,10 +650,28 @@ async def perform_system_reset(
             current_operating_hours=0.0,
             fuel_tank_level_l=0.0,
             status="STOPPED",
-            is_configured=False,
+            is_configured=True,
             timezone="Europe/Kyiv",
             created_at=now,
             updated_at=now
+        )
+        db.add(factory_gen)
+        await db.flush()
+
+        db.add(GeneratorSchedule(
+            generator_id=factory_gen.id,
+            weekday=-1,
+            start_time="08:00",
+            end_time="20:00",
+            timezone="Europe/Kyiv",
+            is_active=True
+        ))
+        db.add(MaintenanceSchedule(
+            generator_id=factory_gen.id,
+            interval_hours=300.0,
+            last_performed_hours=0.0,
+            next_due_hours=300.0,
+            is_active=True
         ))
         await db.flush()
 

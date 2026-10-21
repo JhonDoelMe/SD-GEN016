@@ -821,13 +821,32 @@ async function loadAllData() {
 
 // 1. Generator Data
 async function loadGeneratorData() {
+  if (!currentGeneratorId) {
+    currentGenerator = null;
+    const nameEl = document.getElementById('genName');
+    if (nameEl) nameEl.innerText = "Немає генератора";
+    const modelEl = document.getElementById('genModel');
+    if (modelEl) modelEl.innerText = "На обраному об'єкті ще немає генераторів. Натисніть «+ Генератор», щоб зареєструвати перший генератор.";
+    const cardHours = document.getElementById('cardHours');
+    if (cardHours) cardHours.innerText = "0,0";
+    const cardTank = document.getElementById('cardTank');
+    if (cardTank) cardTank.innerText = "0,0";
+    const badge = document.getElementById('genStatusBadge');
+    if (badge) {
+      badge.className = 'badge';
+      badge.innerText = 'ВІДСУТНІЙ';
+    }
+    const btn = document.getElementById('mainActionBtn');
+    if (btn) {
+      btn.className = 'btn-hero btn-disabled-role';
+      btn.disabled = true;
+      btn.innerHTML = '<span>➕</span><span>ДОДАЙТЕ ГЕНЕРАТОР НА ОБ\'ЄКТ</span>';
+      btn.title = 'Натисніть кнопку "+ Генератор" у верхній панелі, щоб зареєструвати генератор';
+    }
+    return;
+  }
   try {
-    let url = '/generator';
-    const params = [];
-    if (currentGeneratorId) params.push(`generator_id=${encodeURIComponent(currentGeneratorId)}`);
-    if (currentFacilityId) params.push(`facility_id=${encodeURIComponent(currentFacilityId)}`);
-    if (params.length) url += `?${params.join('&')}`;
-
+    let url = `/generator?generator_id=${encodeURIComponent(currentGeneratorId)}`;
     currentGenerator = await api(url);
     if (!currentGenerator) return;
     currentGeneratorId = currentGenerator.id;
@@ -2970,12 +2989,65 @@ window.confirmDeleteCurrentGenerator = async function() {
   }
 };
 
+// Modal Helpers for Facility and Generator Creation
+window.openCreateFacilityModal = function() {
+  if (!hasPermission('facility:configure')) {
+    showToast("Створення об'єктів доступне лише Адміністратору 🔒", 'warning');
+    return;
+  }
+  const nameEl = document.getElementById('newFacilityName');
+  if (nameEl) nameEl.value = '';
+  const addrEl = document.getElementById('newFacilityAddress');
+  if (addrEl) addrEl.value = '';
+  const descEl = document.getElementById('newFacilityDescription');
+  if (descEl) descEl.value = '';
+  openModal('modalCreateFacility');
+};
+
+window.openCreateGeneratorModal = function() {
+  if (!hasPermission('generator:configure')) {
+    showToast('Створення генераторів доступне лише Адміністратору 🔒', 'warning');
+    return;
+  }
+  const modalSel = document.getElementById('newGenFacilityId');
+  if (modalSel && currentFacilityId) {
+    modalSel.value = currentFacilityId;
+  }
+  const nameEl = document.getElementById('newGenName');
+  if (nameEl) nameEl.value = '';
+  const modelEl = document.getElementById('newGenModel');
+  if (modelEl) modelEl.value = '';
+  const mfgEl = document.getElementById('newGenManufacturer');
+  if (mfgEl) mfgEl.value = '';
+  const snEl = document.getElementById('newGenSerial');
+  if (snEl) snEl.value = '';
+  const powerEl = document.getElementById('newGenPower');
+  if (powerEl) powerEl.value = '5.0';
+  const tankEl = document.getElementById('newGenTank');
+  if (tankEl) tankEl.value = '25.0';
+  const consEl = document.getElementById('newGenConsumption');
+  if (consEl) consEl.value = '2.2';
+  const hoursEl = document.getElementById('newGenInitialHours');
+  if (hoursEl) hoursEl.value = '0.0';
+  const fuelEl = document.getElementById('newGenInitialFuel');
+  if (fuelEl) fuelEl.value = '0.0';
+  const maintEl = document.getElementById('newGenMaintInterval');
+  if (maintEl) maintEl.value = '300';
+
+  openModal('modalCreateGenerator');
+};
+
 // Facility Create Form Submit
 document.getElementById('facilityCreateForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const name = document.getElementById('newFacilityName').value;
-  const address = document.getElementById('newFacilityAddress').value;
-  const description = document.getElementById('newFacilityDescription').value;
+  const name = document.getElementById('newFacilityName')?.value?.trim();
+  const address = document.getElementById('newFacilityAddress')?.value?.trim();
+  const description = document.getElementById('newFacilityDescription')?.value?.trim();
+
+  if (!name) {
+    showToast("Вкажіть назву об'єкта", 'warning');
+    return;
+  }
 
   try {
     const created = await api('/facilities', {
@@ -2984,9 +3056,14 @@ document.getElementById('facilityCreateForm')?.addEventListener('submit', async 
     });
     closeModal('modalCreateFacility');
     showToast(`Об'єкт "${created.name}" успішно створено!`, 'success');
-    await loadFacilitiesList();
+
     currentFacilityId = created.id;
+    currentGeneratorId = null;
     localStorage.setItem('sd_last_facility_id', currentFacilityId);
+    localStorage.removeItem('sd_last_generator_id');
+    localStorage.removeItem(`sd_last_gen_facility_${currentFacilityId}`);
+
+    await loadFacilitiesList();
     if (document.getElementById('facilitySelect')) {
       document.getElementById('facilitySelect').value = created.id;
     }
@@ -3000,19 +3077,42 @@ document.getElementById('facilityCreateForm')?.addEventListener('submit', async 
 // Generator Create Form Submit
 document.getElementById('generatorCreateForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
+  const chosenFacilityId = parseInt(document.getElementById('newGenFacilityId')?.value) || currentFacilityId || 1;
+  const name = document.getElementById('newGenName')?.value?.trim();
+  const model = document.getElementById('newGenModel')?.value?.trim();
+  const manufacturer = document.getElementById('newGenManufacturer')?.value?.trim();
+  const serial_number = document.getElementById('newGenSerial')?.value?.trim();
+
+  if (!name) {
+    showToast("Вкажіть назву генератора", 'warning');
+    return;
+  }
+  if (!model) {
+    showToast("Вкажіть модель генератора", 'warning');
+    return;
+  }
+  if (!manufacturer) {
+    showToast("Вкажіть виробника генератора", 'warning');
+    return;
+  }
+  if (!serial_number) {
+    showToast("Вкажіть серійний номер", 'warning');
+    return;
+  }
+
   const body = {
-    facility_id: parseInt(document.getElementById('newGenFacilityId').value) || currentFacilityId || 1,
-    name: document.getElementById('newGenName').value,
-    model: document.getElementById('newGenModel').value,
-    manufacturer: document.getElementById('newGenManufacturer').value,
-    serial_number: document.getElementById('newGenSerial').value,
-    rated_power_kw: parseFloat(document.getElementById('newGenPower').value),
-    tank_capacity_l: parseFloat(document.getElementById('newGenTank').value),
-    fuel_type: document.getElementById('newGenFuelType').value,
-    nominal_consumption_l_per_h: parseFloat(document.getElementById('newGenConsumption').value),
-    initial_operating_hours: parseFloat(document.getElementById('newGenInitialHours').value) || 0.0,
-    initial_fuel_tank_level_l: parseFloat(document.getElementById('newGenInitialFuel').value) || 0.0,
-    maintenance_interval_hours: parseFloat(document.getElementById('newGenMaintInterval').value) || 300.0,
+    facility_id: chosenFacilityId,
+    name: name,
+    model: model,
+    manufacturer: manufacturer,
+    serial_number: serial_number,
+    rated_power_kw: parseFloat(document.getElementById('newGenPower')?.value) || 5.0,
+    tank_capacity_l: parseFloat(document.getElementById('newGenTank')?.value) || 25.0,
+    fuel_type: document.getElementById('newGenFuelType')?.value || 'А-95',
+    nominal_consumption_l_per_h: parseFloat(document.getElementById('newGenConsumption')?.value) || 2.2,
+    initial_operating_hours: parseFloat(document.getElementById('newGenInitialHours')?.value) || 0.0,
+    initial_fuel_tank_level_l: parseFloat(document.getElementById('newGenInitialFuel')?.value) || 0.0,
+    maintenance_interval_hours: parseFloat(document.getElementById('newGenMaintInterval')?.value) || 300.0,
     work_schedule_start: "08:00",
     work_schedule_end: "20:00",
     timezone: "Europe/Kyiv"
@@ -3025,12 +3125,19 @@ document.getElementById('generatorCreateForm')?.addEventListener('submit', async
     });
     closeModal('modalCreateGenerator');
     showToast(`Генератор "${created.name}" успішно створено!`, 'success');
-    await loadGeneratorsList(currentFacilityId);
+
+    // Switch facility context if created on another facility
+    currentFacilityId = chosenFacilityId;
+    localStorage.setItem('sd_last_facility_id', currentFacilityId);
+    if (document.getElementById('facilitySelect')) {
+      document.getElementById('facilitySelect').value = currentFacilityId;
+    }
+
     currentGeneratorId = created.id;
     localStorage.setItem('sd_last_generator_id', currentGeneratorId);
-    if (currentFacilityId) {
-      localStorage.setItem(`sd_last_gen_facility_${currentFacilityId}`, currentGeneratorId);
-    }
+    localStorage.setItem(`sd_last_gen_facility_${currentFacilityId}`, currentGeneratorId);
+
+    await loadGeneratorsList(currentFacilityId);
     if (document.getElementById('generatorSelect')) {
       document.getElementById('generatorSelect').value = created.id;
     }

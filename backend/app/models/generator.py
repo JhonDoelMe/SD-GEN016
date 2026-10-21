@@ -27,7 +27,7 @@ class Generator(Base):
 
     # Status: STOPPED, RUNNING, MAINTENANCE_REQUIRED, FAULTY, BLOCKED
     status = Column(String(50), nullable=False, default="STOPPED")
-    is_configured = Column(Boolean, nullable=False, default=False)
+    is_configured = Column(Boolean, nullable=False, default=True)
 
     timezone = Column(String(50), nullable=False, default="Europe/Kyiv")
     extra_params_json = Column(Text, nullable=True)

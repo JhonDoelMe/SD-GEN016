@@ -3,14 +3,13 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_generator_wizard_and_lifecycle(client, superadmin_auth, operator_auth):
-    # 1. Attempt start before wizard configuration -> rejected
-    unconf_start = await client.post(
-        "/api/v1/generator/start",
-        headers=operator_auth,
-        json={}
+    # 1. Verify default generator is initialized and configured on clean start
+    init_res = await client.get(
+        "/api/v1/generator",
+        headers=operator_auth
     )
-    assert unconf_start.status_code == 400
-    assert "налаштований" in unconf_start.json()["detail"]
+    assert init_res.status_code == 200
+    assert init_res.json()["is_configured"] is True
 
     # 2. Run Wizard setup
     wizard_res = await client.post(

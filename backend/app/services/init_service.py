@@ -7,6 +7,8 @@ from backend.app.core.security import get_password_hash
 from backend.app.models.user import User, Role, Permission
 from backend.app.models.fuel import FuelStock
 from backend.app.models.facility import Facility
+from backend.app.models.generator import Generator, GeneratorSchedule, utc_now
+from backend.app.models.maintenance import MaintenanceSchedule
 
 logger = logging.getLogger("init_service")
 
@@ -134,6 +136,47 @@ async def seed_initial_data(db: AsyncSession) -> None:
             timezone="Europe/Kyiv"
         )
         db.add(default_fac)
+        await db.flush()
+
+    # 3.1 Seed Default Generator for facility if none exists
+    gen_check = await db.execute(select(Generator))
+    if not gen_check.scalars().first():
+        init_gen = Generator(
+            facility_id=default_fac.id if default_fac else 1,
+            name="Бензиновий генератор 5кВт",
+            model="PG-6500",
+            manufacturer="PowerGen",
+            serial_number="GEN-2026-001",
+            rated_power_kw=5.0,
+            tank_capacity_l=25.0,
+            fuel_type="А-95",
+            nominal_consumption_l_per_h=2.2,
+            current_operating_hours=0.0,
+            fuel_tank_level_l=0.0,
+            status="STOPPED",
+            is_configured=True,
+            timezone="Europe/Kyiv",
+            created_at=utc_now(),
+            updated_at=utc_now()
+        )
+        db.add(init_gen)
+        await db.flush()
+
+        db.add(GeneratorSchedule(
+            generator_id=init_gen.id,
+            weekday=-1,
+            start_time="08:00",
+            end_time="20:00",
+            timezone="Europe/Kyiv",
+            is_active=True
+        ))
+        db.add(MaintenanceSchedule(
+            generator_id=init_gen.id,
+            interval_hours=300.0,
+            last_performed_hours=0.0,
+            next_due_hours=300.0,
+            is_active=True
+        ))
         await db.flush()
 
     # 4. Seed or update Initial SuperAdmin

@@ -21,9 +21,10 @@ def utc_now() -> datetime.datetime:
 
 async def get_or_create_default_generator(db: AsyncSession, generator_id: Optional[int] = None, facility_id: Optional[int] = None) -> Generator:
     if generator_id:
-        res = await db.execute(
-            select(Generator).options(selectinload(Generator.schedules)).where(Generator.id == generator_id)
-        )
+        query = select(Generator).options(selectinload(Generator.schedules)).where(Generator.id == generator_id)
+        if facility_id:
+            query = query.where(Generator.facility_id == facility_id)
+        res = await db.execute(query)
         gen = res.scalars().first()
         if gen:
             return gen
@@ -31,11 +32,22 @@ async def get_or_create_default_generator(db: AsyncSession, generator_id: Option
     query = select(Generator).options(selectinload(Generator.schedules))
     if facility_id:
         query = query.where(Generator.facility_id == facility_id)
+    query = query.order_by(Generator.id.asc())
     res = await db.execute(query)
     generator = res.scalars().first()
     if not generator:
+        target_fac_id = facility_id
+        if target_fac_id:
+            fac_check = await db.execute(select(Facility.id).where(Facility.id == target_fac_id))
+            if not fac_check.scalars().first():
+                target_fac_id = None
+        if not target_fac_id:
+            fac_res = await db.execute(select(Facility.id).order_by(Facility.id.asc()))
+            first_fac = fac_res.scalars().first()
+            target_fac_id = first_fac if first_fac else 1
+
         generator = Generator(
-            facility_id=facility_id or 1,
+            facility_id=target_fac_id,
             name="Бензиновий генератор 5кВт",
             model="PG-6500",
             manufacturer="PowerGen",
@@ -47,14 +59,31 @@ async def get_or_create_default_generator(db: AsyncSession, generator_id: Option
             current_operating_hours=0.0,
             fuel_tank_level_l=0.0,
             status="STOPPED",
-            is_configured=False,
+            is_configured=True,
             timezone="Europe/Kyiv",
             created_at=utc_now(),
             updated_at=utc_now()
         )
         db.add(generator)
         await db.flush()
-        # Reload with schedules
+
+        db.add(GeneratorSchedule(
+            generator_id=generator.id,
+            weekday=-1,
+            start_time="08:00",
+            end_time="20:00",
+            timezone="Europe/Kyiv",
+            is_active=True
+        ))
+        db.add(MaintenanceSchedule(
+            generator_id=generator.id,
+            interval_hours=300.0,
+            last_performed_hours=0.0,
+            next_due_hours=300.0,
+            is_active=True
+        ))
+        await db.flush()
+
         res2 = await db.execute(
             select(Generator).options(selectinload(Generator.schedules)).where(Generator.id == generator.id)
         )
@@ -177,10 +206,8 @@ async def start_generator(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
 
     if not generator.is_configured:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Генератор ще не налаштований. Спочатку пройдіть майстер налаштування."
-        )
+        generator.is_configured = True
+        await db.flush()
 
     # Invariant checks on status
     if generator.status == "RUNNING":
@@ -437,7 +464,17 @@ async def create_generator(
     user_id: int,
     ip_address: Optional[str] = None
 ) -> Generator:
-    facility_id = setup_data.facility_id or 1
+    facility_id = setup_data.facility_id
+    if not facility_id:
+        fac_res = await db.execute(select(Facility.id).order_by(Facility.id.asc()))
+        first_fac = fac_res.scalars().first()
+        facility_id = first_fac if first_fac else 1
+    else:
+        fac_check = await db.execute(select(Facility.id).where(Facility.id == facility_id))
+        if not fac_check.scalars().first():
+            fac_res = await db.execute(select(Facility.id).order_by(Facility.id.asc()))
+            first_fac = fac_res.scalars().first()
+            facility_id = first_fac if first_fac else 1
     generator = Generator(
         facility_id=facility_id,
         name=setup_data.name.strip(),

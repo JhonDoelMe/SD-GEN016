@@ -14,7 +14,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.3">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.4">
 </head>
 <body>
 
@@ -94,7 +94,7 @@
         <div class="control-input-wrapper">
           <select id="facilitySelect" class="control-select" aria-label="Вибір об'єкта"></select>
           <button id="quickEditFacilityBtn" class="btn-control-edit" onclick="openQuickEditFacilityModal()" title="Швидкі налаштування об'єкта (назва, адреса)">⚙️</button>
-          <button id="addFacilityBtn" class="btn-control-add btn-facility-add" onclick="openModal('modalCreateFacility')" title="Створити новий об'єкт">+ Об'єкт</button>
+          <button id="addFacilityBtn" class="btn-control-add btn-facility-add" onclick="openCreateFacilityModal()" title="Створити новий об'єкт">+ Об'єкт</button>
         </div>
       </div>
 
@@ -106,7 +106,7 @@
         <div class="control-input-wrapper">
           <select id="generatorSelect" class="control-select" aria-label="Вибір генератора"></select>
           <button id="quickEditGeneratorBtn" class="btn-control-edit" onclick="openQuickEditGeneratorModal()" title="Швидкі налаштування генератора (назва, модель, бак, розхід)">⚙️</button>
-          <button id="addGeneratorBtn" class="btn-control-add btn-generator-add" onclick="openModal('modalCreateGenerator')" title="Створити новий генератор">+ Генератор</button>
+          <button id="addGeneratorBtn" class="btn-control-add btn-generator-add" onclick="openCreateGeneratorModal()" title="Створити новий генератор">+ Генератор</button>
           <button id="deleteGeneratorBtn" class="btn-control-del" onclick="openDeleteGeneratorModal()" title="Видалити поточний генератор">🗑️</button>
         </div>
       </div>
@@ -2273,7 +2273,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.3"></script>
+  <script src="/frontend/app.js?v=4.4"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>
