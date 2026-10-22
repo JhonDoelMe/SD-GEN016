@@ -13,6 +13,29 @@
   --accent-red: #ef4444;
   --accent-purple: #a855f7;
 
+  /* Extended Theme Tokens (Dark Mode Defaults) */
+  --bg-subtle: #0b1120;
+  --input-bg: #0f172a;
+  --input-text: #f8fafc;
+  --input-border: #334155;
+  --table-th-bg: rgba(15, 23, 42, 0.5);
+  --table-hover-bg: rgba(255, 255, 255, 0.02);
+  --table-border: rgba(255, 255, 255, 0.05);
+  --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  --modal-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  --hero-bg: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  --hero-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  --progress-bg: #0f172a;
+  --footer-bg: #090e1a;
+  --footer-card-bg: rgba(15, 23, 42, 0.7);
+  --settings-block-bg: rgba(15, 23, 42, 0.55);
+  --settings-item-bg: rgba(30, 41, 59, 0.75);
+  --settings-item-border: rgba(148, 163, 184, 0.22);
+  --report-banner-bg: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+  --toast-bg: #1e293b;
+  --toast-text: #f8fafc;
+  --pwa-banner-bg: linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%);
+
   /* Safe Area Insets for Mobile devices / Notches */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -21,6 +44,68 @@
 
   /* Touch sizing defaults */
   --touch-min: 44px;
+}
+
+/* ==========================================================================
+   Light Theme Override
+   ========================================================================== */
+[data-theme="light"] {
+  --bg-primary: #f1f5f9;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8fafc;
+  --text-primary: #0f172a;
+  --text-muted: #64748b;
+  --border-color: #cbd5e1;
+  --accent-blue: #2563eb;
+  --accent-cyan: #0284c7;
+  --accent-green: #16a34a;
+  --accent-amber: #d97706;
+  --accent-red: #dc2626;
+  --accent-purple: #9333ea;
+
+  /* Light Theme Tokens */
+  --bg-subtle: #f8fafc;
+  --input-bg: #ffffff;
+  --input-text: #0f172a;
+  --input-border: #cbd5e1;
+  --table-th-bg: #f8fafc;
+  --table-hover-bg: #f1f5f9;
+  --table-border: #e2e8f0;
+  --card-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+  --modal-shadow: 0 20px 45px rgba(15, 23, 42, 0.18);
+  --hero-bg: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  --hero-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
+  --progress-bg: #e2e8f0;
+  --footer-bg: #f1f5f9;
+  --footer-card-bg: #ffffff;
+  --settings-block-bg: #f8fafc;
+  --settings-item-bg: #ffffff;
+  --settings-item-border: #cbd5e1;
+  --report-banner-bg: #ffffff;
+  --toast-bg: #0f172a;
+  --toast-text: #ffffff;
+  --pwa-banner-bg: #ffffff;
+}
+
+/* Smooth Theme Transitions */
+body,
+.app-header,
+.facility-bar,
+.nav-bar,
+.status-card,
+.metric-card,
+.panel,
+.modal-content,
+.app-footer,
+.server-status-card,
+.settings-block,
+.settings-toggle-item,
+.btn-action,
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.2s ease, box-shadow 0.25s ease;
 }
 
 * {
@@ -99,6 +184,34 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.btn-theme-toggle {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 0.35rem 0.55rem;
+  font-size: 1.15rem;
+  line-height: 1;
+  min-height: 32px;
+  min-width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.btn-theme-toggle:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--accent-cyan);
+  transform: scale(1.06);
+}
+
+.btn-theme-toggle:active {
+  transform: scale(0.96);
 }
 
 .user-name {
@@ -292,9 +405,9 @@ body {
   min-width: 160px;
   padding: 0.35rem 0.75rem;
   font-size: 0.9rem;
-  background: rgba(15, 23, 42, 0.85);
+  background: var(--input-bg);
   border: 1px solid var(--border-color);
-  color: white;
+  color: var(--text-primary);
   border-radius: 6px;
   cursor: pointer;
 }
@@ -358,7 +471,7 @@ body {
    Navigation Tabs
    ========================================================================== */
 .nav-bar {
-  background-color: #0b1120;
+  background-color: var(--bg-subtle);
   display: flex;
   overflow-x: auto;
   scrollbar-width: thin;
@@ -426,7 +539,7 @@ body {
    Status Card (Hero)
    ========================================================================== */
 .status-card {
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  background: var(--hero-bg);
   border: 1px solid var(--border-color);
   border-radius: 1.15rem;
   padding: 1.5rem;
@@ -434,7 +547,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--hero-shadow);
 }
 
 .status-header {
@@ -553,7 +666,7 @@ body {
 
 /* Progress bar */
 .progress-bar {
-  background-color: #0f172a;
+  background-color: var(--progress-bg);
   border-radius: 9999px;
   height: 10px;
   overflow: hidden;
@@ -659,7 +772,7 @@ table {
 
 th, td {
   padding: 0.85rem 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--table-border);
   vertical-align: middle;
 }
 
@@ -669,11 +782,11 @@ th {
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  background: rgba(15, 23, 42, 0.5);
+  background: var(--table-th-bg);
 }
 
 tbody tr:hover {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--table-hover-bg);
 }
 
 /* ==========================================================================
@@ -760,7 +873,7 @@ label {
 
 input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   width: 100%;
-  background-color: #0f172a;
+  background-color: var(--input-bg);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
   padding: 0.85rem 1rem;
@@ -781,20 +894,20 @@ select {
 }
 
 select option {
-  background-color: #1e293b;
-  color: #f8fafc;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
   padding: 0.75rem 1rem;
   font-size: 0.95rem;
 }
 
 select option:checked {
-  background-color: #0284c7;
+  background-color: var(--accent-cyan);
   color: #ffffff;
 }
 
 select option:disabled {
-  color: #94a3b8;
-  background-color: #0f172a;
+  color: var(--text-muted);
+  background-color: var(--bg-primary);
 }
 
 input[type="checkbox"], input[type="radio"] {
@@ -870,7 +983,8 @@ input[type="checkbox"], input[type="radio"] {
   left: 1.5rem;
   max-width: 440px;
   margin: 0 auto;
-  background-color: #1e293b;
+  background-color: var(--toast-bg);
+  color: var(--toast-text);
   border-left: 4px solid var(--accent-cyan);
   padding: 1.1rem 1.25rem;
   border-radius: 0.65rem;
@@ -1104,7 +1218,7 @@ input[type="checkbox"], input[type="radio"] {
    ========================================================================== */
 .app-footer {
   margin-top: 3rem;
-  background: #090e1a;
+  background: var(--footer-bg);
   border-top: 1px solid var(--border-color);
   padding: 1.5rem 1rem calc(1.5rem + var(--safe-bottom));
   color: var(--text-muted);
@@ -1127,7 +1241,7 @@ input[type="checkbox"], input[type="radio"] {
   justify-content: center;
   gap: 1.25rem;
   flex-wrap: wrap;
-  background: rgba(15, 23, 42, 0.7);
+  background: var(--footer-card-bg);
   border: 1px solid var(--border-color);
   border-radius: 0.75rem;
   padding: 0.75rem 1.25rem;
@@ -1147,7 +1261,7 @@ input[type="checkbox"], input[type="radio"] {
 }
 
 .status-metric-val {
-  color: #f8fafc;
+  color: var(--text-primary);
   font-weight: 700;
   font-family: monospace;
 }
@@ -1222,8 +1336,8 @@ input[type="checkbox"], input[type="radio"] {
    Admin System Settings Panel — Structured Cards & Toggles
    ========================================================================== */
 .settings-block {
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: var(--settings-block-bg);
+  border: 1px solid var(--border-color);
   border-radius: 0.75rem;
   padding: 1.15rem;
   margin-bottom: 1.15rem;
@@ -1244,7 +1358,7 @@ input[type="checkbox"], input[type="radio"] {
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -1260,8 +1374,8 @@ input[type="checkbox"], input[type="radio"] {
   display: flex;
   align-items: flex-start;
   gap: 0.9rem;
-  background: rgba(30, 41, 59, 0.75);
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: var(--settings-item-bg);
+  border: 1px solid var(--settings-item-border);
   border-radius: 0.65rem;
   padding: 0.9rem 1rem;
   cursor: pointer;
@@ -1295,7 +1409,7 @@ input[type="checkbox"], input[type="radio"] {
 .settings-toggle-title {
   font-size: 0.95rem;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--text-primary);
   line-height: 1.3;
 }
 
@@ -1396,7 +1510,7 @@ button[disabled] {
 }
 
 .report-status-banner {
-  background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+  background: var(--report-banner-bg);
   border: 1px solid rgba(6, 182, 212, 0.35);
   border-left: 4px solid var(--accent-cyan);
   border-radius: 0.75rem;
@@ -1447,5 +1561,153 @@ button[disabled] {
 
 .report-subtab-btn.active .report-badge {
   background: var(--accent-cyan);
+  color: #0f172a;
+}
+
+
+/* ==========================================================================
+   Light Theme Explicit Component Overrides
+   ========================================================================== */
+[data-theme="light"] .btn-theme-toggle {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+[data-theme="light"] .btn-theme-toggle:hover {
+  background: #e2e8f0;
+  border-color: #0284c7;
+}
+
+[data-theme="light"] .badge-running {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+[data-theme="light"] .badge-stopped {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
+[data-theme="light"] .badge-maintenance {
+  background: #fef3c7;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+[data-theme="light"] .badge-faulty {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+
+[data-theme="light"] .badge-blocked {
+  background: #f3e8ff;
+  color: #7e22ce;
+  border-color: #d8b4fe;
+}
+
+[data-theme="light"] .nav-item.active {
+  color: #0284c7;
+  border-bottom-color: #0284c7;
+  background: rgba(2, 132, 199, 0.08);
+}
+
+[data-theme="light"] .nav-item:hover {
+  color: #0f172a;
+}
+
+[data-theme="light"] .nav-item.nav-item-disabled {
+  background: #f8fafc !important;
+  color: #94a3b8 !important;
+}
+
+[data-theme="light"] .btn-logout {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+[data-theme="light"] .btn-logout:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+[data-theme="light"] .btn-control-edit {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+[data-theme="light"] .btn-control-edit:hover {
+  background: #e0f2fe;
+  border-color: #0284c7;
+  color: #0284c7;
+}
+
+[data-theme="light"] .close-btn:hover {
+  color: #0f172a;
+  background: #f1f5f9;
+}
+
+[data-theme="light"] .report-subtab-btn {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #64748b;
+}
+
+[data-theme="light"] .report-subtab-btn.active {
+  background: #e0f2fe !important;
+  border-color: #0284c7 !important;
+  color: #0284c7 !important;
+}
+
+[data-theme="light"] .report-badge {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+[data-theme="light"] .report-subtab-btn.active .report-badge {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+[data-theme="light"] .btn-preset {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  color: #64748b;
+}
+
+[data-theme="light"] .btn-preset:hover {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+[data-theme="light"] .btn-preset.active {
+  background-color: #e0f2fe !important;
+  border-color: #0284c7 !important;
+  color: #0284c7 !important;
+}
+
+[data-theme="light"] .pwa-install-banner {
+  background: #ffffff;
+  border-color: #38bdf8;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.1);
+}
+
+[data-theme="light"] .pwa-install-title {
+  color: #0f172a;
+}
+
+[data-theme="light"] .btn-pwa-dismiss {
+  border-color: #cbd5e1;
+  color: #64748b;
+}
+
+[data-theme="light"] .btn-pwa-dismiss:hover {
+  background: #f1f5f9;
   color: #0f172a;
 }

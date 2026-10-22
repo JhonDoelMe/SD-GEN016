@@ -433,6 +433,146 @@ try {
   }
 }
 
+// ==========================================================================
+// Theme Engine (Dark / Light / Auto by Device & Time-of-Day)
+// ==========================================================================
+const THEME_STORAGE_KEY = 'sd_theme_preference';
+let lastEffectiveTheme = null;
+
+function getThemePreference() {
+  try {
+    return localStorage.getItem(THEME_STORAGE_KEY) || 'auto';
+  } catch (_) {
+    return 'auto';
+  }
+}
+
+function isDaytime() {
+  // Day: 07:00 to 20:00 local/Kyiv time
+  const hour = new Date().getHours();
+  return hour >= 7 && hour < 20;
+}
+
+function doesSystemPreferDark() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+
+function resolveEffectiveTheme(mode) {
+  if (mode === 'light') return 'light';
+  if (mode === 'dark') return 'dark';
+  // 'auto' mode:
+  // If nighttime (20:00 - 07:00) -> dark
+  // If daytime (07:00 - 20:00): if system explicitly prefers dark -> dark, otherwise light
+  if (!isDaytime()) return 'dark';
+  if (doesSystemPreferDark()) return 'dark';
+  return 'light';
+}
+
+function applyTheme(mode, notify = false) {
+  const effective = resolveEffectiveTheme(mode);
+  const root = document.documentElement;
+
+  if (effective === 'light') {
+    root.setAttribute('data-theme', 'light');
+  } else {
+    root.removeAttribute('data-theme');
+  }
+
+  // Update <meta name="theme-color"> for iOS / Android mobile status bars
+  const metaTheme = document.getElementById('metaThemeColor') || document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) {
+    metaTheme.setAttribute('content', effective === 'light' ? '#ffffff' : '#1e293b');
+  }
+
+  // Update header toggle button state and tooltip
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) {
+    if (mode === 'auto') {
+      btn.innerText = '🌓';
+      const detail = effective === 'light' ? 'день / світла' : 'ніч / темна';
+      btn.title = `Тема: Авто (${detail}). Натисніть для перемикання`;
+      btn.setAttribute('aria-label', `Тема авто (${detail})`);
+    } else if (mode === 'light') {
+      btn.innerText = '☀️';
+      btn.title = 'Тема: Світла (вручну). Натисніть для перемикання';
+      btn.setAttribute('aria-label', 'Тема світла');
+    } else {
+      btn.innerText = '🌙';
+      btn.title = 'Тема: Темна (вручну). Натисніть для перемикання';
+      btn.setAttribute('aria-label', 'Тема темна');
+    }
+  }
+
+  lastEffectiveTheme = effective;
+
+  if (notify) {
+    const messages = {
+      auto: `Тема: Авто (${effective === 'light' ? 'Світла ☀️' : 'Темна 🌙'})`,
+      light: 'Тема: Світла ☀️',
+      dark: 'Тема: Темна 🌙'
+    };
+    showToast(messages[mode] || `Тема: ${mode}`, 'info');
+  }
+}
+
+function cycleTheme() {
+  const current = getThemePreference();
+  let next;
+  if (current === 'auto') {
+    next = 'light';
+  } else if (current === 'light') {
+    next = 'dark';
+  } else {
+    next = 'auto';
+  }
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, next);
+  } catch (_) {}
+  applyTheme(next, true);
+}
+
+function checkAutoThemeTransition() {
+  if (getThemePreference() === 'auto') {
+    const effective = resolveEffectiveTheme('auto');
+    if (effective !== lastEffectiveTheme) {
+      applyTheme('auto', false);
+    }
+  }
+}
+
+function initTheme() {
+  const currentPref = getThemePreference();
+  applyTheme(currentPref, false);
+
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) {
+    btn.onclick = cycleTheme;
+  }
+
+  // Listen to OS dark/light mode switches
+  if (window.matchMedia) {
+    try {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      if (mediaQuery.addEventListener) {
+        mediaQuery.addEventListener('change', () => {
+          if (getThemePreference() === 'auto') {
+            applyTheme('auto', false);
+          }
+        });
+      } else if (mediaQuery.addListener) {
+        mediaQuery.addListener(() => {
+          if (getThemePreference() === 'auto') {
+            applyTheme('auto', false);
+          }
+        });
+      }
+    } catch (_) {}
+  }
+}
+
+window.cycleTheme = cycleTheme;
+window.applyTheme = applyTheme;
+
 function updateKyivClock() {
   try {
     const el = document.getElementById('clockKyiv');
@@ -446,6 +586,11 @@ function updateKyivClock() {
       hour12: false
     }).format(now);
     el.innerText = `${kyivTime} (Київ)`;
+
+    // Check auto theme day/night transition on minute boundary
+    if (now.getSeconds() === 0) {
+      checkAutoThemeTransition();
+    }
   } catch (_) {
     const el = document.getElementById('clockKyiv');
     if (el) {
@@ -4296,6 +4441,7 @@ async function loadNotificationLogs() {
 
 // Initialization on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
   startClock();
   setupPwaInstall();
   checkAuth();

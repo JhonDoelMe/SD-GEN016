@@ -5,16 +5,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Service Desk Генератора | SD-GEN016</title>
   
+  <!-- Theme Early Initializer (Prevents FOUC flicker) -->
+  <script>
+    (function() {
+      try {
+        var pref = localStorage.getItem('sd_theme_preference') || 'auto';
+        var isDark = true;
+        if (pref === 'light') {
+          isDark = false;
+        } else if (pref === 'dark') {
+          isDark = true;
+        } else {
+          var hour = new Date().getHours();
+          var isNight = (hour < 7 || hour >= 20);
+          var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          isDark = isNight || systemDark;
+        }
+        if (!isDark) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      } catch (_) {}
+    })();
+  </script>
+
   <!-- PWA Meta -->
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#1e293b">
+  <meta name="theme-color" id="metaThemeColor" content="#1e293b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Генератор">
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.4">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.5">
 </head>
 <body>
 
@@ -75,6 +98,7 @@
     </div>
     <div class="header-clock" id="clockKyiv">--:--:-- (Київ)</div>
     <div class="user-badge">
+      <button id="themeToggleBtn" class="btn-theme-toggle" type="button" aria-label="Перемикач теми" title="Тема: Авто">🌓</button>
       <button id="headerInstallBtn" class="btn-header-install" style="display: none;" title="Встановити додаток на екран">
         <span>📲</span><span class="desktop-only-inline">Встановити</span>
       </button>
@@ -2273,7 +2297,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.4"></script>
+  <script src="/frontend/app.js?v=4.5"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>
