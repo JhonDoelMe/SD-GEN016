@@ -3563,12 +3563,12 @@ function renderAdminFuelPricesHints(fp) {
     boardEl.innerHTML = lineup.map((item) => {
       const isMustang = String(item.brand || '').toLowerCase().includes('mustang');
       const badgeColor = isMustang ? '#ef4444' : '#3b82f6';
-      return `<div style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(148, 163, 184, 0.22); border-left: 3px solid ${badgeColor}; border-radius: 0.5rem; padding: 0.55rem 0.7rem; display: flex; justify-content: space-between; align-items: center; gap: 0.4rem;">
+      return `<div style="background: var(--bg-subtle); border: 1px solid var(--border-color); border-left: 3px solid ${badgeColor}; border-radius: 0.5rem; padding: 0.55rem 0.7rem; display: flex; justify-content: space-between; align-items: center; gap: 0.4rem;">
         <div>
-          <div style="font-weight: 800; font-size: 0.95rem; color: #f8fafc; line-height: 1.1;">${escapeHtml(item.type)}</div>
-          <div style="font-size: 0.72rem; color: ${isMustang ? '#fca5a5' : '#94a3b8'};">${escapeHtml(item.brand || 'Стандарт')}</div>
+          <div style="font-weight: 800; font-size: 0.95rem; color: var(--text-primary); line-height: 1.1;">${escapeHtml(item.type)}</div>
+          <div style="font-size: 0.72rem; color: ${isMustang ? 'var(--accent-red)' : 'var(--text-muted)'};">${escapeHtml(item.brand || 'Стандарт')}</div>
         </div>
-        <div style="font-weight: 800; font-size: 1.05rem; color: #4ade80; white-space: nowrap;">${Number(item.price).toFixed(2)} <span style="font-size: 0.7rem; font-weight: 500; color: #94a3b8;">₴</span></div>
+        <div style="font-weight: 800; font-size: 1.05rem; color: var(--accent-green); white-space: nowrap;">${Number(item.price).toFixed(2)} <span style="font-size: 0.7rem; font-weight: 500; color: var(--text-muted);">₴</span></div>
       </div>`;
     }).join('');
   }

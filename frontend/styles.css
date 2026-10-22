@@ -4,6 +4,8 @@
   --bg-card: #1e293b;
   --bg-card-hover: #334155;
   --text-primary: #f8fafc;
+  --text-color: #f8fafc;
+  --text-secondary: #cbd5e1;
   --text-muted: #94a3b8;
   --border-color: #334155;
   --accent-blue: #3b82f6;
@@ -55,6 +57,8 @@
   --bg-card: #ffffff;
   --bg-card-hover: #f8fafc;
   --text-primary: #0f172a;
+  --text-color: #0f172a;
+  --text-secondary: #475569;
   --text-muted: #64748b;
   --border-color: #cbd5e1;
   --accent-blue: #2563eb;
@@ -1710,4 +1714,58 @@ button[disabled] {
 [data-theme="light"] .btn-pwa-dismiss:hover {
   background: #f1f5f9;
   color: #0f172a;
+}
+
+/* Info Sub-Cards & Metric Summary Blocks */
+.info-card-block {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+[data-theme="light"] .info-card-block {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.stat-summary-card {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: 0.6rem;
+  padding: 0.85rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+[data-theme="light"] .stat-summary-card {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
+}
+
+.notif-num-input {
+  padding: 0.35rem 0.5rem !important;
+  background: var(--input-bg) !important;
+  border: 1px solid var(--input-border) !important;
+  border-radius: 4px !important;
+  color: var(--input-text) !important;
+  font-weight: 600 !important;
+  min-height: auto !important;
+  height: 34px !important;
+}
+
+[data-theme="light"] .notif-num-input {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+.notif-rule-group {
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.75rem;
 }
