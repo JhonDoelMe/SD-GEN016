@@ -1768,7 +1768,7 @@ input[type="checkbox"], input[type="radio"] {
    ========================================================================== */
 @media (min-width: 769px) {
   .facility-bar-content {
-    justify-content: flex-start;
+    justify-content: center;
   }
   .status-header h2 {
     font-size: 1.5rem;
