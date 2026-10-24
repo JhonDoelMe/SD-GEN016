@@ -1,5 +1,8 @@
 # Розгортання на VPS та налаштування PWA
 
+**Версія документа:** 4.2.0 (Production Hardened)  
+**Дата набрання чинності:** 24 жовтня 2026 року  
+
 Цей документ описує покроковий процес розгортання **SD-GEN016** на окремому віртуальному сервері (VPS) під керуванням Ubuntu/Debian із власним доменом та сертифікатом HTTPS.
 
 ---
@@ -37,29 +40,33 @@ nano .env
 ```
 
 Обов'язково заповніть у `.env`:
-- `APP_SECRET_KEY`: згенеруйте випадковий 32+ символьний рядок (`openssl rand -hex 32`).
-- `INITIAL_ADMIN_PASSWORD`: надійний пароль первинного адміністратора.
+- `PRIMARY_DOMAIN`: ваш реальний робочий домен (наприклад `generator-016.pp.ua`).
+- `APP_SECRET_KEY`: згенеруйте надійний 64-символьний ключ (`python -c "import secrets; print(secrets.token_urlsafe(64))"`).
+- `INITIAL_ADMIN_PASSWORD`: надійний пароль первинного адміністратора (буде збережено у БД при першому старті).
 - `POSTGRES_PASSWORD`: надійний пароль для бази даних.
 
 ---
 
-## 3. Отримання безкоштовного SSL-сертифіката (Certbot / Let's Encrypt)
+## 3. Налаштування SSL-сертифікатів (Let's Encrypt або Автоматичний Fallback)
 
-Для домену (наприклад, `gen.myfacility.ua`):
+### Варіант А: Отримання офіційного безкоштовного сертифіката (Certbot / Let's Encrypt)
+Для вашого зареєстрованого домену:
 ```bash
 sudo apt install -y certbot
-sudo certbot certonly --standalone -d gen.myfacility.ua
+sudo certbot certonly --standalone -d generator-016.pp.ua
 ```
-Сертифікати будуть збережені в `/etc/letsencrypt/live/gen.myfacility.ua/`.
+Сертифікати будуть збережені в `/etc/letsencrypt/live/generator-016.pp.ua/`.
 
-Для підключення SSL до Nginx:
-1. Скопіюйте або підмонтуйте сертифікати до `docker/ssl/`:
+Скопіюйте сертифікати до `docker/ssl/`:
 ```bash
 mkdir -p docker/ssl
-sudo cp /etc/letsencrypt/live/gen.myfacility.ua/fullchain.pem docker/ssl/fullchain.pem
-sudo cp /etc/letsencrypt/live/gen.myfacility.ua/privkey.pem docker/ssl/privkey.pem
+sudo cp /etc/letsencrypt/live/generator-016.pp.ua/fullchain.pem docker/ssl/fullchain.pem
+sudo cp /etc/letsencrypt/live/generator-016.pp.ua/privkey.pem docker/ssl/privkey.pem
+chmod 600 docker/ssl/privkey.pem
 ```
-2. У `docker/nginx.conf` увімкніть блок `listen 443 ssl` та вкажіть шляхи до `ssl_certificate /etc/nginx/ssl/fullchain.pem;`.
+
+### Варіант Б: Автоматичний Fallback (Self-Signed на льоту)
+Якщо ви запускаєте систему на внутрішньому IP або сертифікати Let's Encrypt ще не готові, скрипт контейнера Nginx автоматично згенерує локальний тимчасовий SSL-сертифікат на льоту під час запуску. Система запрацює за протоколом HTTPS без помилок конфігурації Nginx.
 
 ---
 
@@ -76,17 +83,18 @@ docker compose logs -f app
 ```
 
 При першому старті:
-1. Автоматично підніметься PostgreSQL.
-2. Alembic автоматично виконає міграції схеми БД.
-3. Сервіс ініціалізації створить суперкористувача `superadmin` та стандартні ролі.
-4. Додаток стане доступним за адресою вашого домену або IP сервера.
+1. Автоматично підніметься PostgreSQL 16 із перевіркою працездатності (healthcheck).
+2. Alembic автоматично застосує міграції схеми БД.
+3. Сервіс ініціалізації створить суперкористувача `superadmin`, стандартні ролі та матрицю прав.
+4. Nginx налаштує безпечні HTTP-заголовки (`HSTS`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, ліміт тіла `client_max_body_size 100M`).
+5. Застосунок стане доступним за захищеним протоколом `https://your-domain`.
 
 ---
 
-## 5. Встановлення PWA на Android
+## 5. Встановлення PWA на Android та iOS
 
-1. Відкрийте сайт через мобільний браузер Chrome на Android: `https://gen.myfacility.ua`
+1. Відкрийте сайт через мобільний браузер: `https://your-domain`
 2. Авторизуйтесь у системі.
-3. У правому верхньому меню Chrome (три крапки) виберіть пункт: **«Встановити додаток»** (або «Додати на головний екран»).
-4. Додаток з'явиться на робочому столі смартфона з власною іконкою.
-5. При запуску він відкривається у повноекранному автономному режимі (`standalone`) без адресного рядка браузера і кешує інтерфейс через Service Worker.
+3. **Android (Chrome)**: У правому верхньому меню (три крапки) оберіть: **«Встановити додаток»** (або «Додати на головний екран»).
+4. **iOS (Safari)**: Натисніть кнопку «Поділитися» (іконка зі стрілкою) та оберіть: **«На екран „Додому“»**.
+5. Додаток з'явиться на робочому столі смартфона з власною іконкою. При запуску він відкривається в автономному повноекранному режимі (`standalone`) без адресного рядка браузера.
