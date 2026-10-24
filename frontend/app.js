@@ -3726,7 +3726,16 @@ async function loadAdminSystemSettings() {
     if (document.getElementById('sysSmtpPrimaryHost')) document.getElementById('sysSmtpPrimaryHost').value = s.smtp_primary_host || 'smtp.gmail.com';
     if (document.getElementById('sysSmtpPrimaryPort')) document.getElementById('sysSmtpPrimaryPort').value = s.smtp_primary_port || 587;
     if (document.getElementById('sysSmtpPrimaryUser')) document.getElementById('sysSmtpPrimaryUser').value = s.smtp_primary_user || '';
-    if (document.getElementById('sysSmtpPrimaryPassword')) document.getElementById('sysSmtpPrimaryPassword').value = s.smtp_primary_password || '';
+    if (document.getElementById('sysSmtpPrimaryPassword')) {
+      const pIn = document.getElementById('sysSmtpPrimaryPassword');
+      if (s.smtp_primary_password === '********') {
+        pIn.value = '';
+        pIn.placeholder = '•••••••• (Пароль збережено, залиште пустим щоб не змінювати)';
+      } else {
+        pIn.value = s.smtp_primary_password || '';
+        pIn.placeholder = '16-значний пароль додатку Google';
+      }
+    }
     if (document.getElementById('sysSmtpPrimarySsl')) document.getElementById('sysSmtpPrimarySsl').checked = s.smtp_primary_ssl === true;
     if (document.getElementById('sysSmtpPrimaryFrom')) document.getElementById('sysSmtpPrimaryFrom').value = s.smtp_primary_from || '';
 
@@ -3734,7 +3743,16 @@ async function loadAdminSystemSettings() {
     if (document.getElementById('sysSmtpFallbackHost')) document.getElementById('sysSmtpFallbackHost').value = s.smtp_fallback_host || 'smtp.ukr.net';
     if (document.getElementById('sysSmtpFallbackPort')) document.getElementById('sysSmtpFallbackPort').value = s.smtp_fallback_port || 465;
     if (document.getElementById('sysSmtpFallbackUser')) document.getElementById('sysSmtpFallbackUser').value = s.smtp_fallback_user || '';
-    if (document.getElementById('sysSmtpFallbackPassword')) document.getElementById('sysSmtpFallbackPassword').value = s.smtp_fallback_password || '';
+    if (document.getElementById('sysSmtpFallbackPassword')) {
+      const fbIn = document.getElementById('sysSmtpFallbackPassword');
+      if (s.smtp_fallback_password === '********') {
+        fbIn.value = '';
+        fbIn.placeholder = '•••••••• (Пароль збережено, залиште пустим щоб не змінювати)';
+      } else {
+        fbIn.value = s.smtp_fallback_password || '';
+        fbIn.placeholder = 'Пароль для зовнішніх програм Ukr.net';
+      }
+    }
     if (document.getElementById('sysSmtpFallbackSsl')) document.getElementById('sysSmtpFallbackSsl').checked = s.smtp_fallback_ssl !== false;
     if (document.getElementById('sysSmtpFallbackFrom')) document.getElementById('sysSmtpFallbackFrom').value = s.smtp_fallback_from || '';
 
@@ -3760,6 +3778,15 @@ window.refreshFuelPricesFromInternet = async function () {
 
 document.getElementById('systemSettingsForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerText = '💾 Збереження налаштувань...';
+  }
+
+  const pPass = document.getElementById('sysSmtpPrimaryPassword')?.value;
+  const fbPass = document.getElementById('sysSmtpFallbackPassword')?.value;
+
   const body = {
     organization_name: document.getElementById('sysOrgName').value.trim() || 'MAXI-UA LLC',
     facility_timezone: document.getElementById('sysTimezone').value,
@@ -3776,25 +3803,30 @@ document.getElementById('systemSettingsForm')?.addEventListener('submit', async 
     smtp_enabled: document.getElementById('sysSmtpEnabled')?.checked ?? false,
     email_notify_password_change: document.getElementById('sysEmailNotifyPwdChange')?.checked ?? true,
     email_notify_safety_stop: document.getElementById('sysEmailNotifySafetyStop')?.checked ?? true,
-    email_notify_weekly_report: document.getElementById('sysEmailWeeklyEnabled')?.checked ?? false,
     email_weekly_report_enabled: document.getElementById('sysEmailWeeklyEnabled')?.checked ?? false,
     smtp_primary_host: document.getElementById('sysSmtpPrimaryHost')?.value.trim() || 'smtp.gmail.com',
     smtp_primary_port: parseInt(document.getElementById('sysSmtpPrimaryPort')?.value || '587', 10),
     smtp_primary_user: document.getElementById('sysSmtpPrimaryUser')?.value.trim() || '',
-    smtp_primary_password: document.getElementById('sysSmtpPrimaryPassword')?.value || '',
     smtp_primary_ssl: document.getElementById('sysSmtpPrimarySsl')?.checked ?? false,
     smtp_primary_from: document.getElementById('sysSmtpPrimaryFrom')?.value.trim() || '',
     smtp_fallback_enabled: document.getElementById('sysSmtpFallbackEnabled')?.checked ?? false,
     smtp_fallback_host: document.getElementById('sysSmtpFallbackHost')?.value.trim() || 'smtp.ukr.net',
     smtp_fallback_port: parseInt(document.getElementById('sysSmtpFallbackPort')?.value || '465', 10),
     smtp_fallback_user: document.getElementById('sysSmtpFallbackUser')?.value.trim() || '',
-    smtp_fallback_password: document.getElementById('sysSmtpFallbackPassword')?.value || '',
     smtp_fallback_ssl: document.getElementById('sysSmtpFallbackSsl')?.checked ?? true,
     smtp_fallback_from: document.getElementById('sysSmtpFallbackFrom')?.value.trim() || '',
     email_weekly_recipients: document.getElementById('sysEmailWeeklyRecipients')?.value.trim() || '',
     email_weekly_send_day: parseInt(document.getElementById('sysEmailWeeklyDay')?.value || '0', 10),
     email_weekly_send_time: document.getElementById('sysEmailWeeklyTime')?.value || '08:00'
   };
+
+  // Only pass password if user entered a new string; otherwise keep existing in DB
+  if (pPass && pPass.trim() !== '') {
+    body.smtp_primary_password = pPass;
+  }
+  if (fbPass && fbPass.trim() !== '') {
+    body.smtp_fallback_password = fbPass;
+  }
 
   try {
     const res = await api('/system/settings', { method: 'PUT', body: JSON.stringify(body) });
@@ -3803,8 +3835,16 @@ document.getElementById('systemSettingsForm')?.addEventListener('submit', async 
       document.getElementById('sysApplyAllGens').checked = res.settings.apply_to_all_generators !== false;
     }
     showToast(res.message || 'Системні налаштування успішно збережено!', 'success');
+    await loadAdminSystemSettings();
     loadAllData();
-  } catch (_) {}
+  } catch (err) {
+    showToast('Помилка збереження налаштувань: ' + (err.message || 'Невідома помилка'), 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = '💾 Зберегти системні налаштування';
+    }
+  }
 });
 
 window.toggleResetFacilitySelect = function () {
@@ -4608,6 +4648,12 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(refreshServerStatus, 30000);
   setTimeout(checkPushSubscriptionStatus, 1500);
 
+  // Forgot password link listener
+  document.getElementById('linkForgotPassword')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    openForgotPasswordModal();
+  });
+
   // Check for reset_token in URL query parameters
   const urlParams = new URLSearchParams(window.location.search);
   const resetToken = urlParams.get('reset_token');
@@ -4753,39 +4799,262 @@ document.getElementById('resetPasswordForm')?.addEventListener('submit', async (
   }
 });
 
-window.triggerSmtpTest = async function (provider) {
-  const defaultEmail = currentUser?.email || document.getElementById('sysSmtpPrimaryUser')?.value || '';
-  const recipient = prompt(`Введіть адресу email для отримання тестового листа (${provider.toUpperCase()}):`, defaultEmail);
-  if (!recipient || !recipient.trim()) return;
+// ---------------------------------------------------------------------------
+// Advanced Interactive SMTP Testing Modal & Weekly Report Dispatcher
+// ---------------------------------------------------------------------------
+let currentSmtpTestProvider = 'primary';
 
-  try {
-    showToast(`Надсилання тестового листа через ${provider.toUpperCase()}...`, 'info');
-    const res = await api('/system/email/test', {
-      method: 'POST',
-      body: JSON.stringify({ recipient: recipient.trim(), provider: provider })
-    });
-    if (res.warning) {
-      showToast(`⚠️ ${res.warning}`, 'warning');
-    } else {
-      showToast(`✅ Тестовий лист успішно надіслано на ${recipient} (через ${res.provider?.toUpperCase()} SMTP)!`, 'success');
+window.switchSmtpTestTab = function (provider) {
+  currentSmtpTestProvider = provider;
+  ['primary', 'fallback', 'failover'].forEach(p => {
+    const btn = document.getElementById(`tabBtnSmtp${p.charAt(0).toUpperCase() + p.slice(1)}`);
+    if (btn) {
+      if (p === provider) btn.classList.add('active');
+      else btn.classList.remove('active');
     }
-  } catch (err) {
-    showToast(`❌ Помилка SMTP тесту: ${err.message}`, 'error');
+  });
+
+  const hostEl = document.getElementById('smtpTestHostDisplay');
+  const userEl = document.getElementById('smtpTestUserDisplay');
+  const sslEl = document.getElementById('smtpTestSslDisplay');
+  const resCard = document.getElementById('smtpTestResultCard');
+  if (resCard) resCard.style.display = 'none';
+
+  if (provider === 'primary') {
+    const host = document.getElementById('sysSmtpPrimaryHost')?.value.trim() || 'smtp.gmail.com';
+    const port = document.getElementById('sysSmtpPrimaryPort')?.value || '587';
+    const user = document.getElementById('sysSmtpPrimaryUser')?.value.trim() || '(не вказано)';
+    const ssl = document.getElementById('sysSmtpPrimarySsl')?.checked;
+    if (hostEl) hostEl.innerText = `${host}:${port}`;
+    if (userEl) userEl.innerText = user;
+    if (sslEl) sslEl.innerText = ssl ? 'Прямий SSL (порт 465)' : 'STARTTLS (порт 587)';
+  } else if (provider === 'fallback') {
+    const host = document.getElementById('sysSmtpFallbackHost')?.value.trim() || 'smtp.ukr.net';
+    const port = document.getElementById('sysSmtpFallbackPort')?.value || '465';
+    const user = document.getElementById('sysSmtpFallbackUser')?.value.trim() || '(не вказано)';
+    const ssl = document.getElementById('sysSmtpFallbackSsl')?.checked;
+    if (hostEl) hostEl.innerText = `${host}:${port}`;
+    if (userEl) userEl.innerText = user;
+    if (sslEl) sslEl.innerText = ssl ? 'Прямий SSL (порт 465 для Ukr.net)' : 'STARTTLS (порт 587)';
+  } else {
+    if (hostEl) hostEl.innerText = 'Primary -> Fallback (Автоматичний Failover)';
+    if (userEl) userEl.innerText = 'Перевірка перемикання при недоступності основного';
+    if (sslEl) sslEl.innerText = 'Динамічне резервування';
   }
 };
 
-window.triggerManualWeeklyReportEmail = async function () {
-  const configured = document.getElementById('sysEmailWeeklyRecipients')?.value.trim() || currentUser?.email || '';
-  const recipient = prompt('Введіть адреси email для відправки щотижневого звіту (через кому):', configured);
-  if (!recipient || !recipient.trim()) return;
+window.openSmtpTestModal = function (provider = 'primary') {
+  if (!isAdmin()) {
+    showToast('Тестування пошти доступне лише адміністратору системи', 'warning');
+    return;
+  }
+  const defaultEmail = currentUser?.email || document.getElementById('sysSmtpPrimaryUser')?.value || '';
+  const input = document.getElementById('smtpTestRecipientInput');
+  if (input) input.value = defaultEmail;
+
+  const spinner = document.getElementById('smtpTestSpinner');
+  if (spinner) spinner.style.display = 'none';
+  const resCard = document.getElementById('smtpTestResultCard');
+  if (resCard) {
+    resCard.style.display = 'none';
+    resCard.innerHTML = '';
+  }
+
+  switchSmtpTestTab(provider);
+  openModal('modalSmtpTest');
+};
+
+window.executeSmtpModalTest = async function () {
+  const recipient = document.getElementById('smtpTestRecipientInput')?.value.trim();
+  const btn = document.getElementById('btnRunSmtpTest');
+  const spinner = document.getElementById('smtpTestSpinner');
+  const resCard = document.getElementById('smtpTestResultCard');
+
+  if (!recipient || !recipient.includes('@')) {
+    showToast('Будь ласка, введіть коректну адресу email отримувача', 'warning');
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = '⏳ Надсилання...';
+  }
+  if (spinner) spinner.style.display = 'block';
+  if (resCard) resCard.style.display = 'none';
+
+  // Read live form values for on-the-fly test
+  const pPass = document.getElementById('sysSmtpPrimaryPassword')?.value;
+  const fbPass = document.getElementById('sysSmtpFallbackPassword')?.value;
+
+  const payload = {
+    recipient: recipient,
+    provider: currentSmtpTestProvider,
+    smtp_primary_host: document.getElementById('sysSmtpPrimaryHost')?.value.trim() || 'smtp.gmail.com',
+    smtp_primary_port: parseInt(document.getElementById('sysSmtpPrimaryPort')?.value || '587', 10),
+    smtp_primary_user: document.getElementById('sysSmtpPrimaryUser')?.value.trim() || '',
+    smtp_primary_password: pPass || undefined,
+    smtp_primary_ssl: document.getElementById('sysSmtpPrimarySsl')?.checked ?? false,
+    smtp_primary_from: document.getElementById('sysSmtpPrimaryFrom')?.value.trim() || '',
+    smtp_fallback_enabled: document.getElementById('sysSmtpFallbackEnabled')?.checked ?? false,
+    smtp_fallback_host: document.getElementById('sysSmtpFallbackHost')?.value.trim() || 'smtp.ukr.net',
+    smtp_fallback_port: parseInt(document.getElementById('sysSmtpFallbackPort')?.value || '465', 10),
+    smtp_fallback_user: document.getElementById('sysSmtpFallbackUser')?.value.trim() || '',
+    smtp_fallback_password: fbPass || undefined,
+    smtp_fallback_ssl: document.getElementById('sysSmtpFallbackSsl')?.checked ?? true,
+    smtp_fallback_from: document.getElementById('sysSmtpFallbackFrom')?.value.trim() || ''
+  };
 
   try {
-    showToast('Генерація книги Excel та надсилання звіту на email...', 'info');
-    const res = await api(`/system/email/weekly-digest/send?recipient=${encodeURIComponent(recipient.trim())}`, {
+    const res = await api('/system/email/test', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    if (spinner) spinner.style.display = 'none';
+    if (resCard) {
+      resCard.style.display = 'block';
+
+      if (res.status === 'ok') {
+        resCard.className = 'test-result-box success';
+        resCard.innerHTML = `
+          <div style="font-weight: 700; font-size: 1rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>🟢</span> <span>Тестовий лист успішно надіслано!</span>
+          </div>
+          <div style="font-size: 0.85rem; line-height: 1.5;">
+            <div><b>Шлюз:</b> ${escapeHtml(res.provider?.toUpperCase())} (${escapeHtml(res.host || '')}:${res.port || ''})</div>
+            <div><b>Отримувач:</b> ${escapeHtml(res.recipient || recipient)}</div>
+            <div><b>Час виконання:</b> ${escapeHtml(res.tested_at || '')} (${res.duration_ms || 0} мс)</div>
+            <div style="margin-top: 0.5rem; color: #4ade80;">
+              ✨ Повідомлення відправлено. Перевірте скриньку отримувача (також перевірте папку «Спам» або «Оповіщення»).
+            </div>
+          </div>
+        `;
+        showToast('Тестовий лист успішно надіслано!', 'success');
+      } else if (res.status === 'warning') {
+        resCard.className = 'test-result-box warning';
+        resCard.innerHTML = `
+          <div style="font-weight: 700; font-size: 1rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>⚠️</span> <span>Спрацював резервний канал (Failover)!</span>
+          </div>
+          <div style="font-size: 0.85rem; line-height: 1.5;">
+            <div>${escapeHtml(res.warning || res.message || '')}</div>
+            <div style="margin-top: 0.4rem;"><b>Доставлено через:</b> ${escapeHtml(res.provider?.toUpperCase())} (${escapeHtml(res.host || '')})</div>
+            <div><b>Отримувач:</b> ${escapeHtml(res.recipient || recipient)}</div>
+          </div>
+        `;
+        showToast('Спрацював резервний SMTP (Failover)!', 'warning');
+      } else {
+        resCard.className = 'test-result-box error';
+        resCard.innerHTML = `
+          <div style="font-weight: 700; font-size: 1rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>🔴</span> <span>Помилка доставки тестового листа</span>
+          </div>
+          <div style="font-size: 0.85rem; line-height: 1.5;">
+            <div><b>Сервер:</b> ${escapeHtml(res.host || '')}</div>
+            <div style="color: #fca5a5; margin-top: 0.35rem; font-family: monospace; background: rgba(0,0,0,0.25); padding: 0.4rem 0.6rem; border-radius: 4px;">
+              ${escapeHtml(res.error || 'Невідома помилка SMTP')}
+            </div>
+            ${res.hint ? `<div class="test-hint-box"><b>💡 Інструкція з вирішення:</b>
+${escapeHtml(res.hint)}</div>` : ''}
+          </div>
+        `;
+        showToast('Помилка надсилання тестового листа', 'error');
+      }
+    }
+  } catch (err) {
+    if (spinner) spinner.style.display = 'none';
+    if (resCard) {
+      resCard.style.display = 'block';
+      resCard.className = 'test-result-box error';
+      resCard.innerHTML = `
+        <div style="font-weight: 700; font-size: 1rem; margin-bottom: 0.4rem;">🔴 Помилка запиту до сервера</div>
+        <div style="font-size: 0.85rem; color: #fca5a5;">${escapeHtml(err.message || 'Не вдалося виконати запит')}</div>
+      `;
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = '🚀 Запустити тест';
+    }
+  }
+};
+
+window.openSendWeeklyReportModal = function () {
+  if (!isAdmin()) {
+    showToast('Відправка звітів доступна лише адміністратору системи', 'warning');
+    return;
+  }
+  const configured = document.getElementById('sysEmailWeeklyRecipients')?.value.trim() || currentUser?.email || '';
+  const input = document.getElementById('weeklyReportRecipientsInput');
+  if (input) input.value = configured;
+
+  const spinner = document.getElementById('weeklyReportSpinner');
+  if (spinner) spinner.style.display = 'none';
+  const resBox = document.getElementById('weeklyReportResultBox');
+  if (resBox) {
+    resBox.style.display = 'none';
+    resBox.innerHTML = '';
+  }
+
+  openModal('modalSendWeeklyReport');
+};
+
+window.executeSendWeeklyReport = async function () {
+  const recipients = document.getElementById('weeklyReportRecipientsInput')?.value.trim();
+  const btn = document.getElementById('btnSubmitWeeklyReport');
+  const spinner = document.getElementById('weeklyReportSpinner');
+  const resBox = document.getElementById('weeklyReportResultBox');
+
+  if (!recipients) {
+    showToast('Будь ласка, введіть щонайменше одну адресу email', 'warning');
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = '📊 Генерація...';
+  }
+  if (spinner) spinner.style.display = 'block';
+  if (resBox) resBox.style.display = 'none';
+
+  try {
+    const res = await api(`/system/email/weekly-digest/send?recipient=${encodeURIComponent(recipients)}`, {
       method: 'POST'
     });
+    if (spinner) spinner.style.display = 'none';
+    if (resBox) {
+      resBox.style.display = 'block';
+      resBox.className = 'test-result-box success';
+      resBox.innerHTML = `
+        <div style="font-weight: 700;">✅ Звіт Excel успішно згенеровано та надіслано!</div>
+        <div style="margin-top: 0.35rem; font-size: 0.83rem;">Отримувачі: ${escapeHtml(recipients)}</div>
+      `;
+    }
     showToast(res.message || 'Звіт Excel успішно відправлено на пошту!', 'success');
   } catch (err) {
-    showToast(`❌ Помилка відправки звіту: ${err.message}`, 'error');
+    if (spinner) spinner.style.display = 'none';
+    if (resBox) {
+      resBox.style.display = 'block';
+      resBox.className = 'test-result-box error';
+      resBox.innerHTML = `
+        <div style="font-weight: 700;">❌ Помилка відправки щотижневого звіту</div>
+        <div style="margin-top: 0.35rem; font-size: 0.83rem;">${escapeHtml(err.message)}</div>
+      `;
+    }
+    showToast(`Помилка відправки звіту: ${err.message}`, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = '✉️ Надіслати звіт зараз';
+    }
   }
+};
+
+// Aliases for compatibility
+window.triggerSmtpTest = function (provider) {
+  openSmtpTestModal(provider);
+};
+
+window.triggerManualWeeklyReportEmail = function () {
+  openSendWeeklyReportModal();
 };

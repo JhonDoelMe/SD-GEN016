@@ -41,6 +41,20 @@ router = APIRouter(prefix="/system", tags=["Система, налаштуван
 class EmailTestRequest(BaseModel):
     recipient: str = Field(..., max_length=150)
     provider: str = Field(default="failover", description="failover | primary | fallback")
+    # On-the-fly config parameters from form testing
+    smtp_primary_host: Optional[str] = None
+    smtp_primary_port: Optional[int] = None
+    smtp_primary_user: Optional[str] = None
+    smtp_primary_password: Optional[str] = None
+    smtp_primary_ssl: Optional[bool] = None
+    smtp_primary_from: Optional[str] = None
+    smtp_fallback_enabled: Optional[bool] = None
+    smtp_fallback_host: Optional[str] = None
+    smtp_fallback_port: Optional[int] = None
+    smtp_fallback_user: Optional[str] = None
+    smtp_fallback_password: Optional[str] = None
+    smtp_fallback_ssl: Optional[bool] = None
+    smtp_fallback_from: Optional[str] = None
 
 
 class SystemSettingsUpdateRequest(BaseModel):
@@ -325,8 +339,8 @@ async def update_admin_system_settings(
     for field_name in all_fields:
         val = getattr(payload, field_name, None)
         if val is not None:
-            # Prevent overwriting real passwords with masked asterisks
-            if field_name in ("smtp_primary_password", "smtp_fallback_password") and val == "********":
+            # Prevent overwriting real passwords with masked asterisks or empty string if unchanged
+            if field_name in ("smtp_primary_password", "smtp_fallback_password") and val in ("********", ""):
                 continue
             updates[field_name] = val
 
@@ -442,7 +456,18 @@ async def test_email_configuration(
     """
     html_body = _wrap_html_template("Тест SMTP", content)
 
-    # For testing, ensure smtp_enabled is temporarily honored or tested directly
+    # For testing, honor on-the-fly config parameters passed from the admin UI
+    config_override: Dict[str, Any] = {"smtp_enabled": True}
+    for attr in (
+        "smtp_primary_host", "smtp_primary_port", "smtp_primary_user", "smtp_primary_password",
+        "smtp_primary_ssl", "smtp_primary_from", "smtp_fallback_enabled", "smtp_fallback_host",
+        "smtp_fallback_port", "smtp_fallback_user", "smtp_fallback_password", "smtp_fallback_ssl", "smtp_fallback_from"
+    ):
+        val = getattr(payload, attr, None)
+        if val is not None:
+            config_override[attr] = val
+
+    start_t = time.time()
     orig_smtp_enabled = bool(get_runtime_setting("smtp_enabled", False))
     from backend.app.services.settings_service import set_runtime_setting
     set_runtime_setting("smtp_enabled", True)
@@ -452,10 +477,15 @@ async def test_email_configuration(
             subject=subject,
             html_body=html_body,
             db=db,
-            force_provider=force_prov
+            force_provider=force_prov,
+            config_override=config_override
         )
     finally:
         set_runtime_setting("smtp_enabled", orig_smtp_enabled)
+
+    duration_ms = int(round((time.time() - start_t) * 1000))
+    res["duration_ms"] = duration_ms
+    res["tested_at"] = now_facility().strftime('%d.%m.%Y %H:%M:%S')
 
     await log_audit(
         db=db,
@@ -467,12 +497,6 @@ async def test_email_configuration(
         ip_address=get_client_ip(request)
     )
     await db.commit()
-
-    if res.get("status") == "error":
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Помилка відправки тестового листа: {res.get('error')}"
-        )
 
     return res
 

@@ -37,7 +37,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.6">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.8.0">
 </head>
 <body>
 
@@ -81,7 +81,7 @@
           </label>
         </div>
         <div style="display: flex; justify-content: flex-end; margin-top: -0.25rem; margin-bottom: 0.75rem;">
-          <a href="javascript:void(0)" onclick="openForgotPasswordModal()" style="color: #38bdf8; font-size: 0.88rem; text-decoration: underline; font-weight: 500;">Забули пароль?</a>
+          <a href="javascript:void(0)" id="linkForgotPassword" onclick="openForgotPasswordModal()" style="color: #38bdf8; font-size: 0.88rem; text-decoration: underline; font-weight: 500; cursor: pointer;">Забули пароль?</a>
         </div>
 
         <div id="loginError" style="display: none; color: #f87171; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 0.5rem; padding: 0.85rem; margin-top: 1rem; font-size: 0.95rem; text-align: left; line-height: 1.4;"></div>
@@ -1052,10 +1052,10 @@
             <!-- Кнопки швидкого тестування -->
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
               <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 0.5rem;">🧪 Тестування пошти:</span>
-              <button type="button" class="btn-action" style="min-height: auto; padding: 0.45rem 0.85rem; font-size: 0.8rem; border-color: #3b82f6; color: #60a5fa;" onclick="triggerSmtpTest('primary')">📨 Тест Primary SMTP</button>
-              <button type="button" class="btn-action" style="min-height: auto; padding: 0.45rem 0.85rem; font-size: 0.8rem; border-color: #eab308; color: #facc15;" onclick="triggerSmtpTest('fallback')">📨 Тест Fallback SMTP</button>
-              <button type="button" class="btn-action" style="min-height: auto; padding: 0.45rem 0.85rem; font-size: 0.8rem; border-color: #10b981; color: #34d399;" onclick="triggerSmtpTest('failover')">🔄 Тест Failover</button>
-              <button type="button" class="btn-action" style="min-height: auto; padding: 0.45rem 0.85rem; font-size: 0.8rem; border-color: #a855f7; color: #c084fc;" onclick="triggerManualWeeklyReportEmail()">📊 Надіслати звіт зараз</button>
+              <button type="button" class="btn-action" style="min-height: auto; padding: 0.45rem 0.85rem; font-size: 0.8rem; border-color: #3b82f6; color: #60a5fa; cursor: pointer;" onclick="openSmtpTestModal('primary')">📨 Тест Primary SMTP</button>
+              <button type="button" class="btn-action" style="min-height: auto; padding: 0.45rem 0.85rem; font-size: 0.8rem; border-color: #eab308; color: #facc15; cursor: pointer;" onclick="openSmtpTestModal('fallback')">📨 Тест Fallback SMTP</button>
+              <button type="button" class="btn-action" style="min-height: auto; padding: 0.45rem 0.85rem; font-size: 0.8rem; border-color: #10b981; color: #34d399; cursor: pointer;" onclick="openSmtpTestModal('failover')">🔄 Тест Failover</button>
+              <button type="button" class="btn-action" style="min-height: auto; padding: 0.45rem 0.85rem; font-size: 0.8rem; border-color: #a855f7; color: #c084fc; cursor: pointer;" onclick="openSendWeeklyReportModal()">📊 Надіслати звіт зараз</button>
             </div>
           </div>
 
@@ -2516,11 +2516,119 @@
     </div>
   </div>
 
+  <!-- Modal: Інтерактивне тестування SMTP та Failover -->
+  <div id="modalSmtpTest" class="modal-overlay">
+    <div class="modal-content" style="max-width: 580px;">
+      <div class="modal-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+          <span>🧪</span> <span>Тестування поштового шлюзу (Email / SMTP)</span>
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalSmtpTest')">&times;</button>
+      </div>
+
+      <div style="padding-top: 0.25rem;">
+        <!-- Режим тестування -->
+        <label style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.4rem;">
+          Оберіть канал для перевірки:
+        </label>
+        <div class="test-provider-tabs">
+          <button type="button" class="test-provider-btn active" id="tabBtnSmtpPrimary" onclick="switchSmtpTestTab('primary')">
+            🌐 1. Primary (Gmail)
+          </button>
+          <button type="button" class="test-provider-btn" id="tabBtnSmtpFallback" onclick="switchSmtpTestTab('fallback')">
+            🛡️ 2. Fallback (Ukr.net)
+          </button>
+          <button type="button" class="test-provider-btn" id="tabBtnSmtpFailover" onclick="switchSmtpTestTab('failover')">
+            🔄 3. Failover (Авто)
+          </button>
+        </div>
+
+        <!-- Поточні реквізити каналу, що тестується -->
+        <div id="smtpTestConfigSummary" style="background: rgba(15, 23, 42, 0.45); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 8px; padding: 0.85rem; margin-bottom: 1rem; font-size: 0.83rem; line-height: 1.5;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+            <span style="color: var(--text-muted);">Сервер:</span>
+            <strong id="smtpTestHostDisplay" style="font-family: monospace; color: #60a5fa;">smtp.gmail.com:587</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+            <span style="color: var(--text-muted);">Обліковий запис:</span>
+            <strong id="smtpTestUserDisplay" style="font-family: monospace; color: #e2e8f0;">(не вказано)</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Шифрування:</span>
+            <span id="smtpTestSslDisplay" style="color: #94a3b8;">STARTTLS (порт 587)</span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label style="font-weight: 600; font-size: 0.88rem;">Куди надіслати тестовий лист (Email отримувача):</label>
+          <input type="email" id="smtpTestRecipientInput" required placeholder="vash.email@gmail.com" autocomplete="email">
+          <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 0.25rem;">
+            Система виконає підключення до обраного поштового шлюзу, перевірить автентифікацію та надішле контрольний лист.
+          </small>
+        </div>
+
+        <!-- Індикатор виконання -->
+        <div id="smtpTestSpinner" style="display: none; padding: 1rem; border-radius: 8px; background: rgba(56, 189, 248, 0.08); border: 1px dashed rgba(56, 189, 248, 0.3); text-align: center; margin-bottom: 1rem;">
+          <div style="font-size: 1.5rem; margin-bottom: 0.35rem;">⏳</div>
+          <strong id="smtpTestSpinnerText" style="color: #38bdf8; font-size: 0.9rem;">Встановлення з'єднання з поштовим сервером...</strong>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Перевірка TLS/SSL handshake та автентифікації</div>
+        </div>
+
+        <!-- Блок детальних результатів діагностики -->
+        <div id="smtpTestResultCard" style="display: none;"></div>
+
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
+          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalSmtpTest')">Закрити</button>
+          <button type="button" id="btnRunSmtpTest" class="btn-primary" style="width: auto; padding: 0.65rem 1.4rem; min-height: auto;" onclick="executeSmtpModalTest()">
+            🚀 Надіслати тестовий лист
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Ручна відправка щотижневого звіту Excel -->
+  <div id="modalSendWeeklyReport" class="modal-overlay">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+          <span>📊</span> <span>Щотижневий звіт Excel</span>
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalSendWeeklyReport')">&times;</button>
+      </div>
+
+      <div style="padding-top: 0.25rem;">
+        <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem;">
+          Система згенерує актуальну книгу Microsoft Excel (.xlsx) із 5 аркушами (сесії генератора, витрата палива, напрацювання ТО, стан складу та коригування) і надішле її у вкладенні на вказані адреси.
+        </p>
+
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label style="font-weight: 600; font-size: 0.88rem;">Отримувачі звіту (email через кому):</label>
+          <input type="text" id="weeklyReportRecipientsInput" required placeholder="director@company.com, chief@ukr.net">
+        </div>
+
+        <div id="weeklyReportSpinner" style="display: none; padding: 1rem; border-radius: 8px; background: rgba(168, 85, 247, 0.08); border: 1px dashed rgba(168, 85, 247, 0.3); text-align: center; margin-bottom: 1rem;">
+          <div style="font-size: 1.5rem; margin-bottom: 0.35rem;">📊</div>
+          <strong style="color: #c084fc; font-size: 0.9rem;">Генерація книги Excel та відправка листа...</strong>
+        </div>
+
+        <div id="weeklyReportResultBox" style="display: none;"></div>
+
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
+          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalSendWeeklyReport')">Закрити</button>
+          <button type="button" id="btnSubmitWeeklyReport" class="btn-primary" style="background: #a855f7; border-color: #a855f7; width: auto; padding: 0.65rem 1.4rem; min-height: auto;" onclick="executeSendWeeklyReport()">
+            ✉️ Надіслати звіт зараз
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.6"></script>
+  <script src="/frontend/app.js?v=4.8.0"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

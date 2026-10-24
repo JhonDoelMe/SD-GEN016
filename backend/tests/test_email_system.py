@@ -287,3 +287,64 @@ async def test_admin_weekly_digest_manual_send(client, superadmin_auth):
         mock_digest.assert_called_once()
         assert mock_digest.call_args[1]["recipients"] == ["boss@maxi-ua.com"]
         assert isinstance(mock_digest.call_args[1]["excel_bytes"], bytes)
+
+
+@pytest.mark.asyncio
+async def test_admin_email_test_endpoint_with_custom_config_and_hints(client, superadmin_auth):
+    # Test that on-the-fly config parameters are passed to send_email_with_failover
+    with patch("backend.app.services.email_service.send_email_with_failover") as mock_failover:
+        mock_failover.return_value = {
+            "status": "ok",
+            "provider": "primary",
+            "host": "custom.smtp.gmail.com",
+            "port": 587,
+            "message": "Лист успішно надіслано!"
+        }
+
+        res = await client.post(
+            "/api/v1/system/email/test",
+            headers=superadmin_auth,
+            json={
+                "recipient": "test_admin@maxi-ua.com",
+                "provider": "primary",
+                "smtp_primary_host": "custom.smtp.gmail.com",
+                "smtp_primary_user": "custom@gmail.com",
+                "smtp_primary_password": "custompassword123"
+            }
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "ok"
+        assert "duration_ms" in data
+        assert "tested_at" in data
+        mock_failover.assert_called_once()
+        cfg = mock_failover.call_args[1]["config_override"]
+        assert cfg["smtp_primary_host"] == "custom.smtp.gmail.com"
+        assert cfg["smtp_primary_user"] == "custom@gmail.com"
+        assert cfg["smtp_primary_password"] == "custompassword123"
+
+
+@pytest.mark.asyncio
+async def test_settings_update_does_not_wipe_password_with_empty_string(client, superadmin_auth, db_session):
+    # 1. Store initial password
+    await update_system_settings(db_session, {
+        "smtp_primary_password": "preserved_gmail_pass",
+        "smtp_fallback_password": "preserved_ukr_pass"
+    })
+
+    # 2. Update settings passing empty string for passwords
+    res = await client.put(
+        "/api/v1/system/settings",
+        headers=superadmin_auth,
+        json={
+            "organization_name": "MAXI-UA UPDATED",
+            "smtp_primary_password": "",
+            "smtp_fallback_password": ""
+        }
+    )
+    assert res.status_code == 200
+
+    # 3. Verify original passwords remain intact
+    from backend.app.services.settings_service import get_runtime_setting
+    assert get_runtime_setting("smtp_primary_password") == "preserved_gmail_pass"
+    assert get_runtime_setting("smtp_fallback_password") == "preserved_ukr_pass"

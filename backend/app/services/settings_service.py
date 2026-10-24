@@ -119,7 +119,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
 # In-memory cache of runtime settings for fast synchronous reads (e.g. timezone.py)
 RUNTIME_SETTINGS: Dict[str, Any] = dict(DEFAULT_SYSTEM_SETTINGS)
 
-_TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$")
 
 
 def get_runtime_setting(key: str, default: Any = None) -> Any:
@@ -296,12 +296,14 @@ async def update_system_settings(
             raise ValueError(f"Невідомий часовий пояс: {tz_str}")
 
     # Validate schedule times if provided
-    for time_key in ("work_schedule_start", "work_schedule_end"):
+    for time_key in ("work_schedule_start", "work_schedule_end", "email_weekly_send_time"):
         if time_key in updates and updates[time_key] is not None:
             t_val = str(updates[time_key]).strip()
-            if not _TIME_RE.match(t_val):
+            m = _TIME_RE.match(t_val)
+            if not m:
                 raise ValueError(f"Некоректний формат часу '{t_val}' для {time_key} (очікується ГГ:ХХ)")
-            updates[time_key] = t_val
+            # Always normalize to HH:MM format
+            updates[time_key] = f"{m.group(1)}:{m.group(2)}"
 
     now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 

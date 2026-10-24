@@ -216,6 +216,50 @@ def send_smtp_message_sync(
             server.send_message(msg)
 
 
+def get_smtp_diagnostic_hint(error_msg: str, host: str = "") -> str:
+    """
+    Повертає зрозумілу прикладну інструкцію для адміністратора українською мовою
+    на основі коду або тексту помилки SMTP-сервера.
+    """
+    err_lower = (error_msg or "").lower()
+    host_lower = (host or "").lower()
+
+    if "535" in err_lower or "authentication" in err_lower or "badcredentials" in err_lower or "username and password not accepted" in err_lower:
+        if "gmail" in host_lower or "google" in host_lower:
+            return (
+                "Google відхилив авторизацію (535 Authentication failed).\n"
+                "Звичайний пароль від пошти НЕ працює для безпеки Google. Необхідно:\n"
+                "1. Увімкнути 2-етапну перевірку в налаштуваннях Google-акаунта;\n"
+                "2. Перейти за посиланням myaccount.google.com/apppasswords;\n"
+                "3. Створити «Пароль додатка» (App Password) з назвою 'ServiceDesk' (отримаєте 16 літер);\n"
+                "4. Скопіювати цей 16-значний пароль без пробілів у поле «Пароль додатку Google» та зберегти."
+            )
+        elif "ukr.net" in host_lower:
+            return (
+                "Ukr.net відхилив авторизацію (535 Authentication failed).\n"
+                "Ukr.net вимагає окремий пароль для поштових програм. Необхідно:\n"
+                "1. Увійти у вашу пошту на ukr.net;\n"
+                "2. Відкрити «Налаштування» -> «Керування доступом IMAP/SMTP»;\n"
+                "3. Увімкнути перемикач «Доступ для зовнішніх поштових програм»;\n"
+                "4. Натиснути «Створити пароль програми», скопіювати згенерований пароль та вставити у налаштування."
+            )
+        return "Помилка автентифікації SMTP (535). Перевірте правильність логіна та пароля додатку для цього поштового сервера."
+
+    if "timed out" in err_lower or "timeout" in err_lower:
+        return f"Сервер {host} не відповів протягом 12 секунд (Timeout). Перевірте наявність інтернет-з'єднання на сервері або спробуйте інший порт."
+
+    if "connection refused" in err_lower or "111" in err_lower or "10061" in err_lower:
+        return f"Сервер {host} відхилив з'єднання. Перевірте правильність порту: 587 (з вимкненим прямим SSL, STARTTLS) або 465 (з увімкненим прямим SSL)."
+
+    if "ssl" in err_lower or "wrong version" in err_lower or "certificate" in err_lower or "handshake" in err_lower:
+        return "Невідповідність протоколу шифрування. Для порту 587 вимкніть галочку SSL (буде використано STARTTLS). Для порту 465 обов'язково увімкніть галочку прямого SSL."
+
+    if "getaddrinfo failed" in err_lower or "not known" in err_lower or "name or service not known" in err_lower:
+        return f"Не вдалося знайти хост '{host}' через DNS. Перевірте правильність написання адреси сервера (наприклад: smtp.gmail.com або smtp.ukr.net)."
+
+    return "Перевірте параметри налаштувань пошти, адресу хоста, порт, логін та наявність доступу до інтернету."
+
+
 async def send_email_with_failover(
     to_addr: Union[str, List[str]],
     subject: str,
@@ -223,36 +267,73 @@ async def send_email_with_failover(
     text_body: Optional[str] = None,
     attachments: Optional[List[Dict[str, Any]]] = None,
     db: Optional[AsyncSession] = None,
-    force_provider: Optional[str] = None  # None | "primary" | "fallback"
+    force_provider: Optional[str] = None,  # None | "primary" | "fallback"
+    config_override: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Sends email with automatic failover:
     Tries Primary SMTP (e.g. Gmail App Password).
     If Primary fails or times out, immediately falls back to Fallback SMTP (e.g. Ukr.net).
+    Supports on-the-fly config overrides for testing without altering persisted DB values.
     Logs success or failover to NotificationLog if db session is provided.
     """
-    smtp_enabled = bool(get_runtime_setting("smtp_enabled", False))
+    smtp_enabled = bool(
+        config_override.get("smtp_enabled")
+        if config_override and "smtp_enabled" in config_override
+        else get_runtime_setting("smtp_enabled", False)
+    )
     if not smtp_enabled:
         logger.info(f"[EMAIL] Skipping send to {to_addr}: SMTP is disabled in settings.")
-        return {"status": "skipped", "message": "Надсилання email вимкнено в системних налаштуваннях"}
+        return {
+            "status": "skipped",
+            "message": "Надсилання email вимкнено в системних налаштуваннях",
+            "hint": "Увімкніть галочку «Увімкнути систему сповіщень на Email» у налаштуваннях."
+        }
 
-    p_host = str(get_runtime_setting("smtp_primary_host", "smtp.gmail.com")).strip()
-    p_port = int(get_runtime_setting("smtp_primary_port", 587))
-    p_user = str(get_runtime_setting("smtp_primary_user", "")).strip()
-    p_pass = str(get_runtime_setting("smtp_primary_password", "")).strip()
-    p_ssl = bool(get_runtime_setting("smtp_primary_ssl", False))
-    p_from = str(get_runtime_setting("smtp_primary_from", "")).strip() or p_user
+    p_host = str((config_override and config_override.get("smtp_primary_host")) or get_runtime_setting("smtp_primary_host", "smtp.gmail.com")).strip()
+    p_port = int((config_override and config_override.get("smtp_primary_port")) or get_runtime_setting("smtp_primary_port", 587))
+    p_user = str((config_override and config_override.get("smtp_primary_user")) if config_override and "smtp_primary_user" in config_override else get_runtime_setting("smtp_primary_user", "")).strip()
+    raw_p_pass = (config_override and config_override.get("smtp_primary_password"))
+    p_pass = raw_p_pass if raw_p_pass and raw_p_pass != "********" else str(get_runtime_setting("smtp_primary_password", "")).strip()
+    p_ssl = bool((config_override and config_override.get("smtp_primary_ssl")) if config_override and "smtp_primary_ssl" in config_override else get_runtime_setting("smtp_primary_ssl", False))
+    p_from = str((config_override and config_override.get("smtp_primary_from")) if config_override and "smtp_primary_from" in config_override else get_runtime_setting("smtp_primary_from", "")).strip() or p_user
 
-    fb_enabled = bool(get_runtime_setting("smtp_fallback_enabled", False))
-    fb_host = str(get_runtime_setting("smtp_fallback_host", "smtp.ukr.net")).strip()
-    fb_port = int(get_runtime_setting("smtp_fallback_port", 465))
-    fb_user = str(get_runtime_setting("smtp_fallback_user", "")).strip()
-    fb_pass = str(get_runtime_setting("smtp_fallback_password", "")).strip()
-    fb_ssl = bool(get_runtime_setting("smtp_fallback_ssl", True))
-    fb_from = str(get_runtime_setting("smtp_fallback_from", "")).strip() or fb_user
+    fb_enabled = bool((config_override and config_override.get("smtp_fallback_enabled")) if config_override and "smtp_fallback_enabled" in config_override else get_runtime_setting("smtp_fallback_enabled", False))
+    fb_host = str((config_override and config_override.get("smtp_fallback_host")) or get_runtime_setting("smtp_fallback_host", "smtp.ukr.net")).strip()
+    fb_port = int((config_override and config_override.get("smtp_fallback_port")) or get_runtime_setting("smtp_fallback_port", 465))
+    fb_user = str((config_override and config_override.get("smtp_fallback_user")) if config_override and "smtp_fallback_user" in config_override else get_runtime_setting("smtp_fallback_user", "")).strip()
+    raw_fb_pass = (config_override and config_override.get("smtp_fallback_password"))
+    fb_pass = raw_fb_pass if raw_fb_pass and raw_fb_pass != "********" else str(get_runtime_setting("smtp_fallback_password", "")).strip()
+    fb_ssl = bool((config_override and config_override.get("smtp_fallback_ssl")) if config_override and "smtp_fallback_ssl" in config_override else get_runtime_setting("smtp_fallback_ssl", True))
+    fb_from = str((config_override and config_override.get("smtp_fallback_from")) if config_override and "smtp_fallback_from" in config_override else get_runtime_setting("smtp_fallback_from", "")).strip() or fb_user
 
     primary_error: Optional[str] = None
     to_list = [to_addr] if isinstance(to_addr, str) else list(to_addr)
+
+    # Validation guards for forced test modes
+    if force_provider == "primary" and (not p_user or not p_pass):
+        err = "Основний SMTP не налаштовано: відсутній логін або пароль додатку Google."
+        return {
+            "status": "error",
+            "provider": "primary",
+            "host": p_host,
+            "port": p_port,
+            "recipient": to_addr,
+            "error": err,
+            "hint": get_smtp_diagnostic_hint("535", host=p_host)
+        }
+
+    if force_provider == "fallback" and (not fb_user or not fb_pass):
+        err = "Резервний SMTP не налаштовано: відсутній логін або пароль додатку для Ukr.net."
+        return {
+            "status": "error",
+            "provider": "fallback",
+            "host": fb_host,
+            "port": fb_port,
+            "recipient": to_addr,
+            "error": err,
+            "hint": get_smtp_diagnostic_hint("535", host=fb_host)
+        }
 
     # 1. Attempt Primary SMTP (unless explicitly forced to fallback)
     if force_provider != "fallback":
@@ -286,14 +367,29 @@ async def send_email_with_failover(
                     await db.commit()
                 except Exception:
                     pass
-            return {"status": "ok", "provider": "primary", "host": p_host}
+            return {
+                "status": "ok",
+                "provider": "primary",
+                "host": p_host,
+                "port": p_port,
+                "recipient": to_addr,
+                "message": f"Лист успішно надіслано на {to_addr} через Основний SMTP ({p_host}:{p_port})!"
+            }
         except Exception as exc:
             primary_error = str(exc)
             logger.warning(f"[EMAIL] Primary SMTP ({p_host}) failed: {exc}")
 
     # If force_provider was "primary", don't attempt fallback
     if force_provider == "primary":
-        return {"status": "error", "provider": "primary", "error": primary_error or "Unknown error"}
+        return {
+            "status": "error",
+            "provider": "primary",
+            "host": p_host,
+            "port": p_port,
+            "recipient": to_addr,
+            "error": primary_error or "Unknown error",
+            "hint": get_smtp_diagnostic_hint(primary_error or "", host=p_host)
+        }
 
     # 2. Attempt Fallback SMTP if enabled and configured
     if fb_enabled and fb_host and fb_user:
@@ -333,7 +429,10 @@ async def send_email_with_failover(
                 "status": "ok",
                 "provider": "fallback",
                 "host": fb_host,
-                "warning": warning_msg
+                "port": fb_port,
+                "recipient": to_addr,
+                "warning": warning_msg,
+                "message": f"Лист успішно надіслано через Резервний SMTP ({fb_host}:{fb_port})!"
             }
         except Exception as fb_exc:
             logger.error(f"[EMAIL] Fallback SMTP ({fb_host}) also failed: {fb_exc}")
@@ -351,7 +450,14 @@ async def send_email_with_failover(
                     await db.commit()
                 except Exception:
                     pass
-            return {"status": "error", "error": combined_err}
+            return {
+                "status": "error",
+                "provider": "failover",
+                "host": f"{p_host} / {fb_host}",
+                "recipient": to_addr,
+                "error": combined_err,
+                "hint": get_smtp_diagnostic_hint(str(fb_exc), host=fb_host)
+            }
 
     # If fallback is not configured
     error_msg = f"Помилка відправки через Primary SMTP ({p_host}): {primary_error}"
@@ -368,7 +474,15 @@ async def send_email_with_failover(
             await db.commit()
         except Exception:
             pass
-    return {"status": "error", "error": error_msg}
+    return {
+        "status": "error",
+        "provider": "primary",
+        "host": p_host,
+        "port": p_port,
+        "recipient": to_addr,
+        "error": error_msg,
+        "hint": get_smtp_diagnostic_hint(primary_error or "", host=p_host)
+    }
 
 
 # ---------------------------------------------------------------------------
