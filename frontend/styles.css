@@ -51,21 +51,21 @@
   --container-max-width: 1200px;
 }
 
-@media (min-width: 1200px) {
+@media (min-width: 1280px) {
   :root {
-    --container-max-width: 1280px;
+    --container-max-width: 1260px;
   }
 }
 
-@media (min-width: 1400px) {
+@media (min-width: 1440px) {
   :root {
-    --container-max-width: 1440px;
+    --container-max-width: 1360px;
   }
 }
 
-@media (min-width: 1600px) {
+@media (min-width: 1680px) {
   :root {
-    --container-max-width: 1600px;
+    --container-max-width: 1420px;
   }
 }
 
@@ -1944,6 +1944,43 @@ input[type="checkbox"], input[type="radio"] {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.settings-grid-org {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.15rem;
+  margin-bottom: 1rem;
+}
+
+.settings-grid-schedule {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.25fr;
+  gap: 1.15rem;
+}
+
+.settings-grid-chain {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.15rem;
+}
+
+@media (max-width: 860px) {
+  .settings-grid-org {
+    grid-template-columns: 1fr;
+  }
+  .settings-grid-schedule {
+    grid-template-columns: 1fr 1fr;
+  }
+  .settings-grid-chain {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .settings-grid-schedule {
+    grid-template-columns: 1fr;
+  }
 }
 
 .settings-toggle-list {

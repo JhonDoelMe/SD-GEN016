@@ -37,7 +37,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.0">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.1">
 </head>
 <body>
 
@@ -816,7 +816,8 @@
               <h4 class="settings-block-title">🏢 1. Організація, Часовий пояс та Робочий графік</h4>
               <span style="font-size: 0.78rem; color: var(--text-muted);">Базові параметри підприємства</span>
             </div>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;">
+            
+            <div class="settings-grid-org">
               <div class="form-group" style="margin-bottom: 0;">
                 <label>Назва організації (у звітах Excel)</label>
                 <input type="text" id="sysOrgName" required placeholder="MAXI-UA LLC">
@@ -831,6 +832,9 @@
                   <option value="UTC">UTC (Всесвітній час)</option>
                 </select>
               </div>
+            </div>
+
+            <div class="settings-grid-schedule">
               <div class="form-group" style="margin-bottom: 0;">
                 <label>Початок робочої зміни</label>
                 <input type="time" id="sysWorkStart" required value="08:00">
@@ -857,7 +861,7 @@
             <p style="font-size: 0.83rem; color: var(--text-muted); margin-bottom: 0.85rem;">
               Визначає базовий об'єкт, генератор та склад пального, які автоматично відкриваються під час входу в систему, та слугують базою для автоматичних звітів.
             </p>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;">
+            <div class="settings-grid-chain">
               <div class="form-group" style="margin-bottom: 0;">
                 <label>🏢 Об'єкт за замовчуванням</label>
                 <select id="sysDefaultFacilityId" onchange="onAdminDefaultFacilityChange()"></select>
@@ -2794,7 +2798,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.9.0"></script>
+  <script src="/frontend/app.js?v=4.9.1"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

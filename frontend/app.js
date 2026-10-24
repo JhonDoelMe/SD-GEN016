@@ -4004,6 +4004,8 @@ async function populateAdminDefaultChain(defaultFacId, defaultGenId, defaultStoc
 
     if (defaultFacId && (facilities || []).some(f => Number(f.id) === Number(defaultFacId))) {
       facSel.value = String(defaultFacId);
+    } else if ((facilities || []).length === 1) {
+      facSel.value = String(facilities[0].id);
     } else {
       facSel.value = '';
     }
@@ -4030,21 +4032,30 @@ window.onAdminDefaultFacilityChange = async function(preselectGenId = null, pres
   try {
     const [generators, stocks] = await Promise.all([
       api(`/generator/list?facility_id=${facId}`),
-      api(`/fuel/stock?facility_id=${facId}`)
+      api(`/fuel/stocks?facility_id=${facId}`)
     ]);
 
+    const genList = Array.isArray(generators) ? generators : (generators && generators.id ? [generators] : []);
     genSel.innerHTML = '<option value="">(Авто / Перший генератор)</option>' +
-      (generators || []).map(g => `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)})</option>`).join('');
-    if (preselectGenId && (generators || []).some(g => Number(g.id) === Number(preselectGenId))) {
+      genList.map(g => `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model || '')})</option>`).join('');
+    if (preselectGenId && genList.some(g => Number(g.id) === Number(preselectGenId))) {
       genSel.value = String(preselectGenId);
+    } else if (genList.length === 1) {
+      genSel.value = String(genList[0].id);
     } else {
       genSel.value = '';
     }
 
+    const stockList = Array.isArray(stocks) ? stocks : (stocks && stocks.id ? [stocks] : []);
     stockSel.innerHTML = '<option value="">(Авто / Перший склад)</option>' +
-      (stocks || []).map(s => `<option value="${Number(s.id)}">${escapeHtml(s.name)} (${escapeHtml(s.fuel_type)}: ${s.current_balance_l} л)</option>`).join('');
-    if (preselectStockId && (stocks || []).some(s => Number(s.id) === Number(preselectStockId))) {
+      stockList.map(s => {
+        const bal = typeof s.current_balance_l === 'number' ? s.current_balance_l.toFixed(2).replace('.', ',') : (s.current_balance_l || '0,00');
+        return `<option value="${Number(s.id)}">${escapeHtml(s.name)} (${escapeHtml(s.fuel_type || 'А-95')}: ${bal} л)</option>`;
+      }).join('');
+    if (preselectStockId && stockList.some(s => Number(s.id) === Number(preselectStockId))) {
       stockSel.value = String(preselectStockId);
+    } else if (stockList.length === 1) {
+      stockSel.value = String(stockList[0].id);
     } else {
       stockSel.value = '';
     }
