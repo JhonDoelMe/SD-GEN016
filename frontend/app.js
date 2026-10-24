@@ -166,15 +166,34 @@ function applyRolePermissionsUI() {
   // If user is currently in a forbidden tab, switch to dashboard immediately
   const activeTab = document.querySelector('.nav-item.active');
   if (activeTab && activeTab.classList.contains('nav-item-disabled')) {
-    const dashTab = document.querySelector('.nav-item[data-tab="tab-dashboard"]');
-    if (dashTab) {
-      document.querySelectorAll('.nav-item').forEach((t) => t.classList.remove('active'));
-      document.querySelectorAll('.tab-pane').forEach((p) => (p.style.display = 'none'));
-      dashTab.classList.add('active');
-      const dashPane = document.getElementById('tab-dashboard');
-      if (dashPane) dashPane.style.display = 'block';
+    if (typeof window.switchTab === 'function') {
+      window.switchTab('tab-dashboard');
+    } else {
+      const dashTab = document.querySelector('.nav-item[data-tab="tab-dashboard"]');
+      if (dashTab) {
+        document.querySelectorAll('.nav-item').forEach((t) => t.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach((p) => (p.style.display = 'none'));
+        dashTab.classList.add('active');
+        const dashPane = document.getElementById('tab-dashboard');
+        if (dashPane) dashPane.style.display = 'block';
+      }
     }
   }
+
+  // Update mobile navigation items visibility
+  document.querySelectorAll('.mobile-more-item').forEach((item) => {
+    const paneId = item.getAttribute('data-tab');
+    if (!paneId) return;
+    const isAllowed = tabRules[paneId] ?? true;
+    item.style.display = isAllowed ? 'flex' : 'none';
+  });
+  document.querySelectorAll('.mobile-nav-btn').forEach((btn) => {
+    const paneId = btn.getAttribute('data-tab');
+    if (!paneId) return;
+    const isAllowed = tabRules[paneId] ?? true;
+    btn.style.opacity = isAllowed ? '' : '0.35';
+    btn.style.pointerEvents = isAllowed ? '' : 'none';
+  });
 
   // 2. Helper to set button state with visual lock
   const setBtnState = (btnId, isAllowed, reason, lockedHtml = null) => {
@@ -516,6 +535,12 @@ function applyTheme(mode, notify = false) {
     }
   }
 
+  // Update mobile drawer theme icon
+  const mobThemeIcon = document.getElementById('mobileMoreThemeIcon');
+  if (mobThemeIcon) {
+    mobThemeIcon.innerText = mode === 'auto' ? '🌓' : (mode === 'light' ? '☀️' : '🌙');
+  }
+
   lastEffectiveTheme = effective;
 
   if (notify) {
@@ -850,43 +875,98 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   showAuthScreen();
 });
 
-// Tab Navigation
+// Responsive Tab Navigation & Mobile Drawer
+window.switchTab = function(paneId) {
+  const targetNav = document.querySelector(`.nav-item[data-tab="${paneId}"]`);
+  if (targetNav && (targetNav.classList.contains('nav-item-disabled') || targetNav.getAttribute('aria-disabled') === 'true')) {
+    const lockTitle = targetNav.getAttribute('title') || 'Розділ заблоковано для вашого рівня доступу 🔒';
+    showToast(lockTitle, 'warning');
+    return false;
+  }
+
+  // Update desktop top tabs
+  document.querySelectorAll('.nav-item').forEach((t) => t.classList.remove('active'));
+  if (targetNav) targetNav.classList.add('active');
+
+  // Update mobile bottom nav items
+  document.querySelectorAll('.mobile-nav-btn').forEach((b) => {
+    if (b.getAttribute('data-tab') === paneId) {
+      b.classList.add('active');
+    } else {
+      b.classList.remove('active');
+    }
+  });
+
+  // If active tab is inside the "More" drawer, highlight "More" button
+  const moreTabs = ['tab-faults', 'tab-notifications', 'tab-audit', 'tab-reports', 'tab-admin'];
+  const moreBtn = document.getElementById('btnMobileMore');
+  if (moreBtn) {
+    if (moreTabs.includes(paneId)) {
+      moreBtn.classList.add('active');
+    } else {
+      moreBtn.classList.remove('active');
+    }
+  }
+
+  // Update tab-pane visibility
+  document.querySelectorAll('.tab-pane').forEach((p) => (p.style.display = 'none'));
+  const pane = document.getElementById(paneId);
+  if (pane) pane.style.display = 'block';
+
+  // Close mobile more sheet if open
+  if (typeof toggleMobileMoreSheet === 'function') {
+    toggleMobileMoreSheet(false);
+  }
+
+  // Smooth scroll to top on tab change
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  // Refresh tab data
+  if (paneId === 'tab-dashboard') loadAllData();
+  if (paneId === 'tab-fuel') loadFuelData();
+  if (paneId === 'tab-maintenance') loadMaintenanceData();
+  if (paneId === 'tab-faults') loadFaultsData();
+  if (paneId === 'tab-runs') loadRunsData();
+  if (paneId === 'tab-notifications') {
+    loadNotificationSettings();
+    loadNotificationLogs();
+    checkPushSubscriptionStatus();
+  }
+  if (paneId === 'tab-audit') loadAuditData();
+  if (paneId === 'tab-reports') loadReport();
+  if (paneId === 'tab-admin') {
+    loadUsersData();
+    loadAdminSystemSettings();
+    if (isSuperAdmin()) {
+      loadBackupsList();
+    }
+  }
+};
+
+window.toggleMobileMoreSheet = function(forceState) {
+  const sheet = document.getElementById('mobileMoreSheet');
+  const backdrop = document.getElementById('mobileMoreBackdrop');
+  if (!sheet || !backdrop) return;
+
+  const isOpen = sheet.classList.contains('open');
+  const next = forceState !== undefined ? forceState : !isOpen;
+
+  if (next) {
+    sheet.classList.add('open');
+    backdrop.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  } else {
+    sheet.classList.remove('open');
+    backdrop.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+};
+
 document.querySelectorAll('.nav-item').forEach((tab) => {
   tab.addEventListener('click', (e) => {
-    if (tab.classList.contains('nav-item-disabled')) {
-      e.preventDefault();
-      e.stopPropagation();
-      showToast('Розділ заблоковано для вашої ролі 🔒', 'warning');
-      return false;
-    }
-
-    document.querySelectorAll('.nav-item').forEach((t) => t.classList.remove('active'));
-    document.querySelectorAll('.tab-pane').forEach((p) => (p.style.display = 'none'));
-
-    tab.classList.add('active');
+    e.preventDefault();
     const paneId = tab.getAttribute('data-tab');
-    const pane = document.getElementById(paneId);
-    if (pane) pane.style.display = 'block';
-
-    // Refresh tab data
-    if (paneId === 'tab-fuel') loadFuelData();
-    if (paneId === 'tab-maintenance') loadMaintenanceData();
-    if (paneId === 'tab-faults') loadFaultsData();
-    if (paneId === 'tab-runs') loadRunsData();
-    if (paneId === 'tab-notifications') {
-      loadNotificationSettings();
-      loadNotificationLogs();
-      checkPushSubscriptionStatus();
-    }
-    if (paneId === 'tab-audit') loadAuditData();
-    if (paneId === 'tab-reports') loadReport();
-    if (paneId === 'tab-admin') {
-      loadUsersData();
-      loadAdminSystemSettings();
-      if (isSuperAdmin()) {
-        loadBackupsList();
-      }
-    }
+    switchTab(paneId);
   });
 });
 
