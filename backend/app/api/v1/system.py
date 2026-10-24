@@ -38,6 +38,11 @@ SERVER_START_TIME = time.time()
 router = APIRouter(prefix="/system", tags=["Система, налаштування та моніторинг"])
 
 
+class EmailTestRequest(BaseModel):
+    recipient: str = Field(..., max_length=150)
+    provider: str = Field(default="failover", description="failover | primary | fallback")
+
+
 class SystemSettingsUpdateRequest(BaseModel):
     organization_name: Optional[str] = Field(default=None, max_length=150)
     facility_timezone: Optional[str] = Field(default=None, max_length=64)
@@ -49,6 +54,37 @@ class SystemSettingsUpdateRequest(BaseModel):
     fuel_price_a92: Optional[float] = Field(default=None, ge=0)
     fuel_price_dp: Optional[float] = Field(default=None, ge=0)
     auto_fetch_fuel_prices: Optional[bool] = None
+    # Operational Safeguards
+    max_continuous_run_hours: Optional[float] = Field(default=None, ge=1.0, le=48.0)
+    auto_stop_on_schedule_end: Optional[bool] = None
+    notify_running_heartbeat: Optional[bool] = None
+    heartbeat_interval_hours: Optional[float] = Field(default=None, ge=1.0, le=24.0)
+    fuel_receipt_max_liters_warning: Optional[float] = Field(default=None, gt=0)
+    fuel_receipt_min_price: Optional[float] = Field(default=None, ge=0)
+    fuel_receipt_max_price: Optional[float] = Field(default=None, gt=0)
+    # SMTP & Failover Settings
+    smtp_enabled: Optional[bool] = None
+    smtp_primary_host: Optional[str] = Field(default=None, max_length=150)
+    smtp_primary_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    smtp_primary_user: Optional[str] = Field(default=None, max_length=150)
+    smtp_primary_password: Optional[str] = Field(default=None, max_length=150)
+    smtp_primary_ssl: Optional[bool] = None
+    smtp_primary_from: Optional[str] = Field(default=None, max_length=150)
+    smtp_fallback_enabled: Optional[bool] = None
+    smtp_fallback_host: Optional[str] = Field(default=None, max_length=150)
+    smtp_fallback_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    smtp_fallback_user: Optional[str] = Field(default=None, max_length=150)
+    smtp_fallback_password: Optional[str] = Field(default=None, max_length=150)
+    smtp_fallback_ssl: Optional[bool] = None
+    smtp_fallback_from: Optional[str] = Field(default=None, max_length=150)
+    email_notify_password_change: Optional[bool] = None
+    email_notify_safety_stop: Optional[bool] = None
+    email_notify_critical_fault: Optional[bool] = None
+    email_notify_maintenance_due: Optional[bool] = None
+    email_weekly_report_enabled: Optional[bool] = None
+    email_weekly_recipients: Optional[str] = Field(default=None, max_length=500)
+    email_weekly_send_day: Optional[int] = Field(default=None, ge=0, le=6)
+    email_weekly_send_time: Optional[str] = Field(default=None, max_length=10)
     apply_to_all_generators: bool = Field(
         default=False,
         description="Якщо True — синхронізувати часовий пояс, графік роботи та інтервал ТО для всіх генераторів і об'єктів"
@@ -219,10 +255,16 @@ async def get_admin_system_settings(
 ) -> Dict[str, Any]:
     """
     Отримання всіх динамічних налаштувань системи (тільки для Адміністратора).
+    Паролі поштових шлюзів маскуються для запобігання витоку.
     """
     data = await load_system_settings(db)
+    masked = dict(data)
+    if masked.get("smtp_primary_password"):
+        masked["smtp_primary_password"] = "********"
+    if masked.get("smtp_fallback_password"):
+        masked["smtp_fallback_password"] = "********"
     return {
-        "settings": data,
+        "settings": masked,
         "fuel_prices": get_fuel_prices_info(),
     }
 
@@ -236,10 +278,10 @@ async def update_admin_system_settings(
 ) -> Dict[str, Any]:
     """
     Збереження динамічних налаштувань системи: графік роботи, часовий пояс, організація,
-    ціни на паливо та інтервали ТО (тільки для Адміністратора).
+    ціни на паливо, інтервали ТО, запобіжники та поштові шлюзи (тільки для Адміністратора).
     """
     updates: Dict[str, Any] = {}
-    for field_name in (
+    all_fields = (
         "organization_name",
         "facility_timezone",
         "work_schedule_start",
@@ -250,9 +292,42 @@ async def update_admin_system_settings(
         "fuel_price_a92",
         "fuel_price_dp",
         "auto_fetch_fuel_prices",
-    ):
-        val = getattr(payload, field_name)
+        "max_continuous_run_hours",
+        "auto_stop_on_schedule_end",
+        "notify_running_heartbeat",
+        "heartbeat_interval_hours",
+        "fuel_receipt_max_liters_warning",
+        "fuel_receipt_min_price",
+        "fuel_receipt_max_price",
+        "smtp_enabled",
+        "smtp_primary_host",
+        "smtp_primary_port",
+        "smtp_primary_user",
+        "smtp_primary_password",
+        "smtp_primary_ssl",
+        "smtp_primary_from",
+        "smtp_fallback_enabled",
+        "smtp_fallback_host",
+        "smtp_fallback_port",
+        "smtp_fallback_user",
+        "smtp_fallback_password",
+        "smtp_fallback_ssl",
+        "smtp_fallback_from",
+        "email_notify_password_change",
+        "email_notify_safety_stop",
+        "email_notify_critical_fault",
+        "email_notify_maintenance_due",
+        "email_weekly_report_enabled",
+        "email_weekly_recipients",
+        "email_weekly_send_day",
+        "email_weekly_send_time",
+    )
+    for field_name in all_fields:
+        val = getattr(payload, field_name, None)
         if val is not None:
+            # Prevent overwriting real passwords with masked asterisks
+            if field_name in ("smtp_primary_password", "smtp_fallback_password") and val == "********":
+                continue
             updates[field_name] = val
 
     try:
@@ -278,9 +353,14 @@ async def update_admin_system_settings(
     )
     await db.commit()
 
+    masked_updated = dict(updated)
+    if masked_updated.get("smtp_primary_password"):
+        masked_updated["smtp_primary_password"] = "********"
+    if masked_updated.get("smtp_fallback_password"):
+        masked_updated["smtp_fallback_password"] = "********"
     return {
         "message": "Системні налаштування успішно збережено",
-        "settings": updated,
+        "settings": masked_updated,
         "fuel_prices": get_fuel_prices_info(),
     }
 
@@ -324,3 +404,137 @@ async def reset_system_or_clean_db(
         return result
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/email/test")
+async def test_email_configuration(
+    payload: EmailTestRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Тестова перевірка конфігурації SMTP (Primary, Fallback або Failover).
+    Доступно тільки для адміністраторів системи.
+    """
+    to_addr = payload.recipient.strip()
+    if not to_addr or "@" not in to_addr:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Вкажіть коректну адресу електронної пошти")
+
+    from backend.app.services.email_service import send_email_with_failover, _wrap_html_template
+    import html as html_lib
+
+    force_prov = payload.provider if payload.provider in ("primary", "fallback") else None
+    subject = "Тестове сповіщення — Service Desk Бензинового Генератора"
+
+    content = f"""
+    <div class="success-box">
+      <strong>✅ Тест SMTP пройдено успішно!</strong><br>
+      Це тестове повідомлення підтверджує працездатність поштового шлюзу сповіщень.
+    </div>
+    <p>Параметри тесту:</p>
+    <ul>
+      <li><strong>Отримувач:</strong> {html_lib.escape(to_addr)}</li>
+      <li><strong>Режим відправки:</strong> {html_lib.escape(payload.provider)}</li>
+      <li><strong>Ініціатор:</strong> {html_lib.escape(current_user.full_name)} ({html_lib.escape(current_user.login)})</li>
+      <li><strong>Час перевірки:</strong> {now_facility().strftime('%d.%m.%Y %H:%M:%S')}</li>
+    </ul>
+    """
+    html_body = _wrap_html_template("Тест SMTP", content)
+
+    # For testing, ensure smtp_enabled is temporarily honored or tested directly
+    orig_smtp_enabled = bool(get_runtime_setting("smtp_enabled", False))
+    from backend.app.services.settings_service import set_runtime_setting
+    set_runtime_setting("smtp_enabled", True)
+    try:
+        res = await send_email_with_failover(
+            to_addr=to_addr,
+            subject=subject,
+            html_body=html_body,
+            db=db,
+            force_provider=force_prov
+        )
+    finally:
+        set_runtime_setting("smtp_enabled", orig_smtp_enabled)
+
+    await log_audit(
+        db=db,
+        action="SMTP_TEST_SENT",
+        entity_type="SystemSetting",
+        entity_id="email",
+        user_id=current_user.id,
+        details={"recipient": to_addr, "provider": payload.provider, "result": res},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    if res.get("status") == "error":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Помилка відправки тестового листа: {res.get('error')}"
+        )
+
+    return res
+
+
+@router.post("/email/weekly-digest/send")
+async def send_weekly_digest_manual(
+    request: Request,
+    recipient: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+) -> Dict[str, Any]:
+    """
+    Примусова генерація та відправка щотижневого звіту Excel на вказану адресу або список адрес із налаштувань.
+    """
+    from backend.app.services.report_service import generate_excel_report
+    from backend.app.services.email_service import send_weekly_digest_email
+
+    recipients_str = recipient or str(get_runtime_setting("email_weekly_recipients", "")).strip()
+    if not recipients_str:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Не вказано адреси отримувачів щотижневого звіту"
+        )
+
+    rec_list = [r.strip() for r in recipients_str.replace(";", ",").split(",") if r.strip()]
+    if not rec_list:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Список адрес отримувачів порожній")
+
+    excel_bytes = await generate_excel_report(db=db)
+    now_dt = datetime.datetime.now()
+    week_ago = now_dt - datetime.timedelta(days=7)
+    period_label = f"{week_ago.strftime('%d.%m.%Y')} — {now_dt.strftime('%d.%m.%Y')}"
+
+    orig_smtp_enabled = bool(get_runtime_setting("smtp_enabled", False))
+    from backend.app.services.settings_service import set_runtime_setting
+    set_runtime_setting("smtp_enabled", True)
+    try:
+        res = await send_weekly_digest_email(
+            recipients=rec_list,
+            excel_bytes=excel_bytes,
+            period_label=period_label,
+            summary_text=f"Звіт надіслано адміністратором {current_user.full_name} ({current_user.login}).",
+            db=db
+        )
+    finally:
+        set_runtime_setting("smtp_enabled", orig_smtp_enabled)
+
+    await log_audit(
+        db=db,
+        action="WEEKLY_DIGEST_EMAIL_SENT",
+        entity_type="SystemSetting",
+        entity_id="email",
+        user_id=current_user.id,
+        details={"recipients": rec_list, "result": res},
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+
+    if res.get("status") == "error":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Помилка відправки щотижневого звіту: {res.get('error')}"
+        )
+
+    return {"message": "Щотижневий звіт успішно надіслано", "result": res}

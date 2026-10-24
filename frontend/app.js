@@ -3718,6 +3718,30 @@ async function loadAdminSystemSettings() {
     if (document.getElementById('sysAutoFetchPrices')) document.getElementById('sysAutoFetchPrices').checked = s.auto_fetch_fuel_prices !== false;
     if (document.getElementById('sysApplyAllGens')) document.getElementById('sysApplyAllGens').checked = s.apply_to_all_generators !== false;
 
+    // SMTP & Failover Settings
+    if (document.getElementById('sysSmtpEnabled')) document.getElementById('sysSmtpEnabled').checked = s.smtp_enabled === true;
+    if (document.getElementById('sysEmailNotifyPwdChange')) document.getElementById('sysEmailNotifyPwdChange').checked = s.email_notify_password_change !== false;
+    if (document.getElementById('sysEmailNotifySafetyStop')) document.getElementById('sysEmailNotifySafetyStop').checked = s.email_notify_safety_stop !== false;
+    if (document.getElementById('sysEmailWeeklyEnabled')) document.getElementById('sysEmailWeeklyEnabled').checked = s.email_weekly_report_enabled === true;
+    if (document.getElementById('sysSmtpPrimaryHost')) document.getElementById('sysSmtpPrimaryHost').value = s.smtp_primary_host || 'smtp.gmail.com';
+    if (document.getElementById('sysSmtpPrimaryPort')) document.getElementById('sysSmtpPrimaryPort').value = s.smtp_primary_port || 587;
+    if (document.getElementById('sysSmtpPrimaryUser')) document.getElementById('sysSmtpPrimaryUser').value = s.smtp_primary_user || '';
+    if (document.getElementById('sysSmtpPrimaryPassword')) document.getElementById('sysSmtpPrimaryPassword').value = s.smtp_primary_password || '';
+    if (document.getElementById('sysSmtpPrimarySsl')) document.getElementById('sysSmtpPrimarySsl').checked = s.smtp_primary_ssl === true;
+    if (document.getElementById('sysSmtpPrimaryFrom')) document.getElementById('sysSmtpPrimaryFrom').value = s.smtp_primary_from || '';
+
+    if (document.getElementById('sysSmtpFallbackEnabled')) document.getElementById('sysSmtpFallbackEnabled').checked = s.smtp_fallback_enabled === true;
+    if (document.getElementById('sysSmtpFallbackHost')) document.getElementById('sysSmtpFallbackHost').value = s.smtp_fallback_host || 'smtp.ukr.net';
+    if (document.getElementById('sysSmtpFallbackPort')) document.getElementById('sysSmtpFallbackPort').value = s.smtp_fallback_port || 465;
+    if (document.getElementById('sysSmtpFallbackUser')) document.getElementById('sysSmtpFallbackUser').value = s.smtp_fallback_user || '';
+    if (document.getElementById('sysSmtpFallbackPassword')) document.getElementById('sysSmtpFallbackPassword').value = s.smtp_fallback_password || '';
+    if (document.getElementById('sysSmtpFallbackSsl')) document.getElementById('sysSmtpFallbackSsl').checked = s.smtp_fallback_ssl !== false;
+    if (document.getElementById('sysSmtpFallbackFrom')) document.getElementById('sysSmtpFallbackFrom').value = s.smtp_fallback_from || '';
+
+    if (document.getElementById('sysEmailWeeklyRecipients')) document.getElementById('sysEmailWeeklyRecipients').value = s.email_weekly_recipients || '';
+    if (document.getElementById('sysEmailWeeklyDay')) document.getElementById('sysEmailWeeklyDay').value = String(s.email_weekly_send_day ?? 0);
+    if (document.getElementById('sysEmailWeeklyTime')) document.getElementById('sysEmailWeeklyTime').value = s.email_weekly_send_time || '08:00';
+
     renderAdminFuelPricesHints(fp);
   } catch (_) {}
 }
@@ -3747,7 +3771,29 @@ document.getElementById('systemSettingsForm')?.addEventListener('submit', async 
     fuel_price_dp: parseFloat(document.getElementById('sysPriceDP').value) || 0.0,
     enforce_work_schedule: document.getElementById('sysEnforceSchedule').checked,
     auto_fetch_fuel_prices: document.getElementById('sysAutoFetchPrices').checked,
-    apply_to_all_generators: document.getElementById('sysApplyAllGens').checked
+    apply_to_all_generators: document.getElementById('sysApplyAllGens').checked,
+    // SMTP & Failover Settings
+    smtp_enabled: document.getElementById('sysSmtpEnabled')?.checked ?? false,
+    email_notify_password_change: document.getElementById('sysEmailNotifyPwdChange')?.checked ?? true,
+    email_notify_safety_stop: document.getElementById('sysEmailNotifySafetyStop')?.checked ?? true,
+    email_notify_weekly_report: document.getElementById('sysEmailWeeklyEnabled')?.checked ?? false,
+    email_weekly_report_enabled: document.getElementById('sysEmailWeeklyEnabled')?.checked ?? false,
+    smtp_primary_host: document.getElementById('sysSmtpPrimaryHost')?.value.trim() || 'smtp.gmail.com',
+    smtp_primary_port: parseInt(document.getElementById('sysSmtpPrimaryPort')?.value || '587', 10),
+    smtp_primary_user: document.getElementById('sysSmtpPrimaryUser')?.value.trim() || '',
+    smtp_primary_password: document.getElementById('sysSmtpPrimaryPassword')?.value || '',
+    smtp_primary_ssl: document.getElementById('sysSmtpPrimarySsl')?.checked ?? false,
+    smtp_primary_from: document.getElementById('sysSmtpPrimaryFrom')?.value.trim() || '',
+    smtp_fallback_enabled: document.getElementById('sysSmtpFallbackEnabled')?.checked ?? false,
+    smtp_fallback_host: document.getElementById('sysSmtpFallbackHost')?.value.trim() || 'smtp.ukr.net',
+    smtp_fallback_port: parseInt(document.getElementById('sysSmtpFallbackPort')?.value || '465', 10),
+    smtp_fallback_user: document.getElementById('sysSmtpFallbackUser')?.value.trim() || '',
+    smtp_fallback_password: document.getElementById('sysSmtpFallbackPassword')?.value || '',
+    smtp_fallback_ssl: document.getElementById('sysSmtpFallbackSsl')?.checked ?? true,
+    smtp_fallback_from: document.getElementById('sysSmtpFallbackFrom')?.value.trim() || '',
+    email_weekly_recipients: document.getElementById('sysEmailWeeklyRecipients')?.value.trim() || '',
+    email_weekly_send_day: parseInt(document.getElementById('sysEmailWeeklyDay')?.value || '0', 10),
+    email_weekly_send_time: document.getElementById('sysEmailWeeklyTime')?.value || '08:00'
   };
 
   try {
@@ -4562,6 +4608,18 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(refreshServerStatus, 30000);
   setTimeout(checkPushSubscriptionStatus, 1500);
 
+  // Check for reset_token in URL query parameters
+  const urlParams = new URLSearchParams(window.location.search);
+  const resetToken = urlParams.get('reset_token');
+  if (resetToken) {
+    const tokenInput = document.getElementById('resetPasswordToken');
+    if (tokenInput) tokenInput.value = resetToken;
+    openModal('modalResetPassword');
+    try {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } catch (_) {}
+  }
+
   // Periodic background refresh for dashboard tiles (updates metrics live without manual F5)
   setInterval(() => {
     if (token && currentUser) {
@@ -4577,3 +4635,157 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
+
+
+// ---------------------------------------------------------------------------
+// Email System & Password Reset Handlers
+// ---------------------------------------------------------------------------
+
+window.openForgotPasswordModal = function () {
+  const input = document.getElementById('forgotLoginOrEmail');
+  if (input) input.value = '';
+  const fb = document.getElementById('forgotPasswordFeedback');
+  if (fb) {
+    fb.style.display = 'none';
+    fb.innerText = '';
+  }
+  openModal('modalForgotPassword');
+};
+
+document.getElementById('forgotPasswordForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = document.getElementById('forgotLoginOrEmail')?.value.trim();
+  const btn = document.getElementById('btnSubmitForgotPassword');
+  const fb = document.getElementById('forgotPasswordFeedback');
+
+  if (!input) {
+    showToast('Будь ласка, введіть логін або email', 'warning');
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Надсилання...';
+  }
+
+  try {
+    const res = await api('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ login_or_email: input })
+    });
+    if (fb) {
+      fb.style.display = 'block';
+      fb.style.background = 'rgba(34, 197, 94, 0.15)';
+      fb.style.border = '1px solid rgba(34, 197, 94, 0.4)';
+      fb.style.color = '#4ade80';
+      fb.innerText = res.message || 'Якщо користувача знайдено, посилання надіслано на вашу пошту.';
+    }
+    showToast('Запит прийнято! Перевірте поштову скриньку', 'success');
+  } catch (err) {
+    if (fb) {
+      fb.style.display = 'block';
+      fb.style.background = 'rgba(239, 68, 68, 0.15)';
+      fb.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+      fb.style.color = '#f87171';
+      fb.innerText = err.message || 'Помилка надсилання запиту';
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = '✉️ Надіслати посилання';
+    }
+  }
+});
+
+document.getElementById('resetPasswordForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const tokenVal = document.getElementById('resetPasswordToken')?.value.trim();
+  const newPwd = document.getElementById('resetPasswordNew')?.value;
+  const confirmPwd = document.getElementById('resetPasswordConfirm')?.value;
+  const btn = document.getElementById('btnSubmitResetPassword');
+  const fb = document.getElementById('resetPasswordFeedback');
+
+  if (!tokenVal) {
+    showToast('Введіть токен відновлення', 'warning');
+    return;
+  }
+  if (!newPwd || newPwd.length < 8) {
+    showToast('Пароль повинен містити щонайменше 8 символів', 'warning');
+    return;
+  }
+  if (newPwd !== confirmPwd) {
+    if (fb) {
+      fb.style.display = 'block';
+      fb.style.background = 'rgba(239, 68, 68, 0.15)';
+      fb.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+      fb.style.color = '#f87171';
+      fb.innerText = 'Введені паролі не співпадають!';
+    }
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Збереження...';
+  }
+
+  try {
+    const res = await api('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token: tokenVal, new_password: newPwd })
+    });
+    closeModal('modalResetPassword');
+    showToast(res.message || 'Пароль успішно змінено! Увійдіть з новим паролем.', 'success');
+    showAuthScreen();
+  } catch (err) {
+    if (fb) {
+      fb.style.display = 'block';
+      fb.style.background = 'rgba(239, 68, 68, 0.15)';
+      fb.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+      fb.style.color = '#f87171';
+      fb.innerText = err.message || 'Помилка скидання пароля';
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = '💾 Зберегти новий пароль';
+    }
+  }
+});
+
+window.triggerSmtpTest = async function (provider) {
+  const defaultEmail = currentUser?.email || document.getElementById('sysSmtpPrimaryUser')?.value || '';
+  const recipient = prompt(`Введіть адресу email для отримання тестового листа (${provider.toUpperCase()}):`, defaultEmail);
+  if (!recipient || !recipient.trim()) return;
+
+  try {
+    showToast(`Надсилання тестового листа через ${provider.toUpperCase()}...`, 'info');
+    const res = await api('/system/email/test', {
+      method: 'POST',
+      body: JSON.stringify({ recipient: recipient.trim(), provider: provider })
+    });
+    if (res.warning) {
+      showToast(`⚠️ ${res.warning}`, 'warning');
+    } else {
+      showToast(`✅ Тестовий лист успішно надіслано на ${recipient} (через ${res.provider?.toUpperCase()} SMTP)!`, 'success');
+    }
+  } catch (err) {
+    showToast(`❌ Помилка SMTP тесту: ${err.message}`, 'error');
+  }
+};
+
+window.triggerManualWeeklyReportEmail = async function () {
+  const configured = document.getElementById('sysEmailWeeklyRecipients')?.value.trim() || currentUser?.email || '';
+  const recipient = prompt('Введіть адреси email для відправки щотижневого звіту (через кому):', configured);
+  if (!recipient || !recipient.trim()) return;
+
+  try {
+    showToast('Генерація книги Excel та надсилання звіту на email...', 'info');
+    const res = await api(`/system/email/weekly-digest/send?recipient=${encodeURIComponent(recipient.trim())}`, {
+      method: 'POST'
+    });
+    showToast(res.message || 'Звіт Excel успішно відправлено на пошту!', 'success');
+  } catch (err) {
+    showToast(`❌ Помилка відправки звіту: ${err.message}`, 'error');
+  }
+};

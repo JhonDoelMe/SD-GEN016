@@ -8,6 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.config import settings
 from backend.app.database import get_db
+import secrets
+import hashlib
+from sqlalchemy import or_, update
+from backend.app.core.timezone import now_utc
 from backend.app.core.security import (
     get_password_hash,
     verify_password,
@@ -17,9 +21,20 @@ from backend.app.core.security import (
     check_login_rate_limit,
     record_failed_login,
     reset_login_attempts,
+    check_password_reset_rate_limit,
+    record_password_reset_attempt,
 )
-from backend.app.models.user import User
-from backend.app.schemas.auth import LoginRequest, ChangePasswordRequest, TokenResponse, UserSummary
+from backend.app.models.user import User, PasswordResetToken
+from backend.app.schemas.auth import (
+    LoginRequest,
+    ChangePasswordRequest,
+    TokenResponse,
+    UserSummary,
+    ForgotPasswordRequest,
+    ResetPasswordRequest
+)
+from backend.app.services.settings_service import get_runtime_setting
+from backend.app.services.email_service import send_password_reset_email, send_password_changed_email
 from backend.app.api.deps import get_current_user, get_client_ip, security_scheme
 from backend.app.services.audit_service import log_audit
 
@@ -246,6 +261,16 @@ async def change_own_password(
         ip_address=get_client_ip(request)
     )
     await db.commit()
+    if current_user.email and get_runtime_setting("email_notify_password_change", True):
+        try:
+            await send_password_changed_email(
+                to_addr=current_user.email,
+                user_name=current_user.full_name,
+                ip_address=get_client_ip(request),
+                db=db
+            )
+        except Exception as mail_err:
+            logger.warning(f"Failed to dispatch password changed notice to {current_user.email}: {mail_err}")
     return {
         "message": "Пароль успішно змінено",
         "access_token": new_token,
@@ -279,3 +304,158 @@ async def logout(
     )
     await db.commit()
     return {"message": "Успішний вихід із системи"}
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Ініціалізація скидання пароля через email.
+    Захищено від timing attacks, перебору логінів та brute-force (max 3 спроби на 15 хв).
+    """
+    ip = get_client_ip(request)
+    ident = payload.login_or_email.strip()
+
+    retry_after = check_password_reset_rate_limit(ip, ident)
+    if retry_after:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Забагато запитів на відновлення пароля. Спробуйте через {retry_after} сек.",
+            headers={"Retry-After": str(retry_after)}
+        )
+
+    record_password_reset_attempt(ip, ident)
+
+    res = await db.execute(
+        select(User).where(
+            or_(
+                func.lower(User.login) == func.lower(ident),
+                func.lower(User.email) == func.lower(ident)
+            )
+        )
+    )
+    user = res.scalars().first()
+
+    generic_response = {
+        "status": "ok",
+        "message": "Якщо вказаний логін або email зареєстровано в системі та має прив'язану адресу електронної пошти, інструкції для відновлення надіслано на вашу пошту."
+    }
+
+    if not user or not user.is_active or not user.email:
+        return generic_response
+
+    # Invalidate any existing unused reset tokens for this user
+    await db.execute(
+        update(PasswordResetToken)
+        .where(PasswordResetToken.user_id == user.id, PasswordResetToken.used == False)
+        .values(used=True)
+    )
+
+    # Generate cryptographically secure token & SHA-256 hash
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    expires_at = now_utc() + datetime.timedelta(minutes=20)
+
+    db.add(PasswordResetToken(
+        user_id=user.id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+        used=False
+    ))
+
+    await log_audit(
+        db=db,
+        action="USER_PASSWORD_RESET_REQUESTED",
+        entity_type="User",
+        entity_id=str(user.id),
+        user_id=user.id,
+        details={"login": user.login, "email": user.email},
+        ip_address=ip
+    )
+    await db.commit()
+
+    # Dispatch email
+    try:
+        base_url = str(request.base_url).rstrip("/")
+        if request.headers.get("x-forwarded-proto", "").lower() == "https":
+            base_url = base_url.replace("http://", "https://")
+        await send_password_reset_email(
+            to_addr=user.email,
+            user_name=user.full_name,
+            reset_token=raw_token,
+            base_url=base_url,
+            db=db
+        )
+    except Exception as mail_err:
+        logger.warning(f"Failed to dispatch password reset email to {user.email}: {mail_err}")
+
+    return generic_response
+
+
+@router.post("/reset-password")
+async def reset_password(
+    payload: ResetPasswordRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Завершення відновлення пароля за одноразовим токеном.
+    Перевіряє валідність токена, оновлює пароль, інвалідує старі сесії та надсилає підтвердження на email.
+    """
+    token_hash = hashlib.sha256(payload.token.strip().encode("utf-8")).hexdigest()
+    current_time = now_utc()
+
+    res = await db.execute(
+        select(PasswordResetToken).where(
+            PasswordResetToken.token_hash == token_hash,
+            PasswordResetToken.used == False,
+            PasswordResetToken.expires_at > current_time
+        )
+    )
+    reset_record = res.scalars().first()
+
+    if not reset_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Недійсне посилання або термін дії посилання для відновлення пароля (20 хв) вичерпано."
+        )
+
+    user = await db.get(User, reset_record.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Користувач не активний або заблокований адміністратором"
+        )
+
+    user.password_hash = get_password_hash(payload.new_password)
+    reset_record.used = True
+    await db.flush()
+
+    ip = get_client_ip(request)
+    await log_audit(
+        db=db,
+        action="USER_PASSWORD_RESET_COMPLETED",
+        entity_type="User",
+        entity_id=str(user.id),
+        user_id=user.id,
+        details={"login": user.login},
+        ip_address=ip
+    )
+    await db.commit()
+
+    if user.email and get_runtime_setting("email_notify_password_change", True):
+        try:
+            await send_password_changed_email(
+                to_addr=user.email,
+                user_name=user.full_name,
+                ip_address=ip,
+                db=db
+            )
+        except Exception as mail_err:
+            logger.warning(f"Failed to dispatch password changed notice to {user.email}: {mail_err}")
+
+    return {"message": "Пароль успішно змінено. Тепер ви можете увійти з новим паролем."}

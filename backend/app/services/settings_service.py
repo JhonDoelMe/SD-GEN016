@@ -90,6 +90,30 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "fuel_receipt_max_liters_warning": 1000.0,
     "fuel_receipt_min_price": 15.0,
     "fuel_receipt_max_price": 250.0,
+    # SMTP Email System & Failover Configuration
+    "smtp_enabled": False,
+    "smtp_primary_host": "smtp.gmail.com",
+    "smtp_primary_port": 587,
+    "smtp_primary_user": "",
+    "smtp_primary_password": "",
+    "smtp_primary_ssl": False,
+    "smtp_primary_from": "",
+    "smtp_fallback_enabled": False,
+    "smtp_fallback_host": "smtp.ukr.net",
+    "smtp_fallback_port": 465,
+    "smtp_fallback_user": "",
+    "smtp_fallback_password": "",
+    "smtp_fallback_ssl": True,
+    "smtp_fallback_from": "",
+    # Email Notification Event Triggers
+    "email_notify_password_change": True,
+    "email_notify_safety_stop": True,
+    "email_notify_critical_fault": True,
+    "email_notify_maintenance_due": True,
+    "email_weekly_report_enabled": False,
+    "email_weekly_recipients": "",
+    "email_weekly_send_day": 0,
+    "email_weekly_send_time": "08:00",
 }
 
 # In-memory cache of runtime settings for fast synchronous reads (e.g. timezone.py)

@@ -69,7 +69,7 @@ def ensure_schema_updates(sync_conn):
             "fuel_transfers", "users", "roles", "permissions",
             "maintenance_schedules", "maintenance_records",
             "generator_runs", "faults", "audit_logs", "system_adjustments",
-            "push_subscriptions", "notification_logs"
+            "push_subscriptions", "notification_logs", "password_resets"
         )
         for tbl in serial_tables:
             if tbl in tables:
@@ -124,7 +124,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Service Desk Бензинового Генератора (SD-GEN016)",
     description="Система оперативного обліку фактичної експлуатації бензинового генератора",
-    version="4.3.0",
+    version="4.4.0",
     lifespan=lifespan
 )
 
