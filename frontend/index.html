@@ -37,7 +37,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.8.2">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.8.3">
 </head>
 <body>
 
@@ -864,6 +864,11 @@
                 <select id="sysDefaultFuelStockId"></select>
               </div>
             </div>
+            <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+              <button type="button" id="btnSaveDefaultChain" class="btn-primary" style="width: auto; padding: 0.55rem 1.25rem; font-size: 0.88rem; background: #9333ea; border-color: #9333ea;" onclick="saveDefaultChainSettings()">
+                💾 Зберегти ланцюжок за замовчуванням
+              </button>
+            </div>
           </div>
 
           <!-- Блок 2: Табло цін АЗК WOG та Фіксовані тарифи -->
@@ -1053,12 +1058,12 @@
             <!-- Щотижневий звіт налаштування -->
             <div class="smtp-weekly-card">
               <h5 class="smtp-weekly-title">📊 Параметри щотижневого звіту Excel</h5>
-              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem;">
-                <div class="form-group" style="margin-bottom: 0;">
-                  <label class="smtp-field-label">Отримувачі (email через кому)</label>
+              <div class="smtp-weekly-grid">
+                <div class="form-group smtp-weekly-group">
+                  <label class="smtp-field-label">Отримувачі (email)</label>
                   <input type="text" id="sysEmailWeeklyRecipients" placeholder="director@gmail.com, accountant@ukr.net">
                 </div>
-                <div class="form-group" style="margin-bottom: 0;">
+                <div class="form-group smtp-weekly-group">
                   <label class="smtp-field-label">День тижня</label>
                   <select id="sysEmailWeeklyDay">
                     <option value="0">Понеділок</option>
@@ -1070,16 +1075,16 @@
                     <option value="6">Неділя</option>
                   </select>
                 </div>
-                <div class="form-group" style="margin-bottom: 0;">
+                <div class="form-group smtp-weekly-group">
                   <label class="smtp-field-label">Час відправки</label>
                   <input type="time" id="sysEmailWeeklyTime" value="08:00">
                 </div>
-                <div class="form-group" style="margin-bottom: 0;">
-                  <label class="smtp-field-label">🏢 Об'єкт для щотижневого звіту</label>
+                <div class="form-group smtp-weekly-group">
+                  <label class="smtp-field-label">🏢 Об'єкт звіту</label>
                   <select id="sysEmailWeeklyFacilityId" onchange="onAdminEmailWeeklyFacilityChange()"></select>
                 </div>
-                <div class="form-group" style="margin-bottom: 0;">
-                  <label class="smtp-field-label">⚡ Генератор для щотижневого звіту</label>
+                <div class="form-group smtp-weekly-group">
+                  <label class="smtp-field-label">⚡ Генератор звіту</label>
                   <select id="sysEmailWeeklyGeneratorId"></select>
                 </div>
               </div>
@@ -2722,7 +2727,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.8.2"></script>
+  <script src="/frontend/app.js?v=4.8.3"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

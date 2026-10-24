@@ -761,6 +761,10 @@ async function checkAuth() {
     const greetEl = document.getElementById('userGreeting');
     if (greetEl) greetEl.innerText = `${currentUser.full_name} (${rolesUa})`;
     applyRolePermissionsUI();
+    // Preload system status / default bindings cache before loading initial data
+    if (!window.systemSettingsCache) {
+      try { await fetchServerStatus(); } catch (_) {}
+    }
     await loadAllData();
   } catch (dataErr) {
     console.error('Error loading initial dashboard data:', dataErr);
@@ -3782,6 +3786,12 @@ async function refreshServerStatus() {
       dbEl.style.color = data.database.status === 'connected' ? '#22c55e' : '#ef4444';
     }
     if (uptimeEl) uptimeEl.textContent = data.uptime.formatted || `${data.uptime.seconds}с`;
+
+    // Cache default binding IDs from server status
+    window.systemSettingsCache = window.systemSettingsCache || {};
+    if (data.default_facility_id !== undefined) window.systemSettingsCache.default_facility_id = data.default_facility_id;
+    if (data.default_generator_id !== undefined) window.systemSettingsCache.default_generator_id = data.default_generator_id;
+    if (data.default_fuel_stock_id !== undefined) window.systemSettingsCache.default_fuel_stock_id = data.default_fuel_stock_id;
   } catch (_) {}
 }
 
@@ -3912,8 +3922,8 @@ async function populateAdminDefaultChain(defaultFacId, defaultGenId, defaultStoc
     facSel.innerHTML = '<option value="">(Авто / Перший об\'єкт)</option>' +
       (facilities || []).map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
 
-    if (defaultFacId && (facilities || []).some(f => f.id === defaultFacId)) {
-      facSel.value = defaultFacId;
+    if (defaultFacId && (facilities || []).some(f => Number(f.id) === Number(defaultFacId))) {
+      facSel.value = String(defaultFacId);
     } else {
       facSel.value = '';
     }
@@ -3945,21 +3955,57 @@ window.onAdminDefaultFacilityChange = async function(preselectGenId = null, pres
 
     genSel.innerHTML = '<option value="">(Авто / Перший генератор)</option>' +
       (generators || []).map(g => `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)})</option>`).join('');
-    if (preselectGenId && (generators || []).some(g => g.id === preselectGenId)) {
-      genSel.value = preselectGenId;
+    if (preselectGenId && (generators || []).some(g => Number(g.id) === Number(preselectGenId))) {
+      genSel.value = String(preselectGenId);
     } else {
       genSel.value = '';
     }
 
     stockSel.innerHTML = '<option value="">(Авто / Перший склад)</option>' +
       (stocks || []).map(s => `<option value="${Number(s.id)}">${escapeHtml(s.name)} (${escapeHtml(s.fuel_type)}: ${s.current_balance_l} л)</option>`).join('');
-    if (preselectStockId && (stocks || []).some(s => s.id === preselectStockId)) {
-      stockSel.value = preselectStockId;
+    if (preselectStockId && (stocks || []).some(s => Number(s.id) === Number(preselectStockId))) {
+      stockSel.value = String(preselectStockId);
     } else {
       stockSel.value = '';
     }
   } catch (err) {
     console.warn('onAdminDefaultFacilityChange error:', err);
+  }
+};
+
+window.saveDefaultChainSettings = async function() {
+  const btn = document.getElementById('btnSaveDefaultChain');
+  const facSel = document.getElementById('sysDefaultFacilityId');
+  const genSel = document.getElementById('sysDefaultGeneratorId');
+  const stockSel = document.getElementById('sysDefaultFuelStockId');
+
+  const facId = parseInt(facSel?.value || '0', 10) || null;
+  const genId = parseInt(genSel?.value || '0', 10) || null;
+  const stockId = parseInt(stockSel?.value || '0', 10) || null;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Збереження...';
+  }
+
+  try {
+    const res = await api('/system/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        default_facility_id: facId,
+        default_generator_id: genId,
+        default_fuel_stock_id: stockId
+      })
+    });
+    showToast('Стартовий ланцюжок за замовчуванням успішно збережено!', 'success');
+    await loadAdminSystemSettings();
+  } catch (err) {
+    showToast('Помилка збереження ланцюжка: ' + (err.message || 'Невідома помилка'), 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = '💾 Зберегти ланцюжок за замовчуванням';
+    }
   }
 };
 
@@ -3972,8 +4018,8 @@ async function populateAdminEmailWeeklyOptions(weeklyFacId, weeklyGenId) {
     facSel.innerHTML = '<option value="">(За замовчуванням)</option>' +
       (facilities || []).map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
 
-    if (weeklyFacId && (facilities || []).some(f => f.id === weeklyFacId)) {
-      facSel.value = weeklyFacId;
+    if (weeklyFacId && (facilities || []).some(f => Number(f.id) === Number(weeklyFacId))) {
+      facSel.value = String(weeklyFacId);
     } else {
       facSel.value = '';
     }
@@ -3999,8 +4045,8 @@ window.onAdminEmailWeeklyFacilityChange = async function(preselectGenId = null) 
     const generators = await api(`/generator/list?facility_id=${facId}`);
     genSel.innerHTML = '<option value="">(Усі генератори об\'єкта)</option>' +
       (generators || []).map(g => `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)})</option>`).join('');
-    if (preselectGenId && (generators || []).some(g => g.id === preselectGenId)) {
-      genSel.value = preselectGenId;
+    if (preselectGenId && (generators || []).some(g => Number(g.id) === Number(preselectGenId))) {
+      genSel.value = String(preselectGenId);
     } else {
       genSel.value = '';
     }

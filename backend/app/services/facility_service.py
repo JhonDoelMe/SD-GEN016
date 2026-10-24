@@ -1,7 +1,7 @@
 import datetime
 from typing import List, Optional
 from fastapi import HTTPException, status
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -216,18 +216,33 @@ async def delete_facility(
 
     facility_name = facility.name
 
-    # Unbind users assigned to this facility
+    from backend.app.models.audit import SystemAdjustment
+    from backend.app.models.fuel import FuelReceipt, FuelTransfer
+    from backend.app.models.notification import PushSubscription, NotificationLog
+    from backend.app.models.user import User
+
+    # 1. Unbind users assigned to this facility
+    await db.execute(update(User).where(User.facility_id == facility_id).values(facility_id=None))
     for u in facility.users:
         u.facility_id = None
 
-    # Cascade delete associated generators if requested
+    # 2. Unbind system adjustments and logs assigned to this facility
+    await db.execute(update(SystemAdjustment).where(SystemAdjustment.facility_id == facility_id).values(facility_id=None))
+    await db.execute(update(PushSubscription).where(PushSubscription.facility_id == facility_id).values(facility_id=None))
+    await db.execute(update(NotificationLog).where(NotificationLog.facility_id == facility_id).values(facility_id=None))
+
+    # 3. Cascade delete associated generators if requested
     if cascade:
         for gen in list(facility.generators):
             await db.delete(gen)
 
-    # Delete associated fuel stocks
+    # 4. Delete associated fuel stocks
     for stock in list(facility.fuel_stocks):
         await db.delete(stock)
+
+    # 5. Unbind any remaining fuel receipts and transfers assigned directly to this facility
+    await db.execute(update(FuelReceipt).where(FuelReceipt.facility_id == facility_id).values(facility_id=None))
+    await db.execute(update(FuelTransfer).where(FuelTransfer.facility_id == facility_id).values(facility_id=None))
 
     await db.delete(facility)
     await db.flush()
@@ -236,8 +251,11 @@ async def delete_facility(
     from backend.app.services.settings_service import get_runtime_setting, set_runtime_setting
     if get_runtime_setting("default_facility_id") == facility_id:
         set_runtime_setting("default_facility_id", None)
+        set_runtime_setting("default_generator_id", None)
+        set_runtime_setting("default_fuel_stock_id", None)
     if get_runtime_setting("email_weekly_facility_id") == facility_id:
         set_runtime_setting("email_weekly_facility_id", None)
+        set_runtime_setting("email_weekly_generator_id", None)
     await db.flush()
 
     await log_audit(

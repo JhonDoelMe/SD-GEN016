@@ -472,7 +472,7 @@ async def test_system_reset_and_clean_db(client, superadmin_auth, operator_auth)
 
 
 @pytest.mark.asyncio
-async def test_facility_cascade_delete_and_chain_binding(client, superadmin_auth, operator_auth):
+async def test_facility_cascade_delete_and_chain_binding(client, db_session, superadmin_auth, operator_auth):
     """
     Тестування:
     1. Каскадне видалення об\x27єкта (?cascade=true vs ?cascade=false).
@@ -590,6 +590,23 @@ async def test_facility_cascade_delete_and_chain_binding(client, superadmin_auth
         assert mock_digest.call_args[1]["recipients"] == ["admin@test.ua"]
         assert isinstance(mock_digest.call_args[1]["excel_bytes"], bytes)
 
+    # 6.1 Create SystemAdjustment referencing this facility to ensure FK unlinking on delete
+    from backend.app.models.audit import SystemAdjustment
+    adj = SystemAdjustment(
+        user_id=1,
+        facility_id=fac_id,
+        target_name="Тестовий філіал (Одеса)",
+        entity_type="facility",
+        entity_id=fac_id,
+        field_name="description",
+        old_value="old",
+        new_value="new",
+        reason="Тестове коригування перед видаленням"
+    )
+    db_session.add(adj)
+    await db_session.commit()
+    adj_id = adj.id
+
     # 7. Try delete facility without cascade -> 400 Bad Request
     del_no_cascade = await client.delete(
         f"/api/v1/facilities/{fac_id}",
@@ -598,13 +615,17 @@ async def test_facility_cascade_delete_and_chain_binding(client, superadmin_auth
     assert del_no_cascade.status_code == 400
     assert "каскадного видалення" in del_no_cascade.json()["detail"]
 
-    # 8. Delete facility with cascade=True -> 200 OK
+    # 8. Delete facility with cascade=True -> 200 OK (verifies no ForeignKeyViolationError with SystemAdjustment)
     del_cascade = await client.delete(
         f"/api/v1/facilities/{fac_id}?cascade=true",
         headers=superadmin_auth
     )
     assert del_cascade.status_code == 200
     assert "успішно видалено" in del_cascade.json()["message"]
+
+    # 8.1 Verify SystemAdjustment.facility_id was safely unlinked to None
+    await db_session.refresh(adj)
+    assert adj.facility_id is None
 
     # 9. Verify generator was cascade deleted
     gen_check = await client.get(
@@ -616,3 +637,11 @@ async def test_facility_cascade_delete_and_chain_binding(client, superadmin_auth
     # 10. Verify runtime setting default_facility_id was safely reset to None
     from backend.app.services.settings_service import get_runtime_setting
     assert get_runtime_setting("default_facility_id") is None
+
+    # 11. Verify system status includes default binding fields
+    status_res = await client.get("/api/v1/system/status")
+    assert status_res.status_code == 200
+    status_data = status_res.json()
+    assert "default_facility_id" in status_data
+    assert "default_generator_id" in status_data
+    assert "default_fuel_stock_id" in status_data

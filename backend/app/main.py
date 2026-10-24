@@ -45,9 +45,32 @@ def ensure_schema_updates(sync_conn):
         if table_name in tables:
             cols = [c["name"] for c in inspector.get_columns(table_name)]
             if "facility_id" not in cols:
-                sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"))
+                sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN facility_id INTEGER REFERENCES facilities(id) ON DELETE SET NULL"))
             # Set default facility_id to 1 if null
             sync_conn.execute(text(f"UPDATE {table_name} SET facility_id = 1 WHERE facility_id IS NULL"))
+
+    # Ensure PostgreSQL constraints have ON DELETE SET NULL for foreign keys referencing facilities(id)
+    if sync_conn.dialect.name == "postgresql":
+        fk_set_null_tables = ("system_adjustments", "fuel_receipts", "fuel_transfers", "users", "push_subscriptions", "notification_logs")
+        for tbl in fk_set_null_tables:
+            if tbl in tables:
+                try:
+                    sync_conn.execute(text(f"""
+                        DO $$
+                        BEGIN
+                            IF EXISTS (
+                                SELECT 1 FROM information_schema.table_constraints 
+                                WHERE constraint_name = '{tbl}_facility_id_fkey' 
+                                AND table_name = '{tbl}'
+                            ) THEN
+                                ALTER TABLE {tbl} DROP CONSTRAINT {tbl}_facility_id_fkey;
+                                ALTER TABLE {tbl} ADD CONSTRAINT {tbl}_facility_id_fkey 
+                                    FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE SET NULL;
+                            END IF;
+                        END $$;
+                    """))
+                except Exception as ex:
+                    print(f"[DB] FK upgrade notice for {tbl}: {ex}", flush=True)
 
     if "system_adjustments" in tables:
         cols = [c["name"] for c in inspector.get_columns("system_adjustments")]

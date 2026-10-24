@@ -372,17 +372,17 @@ body {
 .facility-bar-content {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 0.85rem;
   flex-wrap: wrap;
-  max-width: 1200px;
+  max-width: 1350px;
   margin: 0 auto;
 }
 
 .facility-control-group {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: 0.45rem;
+  flex-wrap: nowrap;
 }
 
 .control-label {
@@ -406,14 +406,16 @@ body {
 
 .control-select {
   height: 38px;
-  min-width: 160px;
-  padding: 0.35rem 0.75rem;
-  font-size: 0.9rem;
+  min-width: 135px;
+  max-width: 220px;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.88rem;
   background: var(--input-bg);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
   border-radius: 6px;
   cursor: pointer;
+  text-overflow: ellipsis;
 }
 
 .control-select:focus {
@@ -422,8 +424,8 @@ body {
 
 .btn-control-add {
   height: 38px;
-  padding: 0.35rem 0.75rem;
-  font-size: 0.85rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: white;
   border: none;
@@ -2169,7 +2171,7 @@ button[disabled] {
   color: #854d0e;
 }
 
-/* Weekly Report Box */
+/* Weekly Report Box & Grid Alignment */
 .smtp-weekly-card {
   background: rgba(15, 23, 42, 0.35);
   border: 1px dashed rgba(168, 85, 247, 0.35);
@@ -2185,7 +2187,7 @@ button[disabled] {
 }
 
 .smtp-weekly-title {
-  margin: 0 0 0.5rem 0;
+  margin: 0 0 0.65rem 0;
   font-size: 0.88rem;
   font-weight: 700;
   color: #c084fc;
@@ -2193,6 +2195,36 @@ button[disabled] {
 
 [data-theme="light"] .smtp-weekly-title {
   color: #7e22ce;
+}
+
+.smtp-weekly-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.smtp-weekly-group {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.smtp-weekly-group .smtp-field-label {
+  min-height: 1.35rem;
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: 0.35rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.smtp-weekly-group input,
+.smtp-weekly-group select {
+  height: 38px;
+  box-sizing: border-box;
 }
 
 /* Form Sub-labels inside SMTP cards */

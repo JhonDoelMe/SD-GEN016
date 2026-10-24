@@ -212,6 +212,9 @@ async def get_system_status(
         "server_time": now_facility().strftime("%Y-%m-%d %H:%M:%S"),
         "timezone": get_runtime_timezone(),
         "organization_name": get_runtime_setting("organization_name", "MAXI-UA LLC"),
+        "default_facility_id": get_runtime_setting("default_facility_id"),
+        "default_generator_id": get_runtime_setting("default_generator_id"),
+        "default_fuel_stock_id": get_runtime_setting("default_fuel_stock_id"),
         "environment": {
             "platform": platform.system(),
             "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
@@ -347,9 +350,10 @@ async def update_admin_system_settings(
         "email_weekly_facility_id",
         "email_weekly_generator_id",
     )
+    submitted = payload.model_dump(exclude_unset=True)
     for field_name in all_fields:
-        val = getattr(payload, field_name, None)
-        if val is not None:
+        if field_name in submitted:
+            val = submitted[field_name]
             # Prevent overwriting real passwords with masked asterisks or empty string if unchanged
             if field_name in ("smtp_primary_password", "smtp_fallback_password") and val in ("********", ""):
                 continue
