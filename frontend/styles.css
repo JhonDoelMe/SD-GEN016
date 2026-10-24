@@ -836,12 +836,153 @@ tbody tr:hover {
   transition: all 0.2s;
 }
 
+.test-provider-btn:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
 .test-provider-btn.active {
   border-color: #38bdf8;
   background: rgba(56, 189, 248, 0.15);
   color: #38bdf8;
 }
 
+[data-theme="light"] .test-provider-btn {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #64748b;
+}
+
+[data-theme="light"] .test-provider-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+[data-theme="light"] .test-provider-btn.active {
+  background: #e0f2fe;
+  border-color: #0284c7;
+  color: #0369a1;
+  font-weight: 700;
+}
+
+/* Modal Summary Card */
+.smtp-test-summary-card {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.83rem;
+  line-height: 1.5;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+[data-theme="light"] .smtp-test-summary-card {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+
+.smtp-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.smtp-summary-row:last-child {
+  margin-bottom: 0;
+}
+
+.smtp-summary-key {
+  color: var(--text-muted);
+}
+
+.smtp-summary-val-host {
+  font-family: monospace;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #60a5fa;
+}
+
+[data-theme="light"] .smtp-summary-val-host {
+  color: #0284c7;
+}
+
+.smtp-summary-val-user {
+  font-family: monospace;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+[data-theme="light"] .smtp-summary-val-user {
+  color: #0f172a;
+}
+
+.smtp-summary-val-ssl {
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+[data-theme="light"] .smtp-summary-val-ssl {
+  color: #475569;
+}
+
+/* Spinner Boxes */
+.smtp-spinner-box {
+  padding: 1rem;
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px dashed rgba(56, 189, 248, 0.35);
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+[data-theme="light"] .smtp-spinner-box {
+  background: #f0f9ff;
+  border-color: #0284c7;
+}
+
+.smtp-spinner-text {
+  color: #38bdf8;
+  font-size: 0.9rem;
+}
+
+[data-theme="light"] .smtp-spinner-text {
+  color: #0284c7;
+}
+
+.smtp-spinner-subtext {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+.smtp-weekly-spinner-box {
+  padding: 1rem;
+  border-radius: 8px;
+  background: rgba(168, 85, 247, 0.08);
+  border: 1px dashed rgba(168, 85, 247, 0.35);
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+[data-theme="light"] .smtp-weekly-spinner-box {
+  background: #faf5ff;
+  border-color: #a855f7;
+}
+
+.smtp-weekly-spinner-text {
+  color: #c084fc;
+  font-size: 0.9rem;
+}
+
+[data-theme="light"] .smtp-weekly-spinner-text {
+  color: #7e22ce;
+}
+
+/* Result & Hint Boxes */
 .test-result-box {
   border-radius: 8px;
   padding: 1rem;
@@ -856,16 +997,34 @@ tbody tr:hover {
   color: #4ade80;
 }
 
+[data-theme="light"] .test-result-box.success {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #15803d;
+}
+
 .test-result-box.warning {
   background: rgba(234, 179, 8, 0.1);
   border: 1px solid rgba(234, 179, 8, 0.4);
   color: #facc15;
 }
 
+[data-theme="light"] .test-result-box.warning {
+  background: #fefce8;
+  border-color: #fde047;
+  color: #854d0e;
+}
+
 .test-result-box.error {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.4);
   color: #f87171;
+}
+
+[data-theme="light"] .test-result-box.error {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
 }
 
 .test-hint-box {
@@ -878,6 +1037,45 @@ tbody tr:hover {
   color: #e2e8f0;
   line-height: 1.5;
   white-space: pre-line;
+}
+
+[data-theme="light"] .test-hint-box {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  color: #78350f;
+}
+
+/* Feedback Boxes */
+.feedback-box {
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  line-height: 1.4;
+}
+
+.feedback-box.success {
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+}
+
+[data-theme="light"] .feedback-box.success {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #15803d;
+}
+
+.feedback-box.error {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+[data-theme="light"] .feedback-box.error {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
 }
 
 .modal-content {
@@ -963,6 +1161,19 @@ input:not([type="checkbox"]):not([type="radio"]), select, textarea {
 input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus {
   border-color: var(--accent-cyan);
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+/* Browser Autofill Styling (Dark & Light Theme aware) */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active,
+select:-webkit-autofill,
+textarea:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset !important;
+  -webkit-text-fill-color: var(--input-text) !important;
+  caret-color: var(--input-text) !important;
+  transition: background-color 5000s ease-in-out 0s;
 }
 
 select {
@@ -1840,4 +2051,240 @@ button[disabled] {
 .notif-rule-group {
   border-top: 1px solid var(--border-color);
   padding-top: 0.75rem;
+}
+
+/* ==========================================================================
+   Email / SMTP System Settings Cards (Dark & Light Theme)
+   ========================================================================== */
+
+/* Section 4 Block */
+.smtp-container-block {
+  background: rgba(56, 189, 248, 0.04);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+[data-theme="light"] .smtp-container-block {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.smtp-header-title {
+  color: #38bdf8;
+  font-size: 1.1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+[data-theme="light"] .smtp-header-title {
+  color: #0284c7;
+}
+
+.smtp-header-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Primary SMTP Card */
+.smtp-primary-card {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  padding: 1rem;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+[data-theme="light"] .smtp-primary-card {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+
+.smtp-primary-title {
+  color: #60a5fa;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+[data-theme="light"] .smtp-primary-title {
+  color: #1d4ed8;
+}
+
+.smtp-primary-badge {
+  background: rgba(37, 99, 235, 0.2);
+  color: #93c5fd;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+[data-theme="light"] .smtp-primary-badge {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+/* Fallback SMTP Card */
+.smtp-fallback-card {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(234, 179, 8, 0.25);
+  border-radius: 8px;
+  padding: 1rem;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+[data-theme="light"] .smtp-fallback-card {
+  background: #fffdf5;
+  border-color: #fde047;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+
+.smtp-fallback-title {
+  color: #facc15;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+[data-theme="light"] .smtp-fallback-title {
+  color: #a16207;
+}
+
+.smtp-fallback-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: #facc15;
+  cursor: pointer;
+  margin: 0;
+  font-weight: 600;
+}
+
+[data-theme="light"] .smtp-fallback-toggle {
+  color: #854d0e;
+}
+
+/* Weekly Report Box */
+.smtp-weekly-card {
+  background: rgba(15, 23, 42, 0.35);
+  border: 1px dashed rgba(168, 85, 247, 0.35);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.25rem;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+[data-theme="light"] .smtp-weekly-card {
+  background: #faf5ff;
+  border-color: #d8b4fe;
+}
+
+.smtp-weekly-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #c084fc;
+}
+
+[data-theme="light"] .smtp-weekly-title {
+  color: #7e22ce;
+}
+
+/* Form Sub-labels inside SMTP cards */
+.smtp-field-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.smtp-checkbox-subtext {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-top: 0.5rem;
+}
+
+/* Quick Test Buttons */
+.btn-smtp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid;
+  transition: all 0.2s ease;
+  background: transparent;
+}
+
+.btn-smtp-pill:hover {
+  transform: translateY(-1px);
+}
+
+.btn-smtp-pill.primary {
+  border-color: #3b82f6;
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.08);
+}
+[data-theme="light"] .btn-smtp-pill.primary {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+[data-theme="light"] .btn-smtp-pill.primary:hover {
+  background: #dbeafe;
+}
+
+.btn-smtp-pill.fallback {
+  border-color: #eab308;
+  color: #facc15;
+  background: rgba(234, 179, 8, 0.08);
+}
+[data-theme="light"] .btn-smtp-pill.fallback {
+  border-color: #fde047;
+  color: #a16207;
+  background: #fefce8;
+}
+[data-theme="light"] .btn-smtp-pill.fallback:hover {
+  background: #fef9c3;
+}
+
+.btn-smtp-pill.failover {
+  border-color: #10b981;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.08);
+}
+[data-theme="light"] .btn-smtp-pill.failover {
+  border-color: #86efac;
+  color: #15803d;
+  background: #f0fdf4;
+}
+[data-theme="light"] .btn-smtp-pill.failover:hover {
+  background: #dcfce7;
+}
+
+.btn-smtp-pill.weekly {
+  border-color: #a855f7;
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.08);
+}
+[data-theme="light"] .btn-smtp-pill.weekly {
+  border-color: #d8b4fe;
+  color: #7e22ce;
+  background: #faf5ff;
+}
+[data-theme="light"] .btn-smtp-pill.weekly:hover {
+  background: #f3e8ff;
 }

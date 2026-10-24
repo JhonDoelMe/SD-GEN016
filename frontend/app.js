@@ -4660,6 +4660,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (resetToken) {
     const tokenInput = document.getElementById('resetPasswordToken');
     if (tokenInput) tokenInput.value = resetToken;
+    const rfb = document.getElementById('resetPasswordFeedback');
+    if (rfb) {
+      rfb.className = 'feedback-box';
+      rfb.innerText = '';
+    }
     openModal('modalResetPassword');
     try {
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -4692,7 +4697,7 @@ window.openForgotPasswordModal = function () {
   if (input) input.value = '';
   const fb = document.getElementById('forgotPasswordFeedback');
   if (fb) {
-    fb.style.display = 'none';
+    fb.className = 'feedback-box';
     fb.innerText = '';
   }
   openModal('modalForgotPassword');
@@ -4720,19 +4725,13 @@ document.getElementById('forgotPasswordForm')?.addEventListener('submit', async 
       body: JSON.stringify({ login_or_email: input })
     });
     if (fb) {
-      fb.style.display = 'block';
-      fb.style.background = 'rgba(34, 197, 94, 0.15)';
-      fb.style.border = '1px solid rgba(34, 197, 94, 0.4)';
-      fb.style.color = '#4ade80';
+      fb.className = 'feedback-box success';
       fb.innerText = res.message || 'Якщо користувача знайдено, посилання надіслано на вашу пошту.';
     }
     showToast('Запит прийнято! Перевірте поштову скриньку', 'success');
   } catch (err) {
     if (fb) {
-      fb.style.display = 'block';
-      fb.style.background = 'rgba(239, 68, 68, 0.15)';
-      fb.style.border = '1px solid rgba(239, 68, 68, 0.4)';
-      fb.style.color = '#f87171';
+      fb.className = 'feedback-box error';
       fb.innerText = err.message || 'Помилка надсилання запиту';
     }
   } finally {
@@ -4785,10 +4784,7 @@ document.getElementById('resetPasswordForm')?.addEventListener('submit', async (
     showAuthScreen();
   } catch (err) {
     if (fb) {
-      fb.style.display = 'block';
-      fb.style.background = 'rgba(239, 68, 68, 0.15)';
-      fb.style.border = '1px solid rgba(239, 68, 68, 0.4)';
-      fb.style.color = '#f87171';
+      fb.className = 'feedback-box error';
       fb.innerText = err.message || 'Помилка скидання пароля';
     }
   } finally {
