@@ -277,6 +277,16 @@ function applyRolePermissionsUI() {
   setBtnState('btnRecalculateMaint', canPerformSched, 'Перерахунок нормативу ТО доступний лише Адміністратору 🔒', '🔄 Перерахувати 🔒');
   setBtnState('btnOpenMaintModal', hasPermission('maintenance:create_intermediate') || canPerformSched, 'Фіксація ТО недоступна для вашої ролі 🔒', '+ Зафіксувати ТО 🔒');
 
+  const btnAdminResetMaint = document.getElementById('btnAdminResetMaint');
+  if (btnAdminResetMaint) {
+    btnAdminResetMaint.style.display = (canPerformSched || isAdmin()) ? 'inline-flex' : 'none';
+  }
+
+  const btnClearNotifLogs = document.getElementById('btnClearNotifLogs');
+  if (btnClearNotifLogs) {
+    btnClearNotifLogs.style.display = isAdmin() ? 'inline-flex' : 'none';
+  }
+
   // Maintenance Type selector in modal
   const maintTypeSel = document.getElementById('maintType');
   if (maintTypeSel) {
@@ -2049,6 +2059,93 @@ document.getElementById('maintForm').addEventListener('submit', async (e) => {
     loadAllData();
   } catch (_) {}
 });
+
+window.openAdminResetMaintModal = function() {
+  const m = cachedMaintenanceSchedule;
+  const genName = document.getElementById('genName')?.innerText || 'Поточний генератор';
+  const curHours = m ? m.current_operating_hours : (parseFloat(document.getElementById('cardHours')?.innerText?.replace(',', '.') || '0') || 0.0);
+  const interval = (m && m.interval_hours) ? m.interval_hours : 300.0;
+
+  const genNameIn = document.getElementById('adminResetGenName');
+  if (genNameIn) genNameIn.value = genName;
+
+  const curHoursIn = document.getElementById('adminResetCurrentHours');
+  if (curHoursIn) curHoursIn.value = formatHoursCounter(curHours);
+
+  const opHoursIn = document.getElementById('adminResetOperatingHours');
+  if (opHoursIn) {
+    opHoursIn.value = curHours.toFixed(1);
+    opHoursIn.oninput = function() {
+      const val = parseFloat(opHoursIn.value) || 0.0;
+      const preview = document.getElementById('adminResetNextDuePreview');
+      if (preview) {
+        preview.innerText = `${(val + interval).toFixed(1).replace('.', ',')} год (+${interval.toFixed(0)} год регламенту)`;
+      }
+    };
+  }
+
+  const preview = document.getElementById('adminResetNextDuePreview');
+  if (preview) {
+    preview.innerText = `${(curHours + interval).toFixed(1).replace('.', ',')} год (+${interval.toFixed(0)} год регламенту)`;
+  }
+
+  const workDescIn = document.getElementById('adminResetWorkDesc');
+  if (workDescIn) workDescIn.value = 'Планове регламентне ТО (сервісна служба)';
+
+  const consIn = document.getElementById('adminResetConsumables');
+  if (consIn) consIn.value = '';
+
+  const costIn = document.getElementById('adminResetCost');
+  if (costIn) costIn.value = '0.00';
+
+  const commIn = document.getElementById('adminResetComment');
+  if (commIn) commIn.value = '';
+
+  openModal('modalAdminResetMaint');
+};
+
+window.submitAdminResetMaint = async function(e) {
+  if (e) e.preventDefault();
+  const btn = document.getElementById('btnSubmitAdminResetMaint');
+  const opHours = parseFloat(document.getElementById('adminResetOperatingHours')?.value);
+  if (isNaN(opHours) || opHours < 0) {
+    showToast('Вкажіть коректні мотогодини виконання ТО', 'error');
+    return;
+  }
+
+  const body = {
+    generator_id: currentGeneratorId,
+    maintenance_type: 'SCHEDULED',
+    operating_hours: opHours,
+    work_description: document.getElementById('adminResetWorkDesc')?.value || 'Планове регламентне ТО (сервісна служба)',
+    consumables_used: document.getElementById('adminResetConsumables')?.value || '',
+    cost: parseFloat(document.getElementById('adminResetCost')?.value) || 0.0,
+    comment: document.getElementById('adminResetComment')?.value || ''
+  };
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Скидання лічильника...';
+  }
+
+  try {
+    await api('/maintenance/record', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+    closeModal('modalAdminResetMaint');
+    showToast(`Лічильник ТО успішно скинуто! Зафіксовано ТО на ${opHours.toFixed(1).replace('.', ',')} год`, 'success');
+    await loadMaintenanceData();
+    await loadDashboardOverview();
+  } catch (err) {
+    showToast('Помилка скидання лічильника: ' + (err.message || 'Невідома помилка'), 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = 'Скинути лічильник та зафіксувати ТО';
+    }
+  }
+};
 
 // 4. Faults
 async function loadFaultsData() {
@@ -5025,6 +5122,19 @@ async function loadNotificationLogs() {
     `).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Журнал сповіщень порожній</td></tr>';
   } catch (_) {}
 }
+
+window.clearNotificationLogs = async function() {
+  if (!confirm('Ви дійсно бажаєте безповоротно очистити весь журнал надісланих сповіщень?')) {
+    return;
+  }
+  try {
+    const res = await api('/notifications/logs', { method: 'DELETE' });
+    showToast(`Журнал сповіщень успішно очищено (видалено записів: ${res.deleted_count || 0})`, 'success');
+    await loadNotificationLogs();
+  } catch (err) {
+    showToast('Помилка очищення журналу: ' + (err.message || 'Невідома помилка'), 'error');
+  }
+};
 
 // Initialization on DOM ready
 document.addEventListener('DOMContentLoaded', () => {

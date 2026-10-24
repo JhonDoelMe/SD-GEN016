@@ -393,7 +393,8 @@ body {
 .facility-bar-content {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
+  justify-content: center;
+  gap: 1.15rem;
   flex-wrap: wrap;
   max-width: var(--container-max-width);
   margin: 0 auto;

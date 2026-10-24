@@ -71,11 +71,14 @@ async def record_maintenance(
     if not generator:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
 
+    target_hours = data.operating_hours if data.operating_hours is not None else generator.current_operating_hours
+    target_hours = round(float(target_hours), 1)
+
     record = MaintenanceRecord(
         generator_id=generator.id,
         user_id=user_id,
         maintenance_type=data.maintenance_type,
-        operating_hours=generator.current_operating_hours,
+        operating_hours=target_hours,
         work_description=data.work_description.strip(),
         consumables_used=data.consumables_used.strip() if data.consumables_used else None,
         cost=data.cost,
@@ -91,8 +94,8 @@ async def record_maintenance(
     if data.maintenance_type == "SCHEDULED":
         # Regular scheduled maintenance resets/advances the due counter
         if m_sched:
-            m_sched.last_performed_hours = generator.current_operating_hours
-            m_sched.next_due_hours = round(generator.current_operating_hours + m_sched.interval_hours, 1)
+            m_sched.last_performed_hours = target_hours
+            m_sched.next_due_hours = round(target_hours + m_sched.interval_hours, 1)
 
         # Clear MAINTENANCE_REQUIRED state if it was set
         if generator.status == "MAINTENANCE_REQUIRED":

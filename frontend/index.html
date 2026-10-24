@@ -37,7 +37,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.1">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.2">
 </head>
 <body>
 
@@ -97,7 +97,7 @@
   <header class="app-header">
     <div class="brand-title">
       <span class="brand-icon">⚡</span>
-      <span class="brand-name">SD-GEN016</span>
+      <span class="brand-name">Service Desk Генератора</span>
     </div>
     <div class="header-clock" id="clockKyiv">--:--:-- (Київ)</div>
     <div class="user-badge">
@@ -367,6 +367,7 @@
           <h3>Технічне обслуговування генератора</h3>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
             <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; background: #0284c7;" id="btnRecalculateMaint" onclick="recalculateMaintenanceSchedule()">🔄 Перерахувати за нормативом</button>
+            <button type="button" id="btnAdminResetMaint" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #f59e0b; color: #fbbf24; background: rgba(245, 158, 11, 0.1); display: none;" onclick="openAdminResetMaintModal()">⚙️ Скидання лічильника ТО</button>
             <button type="button" id="btnOpenMaintModal" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalMaintenance')">+ Зафіксувати ТО</button>
           </div>
         </div>
@@ -558,9 +559,12 @@
         </div>
 
         <!-- Dispatched Notifications Log -->
-        <div class="panel-header" style="margin-top: 1.5rem; margin-bottom: 0.5rem;">
+        <div class="panel-header" style="margin-top: 1.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
           <h4 style="margin: 0;">📜 Журнал надісланих сповіщень</h4>
-          <button class="btn-action" style="padding: 0.25rem 0.75rem; font-size: 0.8rem;" onclick="loadNotificationLogs()">🔄 Оновити</button>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" class="btn-action" style="padding: 0.35rem 0.75rem; font-size: 0.82rem; min-height: auto;" onclick="loadNotificationLogs()">🔄 Оновити</button>
+            <button type="button" id="btnClearNotifLogs" class="btn-action" style="padding: 0.35rem 0.75rem; font-size: 0.82rem; min-height: auto; border-color: #ef4444; color: #f87171; display: none;" onclick="clearNotificationLogs()">🗑️ Очистити історію</button>
+          </div>
         </div>
         <div class="table-wrapper">
           <table id="notifLogsTable">
@@ -803,10 +807,6 @@
               Керування робочим регламентом, часовим поясом, цінами пального АЗК WOG та режимами роботи (доступно лише Адміністратору)
             </p>
           </div>
-          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button type="button" id="btnRefreshFuelPrices" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #22c55e; color: #4ade80;" onclick="refreshFuelPricesFromInternet()">🟢 Оновити ціни АЗК WOG</button>
-            <button type="button" id="btnSystemReset" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #ef4444; color: #f87171;" onclick="openSystemResetModal()">🧹 Очищення даних / Скидання БД</button>
-          </div>
         </div>
 
         <form id="systemSettingsForm">
@@ -850,11 +850,11 @@
             </div>
           </div>
 
-          <!-- Блок 1.1: Ланцюжок за замовчуванням (Default Binding) -->
+          <!-- Блок 2: Ланцюжок за замовчуванням (Default Binding) -->
           <div class="settings-block" style="background: rgba(168, 85, 247, 0.05); border-color: rgba(168, 85, 247, 0.28);">
             <div class="settings-block-header" style="border-bottom-color: rgba(168, 85, 247, 0.18);">
               <h4 class="settings-block-title" style="color: #c084fc;">
-                🔗 1.1. Стартовий ланцюжок за замовчуванням (Об'єкт ➔ Генератор ➔ Склад ГСМ)
+                🔗 2. Стартовий ланцюжок за замовчуванням (Об'єкт ➔ Генератор ➔ Склад ГСМ)
               </h4>
               <span style="font-size: 0.8rem; color: #c084fc;">Жорстка зв'язка для старту та щотижневих звітів</span>
             </div>
@@ -882,13 +882,16 @@
             </div>
           </div>
 
-          <!-- Блок 2: Табло цін АЗК WOG та Фіксовані тарифи -->
+          <!-- Блок 3: Табло цін АЗК WOG та Фіксовані тарифи -->
           <div class="settings-block" style="background: rgba(34, 197, 94, 0.05); border-color: rgba(34, 197, 94, 0.28);">
             <div class="settings-block-header" style="border-bottom-color: rgba(34, 197, 94, 0.18);">
               <h4 class="settings-block-title" style="color: #4ade80;">
-                ⛽ 2. Табло цін АЗК WOG (<a href="https://wog.ua/ua/fuels/" target="_blank" rel="noopener" style="color: #38bdf8; text-decoration: underline;">wog.ua/ua/fuels</a>)
+                ⛽ 3. Табло цін АЗК WOG (<a href="https://wog.ua/ua/fuels/" target="_blank" rel="noopener" style="color: #38bdf8; text-decoration: underline;">wog.ua/ua/fuels</a>)
               </h4>
-              <span id="sysInternetPricesMeta" style="font-size: 0.8rem; color: #94a3b8;">Джерело: АЗК WOG</span>
+              <div style="display: flex; gap: 0.65rem; align-items: center; flex-wrap: wrap;">
+                <span id="sysInternetPricesMeta" style="font-size: 0.8rem; color: #94a3b8;">Джерело: АЗК WOG</span>
+                <button type="button" id="btnRefreshFuelPrices" class="btn-action" style="padding: 0.35rem 0.85rem; font-size: 0.82rem; min-height: auto; flex-direction: row; border-color: #22c55e; color: #4ade80;" onclick="refreshFuelPricesFromInternet()">🟢 Оновити ціни АЗК WOG</button>
+              </div>
             </div>
             <p style="font-size: 0.83rem; color: var(--text-muted); margin-bottom: 0.85rem;">
               Актуальне табло цін мережі <b>АЗК WOG</b>. Якщо власна договірна ціна нижче встановлена як <b>0</b>, при оприбуткуванні палива без суми чека система автоматично розраховує вартість за ціною АЗК WOG.
@@ -914,10 +917,10 @@
             </div>
           </div>
 
-          <!-- Блок 3: Режими роботи та Синхронізація -->
+          <!-- Блок 4: Режими роботи та Синхронізація -->
           <div class="settings-block">
             <div class="settings-block-header">
-              <h4 class="settings-block-title">⚡ 3. Правила контролю та Синхронізація</h4>
+              <h4 class="settings-block-title">⚡ 4. Правила контролю та Синхронізація</h4>
               <span style="font-size: 0.78rem; color: var(--text-muted);">Натисніть на рядок для увімкнення/вимкнення</span>
             </div>
             <div class="settings-toggle-list">
@@ -947,11 +950,11 @@
             </div>
           </div>
 
-          <!-- Блок 4: Поштовий шлюз (Email / SMTP) та Резервування (Failover) -->
+          <!-- Блок 5: Поштовий шлюз (Email / SMTP) та Резервування (Failover) -->
           <div class="settings-block smtp-container-block">
             <div class="settings-block-header">
               <h4 class="settings-block-title smtp-header-title">
-                📧 4. Поштовий шлюз (Email / SMTP) та Резервування (Failover)
+                📧 5. Поштовий шлюз (Email / SMTP) та Резервування (Failover)
               </h4>
               <span class="smtp-header-subtitle">Gmail + Ukr.net (Безкоштовно без покупки домену)</span>
             </div>
@@ -1164,6 +1167,9 @@
             </button>
             <button type="button" id="btnOpenBackupSettings" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #a855f7; color: #c084fc; font-weight: 600;" onclick="openBackupSettingsModal()">
               ⚙️ Розклад автобекапу
+            </button>
+            <button type="button" id="btnSystemReset" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #ef4444; color: #f87171; font-weight: 600;" onclick="openSystemResetModal()">
+              🧹 Очищення даних / Скидання БД
             </button>
             <button type="button" class="btn-action" style="padding: 0.55rem 0.85rem; min-height: auto; flex-direction: row;" onclick="loadBackupsList(true)" title="Оновити список бекапів">
               🔄
@@ -1533,6 +1539,67 @@
           <textarea id="transComment" rows="2" placeholder="Заправка перед зміною"></textarea>
         </div>
         <button type="submit" class="btn-primary">Заправити бак</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Admin Reset Maintenance Counter -->
+  <div id="modalAdminResetMaint" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem; color: #fbbf24;">
+          <span>⚙️</span> <span>Скидання лічильника ТО</span>
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalAdminResetMaint')">&times;</button>
+      </div>
+      <form id="adminResetMaintForm" onsubmit="submitAdminResetMaint(event)">
+        <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.85rem; line-height: 1.45;">
+          ℹ️ <b>Для Адміністратора:</b> Фіксує виконання планового регламентного ТО (наприклад, сервісною службою), оновлює останню позначку та переносить наступне планове ТО на новий регламентний інтервал (+300 год).
+        </div>
+        
+        <div class="form-group">
+          <label>Генератор</label>
+          <input type="text" id="adminResetGenName" readonly style="background: var(--bg-secondary); color: var(--text-muted); cursor: not-allowed;">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Поточні мотогодини</label>
+            <input type="text" id="adminResetCurrentHours" readonly style="background: var(--bg-secondary); color: var(--text-muted); font-weight: 600;">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>ТО виконано на (год)</label>
+            <input type="number" step="0.1" min="0" id="adminResetOperatingHours" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Опис робіт / Сервісна служба</label>
+          <input type="text" id="adminResetWorkDesc" required value="Планове регламентне ТО (сервісна служба)">
+        </div>
+
+        <div class="form-group">
+          <label>Використані матеріали (масло, фільтри тощо)</label>
+          <input type="text" id="adminResetConsumables" placeholder="напр. Моторна олива 10W-40, фільтр, свічка">
+        </div>
+
+        <div class="form-group">
+          <label>Вартість робіт / матеріалів (грн, опціонально)</label>
+          <input type="number" step="0.01" min="0" id="adminResetCost" value="0.0" placeholder="0.00">
+        </div>
+
+        <div class="form-group">
+          <label>Коментар / Номер акту / Примітка</label>
+          <textarea id="adminResetComment" rows="2" placeholder="напр. Акт сервісного обслуговування №..."></textarea>
+        </div>
+
+        <div style="background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.25); border-radius: 0.5rem; padding: 0.65rem 0.85rem; margin-bottom: 1.15rem; font-size: 0.85rem; color: #4ade80;">
+          ⚡ Наступне планове ТО буде розраховано: <b id="adminResetNextDuePreview">-</b>
+        </div>
+
+        <button type="submit" id="btnSubmitAdminResetMaint" class="btn-primary" style="background: #f59e0b; border-color: #f59e0b; color: #000; font-weight: 700; width: 100%;">
+          Скинути лічильник та зафіксувати ТО
+        </button>
       </form>
     </div>
   </div>
@@ -2798,7 +2865,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.9.1"></script>
+  <script src="/frontend/app.js?v=4.9.2"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

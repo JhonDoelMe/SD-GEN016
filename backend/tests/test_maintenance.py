@@ -157,3 +157,54 @@ async def test_maintenance_interval_alignment_and_seconds_duration(client, super
     assert run_out["calculated_consumption_l"] is not None
     # End hours should be approx 235.0 + small fraction
     assert run_out["end_hours"] >= 235.0
+
+
+@pytest.mark.asyncio
+async def test_admin_reset_maintenance_counter_with_custom_hours(client, superadmin_auth, operator_auth):
+    # Setup generator at 600 hours
+    await client.post(
+        '/api/v1/generator/wizard',
+        headers=superadmin_auth,
+        json={
+            'name': 'Генератор Скидання ТО',
+            'model': 'RST-5000',
+            'manufacturer': 'PowerGen',
+            'serial_number': 'SN-RST-99',
+            'rated_power_kw': 5.0,
+            'tank_capacity_l': 25.0,
+            'fuel_type': 'А-95',
+            'nominal_consumption_l_per_h': 2.0,
+            'initial_operating_hours': 615.0,
+            'initial_fuel_tank_level_l': 20.0,
+            'work_schedule_start': '00:00',
+            'work_schedule_end': '23:59',
+            'maintenance_interval_hours': 300.0,
+            'timezone': 'Europe/Kyiv'
+        }
+    )
+
+    # Admin resets counter specifying that service performed scheduled maintenance retroactively at 600.0 hours
+    res = await client.post(
+        '/api/v1/maintenance/record',
+        headers=superadmin_auth,
+        json={
+            'maintenance_type': 'SCHEDULED',
+            'operating_hours': 600.0,
+            'work_description': 'Планове регламентне ТО (сервісна служба)',
+            'consumables_used': 'Олива 10W-40, фільтри',
+            'cost': 1500.0,
+            'comment': 'Виїзне ТО'
+        }
+    )
+    assert res.status_code == 201
+    record = res.json()
+    assert record['operating_hours'] == 600.0
+
+    # Verify schedule was updated to 600.0 + 300.0 = 900.0
+    sched = await client.get('/api/v1/maintenance/schedule', headers=operator_auth)
+    assert sched.status_code == 200
+    s_data = sched.json()
+    assert s_data['last_performed_hours'] == 600.0
+    assert s_data['next_due_hours'] == 900.0
+    # Current hours is 615, next due is 900, remaining is 285
+    assert s_data['hours_remaining'] == 285.0

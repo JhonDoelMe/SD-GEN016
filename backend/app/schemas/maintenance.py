@@ -26,6 +26,7 @@ class MaintenanceRecordCreate(BaseModel):
     generator_id: Optional[int] = None
     maintenance_type: str = Field(..., pattern="^(SCHEDULED|INTERMEDIATE)$")
     work_description: str = Field(..., min_length=3)
+    operating_hours: Optional[float] = Field(default=None, ge=0)
     consumables_used: Optional[str] = None
     cost: float = Field(default=0.0, ge=0)
     comment: Optional[str] = None
