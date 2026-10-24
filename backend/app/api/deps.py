@@ -91,9 +91,12 @@ async def verify_generator_facility_access(
 
     if not is_user_admin_or_super(current_user) and current_user.facility_id:
         if gen.facility_id and int(gen.facility_id) != int(current_user.facility_id):
+            from backend.app.models.facility import Facility
+            fac = await db.get(Facility, gen.facility_id)
+            fac_name = fac.name if fac else f"ID {gen.facility_id}"
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Доступ заборонено: цей генератор належить до іншого об'єкта"
+                detail=f"Ви не можете вибрати генератор '{gen.name}', він закріплений за об'єктом '{fac_name}'"
             )
 
 

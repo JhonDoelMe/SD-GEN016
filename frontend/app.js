@@ -206,6 +206,19 @@ function applyRolePermissionsUI() {
   const canConfigFacility = hasPermission('facility:configure');
   setBtnState('addFacilityBtn', canConfigFacility, "Додавання об'єктів доступне лише Адміністратору 🔒", "+ Об'єкт 🔒");
   setBtnState('quickEditFacilityBtn', canConfigFacility, "Редагування об'єктів доступне лише Адміністратору 🔒", "⚙️🔒");
+  setBtnState('deleteFacilityBtn', canConfigFacility, "Видалення об'єктів доступне лише Адміністратору 🔒", "🗑️🔒");
+
+  // Rigid facility binding for non-admin operators
+  const mainFacSelect = document.getElementById('facilitySelect');
+  if (mainFacSelect) {
+    if (!isAdmin() && currentUser && currentUser.facility_id) {
+      mainFacSelect.disabled = true;
+      mainFacSelect.title = `Закріплено за вашим робочим об'єктом 🔒`;
+    } else {
+      mainFacSelect.disabled = false;
+      mainFacSelect.removeAttribute('title');
+    }
+  }
 
   // 4. Generators management buttons (Admin/Superadmin only)
   const canConfigGen = hasPermission('generator:configure');
@@ -366,7 +379,7 @@ window.openModal = function (id) {
     showToast('Керування резервними копіями та відновлення доступні виключно Головному Суперадміністратору', 'warning');
     return;
   }
-  if ((id === 'modalCreateFacility' || id === 'modalQuickEditFacility') && !hasPermission('facility:configure')) {
+  if ((id === 'modalCreateFacility' || id === 'modalQuickEditFacility' || id === 'modalDeleteFacility') && !hasPermission('facility:configure')) {
     showToast("Керування об'єктами доступне лише Адміністратору", 'warning');
     return;
   }
@@ -879,19 +892,36 @@ async function loadFacilitiesList() {
     const facilities = await api('/facilities');
     const sel = document.getElementById('facilitySelect');
     const modalSel = document.getElementById('newGenFacilityId');
+    const userFacSel = document.getElementById('newUserFacility');
+    const editUserFacSel = document.getElementById('editUserFacility');
     if (!sel) return;
 
     sel.innerHTML = facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
     if (modalSel) {
       modalSel.innerHTML = facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
     }
+    if (userFacSel) {
+      userFacSel.innerHTML = '<option value="">(Усі об\'єкти / Не обмежено)</option>' +
+        facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
+    }
+    if (editUserFacSel) {
+      editUserFacSel.innerHTML = '<option value="">(Усі об\'єкти / Не обмежено)</option>' +
+        facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
+    }
 
     if (facilities.length > 0) {
-      const savedFacilityId = parseInt(localStorage.getItem('sd_last_facility_id') || '0', 10);
-      if (savedFacilityId && facilities.some(f => f.id === savedFacilityId)) {
-        currentFacilityId = savedFacilityId;
-      } else if (!currentFacilityId || !facilities.some(f => f.id === currentFacilityId)) {
-        currentFacilityId = facilities[0].id;
+      if (!isAdmin() && currentUser && currentUser.facility_id) {
+        currentFacilityId = currentUser.facility_id;
+      } else {
+        const sysDefaultFac = window.systemSettingsCache?.default_facility_id;
+        const savedFacilityId = parseInt(localStorage.getItem('sd_last_facility_id') || '0', 10);
+        if (savedFacilityId && facilities.some(f => f.id === savedFacilityId)) {
+          currentFacilityId = savedFacilityId;
+        } else if (sysDefaultFac && facilities.some(f => f.id === sysDefaultFac)) {
+          currentFacilityId = sysDefaultFac;
+        } else if (!currentFacilityId || !facilities.some(f => f.id === currentFacilityId)) {
+          currentFacilityId = facilities[0].id;
+        }
       }
       sel.value = currentFacilityId;
       localStorage.setItem('sd_last_facility_id', currentFacilityId);
@@ -915,11 +945,14 @@ async function loadGeneratorsList(facilityId) {
     } else {
       sel.innerHTML = generators.map(g => `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)})</option>`).join('');
       
+      const sysDefaultGen = window.systemSettingsCache?.default_generator_id;
       const savedGenForFac = parseInt(localStorage.getItem(`sd_last_gen_facility_${facilityId}`) || '0', 10);
       const savedGlobalGen = parseInt(localStorage.getItem('sd_last_generator_id') || '0', 10);
       const targetGenId = (savedGenForFac && generators.some(g => g.id === savedGenForFac))
         ? savedGenForFac
-        : ((savedGlobalGen && generators.some(g => g.id === savedGlobalGen)) ? savedGlobalGen : null);
+        : ((savedGlobalGen && generators.some(g => g.id === savedGlobalGen))
+          ? savedGlobalGen
+          : ((sysDefaultGen && generators.some(g => g.id === sysDefaultGen)) ? sysDefaultGen : null));
 
       if (targetGenId) {
         currentGeneratorId = targetGenId;
@@ -2964,6 +2997,7 @@ async function loadUsersData() {
     tbody.innerHTML = allUsersCache.map((u) => {
       const rolesUa = (u.roles || []).map((r) => ROLE_MAP_UA[r.name] || r.name).join(', ') || '-';
       const isSuper = u.is_superadmin;
+      const facName = u.facility ? u.facility.name : (u.facility_id ? `Об'єкт #${u.facility_id}` : 'Всі об\'єкти');
 
       let actionsHtml = '';
       if (isSuper) {
@@ -2987,7 +3021,7 @@ async function loadUsersData() {
           <td>${escapeHtml(u.full_name)}</td>
           <td>${escapeHtml(u.email || '-')}</td>
           <td><span class="badge ${u.is_active ? 'badge-running' : 'badge-faulty'}">${u.is_active ? 'Активний' : 'Заблокований'}</span></td>
-          <td>${escapeHtml(rolesUa)}</td>
+          <td>${escapeHtml(rolesUa)} <small style="display:block;color:var(--text-muted);font-size:0.75rem;">🏢 ${escapeHtml(facName)}</small></td>
           <td>${actionsHtml}</td>
         </tr>
       `;
@@ -3016,11 +3050,13 @@ document.getElementById('userCreateForm')?.addEventListener('submit', async (e) 
     return;
   }
 
+  const facVal = parseInt(document.getElementById('newUserFacility')?.value || '0', 10) || null;
   const body = {
     login: loginVal,
     full_name: fullNameVal,
     email: emailVal,
     password: passVal,
+    facility_id: facVal,
     role_ids: [parseInt(document.getElementById('newUserRole').value, 10)]
   };
 
@@ -3053,6 +3089,10 @@ window.openEditUserModal = function(id) {
   document.getElementById('editUserName').value = u.full_name;
   document.getElementById('editUserEmail').value = u.email || '';
   document.getElementById('editUserActive').checked = Boolean(u.is_active);
+  const userFacSelect = document.getElementById('editUserFacility');
+  if (userFacSelect) {
+    userFacSelect.value = u.facility_id ? String(u.facility_id) : '';
+  }
   document.getElementById('editUserPassword').value = '';
 
   const roleSelect = document.getElementById('editUserRole');
@@ -3079,6 +3119,7 @@ document.getElementById('userEditForm')?.addEventListener('submit', async (e) =>
   const roleVal = parseInt(document.getElementById('editUserRole').value);
   const activeVal = document.getElementById('editUserActive').checked;
   const passVal = document.getElementById('editUserPassword').value;
+  const facVal = parseInt(document.getElementById('editUserFacility')?.value || '0', 10) || null;
 
   if (!/^[a-zA-Z0-9_.\-]{3,50}$/.test(loginVal)) {
     showToast("Логін повинен містити 3–50 символів (латинські літери, цифри, '_', '.', '-')", 'error');
@@ -3097,6 +3138,7 @@ document.getElementById('userEditForm')?.addEventListener('submit', async (e) =>
     login: loginVal,
     full_name: nameVal,
     email: emailVal,
+    facility_id: facVal,
     role_ids: [roleVal],
     is_active: activeVal
   };
@@ -3244,6 +3286,92 @@ window.confirmDeleteCurrentGenerator = async function() {
     await loadAllData();
   } catch (err) {
     showToast(err.message, 'error');
+  }
+};
+
+// Facility Deletion Handlers
+window.openDeleteFacilityModal = async function() {
+  if (!hasPermission('facility:configure')) {
+    showToast("Видалення об'єктів доступне лише Адміністратору", 'warning');
+    return;
+  }
+  if (!currentFacilityId) {
+    showToast("Будь ласка, спочатку оберіть об'єкт для видалення", 'warning');
+    return;
+  }
+
+  try {
+    const facilities = await api('/facilities');
+    if (!facilities || facilities.length <= 1) {
+      showToast("Неможливо видалити єдиний об'єкт у системі", 'warning');
+      return;
+    }
+    const currentFac = facilities.find(f => f.id === currentFacilityId) || { name: `ID ${currentFacilityId}` };
+    const generators = await api(`/generator/list?facility_id=${currentFacilityId}`);
+    
+    // Check if any generator is running
+    const runningGen = (generators || []).find(g => g.status === 'RUNNING');
+    if (runningGen) {
+      showToast(`Неможливо видалити об'єкт: генератор "${runningGen.name}" наразі працює! Спершу зупиніть його.`, 'error');
+      return;
+    }
+
+    const text = document.getElementById('deleteFacilityConfirmText');
+    if (text) {
+      text.innerHTML = `Ви дійсно бажаєте видалити об'єкт <b>"${escapeHtml(currentFac.name)}"</b>?`;
+    }
+
+    const warnBox = document.getElementById('deleteFacilityGenWarning');
+    const cascadeCheckbox = document.getElementById('deleteFacilityCascadeCheckbox');
+    if (cascadeCheckbox) cascadeCheckbox.checked = false;
+
+    if (warnBox) {
+      if (generators && generators.length > 0) {
+        warnBox.style.display = 'block';
+        warnBox.innerHTML = `⚠️ <b>Увага:</b> На цьому об'єкті зареєстровано <b>${generators.length}</b> генератор(ів)!<br>Щоб видалити цей об'єкт разом з ними, обов'язково активуйте чекбокс <b>«Каскадне видалення»</b> нижче.`;
+      } else {
+        warnBox.style.display = 'none';
+      }
+    }
+
+    openModal('modalDeleteFacility');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+};
+
+window.confirmDeleteCurrentFacility = async function() {
+  if (!currentFacilityId) return;
+  const btn = document.getElementById('confirmDeleteFacilityBtn');
+  const cascadeCheckbox = document.getElementById('deleteFacilityCascadeCheckbox');
+  const cascade = cascadeCheckbox ? cascadeCheckbox.checked : false;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Видалення...';
+  }
+
+  try {
+    const res = await api(`/facilities/${currentFacilityId}?cascade=${cascade}`, { method: 'DELETE' });
+    closeModal('modalDeleteFacility');
+    showToast(res.message || "Об'єкт успішно видалено!", 'success');
+    localStorage.removeItem('sd_last_facility_id');
+    localStorage.removeItem('sd_last_generator_id');
+    if (currentFacilityId) {
+      localStorage.removeItem(`sd_last_gen_facility_${currentFacilityId}`);
+    }
+    currentFacilityId = null;
+    currentGeneratorId = null;
+    await loadFacilitiesList();
+    await loadGeneratorsList(currentFacilityId);
+    await loadAllData();
+  } catch (err) {
+    showToast(err.message || 'Помилка видалення об\'єкта', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = 'Підтвердити видалення';
+    }
   }
 };
 
@@ -3407,7 +3535,13 @@ document.getElementById('generatorCreateForm')?.addEventListener('submit', async
 
 // Dropdowns Change Listeners
 document.getElementById('facilitySelect')?.addEventListener('change', async (e) => {
-  currentFacilityId = parseInt(e.target.value);
+  const targetId = parseInt(e.target.value);
+  if (!isAdmin() && currentUser && currentUser.facility_id && targetId !== currentUser.facility_id) {
+    showToast("Ви не можете вибрати інший об'єкт, ви закріплені за своїм об'єктом!", "warning");
+    e.target.value = currentUser.facility_id;
+    return;
+  }
+  currentFacilityId = targetId;
   localStorage.setItem('sd_last_facility_id', currentFacilityId);
   currentGeneratorId = null;
   await loadGeneratorsList(currentFacilityId);
@@ -3705,6 +3839,7 @@ async function loadAdminSystemSettings() {
     const res = await api('/system/settings');
     const s = res.settings || {};
     const fp = res.fuel_prices || null;
+    window.systemSettingsCache = s;
 
     if (document.getElementById('sysOrgName')) document.getElementById('sysOrgName').value = s.organization_name || 'MAXI-UA LLC';
     if (document.getElementById('sysTimezone')) document.getElementById('sysTimezone').value = s.facility_timezone || 'Europe/Kyiv';
@@ -3717,6 +3852,10 @@ async function loadAdminSystemSettings() {
     if (document.getElementById('sysEnforceSchedule')) document.getElementById('sysEnforceSchedule').checked = s.enforce_work_schedule !== false;
     if (document.getElementById('sysAutoFetchPrices')) document.getElementById('sysAutoFetchPrices').checked = s.auto_fetch_fuel_prices !== false;
     if (document.getElementById('sysApplyAllGens')) document.getElementById('sysApplyAllGens').checked = s.apply_to_all_generators !== false;
+
+    // Default Chain & Weekly Options
+    await populateAdminDefaultChain(s.default_facility_id, s.default_generator_id, s.default_fuel_stock_id);
+    await populateAdminEmailWeeklyOptions(s.email_weekly_facility_id, s.email_weekly_generator_id);
 
     // SMTP & Failover Settings
     if (document.getElementById('sysSmtpEnabled')) document.getElementById('sysSmtpEnabled').checked = s.smtp_enabled === true;
@@ -3763,6 +3902,112 @@ async function loadAdminSystemSettings() {
     renderAdminFuelPricesHints(fp);
   } catch (_) {}
 }
+
+async function populateAdminDefaultChain(defaultFacId, defaultGenId, defaultStockId) {
+  try {
+    const facSel = document.getElementById('sysDefaultFacilityId');
+    if (!facSel) return;
+
+    const facilities = await api('/facilities');
+    facSel.innerHTML = '<option value="">(Авто / Перший об\'єкт)</option>' +
+      (facilities || []).map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
+
+    if (defaultFacId && (facilities || []).some(f => f.id === defaultFacId)) {
+      facSel.value = defaultFacId;
+    } else {
+      facSel.value = '';
+    }
+
+    await onAdminDefaultFacilityChange(defaultGenId, defaultStockId);
+  } catch (e) {
+    console.warn('populateAdminDefaultChain error:', e);
+  }
+}
+
+window.onAdminDefaultFacilityChange = async function(preselectGenId = null, preselectStockId = null) {
+  const facSel = document.getElementById('sysDefaultFacilityId');
+  const genSel = document.getElementById('sysDefaultGeneratorId');
+  const stockSel = document.getElementById('sysDefaultFuelStockId');
+  if (!facSel || !genSel || !stockSel) return;
+
+  const facId = parseInt(facSel.value || '0', 10);
+  if (!facId) {
+    genSel.innerHTML = '<option value="">(Авто / Перший генератор)</option>';
+    stockSel.innerHTML = '<option value="">(Авто / Перший склад)</option>';
+    return;
+  }
+
+  try {
+    const [generators, stocks] = await Promise.all([
+      api(`/generator/list?facility_id=${facId}`),
+      api(`/fuel/stock?facility_id=${facId}`)
+    ]);
+
+    genSel.innerHTML = '<option value="">(Авто / Перший генератор)</option>' +
+      (generators || []).map(g => `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)})</option>`).join('');
+    if (preselectGenId && (generators || []).some(g => g.id === preselectGenId)) {
+      genSel.value = preselectGenId;
+    } else {
+      genSel.value = '';
+    }
+
+    stockSel.innerHTML = '<option value="">(Авто / Перший склад)</option>' +
+      (stocks || []).map(s => `<option value="${Number(s.id)}">${escapeHtml(s.name)} (${escapeHtml(s.fuel_type)}: ${s.current_balance_l} л)</option>`).join('');
+    if (preselectStockId && (stocks || []).some(s => s.id === preselectStockId)) {
+      stockSel.value = preselectStockId;
+    } else {
+      stockSel.value = '';
+    }
+  } catch (err) {
+    console.warn('onAdminDefaultFacilityChange error:', err);
+  }
+};
+
+async function populateAdminEmailWeeklyOptions(weeklyFacId, weeklyGenId) {
+  try {
+    const facSel = document.getElementById('sysEmailWeeklyFacilityId');
+    if (!facSel) return;
+
+    const facilities = await api('/facilities');
+    facSel.innerHTML = '<option value="">(За замовчуванням)</option>' +
+      (facilities || []).map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
+
+    if (weeklyFacId && (facilities || []).some(f => f.id === weeklyFacId)) {
+      facSel.value = weeklyFacId;
+    } else {
+      facSel.value = '';
+    }
+
+    await onAdminEmailWeeklyFacilityChange(weeklyGenId);
+  } catch (e) {
+    console.warn('populateAdminEmailWeeklyOptions error:', e);
+  }
+}
+
+window.onAdminEmailWeeklyFacilityChange = async function(preselectGenId = null) {
+  const facSel = document.getElementById('sysEmailWeeklyFacilityId');
+  const genSel = document.getElementById('sysEmailWeeklyGeneratorId');
+  if (!facSel || !genSel) return;
+
+  const facId = parseInt(facSel.value || '0', 10);
+  if (!facId) {
+    genSel.innerHTML = '<option value="">(Усі генератори за замовчуванням)</option>';
+    return;
+  }
+
+  try {
+    const generators = await api(`/generator/list?facility_id=${facId}`);
+    genSel.innerHTML = '<option value="">(Усі генератори об\'єкта)</option>' +
+      (generators || []).map(g => `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)})</option>`).join('');
+    if (preselectGenId && (generators || []).some(g => g.id === preselectGenId)) {
+      genSel.value = preselectGenId;
+    } else {
+      genSel.value = '';
+    }
+  } catch (err) {
+    console.warn('onAdminEmailWeeklyFacilityChange error:', err);
+  }
+};
 
 window.refreshFuelPricesFromInternet = async function () {
   try {
@@ -3817,7 +4062,13 @@ document.getElementById('systemSettingsForm')?.addEventListener('submit', async 
     smtp_fallback_from: document.getElementById('sysSmtpFallbackFrom')?.value.trim() || '',
     email_weekly_recipients: document.getElementById('sysEmailWeeklyRecipients')?.value.trim() || '',
     email_weekly_send_day: parseInt(document.getElementById('sysEmailWeeklyDay')?.value || '0', 10),
-    email_weekly_send_time: document.getElementById('sysEmailWeeklyTime')?.value || '08:00'
+    email_weekly_send_time: document.getElementById('sysEmailWeeklyTime')?.value || '08:00',
+    // Default Chain & Weekly target bindings
+    default_facility_id: parseInt(document.getElementById('sysDefaultFacilityId')?.value || '0', 10) || null,
+    default_generator_id: parseInt(document.getElementById('sysDefaultGeneratorId')?.value || '0', 10) || null,
+    default_fuel_stock_id: parseInt(document.getElementById('sysDefaultFuelStockId')?.value || '0', 10) || null,
+    email_weekly_facility_id: parseInt(document.getElementById('sysEmailWeeklyFacilityId')?.value || '0', 10) || null,
+    email_weekly_generator_id: parseInt(document.getElementById('sysEmailWeeklyGeneratorId')?.value || '0', 10) || null
   };
 
   // Only pass password if user entered a new string; otherwise keep existing in DB
@@ -4975,7 +5226,51 @@ ${escapeHtml(res.hint)}</div>` : ''}
   }
 };
 
-window.openSendWeeklyReportModal = function () {
+async function populateWeeklyReportModalSelectors() {
+  const facSel = document.getElementById('weeklyReportFacilitySelect');
+  const genSel = document.getElementById('weeklyReportGeneratorSelect');
+  if (!facSel || !genSel) return;
+
+  try {
+    const facilities = await api('/facilities');
+    facSel.innerHTML = (facilities || []).map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
+
+    const targetFac = currentFacilityId || (facilities && facilities[0] ? facilities[0].id : null);
+    if (targetFac && (facilities || []).some(f => f.id === targetFac)) {
+      facSel.value = targetFac;
+    }
+
+    await onWeeklyReportModalFacilityChange(currentGeneratorId);
+  } catch (e) {
+    console.warn('populateWeeklyReportModalSelectors error:', e);
+  }
+}
+
+window.onWeeklyReportModalFacilityChange = async function(preselectGenId = null) {
+  const facSel = document.getElementById('weeklyReportFacilitySelect');
+  const genSel = document.getElementById('weeklyReportGeneratorSelect');
+  if (!facSel || !genSel) return;
+
+  const facId = parseInt(facSel.value || '0', 10);
+  if (!facId) return;
+
+  try {
+    const generators = await api(`/generator/list?facility_id=${facId}`);
+    if (!generators || generators.length === 0) {
+      genSel.innerHTML = '<option value="">(Немає генераторів на об\'єкті)</option>';
+    } else {
+      genSel.innerHTML = '<option value="">(Усі генератори об\'єкта)</option>' +
+        generators.map(g => `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)})</option>`).join('');
+      if (preselectGenId && generators.some(g => g.id === preselectGenId)) {
+        genSel.value = preselectGenId;
+      }
+    }
+  } catch (e) {
+    console.warn('onWeeklyReportModalFacilityChange error:', e);
+  }
+};
+
+window.openSendWeeklyReportModal = async function () {
   if (!isAdmin()) {
     showToast('Відправка звітів доступна лише адміністратору системи', 'warning');
     return;
@@ -4992,11 +5287,15 @@ window.openSendWeeklyReportModal = function () {
     resBox.innerHTML = '';
   }
 
+  await populateWeeklyReportModalSelectors();
+
   openModal('modalSendWeeklyReport');
 };
 
 window.executeSendWeeklyReport = async function () {
   const recipients = document.getElementById('weeklyReportRecipientsInput')?.value.trim();
+  const facId = parseInt(document.getElementById('weeklyReportFacilitySelect')?.value || '0', 10) || null;
+  const genId = parseInt(document.getElementById('weeklyReportGeneratorSelect')?.value || '0', 10) || null;
   const btn = document.getElementById('btnSubmitWeeklyReport');
   const spinner = document.getElementById('weeklyReportSpinner');
   const resBox = document.getElementById('weeklyReportResultBox');
@@ -5014,7 +5313,10 @@ window.executeSendWeeklyReport = async function () {
   if (resBox) resBox.style.display = 'none';
 
   try {
-    const res = await api(`/system/email/weekly-digest/send?recipient=${encodeURIComponent(recipients)}`, {
+    let url = `/system/email/weekly-digest/send?recipient=${encodeURIComponent(recipients)}`;
+    if (facId) url += `&facility_id=${facId}`;
+    if (genId) url += `&generator_id=${genId}`;
+    const res = await api(url, {
       method: 'POST'
     });
     if (spinner) spinner.style.display = 'none';

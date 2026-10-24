@@ -20,7 +20,8 @@ async def get_all_facilities(db: AsyncSession) -> List[FacilityOut]:
     result = await db.execute(
         select(Facility).options(
             selectinload(Facility.generators),
-            selectinload(Facility.fuel_stocks)
+            selectinload(Facility.fuel_stocks),
+            selectinload(Facility.users)
         ).order_by(Facility.id.asc())
     )
     facilities = result.scalars().all()
@@ -47,7 +48,8 @@ async def get_facility_by_id(db: AsyncSession, facility_id: int) -> FacilityOut:
     result = await db.execute(
         select(Facility).options(
             selectinload(Facility.generators),
-            selectinload(Facility.fuel_stocks)
+            selectinload(Facility.fuel_stocks),
+            selectinload(Facility.users)
         ).where(Facility.id == facility_id)
     )
     f = result.scalars().first()
@@ -173,6 +175,7 @@ async def delete_facility(
     db: AsyncSession,
     facility_id: int,
     user_id: int,
+    cascade: bool = False,
     ip_address: Optional[str] = None
 ) -> dict:
     count_res = await db.execute(select(func.count(Facility.id)))
@@ -186,7 +189,8 @@ async def delete_facility(
     result = await db.execute(
         select(Facility).options(
             selectinload(Facility.generators),
-            selectinload(Facility.fuel_stocks)
+            selectinload(Facility.fuel_stocks),
+            selectinload(Facility.users)
         ).where(Facility.id == facility_id)
     )
     facility = result.scalars().first()
@@ -203,18 +207,37 @@ async def delete_facility(
                 detail=f"Неможливо видалити об'єкт: генератор '{gen.name}' наразі працює!"
             )
 
-    if facility.generators:
+    if facility.generators and not cascade:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Неможливо видалити об'єкт, на якому зареєстровано {len(facility.generators)} генератор(ів). Спочатку видаліть або перемістіть генератори."
+            detail=f"Неможливо видалити об'єкт, на якому зареєстровано {len(facility.generators)} генератор(ів). "
+                   f"Увімкніть опцію каскадного видалення або спочатку видаліть генератори."
         )
 
     facility_name = facility.name
-    # Delete associated fuel stocks if any
-    for stock in facility.fuel_stocks:
+
+    # Unbind users assigned to this facility
+    for u in facility.users:
+        u.facility_id = None
+
+    # Cascade delete associated generators if requested
+    if cascade:
+        for gen in list(facility.generators):
+            await db.delete(gen)
+
+    # Delete associated fuel stocks
+    for stock in list(facility.fuel_stocks):
         await db.delete(stock)
 
     await db.delete(facility)
+    await db.flush()
+
+    # Clear runtime settings if pointing to deleted facility
+    from backend.app.services.settings_service import get_runtime_setting, set_runtime_setting
+    if get_runtime_setting("default_facility_id") == facility_id:
+        set_runtime_setting("default_facility_id", None)
+    if get_runtime_setting("email_weekly_facility_id") == facility_id:
+        set_runtime_setting("email_weekly_facility_id", None)
     await db.flush()
 
     await log_audit(

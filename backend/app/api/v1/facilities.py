@@ -73,10 +73,11 @@ async def edit_facility(
 async def remove_facility(
     facility_id: int,
     request: Request,
+    cascade: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("facility:configure"))
 ):
     """Видалити об'єкт"""
     verify_facility_access(current_user, facility_id)
     client_ip = get_client_ip(request)
-    return await delete_facility(db, facility_id, current_user.id, client_ip)
+    return await delete_facility(db, facility_id, current_user.id, cascade=cascade, ip_address=client_ip)

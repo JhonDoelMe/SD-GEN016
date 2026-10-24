@@ -99,6 +99,12 @@ class SystemSettingsUpdateRequest(BaseModel):
     email_weekly_recipients: Optional[str] = Field(default=None, max_length=500)
     email_weekly_send_day: Optional[int] = Field(default=None, ge=0, le=6)
     email_weekly_send_time: Optional[str] = Field(default=None, max_length=10)
+    # Default Facility, Generator & Stock Binding
+    default_facility_id: Optional[int] = None
+    default_generator_id: Optional[int] = None
+    default_fuel_stock_id: Optional[int] = None
+    email_weekly_facility_id: Optional[int] = None
+    email_weekly_generator_id: Optional[int] = None
     apply_to_all_generators: bool = Field(
         default=False,
         description="Якщо True — синхронізувати часовий пояс, графік роботи та інтервал ТО для всіх генераторів і об'єктів"
@@ -335,6 +341,11 @@ async def update_admin_system_settings(
         "email_weekly_recipients",
         "email_weekly_send_day",
         "email_weekly_send_time",
+        "default_facility_id",
+        "default_generator_id",
+        "default_fuel_stock_id",
+        "email_weekly_facility_id",
+        "email_weekly_generator_id",
     )
     for field_name in all_fields:
         val = getattr(payload, field_name, None)
@@ -505,6 +516,8 @@ async def test_email_configuration(
 async def send_weekly_digest_manual(
     request: Request,
     recipient: Optional[str] = None,
+    facility_id: Optional[int] = None,
+    generator_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ) -> Dict[str, Any]:
@@ -525,7 +538,9 @@ async def send_weekly_digest_manual(
     if not rec_list:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Список адрес отримувачів порожній")
 
-    excel_bytes = await generate_excel_report(db=db)
+    target_fac = facility_id or get_runtime_setting("email_weekly_facility_id") or get_runtime_setting("default_facility_id")
+    target_gen = generator_id or get_runtime_setting("email_weekly_generator_id") or get_runtime_setting("default_generator_id")
+    excel_bytes = await generate_excel_report(db=db, facility_id=target_fac, generator_id=target_gen)
     now_dt = datetime.datetime.now()
     week_ago = now_dt - datetime.timedelta(days=7)
     period_label = f"{week_ago.strftime('%d.%m.%Y')} — {now_dt.strftime('%d.%m.%Y')}"

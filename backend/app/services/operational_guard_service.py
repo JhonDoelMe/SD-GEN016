@@ -278,7 +278,9 @@ async def check_and_send_weekly_digest(db: AsyncSession) -> bool:
     from backend.app.services.email_service import send_weekly_digest_email
 
     try:
-        excel_bytes = await generate_excel_report(db=db)
+        target_fac = get_runtime_setting("email_weekly_facility_id") or get_runtime_setting("default_facility_id")
+        target_gen = get_runtime_setting("email_weekly_generator_id") or get_runtime_setting("default_generator_id")
+        excel_bytes = await generate_excel_report(db=db, facility_id=target_fac, generator_id=target_gen)
         week_ago = now_fac - datetime.timedelta(days=7)
         period_label = f"{week_ago.strftime('%d.%m.%Y')} — {now_fac.strftime('%d.%m.%Y')}"
         await send_weekly_digest_email(

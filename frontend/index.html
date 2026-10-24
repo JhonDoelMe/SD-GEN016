@@ -37,7 +37,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.8.1">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.8.2">
 </head>
 <body>
 
@@ -122,6 +122,7 @@
           <select id="facilitySelect" class="control-select" aria-label="Вибір об'єкта"></select>
           <button id="quickEditFacilityBtn" class="btn-control-edit" onclick="openQuickEditFacilityModal()" title="Швидкі налаштування об'єкта (назва, адреса)">⚙️</button>
           <button id="addFacilityBtn" class="btn-control-add btn-facility-add" onclick="openCreateFacilityModal()" title="Створити новий об'єкт">+ Об'єкт</button>
+          <button id="deleteFacilityBtn" class="btn-control-del" onclick="openDeleteFacilityModal()" title="Видалити поточний об'єкт">🗑️</button>
         </div>
       </div>
 
@@ -838,6 +839,33 @@
             </div>
           </div>
 
+          <!-- Блок 1.1: Ланцюжок за замовчуванням (Default Binding) -->
+          <div class="settings-block" style="background: rgba(168, 85, 247, 0.05); border-color: rgba(168, 85, 247, 0.28);">
+            <div class="settings-block-header" style="border-bottom-color: rgba(168, 85, 247, 0.18);">
+              <h4 class="settings-block-title" style="color: #c084fc;">
+                🔗 1.1. Стартовий ланцюжок за замовчуванням (Об'єкт ➔ Генератор ➔ Склад ГСМ)
+              </h4>
+              <span style="font-size: 0.8rem; color: #c084fc;">Жорстка зв'язка для старту та щотижневих звітів</span>
+            </div>
+            <p style="font-size: 0.83rem; color: var(--text-muted); margin-bottom: 0.85rem;">
+              Визначає базовий об'єкт, генератор та склад пального, які автоматично відкриваються під час входу в систему, та слугують базою для автоматичних звітів.
+            </p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>🏢 Об'єкт за замовчуванням</label>
+                <select id="sysDefaultFacilityId" onchange="onAdminDefaultFacilityChange()"></select>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>⚡ Генератор за замовчуванням</label>
+                <select id="sysDefaultGeneratorId"></select>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>🛢️ Склад ГСМ за замовчуванням</label>
+                <select id="sysDefaultFuelStockId"></select>
+              </div>
+            </div>
+          </div>
+
           <!-- Блок 2: Табло цін АЗК WOG та Фіксовані тарифи -->
           <div class="settings-block" style="background: rgba(34, 197, 94, 0.05); border-color: rgba(34, 197, 94, 0.28);">
             <div class="settings-block-header" style="border-bottom-color: rgba(34, 197, 94, 0.18);">
@@ -1045,6 +1073,14 @@
                 <div class="form-group" style="margin-bottom: 0;">
                   <label class="smtp-field-label">Час відправки</label>
                   <input type="time" id="sysEmailWeeklyTime" value="08:00">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="smtp-field-label">🏢 Об'єкт для щотижневого звіту</label>
+                  <select id="sysEmailWeeklyFacilityId" onchange="onAdminEmailWeeklyFacilityChange()"></select>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="smtp-field-label">⚡ Генератор для щотижневого звіту</label>
+                  <select id="sysEmailWeeklyGeneratorId"></select>
                 </div>
               </div>
             </div>
@@ -1661,6 +1697,12 @@
             <option value="4">Спостерігач</option>
           </select>
         </div>
+        <div class="form-group">
+          <label>Закріплений об'єкт (для оператора)</label>
+          <select id="newUserFacility">
+            <option value="">(Усі об'єкти / Не обмежено)</option>
+          </select>
+        </div>
         <button type="submit" class="btn-primary">Створити акаунт</button>
       </form>
     </div>
@@ -1693,6 +1735,12 @@
             <option value="3">Оператор</option>
             <option value="2">Адміністратор</option>
             <option value="4">Спостерігач</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Закріплений об'єкт (для оператора)</label>
+          <select id="editUserFacility">
+            <option value="">(Усі об'єкти / Не обмежено)</option>
           </select>
         </div>
         <div class="form-group" style="margin-top: 0.5rem;">
@@ -1872,6 +1920,41 @@
       <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
         <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalDeleteGenerator')">Скасувати</button>
         <button type="button" class="btn-primary" id="confirmDeleteGenBtn" style="background: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentGenerator()">Підтвердити видалення</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Видалення об'єкта -->
+  <div id="modalDeleteFacility" class="modal-overlay">
+    <div class="modal-content" style="max-width: 460px;">
+      <div class="modal-header">
+        <h3 style="color: #ef4444; display: flex; align-items: center; gap: 0.5rem;">
+          <span>🏢</span> <span>Видалення об'єкта</span>
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalDeleteFacility')">&times;</button>
+      </div>
+      <div style="padding: 0.5rem 0 1rem;">
+        <p id="deleteFacilityConfirmText" style="font-size: 0.95rem; line-height: 1.5; color: var(--text-color);">
+          Ви дійсно бажаєте видалити цей об'єкт?
+        </p>
+        <div id="deleteFacilityGenWarning" style="display: none; font-size: 0.85rem; color: #ef4444; margin-top: 0.75rem; background: rgba(239, 68, 68, 0.1); padding: 0.65rem; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.25);">
+          ⚠️ На цьому об'єкті є зареєстровані генератори або склади ГСМ!
+        </div>
+        <div style="margin-top: 0.85rem; padding: 0.65rem; background: var(--bg-card); border-radius: 6px; border: 1px solid var(--border-color);">
+          <label style="display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.88rem; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="deleteFacilityCascadeCheckbox" style="margin-top: 0.2rem; cursor: pointer;">
+            <span>
+              <strong>Каскадне видалення (Cascade)</strong><br>
+              <span style="font-size: 0.8rem; color: var(--text-muted);">
+                Видалити об'єкт разом з усіма його генераторами, складами ГСМ, історією роботи, заправками та ТО.
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+      <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+        <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalDeleteFacility')">Скасувати</button>
+        <button type="button" class="btn-primary" id="confirmDeleteFacilityBtn" style="background: #dc2626; border-color: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentFacility()">Підтвердити видалення</button>
       </div>
     </div>
   </div>
@@ -2602,6 +2685,17 @@
           Система згенерує актуальну книгу Microsoft Excel (.xlsx) із 5 аркушами (сесії генератора, витрата палива, напрацювання ТО, стан складу та коригування) і надішле її у вкладенні на вказані адреси.
         </p>
 
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label style="font-weight: 600; font-size: 0.88rem;">🏢 Об'єкт звіту:</label>
+            <select id="weeklyReportFacilitySelect" class="form-input" onchange="onWeeklyReportModalFacilityChange()"></select>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label style="font-weight: 600; font-size: 0.88rem;">⚡ Генератор звіту:</label>
+            <select id="weeklyReportGeneratorSelect" class="form-input"></select>
+          </div>
+        </div>
+
         <div class="form-group" style="margin-bottom: 0.75rem;">
           <label style="font-weight: 600; font-size: 0.88rem;">Отримувачі звіту (email через кому):</label>
           <input type="text" id="weeklyReportRecipientsInput" required placeholder="director@company.com, chief@ukr.net">
@@ -2628,7 +2722,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.8.1"></script>
+  <script src="/frontend/app.js?v=4.8.2"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

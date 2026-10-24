@@ -469,3 +469,150 @@ async def test_system_reset_and_clean_db(client, superadmin_auth, operator_auth)
 
 
 
+
+
+@pytest.mark.asyncio
+async def test_facility_cascade_delete_and_chain_binding(client, superadmin_auth, operator_auth):
+    """
+    Тестування:
+    1. Каскадне видалення об\x27єкта (?cascade=true vs ?cascade=false).
+    2. Автоматичне відкріплення закріплених користувачів (u.facility_id -> None).
+    3. Жорстка прив\x27язка генератора до об\x27єкта (403 "Ви не можете вибрати генератор ..., він закріплений за об\x27єктом ...").
+    4. Збереження та валідація налаштувань ланцюжка за замовчуванням (Default Chain).
+    5. Щотижневий звіт Excel з цільовим об\x27єктом та генератором.
+    """
+    # 1. Create a dedicated test facility
+    fac_res = await client.post(
+        "/api/v1/facilities",
+        headers=superadmin_auth,
+        json={
+            "name": "Тестовий філіал (Одеса)",
+            "address": "вул. Дерибасівська, 1",
+            "description": "Філія для перевірки каскадного видалення",
+            "timezone": "Europe/Kyiv"
+        }
+    )
+    assert fac_res.status_code == 201
+    fac_id = fac_res.json()["id"]
+
+    # 2. Create a generator on this facility
+    gen_res = await client.post(
+        "/api/v1/generator",
+        headers=superadmin_auth,
+        json={
+            "facility_id": fac_id,
+            "name": "Одеський дизель-генератор",
+            "model": "SDMO 15kW",
+            "manufacturer": "SDMO",
+            "serial_number": "ODS-15-999",
+            "rated_power_kw": 15.0,
+            "tank_capacity_l": 50.0,
+            "fuel_type": "ДП",
+            "nominal_consumption_l_per_h": 3.8,
+            "initial_operating_hours": 0.0,
+            "initial_fuel_tank_level_l": 25.0,
+            "work_schedule_start": "08:00",
+            "work_schedule_end": "20:00",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv"
+        }
+    )
+    assert gen_res.status_code == 201
+    gen_id = gen_res.json()["id"]
+
+    # 3. Create an operator assigned specifically to facility 1
+    op_create_res = await client.post(
+        "/api/v1/users",
+        headers=superadmin_auth,
+        json={
+            "login": "operator_kyiv_lock",
+            "full_name": "Київський Оператор",
+            "password": "Password123!",
+            "facility_id": 1,
+            "role_ids": [3]
+        }
+    )
+    assert op_create_res.status_code == 201
+
+    # Login as this operator
+    login_res = await client.post(
+        "/api/v1/auth/login",
+        json={"login": "operator_kyiv_lock", "password": "Password123!"}
+    )
+    assert login_res.status_code == 200
+    token = login_res.json()["access_token"]
+    kyiv_op_auth = {"Authorization": f"Bearer {token}"}
+
+    # 4. Invariant: Kyiv operator tries to start Odessa generator -> 403 Forbidden with exact text
+    forbidden_res = await client.post(
+        "/api/v1/generator/start",
+        headers=kyiv_op_auth,
+        json={"generator_id": gen_id, "fuel_level_l": 25.0}
+    )
+    assert forbidden_res.status_code == 403
+    assert "Ви не можете вибрати генератор" in forbidden_res.json()["detail"]
+    assert "Тестовий філіал (Одеса)" in forbidden_res.json()["detail"]
+
+    # 5. Admin establishes default chain settings
+    settings_put = await client.put(
+        "/api/v1/system/settings",
+        headers=superadmin_auth,
+        json={
+            "organization_name": "MAXI-UA CHAIN",
+            "facility_timezone": "Europe/Kyiv",
+            "work_schedule_start": "08:00",
+            "work_schedule_end": "20:00",
+            "default_facility_id": fac_id,
+            "default_generator_id": gen_id,
+            "email_weekly_facility_id": fac_id,
+            "email_weekly_generator_id": gen_id
+        }
+    )
+    assert settings_put.status_code == 200
+    sett = settings_put.json()["settings"]
+    assert sett["default_facility_id"] == fac_id
+    assert sett["default_generator_id"] == gen_id
+    assert sett["email_weekly_facility_id"] == fac_id
+    assert sett["email_weekly_generator_id"] == gen_id
+
+    # 6. Test weekly digest manual send with facility_id and generator_id
+    from unittest.mock import patch
+    with patch("backend.app.services.email_service.send_weekly_digest_email") as mock_digest:
+        mock_digest.return_value = {"status": "ok", "provider": "primary", "message": "Звіт Excel успішно надіслано на 1 адрес(у/ів)!"}
+        digest_res = await client.post(
+            f"/api/v1/system/email/weekly-digest/send?recipient=admin@test.ua&facility_id={fac_id}&generator_id={gen_id}",
+            headers=superadmin_auth
+        )
+        assert digest_res.status_code == 200
+        assert digest_res.json()["result"]["status"] == "ok"
+        assert "успішно надіслано" in digest_res.json()["message"]
+        mock_digest.assert_called_once()
+        assert mock_digest.call_args[1]["recipients"] == ["admin@test.ua"]
+        assert isinstance(mock_digest.call_args[1]["excel_bytes"], bytes)
+
+    # 7. Try delete facility without cascade -> 400 Bad Request
+    del_no_cascade = await client.delete(
+        f"/api/v1/facilities/{fac_id}",
+        headers=superadmin_auth
+    )
+    assert del_no_cascade.status_code == 400
+    assert "каскадного видалення" in del_no_cascade.json()["detail"]
+
+    # 8. Delete facility with cascade=True -> 200 OK
+    del_cascade = await client.delete(
+        f"/api/v1/facilities/{fac_id}?cascade=true",
+        headers=superadmin_auth
+    )
+    assert del_cascade.status_code == 200
+    assert "успішно видалено" in del_cascade.json()["message"]
+
+    # 9. Verify generator was cascade deleted
+    gen_check = await client.get(
+        f"/api/v1/generator?generator_id={gen_id}",
+        headers=superadmin_auth
+    )
+    assert gen_check.status_code == 404
+
+    # 10. Verify runtime setting default_facility_id was safely reset to None
+    from backend.app.services.settings_service import get_runtime_setting
+    assert get_runtime_setting("default_facility_id") is None
