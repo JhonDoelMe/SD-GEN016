@@ -183,6 +183,16 @@ def send_smtp_message_sync(
     msg["To"] = to_str
     msg["Date"] = email.utils.formatdate(localtime=True)
 
+    # Deliverability & Anti-Spam Headers (RFC 5322 & RFC 3834)
+    sender_clean = from_addr or user
+    domain_part = None
+    if "@" in sender_clean:
+        domain_part = sender_clean.split("@")[-1].rstrip(">").strip()
+    msg["Message-ID"] = email.utils.make_msgid(domain=domain_part or None)
+    msg["Reply-To"] = from_addr or user
+    msg["Auto-Submitted"] = "auto-generated"
+    msg["X-Auto-Response-Suppress"] = "All"
+
     plain_content = text_body or _strip_html(html_body)
     msg.set_content(plain_content)
     msg.add_alternative(html_body, subtype="html")
