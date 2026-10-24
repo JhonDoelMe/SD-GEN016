@@ -129,7 +129,6 @@ async def seed_initial_data(db: AsyncSession) -> None:
     default_fac = fac_res.scalars().first()
     if not default_fac:
         default_fac = Facility(
-            id=1,
             name="Основний об'єкт",
             address="вул. Центральна, 1",
             description="Головна виробничо-офісна локація",
@@ -142,7 +141,7 @@ async def seed_initial_data(db: AsyncSession) -> None:
     gen_check = await db.execute(select(Generator))
     if not gen_check.scalars().first():
         init_gen = Generator(
-            facility_id=default_fac.id if default_fac else 1,
+            facility_id=default_fac.id if default_fac else None,
             name="Бензиновий генератор 5кВт",
             model="PG-6500",
             manufacturer="PowerGen",
@@ -194,7 +193,7 @@ async def seed_initial_data(db: AsyncSession) -> None:
             full_name=settings.INITIAL_ADMIN_FULL_NAME,
             is_active=True,
             is_superadmin=True,
-            facility_id=default_fac.id if default_fac else 1,
+            facility_id=default_fac.id if default_fac else None,
         )
         if "superadmin" in existing_roles:
             superadmin_user.roles.append(existing_roles["superadmin"])
@@ -219,7 +218,7 @@ async def seed_initial_data(db: AsyncSession) -> None:
             name="Основний склад ГСМ",
             fuel_type="А-95",
             current_balance_l=0.0,
-            facility_id=default_fac.id if default_fac else 1,
+            facility_id=default_fac.id if default_fac else None,
         )
         db.add(stock)
         await db.flush()

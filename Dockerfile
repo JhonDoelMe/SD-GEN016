@@ -30,4 +30,4 @@ RUN mkdir -p /app/uploads
 EXPOSE 8000
 
 # Startup script: apply migrations and start uvicorn (restricted proxy headers to internal Docker/private ranges)
-CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'"]
+CMD ["sh", "-c", "(alembic upgrade head || true) && uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'"]

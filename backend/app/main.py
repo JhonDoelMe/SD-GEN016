@@ -31,13 +31,15 @@ def ensure_schema_updates(sync_conn):
             sync_conn.execute(text("ALTER TABLE generator_runs ADD COLUMN duration_seconds INTEGER"))
 
     # 2. facilities default record
+    default_facility_id = None
     if "facilities" in tables:
         res = sync_conn.execute(text("SELECT COUNT(*) FROM facilities")).scalar()
         if res == 0:
             sync_conn.execute(text(
-                "INSERT INTO facilities (id, name, address, description, timezone, created_at, updated_at) "
-                "VALUES (1, 'Основний об''єкт', 'Головна локація', 'Базовий об''єкт генератора', 'Europe/Kyiv', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                "INSERT INTO facilities (name, address, description, timezone, created_at, updated_at) "
+                "VALUES ('Основний об''єкт', 'Головна локація', 'Базовий об''єкт генератора', 'Europe/Kyiv', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
             ))
+        default_facility_id = sync_conn.execute(text("SELECT id FROM facilities ORDER BY id ASC LIMIT 1")).scalar()
 
     # 3. Add facility_id to related tables (strictly whitelisted identifiers)
     allowed_facility_tables = ("generators", "fuel_stocks", "fuel_receipts", "fuel_transfers", "users", "system_adjustments")
@@ -46,8 +48,12 @@ def ensure_schema_updates(sync_conn):
             cols = [c["name"] for c in inspector.get_columns(table_name)]
             if "facility_id" not in cols:
                 sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN facility_id INTEGER REFERENCES facilities(id) ON DELETE SET NULL"))
-            # Set default facility_id to 1 if null
-            sync_conn.execute(text(f"UPDATE {table_name} SET facility_id = 1 WHERE facility_id IS NULL"))
+            # Only associate generators & fuel_stocks if facility_id is null and an existing facility exists
+            if default_facility_id is not None and table_name in ("generators", "fuel_stocks"):
+                sync_conn.execute(
+                    text(f"UPDATE {table_name} SET facility_id = :fid WHERE facility_id IS NULL"),
+                    {"fid": default_facility_id}
+                )
 
     # Ensure PostgreSQL constraints have ON DELETE SET NULL for foreign keys referencing facilities(id)
     if sync_conn.dialect.name == "postgresql":
@@ -55,20 +61,21 @@ def ensure_schema_updates(sync_conn):
         for tbl in fk_set_null_tables:
             if tbl in tables:
                 try:
-                    sync_conn.execute(text(f"""
-                        DO $$
-                        BEGIN
-                            IF EXISTS (
-                                SELECT 1 FROM information_schema.table_constraints 
-                                WHERE constraint_name = '{tbl}_facility_id_fkey' 
-                                AND table_name = '{tbl}'
-                            ) THEN
-                                ALTER TABLE {tbl} DROP CONSTRAINT {tbl}_facility_id_fkey;
-                                ALTER TABLE {tbl} ADD CONSTRAINT {tbl}_facility_id_fkey 
-                                    FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE SET NULL;
-                            END IF;
-                        END $$;
-                    """))
+                    with sync_conn.begin_nested():
+                        sync_conn.execute(text(f"""
+                            DO $$
+                            BEGIN
+                                IF EXISTS (
+                                    SELECT 1 FROM information_schema.table_constraints 
+                                    WHERE constraint_name = '{tbl}_facility_id_fkey' 
+                                    AND table_name = '{tbl}'
+                                ) THEN
+                                    ALTER TABLE {tbl} DROP CONSTRAINT {tbl}_facility_id_fkey;
+                                    ALTER TABLE {tbl} ADD CONSTRAINT {tbl}_facility_id_fkey 
+                                        FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE SET NULL;
+                                END IF;
+                            END $$;
+                        """))
                 except Exception as ex:
                     print(f"[DB] FK upgrade notice for {tbl}: {ex}", flush=True)
 
@@ -97,13 +104,14 @@ def ensure_schema_updates(sync_conn):
         for tbl in serial_tables:
             if tbl in tables:
                 try:
-                    sync_conn.execute(text(f"""
-                        SELECT setval(
-                            pg_get_serial_sequence('{tbl}', 'id'),
-                            COALESCE((SELECT MAX(id) FROM {tbl}), 1),
-                            (SELECT MAX(id) IS NOT NULL FROM {tbl})
-                        ) WHERE pg_get_serial_sequence('{tbl}', 'id') IS NOT NULL;
-                    """))
+                    with sync_conn.begin_nested():
+                        sync_conn.execute(text(f"""
+                            SELECT setval(
+                                pg_get_serial_sequence('{tbl}', 'id'),
+                                COALESCE((SELECT MAX(id) FROM {tbl}), 1),
+                                (SELECT MAX(id) IS NOT NULL FROM {tbl})
+                            ) WHERE pg_get_serial_sequence('{tbl}', 'id') IS NOT NULL;
+                        """))
                 except Exception as ex:
                     print(f"[DB] Sequence sync notice for {tbl}: {ex}", flush=True)
 
