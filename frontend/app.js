@@ -450,7 +450,13 @@ window.openModal = function (id) {
   }
 
   const modal = document.getElementById(id);
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    modal.style.display = 'flex';
+    document.body.classList.add('modal-open');
+    if (typeof toggleMobileMoreSheet === 'function') {
+      toggleMobileMoreSheet(false);
+    }
+  }
   if (id === 'modalReceipt') setupReceiptModal();
   if (id === 'modalTransfer') setupTransferModal();
   if (id === 'modalNewStock') setupNewStockModal();
@@ -460,6 +466,10 @@ window.openModal = function (id) {
 window.closeModal = function (id) {
   const modal = document.getElementById(id);
   if (modal) modal.style.display = 'none';
+  const anyOpen = Array.from(document.querySelectorAll('.modal-overlay')).some(m => m.style.display === 'flex' || m.style.display === 'block');
+  if (!anyOpen) {
+    document.body.classList.remove('modal-open');
+  }
 };
 
 // Kyiv Live Clock & Universal Formatters
@@ -766,10 +776,12 @@ function formatPricePerLiter(price) {
 
 // Auth Lifecycle
 function showAuthScreen() {
+  document.body.classList.add('not-authenticated');
   document.getElementById('authOverlay').style.display = 'flex';
 }
 
 function hideAuthScreen() {
+  document.body.classList.remove('not-authenticated');
   document.getElementById('authOverlay').style.display = 'none';
 }
 
@@ -2566,7 +2578,13 @@ window.openAdjustmentModal = async function() {
     return;
   }
   const modal = document.getElementById('modalAdjustment');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    modal.style.display = 'flex';
+    document.body.classList.add('modal-open');
+    if (typeof toggleMobileMoreSheet === 'function') {
+      toggleMobileMoreSheet(false);
+    }
+  }
 
   // 1. Immediately & synchronously populate facility dropdown from header selector if available
   const mainFacSel = document.getElementById('facilitySelect');

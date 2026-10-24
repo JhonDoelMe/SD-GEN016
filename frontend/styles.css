@@ -912,7 +912,7 @@ tbody tr:hover {
   display: none;
   justify-content: center;
   align-items: center;
-  z-index: 50;
+  z-index: 1000;
   padding: 1rem;
 }
 
@@ -921,7 +921,7 @@ tbody tr:hover {
 #modalResetPassword,
 #modalSmtpTest,
 #modalSendWeeklyReport {
-  z-index: 200;
+  z-index: 1100;
 }
 
 .test-provider-tabs {
@@ -1384,7 +1384,7 @@ input[type="checkbox"], input[type="radio"] {
   padding: 1.1rem 1.25rem;
   border-radius: 0.65rem;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  z-index: 60;
+  z-index: 2000;
   display: none;
   font-size: 0.95rem;
   font-weight: 500;
@@ -1561,18 +1561,32 @@ input[type="checkbox"], input[type="radio"] {
   .modal-overlay {
     align-items: flex-end;
     padding: 0;
+    z-index: 1000;
   }
   .modal-content {
-    max-height: 92vh;
+    max-height: 90vh;
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
-    padding: 1.25rem 1rem calc(1.5rem + var(--safe-bottom));
+    padding: 1.25rem 1rem calc(2rem + var(--safe-bottom));
   }
   .auth-modal-content {
     /* Center the login screen modal nicely even on mobile */
     border-bottom-left-radius: 1.15rem;
     border-bottom-right-radius: 1.15rem;
     margin: auto;
+  }
+
+  .toast {
+    bottom: calc(72px + var(--safe-bottom));
+  }
+  body.modal-open .toast {
+    bottom: calc(1.5rem + var(--safe-bottom));
+  }
+
+  /* Automatically hide mobile bottom navigation bar when any modal is active */
+  body.modal-open .mobile-bottom-nav,
+  body.not-authenticated .mobile-bottom-nav {
+    display: none !important;
   }
 
   /* Tables on Mobile */
