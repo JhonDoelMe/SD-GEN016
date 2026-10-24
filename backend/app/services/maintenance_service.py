@@ -11,14 +11,10 @@ from backend.app.services.audit_service import log_audit
 
 async def get_maintenance_schedule_status(db: AsyncSession, generator_id: Optional[int] = None) -> MaintenanceScheduleOut:
     gen_query = select(Generator)
-    if generator_id:
+    if generator_id is not None:
         gen_query = gen_query.where(Generator.id == generator_id)
     gen_res = await db.execute(gen_query)
     generator = gen_res.scalars().first()
-    if not generator and generator_id:
-        # Fallback to any existing generator to avoid 404 on deleted/stale generator IDs
-        gen_res = await db.execute(select(Generator))
-        generator = gen_res.scalars().first()
 
     if not generator:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")

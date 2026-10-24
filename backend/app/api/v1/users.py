@@ -64,6 +64,7 @@ async def create_user(
         email=data.email.strip() if data.email else None,
         full_name=data.full_name.strip(),
         password_hash=get_password_hash(data.password),
+        facility_id=data.facility_id if data.facility_id is not None else 1,
         is_active=True,
         is_superadmin=False,
     )
@@ -77,7 +78,11 @@ async def create_user(
         entity_type="User",
         entity_id=str(new_user.id),
         user_id=current_user.id,
-        details={"login": new_user.login, "roles": [r.name for r in roles]},
+        details={
+            "login": new_user.login,
+            "facility_id": new_user.facility_id,
+            "roles": [r.name for r in roles]
+        },
         ip_address=get_client_ip(request)
     )
     await db.commit()
@@ -123,6 +128,8 @@ async def update_user(
         target_user.full_name = data.full_name.strip()
     if data.email is not None:
         target_user.email = data.email.strip() if data.email else None
+    if data.facility_id is not None:
+        target_user.facility_id = data.facility_id
     if data.is_active is not None:
         if target_user.id == current_user.id and not data.is_active:
             raise HTTPException(
@@ -150,6 +157,7 @@ async def update_user(
             "login": target_user.login,
             "full_name": target_user.full_name,
             "email": target_user.email,
+            "facility_id": target_user.facility_id,
             "is_active": target_user.is_active,
             "roles": [r.name for r in target_user.roles]
         },

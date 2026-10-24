@@ -1,22 +1,26 @@
 import datetime
 import logging
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.config import settings
 from backend.app.database import get_db
 from backend.app.core.security import (
+    get_password_hash,
     verify_password,
     verify_dummy_password,
     create_access_token,
+    revoke_access_token,
     check_login_rate_limit,
     record_failed_login,
     reset_login_attempts,
 )
 from backend.app.models.user import User
-from backend.app.schemas.auth import LoginRequest, TokenResponse, UserSummary
-from backend.app.api.deps import get_current_user, get_client_ip
+from backend.app.schemas.auth import LoginRequest, ChangePasswordRequest, TokenResponse, UserSummary
+from backend.app.api.deps import get_current_user, get_client_ip, security_scheme
 from backend.app.services.audit_service import log_audit
 
 logger = logging.getLogger("auth")
@@ -123,7 +127,11 @@ async def login(
         token_delta = datetime.timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         cookie_max_age = None  # Session cookie
 
-    token = create_access_token({"sub": str(user.id), "login": user.login}, expires_delta=token_delta)
+    token = create_access_token(
+        {"sub": str(user.id), "login": user.login},
+        expires_delta=token_delta,
+        password_hash=user.password_hash
+    )
 
     is_https = (
         request.url.scheme == "https"
@@ -162,6 +170,7 @@ async def login(
             login=user.login,
             full_name=user.full_name,
             email=user.email,
+            facility_id=user.facility_id,
             is_active=user.is_active,
             is_superadmin=user.is_superadmin,
             roles=role_names,
@@ -183,6 +192,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
         login=current_user.login,
         full_name=current_user.full_name,
         email=current_user.email,
+        facility_id=current_user.facility_id,
         is_active=current_user.is_active,
         is_superadmin=current_user.is_superadmin,
         roles=role_names,
@@ -190,13 +200,74 @@ async def get_me(current_user: User = Depends(get_current_user)):
     )
 
 
-@router.post("/logout")
-async def logout(
+@router.post("/change-password")
+async def change_own_password(
+    payload: ChangePasswordRequest,
     request: Request,
     response: Response,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    """Зміна власного пароля будь-яким авторизованим користувачем (включно з SuperAdmin)."""
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Поточний пароль вказано невірно"
+        )
+
+    current_user.password_hash = get_password_hash(payload.new_password)
+    await db.flush()
+
+    # Issue a fresh access token with the new password signature so current session stays valid
+    new_token = create_access_token(
+        {"sub": str(current_user.id), "login": current_user.login},
+        password_hash=current_user.password_hash
+    )
+
+    is_https = (
+        request.url.scheme == "https"
+        or request.headers.get("x-forwarded-proto", "").lower() == "https"
+    )
+    response.set_cookie(
+        key="access_token",
+        value=new_token,
+        httponly=True,
+        samesite="lax",
+        secure=is_https,
+        path="/",
+    )
+
+    await log_audit(
+        db=db,
+        action="USER_CHANGED_OWN_PASSWORD",
+        entity_type="User",
+        entity_id=str(current_user.id),
+        user_id=current_user.id,
+        ip_address=get_client_ip(request)
+    )
+    await db.commit()
+    return {
+        "message": "Пароль успішно змінено",
+        "access_token": new_token,
+        "token_type": "bearer"
+    }
+
+
+@router.post("/logout")
+async def logout(
+    request: Request,
+    response: Response,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    # Revoke active JWT token (from Authorization header or cookie)
+    if credentials and credentials.credentials:
+        revoke_access_token(credentials.credentials)
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        revoke_access_token(cookie_token)
+
     response.delete_cookie(key="access_token", path="/")
     await log_audit(
         db=db,

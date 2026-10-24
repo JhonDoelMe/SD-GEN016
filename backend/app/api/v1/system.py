@@ -86,6 +86,7 @@ async def get_system_status(
     """
     Повертає реальний статус стану сервера:
     CPU, оперативна пам'ять, диск, час безвідмовної роботи (uptime), статус бази даних.
+    Чутливі деталі ядра ОС та точні патч-версії Python приховано для захисту від fingerprinting.
     """
     now = time.time()
     uptime_sec = max(0.0, now - SERVER_START_TIME)
@@ -156,8 +157,8 @@ async def get_system_status(
         "timezone": get_runtime_timezone(),
         "organization_name": get_runtime_setting("organization_name", "MAXI-UA LLC"),
         "environment": {
-            "platform": f"{platform.system()} {platform.release()}",
-            "python_version": platform.python_version(),
+            "platform": platform.system(),
+            "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
             "facilities_count": facility_count,
             "generators_count": generator_count
         }

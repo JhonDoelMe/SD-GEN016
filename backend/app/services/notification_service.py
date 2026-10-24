@@ -3,6 +3,7 @@ import base64
 import datetime
 import asyncio
 from typing import Dict, Any, Optional, Tuple, List
+from fastapi import HTTPException, status
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -94,7 +95,8 @@ async def subscribe_device(
     p256dh: str,
     auth: str,
     user_agent: Optional[str] = None,
-    facility_id: Optional[int] = None
+    facility_id: Optional[int] = None,
+    is_admin: bool = False
 ) -> PushSubscription:
     q = select(PushSubscription).where(PushSubscription.endpoint == endpoint)
     res = await db.execute(q)
@@ -102,6 +104,13 @@ async def subscribe_device(
 
     now = utc_now()
     if sub:
+        # Prevent IDOR hijacking of another user's active subscription unless same user or admin
+        if sub.user_id != user_id and not is_admin:
+            if sub.p256dh != p256dh or sub.auth != auth:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Ця підписка вже зареєстрована за іншим користувачем"
+                )
         sub.user_id = user_id
         sub.facility_id = facility_id
         sub.p256dh = p256dh
@@ -128,11 +137,22 @@ async def subscribe_device(
     return sub
 
 
-async def unsubscribe_device(db: AsyncSession, endpoint: str) -> bool:
+async def unsubscribe_device(
+    db: AsyncSession,
+    endpoint: str,
+    user_id: Optional[int] = None,
+    is_admin: bool = False
+) -> bool:
     q = select(PushSubscription).where(PushSubscription.endpoint == endpoint)
     res = await db.execute(q)
     sub = res.scalars().first()
     if sub:
+        # Prevent IDOR: non-admin users can only unsubscribe their own device endpoints
+        if user_id is not None and sub.user_id != user_id and not is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Ви можете відписати лише власний пристрій"
+            )
         sub.is_active = False
         sub.updated_at = utc_now()
         await db.commit()
@@ -197,11 +217,13 @@ async def send_push_notification(
     event_type: str,
     generator_id: Optional[int] = None,
     facility_id: Optional[int] = None,
-    url: str = "/"
+    url: str = "/",
+    target_user_id: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    Dispatches a push notification to all subscribed devices with anti-spam guards,
+    Dispatches a push notification to subscribed devices with anti-spam guards,
     strict rate limiting (e.g. maintenance <= 2 per day), and persistent logging.
+    If `target_user_id` is provided (e.g. for TEST notifications), sends ONLY to that user's own devices.
     """
     # 1. Check global notifications enabled
     if not get_runtime_setting("notifications_enabled", True):
@@ -284,11 +306,14 @@ async def send_push_notification(
 
     # 5. Fetch active subscriptions (with User eagerly loaded)
     sub_query = select(PushSubscription).options(selectinload(PushSubscription.user)).where(PushSubscription.is_active == True)
+    if target_user_id is not None:
+        sub_query = sub_query.where(PushSubscription.user_id == target_user_id)
     sub_res = await db.execute(sub_query)
     all_active = sub_res.scalars().all()
 
     # Routing rules:
-    # - Admins and SuperAdmins ALWAYS receive start, stop, critical fault, low fuel and maintenance notifications!
+    # - If target_user_id is set (e.g. test notification), send ONLY to that user's own active devices!
+    # - Otherwise, Admins and SuperAdmins ALWAYS receive start, stop, critical fault, low fuel and maintenance notifications!
     # - Other roles (e.g. operators) receive notifications matching their facility or global.
     subscriptions = []
     seen_endpoints = set()
@@ -297,6 +322,12 @@ async def send_push_notification(
             continue
         user = s.user
         if not user or not user.is_active:
+            continue
+
+        if target_user_id is not None:
+            if s.user_id == target_user_id:
+                subscriptions.append(s)
+                seen_endpoints.add(s.endpoint)
             continue
 
         is_admin_or_super = user.is_superadmin or any(r.name.lower() in ("admin", "superadmin") for r in (user.roles or []))

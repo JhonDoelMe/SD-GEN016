@@ -6,7 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.database import get_db
 from backend.app.models.user import User
 from backend.app.schemas.report import OperationalReportOut
-from backend.app.api.deps import require_permission
+from backend.app.api.deps import (
+    require_permission,
+    verify_facility_access,
+    verify_generator_facility_access,
+)
 from backend.app.services.report_service import (
     generate_operational_report, export_report_to_csv, generate_excel_report
 )
@@ -37,13 +41,15 @@ async def get_report_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("reports:view"))
 ):
+    eff_facility_id = verify_facility_access(current_user, facility_id)
+    await verify_generator_facility_access(db, current_user, generator_id)
     start_dt = parse_report_dt(start_date, is_end=False)
     end_dt = parse_report_dt(end_date, is_end=True)
 
     return await generate_operational_report(
         db=db,
         generator_id=generator_id,
-        facility_id=facility_id,
+        facility_id=eff_facility_id,
         start_date=start_dt,
         end_date=end_dt
     )
@@ -73,13 +79,15 @@ async def export_excel_report(
     current_user: User = Depends(require_permission("reports:export"))
 ):
     """Експорт детального багатосторінкового звіту в Excel (.xlsx)"""
+    eff_facility_id = verify_facility_access(current_user, facility_id)
+    await verify_generator_facility_access(db, current_user, generator_id)
     start_dt = parse_report_dt(start_date, is_end=False)
     end_dt = parse_report_dt(end_date, is_end=True)
 
     excel_bytes = await generate_excel_report(
         db=db,
         generator_id=generator_id,
-        facility_id=facility_id,
+        facility_id=eff_facility_id,
         start_date=start_dt,
         end_date=end_dt
     )

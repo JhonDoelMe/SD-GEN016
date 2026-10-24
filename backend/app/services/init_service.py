@@ -179,7 +179,7 @@ async def seed_initial_data(db: AsyncSession) -> None:
         ))
         await db.flush()
 
-    # 4. Seed or update Initial SuperAdmin
+    # 4. Seed Initial SuperAdmin (password is set ONLY on initial creation; not overwritten on every restart)
     admin_login = settings.INITIAL_ADMIN_LOGIN.strip()
     admin_pass = settings.INITIAL_ADMIN_PASSWORD
 
@@ -202,15 +202,15 @@ async def seed_initial_data(db: AsyncSession) -> None:
         await db.flush()
         logger.info(f"Initialized new SuperAdmin user: '{admin_login}'")
     else:
-        # Guarantee superadmin has updated password hash from settings.INITIAL_ADMIN_PASSWORD,
-        # is active, and has superadmin role
-        superadmin_user.password_hash = get_password_hash(admin_pass)
+        # Ensure superadmin remains active and has superadmin role, but preserve their custom password hash
+        if not superadmin_user.password_hash:
+            superadmin_user.password_hash = get_password_hash(admin_pass)
         superadmin_user.is_active = True
         superadmin_user.is_superadmin = True
         if "superadmin" in existing_roles and existing_roles["superadmin"] not in superadmin_user.roles:
             superadmin_user.roles.append(existing_roles["superadmin"])
         await db.flush()
-        logger.info(f"Synchronized SuperAdmin user '{admin_login}' with current settings/env password")
+        logger.info(f"Verified existing SuperAdmin user '{admin_login}' (password preserved)")
 
     # 5. Seed Default FuelStock if none exists
     stock_res = await db.execute(select(FuelStock))
@@ -229,4 +229,3 @@ async def seed_initial_data(db: AsyncSession) -> None:
     # 6. Load or initialize dynamic SystemSettings in DB & memory
     from backend.app.services.settings_service import load_system_settings
     await load_system_settings(db)
-

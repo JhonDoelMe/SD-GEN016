@@ -1,5 +1,6 @@
 import datetime
 import zipfile
+import logging
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -26,6 +27,10 @@ from backend.app.services.backup_service import (
     inspect_backup,
     restore_backup,
 )
+
+logger = logging.getLogger(__name__)
+
+MAX_BACKUP_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB limit for uploaded backup archives
 
 router = APIRouter(prefix="/backups", tags=["Резервне копіювання та бекапи"])
 
@@ -233,9 +238,10 @@ async def inspect_backup_file(
     try:
         return inspect_backup(file_path)
     except Exception as e:
+        logger.warning(f"Backup inspect failed for {safe_name}: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Не вдалося прочитати маніфест резервної копії: {str(e)}"
+            detail="Не вдалося прочитати маніфест резервної копії. Можливо, архів пошкоджено."
         )
 
 
@@ -279,10 +285,16 @@ async def restore_from_backup(
             creator_ip=client_ip
         )
         return result
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
     except Exception as e:
+        logger.error(f"Error restoring backup {safe_name}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Помилка відновлення системи: {str(e)}"
+            detail="Внутрішня помилка під час відновлення системи з резервної копії"
         )
 
 
@@ -318,14 +330,31 @@ async def upload_and_restore_backup(
 
     saved_path = backup_dir / target_name
 
+    # Read uploaded file in chunks with strict size limit (100 MB)
+    total_read = 0
     try:
-        content = await file.read()
         with open(saved_path, "wb") as f:
-            f.write(content)
+            while True:
+                chunk = await file.read(65536)
+                if not chunk:
+                    break
+                total_read += len(chunk)
+                if total_read > MAX_BACKUP_UPLOAD_BYTES:
+                    f.close()
+                    saved_path.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="Розмір завантажуваного архіву перевищує допустимий ліміт (100 МБ)"
+                    )
+                f.write(chunk)
+    except HTTPException:
+        raise
     except Exception as e:
+        saved_path.unlink(missing_ok=True)
+        logger.error(f"Error saving uploaded backup file: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Помилка збереження завантаженого файлу: {str(e)}"
+            detail="Помилка збереження завантаженого файлу на сервері"
         )
 
     # Validate zip integrity
@@ -354,10 +383,17 @@ async def upload_and_restore_backup(
             creator_ip=client_ip
         )
         return result
+    except ValueError as ve:
+        saved_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
     except Exception as e:
+        logger.error(f"Error restoring uploaded backup {target_name}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Помилка відновлення системи: {str(e)}"
+            detail="Внутрішня помилка під час відновлення системи з завантаженої копії"
         )
 
 

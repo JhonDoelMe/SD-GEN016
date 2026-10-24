@@ -86,6 +86,9 @@ def ensure_schema_updates(sync_conn):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 0. Check for insecure default secrets and emit warnings if found
+    settings.check_security_warnings()
+
     # 1. Create DB schema if needed and apply missing columns to existing DBs
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

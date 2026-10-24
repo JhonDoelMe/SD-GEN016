@@ -20,14 +20,18 @@ def utc_now() -> datetime.datetime:
 
 
 async def get_or_create_default_generator(db: AsyncSession, generator_id: Optional[int] = None, facility_id: Optional[int] = None) -> Generator:
-    if generator_id:
+    if generator_id is not None:
         query = select(Generator).options(selectinload(Generator.schedules)).where(Generator.id == generator_id)
-        if facility_id:
+        if facility_id is not None:
             query = query.where(Generator.facility_id == facility_id)
         res = await db.execute(query)
         gen = res.scalars().first()
-        if gen:
-            return gen
+        if not gen:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Генератор не знайдено"
+            )
+        return gen
 
     query = select(Generator).options(selectinload(Generator.schedules))
     if facility_id:

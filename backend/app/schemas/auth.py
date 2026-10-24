@@ -43,11 +43,22 @@ class LoginRequest(BaseModel):
         return v
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        return validate_password_complexity(v)
+
+
 class UserSummary(BaseModel):
     id: int
     login: str
     full_name: str
     email: Optional[str] = None
+    facility_id: Optional[int] = None
     is_active: bool
     is_superadmin: bool
     roles: List[str] = []
@@ -61,6 +72,7 @@ class UserCreate(BaseModel):
     password: str = Field(..., min_length=8, max_length=128)
     full_name: str = Field(..., min_length=1, max_length=150)
     email: Optional[str] = Field(None, max_length=150)
+    facility_id: Optional[int] = Field(default=1)
     role_ids: List[int] = []
 
     @field_validator("login")
@@ -103,6 +115,7 @@ class UserUpdate(BaseModel):
     login: Optional[str] = Field(None, min_length=3, max_length=50)
     full_name: Optional[str] = Field(None, max_length=150)
     email: Optional[str] = Field(None, max_length=150)
+    facility_id: Optional[int] = None
     is_active: Optional[bool] = None
     role_ids: Optional[List[int]] = None
     password: Optional[str] = Field(None, min_length=8, max_length=128)
@@ -159,6 +172,7 @@ class UserOut(BaseModel):
     login: str
     full_name: str
     email: Optional[str] = None
+    facility_id: Optional[int] = None
     is_active: bool
     is_superadmin: bool
     created_at: datetime.datetime

@@ -11,12 +11,20 @@ from backend.app.schemas.generator import (
     GeneratorOut, GeneratorWizardSetup, GeneratorCreate, GeneratorStartRequest,
     GeneratorStopRequest, GeneratorRunOut, GeneratorUpdate, GeneratorManualRunCreate
 )
-from backend.app.api.deps import get_current_user, require_permission, get_client_ip
+from backend.app.api.deps import (
+    get_current_user,
+    require_permission,
+    get_client_ip,
+    is_user_admin_or_super,
+    verify_facility_access,
+    verify_generator_facility_access,
+)
 from backend.app.services.generator_service import (
     get_or_create_default_generator, setup_generator_wizard,
     start_generator, stop_generator, get_generators_list,
     create_generator, delete_generator, update_generator, add_manual_run
 )
+
 
 def format_seconds(seconds: Optional[int]) -> Optional[str]:
     if seconds is None:
@@ -62,7 +70,9 @@ async def get_generator(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    gen = await get_or_create_default_generator(db, generator_id=generator_id, facility_id=facility_id)
+    eff_facility_id = verify_facility_access(current_user, facility_id)
+    await verify_generator_facility_access(db, current_user, generator_id)
+    gen = await get_or_create_default_generator(db, generator_id=generator_id, facility_id=eff_facility_id)
     return gen
 
 
@@ -73,7 +83,8 @@ async def list_all_generators(
     current_user: User = Depends(get_current_user)
 ):
     """Список усіх генераторів (з можливістю фільтрації за об'єктом)"""
-    return await get_generators_list(db, facility_id=facility_id)
+    eff_facility_id = verify_facility_access(current_user, facility_id)
+    return await get_generators_list(db, facility_id=eff_facility_id)
 
 
 @router.post("", response_model=GeneratorOut, status_code=status.HTTP_201_CREATED)
@@ -84,6 +95,7 @@ async def create_new_generator_api(
     current_user: User = Depends(require_permission("generator:configure"))
 ):
     """Створити новий генератор"""
+    verify_facility_access(current_user, data.facility_id)
     client_ip = get_client_ip(request)
     return await create_generator(db, data, current_user.id, client_ip)
 
@@ -96,6 +108,7 @@ async def delete_generator_api(
     current_user: User = Depends(require_permission("generator:configure"))
 ):
     """Видалити генератор"""
+    await verify_generator_facility_access(db, current_user, generator_id)
     client_ip = get_client_ip(request)
     return await delete_generator(db, generator_id, current_user.id, client_ip)
 
@@ -109,6 +122,9 @@ async def update_generator_api(
     current_user: User = Depends(require_permission("generator:configure"))
 ):
     """Швидке оновлення налаштувань генератора (назва, модель, бак, розхід тощо)"""
+    await verify_generator_facility_access(db, current_user, generator_id)
+    if data.facility_id is not None:
+        verify_facility_access(current_user, data.facility_id)
     client_ip = get_client_ip(request)
     return await update_generator(db, generator_id, data, current_user.id, client_ip)
 
@@ -120,6 +136,8 @@ async def setup_wizard(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("generator:configure"))
 ):
+    if setup_data.facility_id is not None:
+        verify_facility_access(current_user, setup_data.facility_id)
     gen = await setup_generator_wizard(
         db=db,
         setup_data=setup_data,
@@ -136,7 +154,9 @@ async def api_start_generator(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("generator:start"))
 ):
-    gen = await get_or_create_default_generator(db, generator_id=data.generator_id)
+    await verify_generator_facility_access(db, current_user, data.generator_id)
+    eff_fac_id = None if is_user_admin_or_super(current_user) else current_user.facility_id
+    gen = await get_or_create_default_generator(db, generator_id=data.generator_id, facility_id=eff_fac_id)
     run = await start_generator(
         db=db,
         generator_id=gen.id,
@@ -154,7 +174,9 @@ async def api_stop_generator(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("generator:stop"))
 ):
-    gen = await get_or_create_default_generator(db, generator_id=data.generator_id)
+    await verify_generator_facility_access(db, current_user, data.generator_id)
+    eff_fac_id = None if is_user_admin_or_super(current_user) else current_user.facility_id
+    gen = await get_or_create_default_generator(db, generator_id=data.generator_id, facility_id=eff_fac_id)
     run = await stop_generator(
         db=db,
         generator_id=gen.id,
@@ -165,9 +187,6 @@ async def api_stop_generator(
     return run_to_out(run, user_name=current_user.full_name)
 
 
-
-
-
 @router.post("/manual-run", response_model=GeneratorRunOut, status_code=status.HTTP_201_CREATED)
 async def api_add_manual_run(
     data: GeneratorManualRunCreate,
@@ -176,7 +195,9 @@ async def api_add_manual_run(
     current_user: User = Depends(require_permission("generator:start"))
 ):
     """Внесення сеансу роботи генератора вручну (з паперового журналу при відсутності зв'язку)"""
-    gen = await get_or_create_default_generator(db, generator_id=data.generator_id)
+    await verify_generator_facility_access(db, current_user, data.generator_id)
+    eff_fac_id = None if is_user_admin_or_super(current_user) else current_user.facility_id
+    gen = await get_or_create_default_generator(db, generator_id=data.generator_id, facility_id=eff_fac_id)
     run = await add_manual_run(
         db=db,
         generator_id=gen.id,
@@ -193,9 +214,14 @@ async def get_active_run(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    await verify_generator_facility_access(db, current_user, generator_id)
     query = select(GeneratorRun).options(selectinload(GeneratorRun.user)).where(GeneratorRun.status == "RUNNING")
     if generator_id:
         query = query.where(GeneratorRun.generator_id == generator_id)
+    elif not is_user_admin_or_super(current_user) and current_user.facility_id:
+        query = query.join(Generator, GeneratorRun.generator_id == Generator.id).where(
+            Generator.facility_id == current_user.facility_id
+        )
     query = query.order_by(GeneratorRun.id.desc())
     res = await db.execute(query)
     run = res.scalars().first()
@@ -211,9 +237,14 @@ async def list_runs(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    await verify_generator_facility_access(db, current_user, generator_id)
     query = select(GeneratorRun).options(selectinload(GeneratorRun.user))
     if generator_id:
         query = query.where(GeneratorRun.generator_id == generator_id)
+    elif not is_user_admin_or_super(current_user) and current_user.facility_id:
+        query = query.join(Generator, GeneratorRun.generator_id == Generator.id).where(
+            Generator.facility_id == current_user.facility_id
+        )
     query = query.order_by(GeneratorRun.id.desc()).limit(limit)
     res = await db.execute(query)
     runs = res.scalars().all()

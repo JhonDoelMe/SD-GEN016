@@ -6,9 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
 from backend.app.models.user import User
+from backend.app.models.generator import Generator
 from backend.app.models.fault import Fault
 from backend.app.schemas.fault import FaultCreate, FaultStatusUpdate, FaultOut
-from backend.app.api.deps import get_current_user, require_permission, get_client_ip
+from backend.app.api.deps import (
+    get_current_user,
+    require_permission,
+    get_client_ip,
+    is_user_admin_or_super,
+    verify_generator_facility_access,
+)
 from backend.app.services.fault_service import create_fault, update_fault_status
 
 router = APIRouter(prefix="/faults", tags=["Несправності"])
@@ -22,6 +29,7 @@ async def list_faults(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("faults:view"))
 ):
+    await verify_generator_facility_access(db, current_user, generator_id)
     q = (
         select(Fault)
         .options(selectinload(Fault.user), selectinload(Fault.resolved_by))
@@ -30,6 +38,10 @@ async def list_faults(
     )
     if generator_id:
         q = q.where(Fault.generator_id == generator_id)
+    elif not is_user_admin_or_super(current_user) and current_user.facility_id:
+        q = q.join(Generator, Fault.generator_id == Generator.id).where(
+            Generator.facility_id == current_user.facility_id
+        )
     if status_filter:
         q = q.where(Fault.status == status_filter)
     res = await db.execute(q)
@@ -64,6 +76,7 @@ async def report_fault(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("faults:create"))
 ):
+    await verify_generator_facility_access(db, current_user, data.generator_id)
     fault = await create_fault(
         db=db,
         fault_data=data,
@@ -98,6 +111,9 @@ async def change_fault_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("faults:manage"))
 ):
+    existing_fault = await db.get(Fault, fault_id)
+    if existing_fault:
+        await verify_generator_facility_access(db, current_user, existing_fault.generator_id)
     fault = await update_fault_status(
         db=db,
         fault_id=fault_id,

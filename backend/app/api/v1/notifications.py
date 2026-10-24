@@ -1,11 +1,18 @@
 import json
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
-from backend.app.api.deps import get_current_user, get_current_admin, require_permission
+from backend.app.api.deps import (
+    get_current_user,
+    get_current_admin,
+    require_permission,
+    is_user_admin_or_super,
+    verify_facility_access,
+    verify_generator_facility_access,
+)
 from backend.app.models.user import User
 from backend.app.models.notification import NotificationLog, PushSubscription
 from backend.app.schemas.notification import (
@@ -47,7 +54,7 @@ async def subscribe_push_notifications(
     current_user: User = Depends(get_current_user)
 ):
     """Register or update current device push subscription for the logged in user."""
-    facility_id = sub_in.facility_id or current_user.facility_id
+    facility_id = verify_facility_access(current_user, sub_in.facility_id or current_user.facility_id)
     sub = await subscribe_device(
         db=db,
         user_id=current_user.id,
@@ -55,7 +62,8 @@ async def subscribe_push_notifications(
         p256dh=sub_in.keys.p256dh,
         auth=sub_in.keys.auth,
         user_agent=sub_in.user_agent,
-        facility_id=facility_id
+        facility_id=facility_id,
+        is_admin=is_user_admin_or_super(current_user)
     )
     return sub
 
@@ -70,7 +78,12 @@ async def unsubscribe_push_notifications(
     endpoint = payload.get("endpoint")
     if not endpoint:
         raise HTTPException(status_code=400, detail="Параметр endpoint є обов'язковим")
-    ok = await unsubscribe_device(db=db, endpoint=endpoint)
+    ok = await unsubscribe_device(
+        db=db,
+        endpoint=endpoint,
+        user_id=current_user.id,
+        is_admin=is_user_admin_or_super(current_user)
+    )
     return {"success": ok}
 
 
@@ -115,17 +128,19 @@ async def send_test_notification(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("notifications:configure"))
 ):
-    """Send an immediate test push notification to verify sound, vibration and system drawer banner."""
+    """Send an immediate test push notification to the current user's own devices."""
     title = payload.title or "🔔 Тестове сповіщення Service Desk"
     body = payload.body or f"Привіт, {current_user.full_name}! Сповіщення успішно налаштовано для вашого облікового запису."
 
+    # Restrict test notifications to ONLY the current user's own subscribed devices (prevents broadcast phishing)
     res = await send_push_notification(
         db=db,
         title=title,
         body=body,
         event_type="TEST",
         facility_id=current_user.facility_id,
-        url="/?tab=tab-notifications"
+        url="/?tab=tab-notifications",
+        target_user_id=current_user.id
     )
     return {
         "success": True,
@@ -136,12 +151,17 @@ async def send_test_notification(
 
 @router.get("/logs", response_model=List[NotificationLogOut])
 async def get_notification_logs(
-    limit: int = 30,
+    limit: int = Query(30, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("notifications:view"))
 ):
     """Get history of dispatched notifications."""
     q = select(NotificationLog).order_by(NotificationLog.created_at.desc()).limit(limit)
+    if not is_user_admin_or_super(current_user) and current_user.facility_id:
+        q = q.where(
+            (NotificationLog.facility_id == current_user.facility_id)
+            | (NotificationLog.facility_id == None)  # noqa: E711
+        )
     res = await db.execute(q)
     logs = res.scalars().all()
     return logs
@@ -154,5 +174,6 @@ async def check_generator_maintenance_notification(
     current_user: User = Depends(get_current_user)
 ):
     """Manually check maintenance schedule and trigger reminder if due (max 2 times per day)."""
+    await verify_generator_facility_access(db, current_user, generator_id)
     await check_and_notify_maintenance_due(db, generator_id)
     return {"success": True, "message": "Перевірку регламенту ТО виконано"}

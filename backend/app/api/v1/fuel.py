@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +13,14 @@ from backend.app.schemas.fuel import (
     FuelStockCreate, FuelStockUpdate, FuelStockOut, FuelReceiptCreate, FuelReceiptOut,
     FuelTransferCreate, FuelTransferOut, FuelBalancesSummary
 )
-from backend.app.api.deps import get_current_user, require_permission, get_client_ip
+from backend.app.api.deps import (
+    get_current_user,
+    require_permission,
+    get_client_ip,
+    is_user_admin_or_super,
+    verify_facility_access,
+    verify_generator_facility_access,
+)
 from backend.app.services.fuel_service import (
     get_or_create_default_stock, list_fuel_stocks, create_fuel_stock,
     update_fuel_stock, delete_fuel_stock,
@@ -30,7 +37,9 @@ async def fuel_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("fuel:view"))
 ):
-    return await get_fuel_balances_summary(db, facility_id=facility_id, generator_id=generator_id)
+    eff_facility_id = verify_facility_access(current_user, facility_id)
+    await verify_generator_facility_access(db, current_user, generator_id)
+    return await get_fuel_balances_summary(db, facility_id=eff_facility_id, generator_id=generator_id)
 
 
 @router.get("/stocks", response_model=List[FuelStockOut])
@@ -40,7 +49,8 @@ async def get_stocks_list(
     current_user: User = Depends(require_permission("fuel:view"))
 ):
     """Список усіх складів ГСМ (за об'єктом або загальний)"""
-    stocks = await list_fuel_stocks(db, facility_id=facility_id)
+    eff_facility_id = verify_facility_access(current_user, facility_id)
+    stocks = await list_fuel_stocks(db, facility_id=eff_facility_id)
     return [
         FuelStockOut(
             id=s.id,
@@ -64,6 +74,7 @@ async def create_stock_api(
     current_user: User = Depends(require_permission("fuel:configure"))
 ):
     """Створити новий склад ГСМ для обраного об'єкта"""
+    verify_facility_access(current_user, data.facility_id)
     client_ip = get_client_ip(request)
     stock = await create_fuel_stock(db, data, current_user.id, client_ip)
     return FuelStockOut(
@@ -86,6 +97,11 @@ async def update_stock_api(
     current_user: User = Depends(require_permission("fuel:configure"))
 ):
     """Редагувати склад ГСМ (назву, тип палива, об'єкт)"""
+    existing = await db.get(FuelStock, stock_id)
+    if existing:
+        verify_facility_access(current_user, existing.facility_id)
+    if data.facility_id is not None:
+        verify_facility_access(current_user, data.facility_id)
     client_ip = get_client_ip(request)
     stock = await update_fuel_stock(db, stock_id, data, current_user.id, client_ip)
     return FuelStockOut(
@@ -107,6 +123,9 @@ async def delete_stock_api(
     current_user: User = Depends(require_permission("fuel:configure"))
 ):
     """Видалити склад ГСМ із безпечним перенесенням залишків та історії на інший склад об'єкта"""
+    existing = await db.get(FuelStock, stock_id)
+    if existing:
+        verify_facility_access(current_user, existing.facility_id)
     client_ip = get_client_ip(request)
     return await delete_fuel_stock(db, stock_id, current_user.id, client_ip)
 
@@ -117,7 +136,8 @@ async def get_stock(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("fuel:view"))
 ):
-    stock = await get_or_create_default_stock(db, facility_id=facility_id)
+    eff_facility_id = verify_facility_access(current_user, facility_id)
+    stock = await get_or_create_default_stock(db, facility_id=eff_facility_id)
     return FuelStockOut(
         id=stock.id,
         facility_id=stock.facility_id,
@@ -136,6 +156,17 @@ async def create_receipt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("fuel:receipt"))
 ):
+    if data.facility_id is not None:
+        verify_facility_access(current_user, data.facility_id)
+    elif not is_user_admin_or_super(current_user) and current_user.facility_id:
+        data.facility_id = current_user.facility_id
+
+    if data.stock_id:
+        st = await db.get(FuelStock, data.stock_id)
+        if not st:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+        verify_facility_access(current_user, st.facility_id)
+
     receipt = await add_fuel_receipt(
         db=db,
         receipt_data=data,
@@ -183,14 +214,15 @@ async def list_receipts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("fuel:view"))
 ):
+    eff_facility_id = verify_facility_access(current_user, facility_id)
     q = select(FuelReceipt).options(
         selectinload(FuelReceipt.user),
         selectinload(FuelReceipt.stock).selectinload(FuelStock.facility)
     ).order_by(FuelReceipt.id.desc()).limit(limit)
 
-    if facility_id:
+    if eff_facility_id:
         q = q.outerjoin(FuelStock, FuelReceipt.stock_id == FuelStock.id).where(
-            or_(FuelReceipt.facility_id == facility_id, FuelStock.facility_id == facility_id)
+            or_(FuelReceipt.facility_id == eff_facility_id, FuelStock.facility_id == eff_facility_id)
         )
 
     res = await db.execute(q)
@@ -224,6 +256,20 @@ async def create_transfer(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("fuel:transfer"))
 ):
+    if data.facility_id is not None:
+        verify_facility_access(current_user, data.facility_id)
+    elif not is_user_admin_or_super(current_user) and current_user.facility_id:
+        data.facility_id = current_user.facility_id
+
+    if data.generator_id is not None:
+        await verify_generator_facility_access(db, current_user, data.generator_id)
+
+    if data.stock_id is not None:
+        st = await db.get(FuelStock, data.stock_id)
+        if not st:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+        verify_facility_access(current_user, st.facility_id)
+
     transfer = await transfer_fuel_to_tank(
         db=db,
         transfer_data=data,
@@ -274,6 +320,9 @@ async def list_transfers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    eff_facility_id = verify_facility_access(current_user, facility_id)
+    await verify_generator_facility_access(db, current_user, generator_id)
+
     q = select(FuelTransfer).options(
         selectinload(FuelTransfer.user),
         selectinload(FuelTransfer.stock).selectinload(FuelStock.facility),
@@ -282,8 +331,8 @@ async def list_transfers(
 
     if generator_id:
         q = q.where(FuelTransfer.generator_id == generator_id)
-    elif facility_id:
-        q = q.where(FuelTransfer.facility_id == facility_id)
+    elif eff_facility_id:
+        q = q.where(FuelTransfer.facility_id == eff_facility_id)
 
     res = await db.execute(q)
     transfers = res.scalars().all()

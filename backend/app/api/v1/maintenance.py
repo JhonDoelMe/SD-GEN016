@@ -6,11 +6,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
 from backend.app.models.user import User
+from backend.app.models.generator import Generator
 from backend.app.models.maintenance import MaintenanceRecord
 from backend.app.schemas.maintenance import (
     MaintenanceScheduleOut, MaintenanceRecordCreate, MaintenanceRecordOut
 )
-from backend.app.api.deps import get_current_user, require_permission, get_client_ip
+from backend.app.api.deps import (
+    get_current_user,
+    require_permission,
+    get_client_ip,
+    is_user_admin_or_super,
+    verify_generator_facility_access,
+)
 from backend.app.services.maintenance_service import (
     get_maintenance_schedule_status, record_maintenance, recalculate_schedule
 )
@@ -24,6 +31,7 @@ async def get_schedule(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("maintenance:view"))
 ):
+    await verify_generator_facility_access(db, current_user, generator_id)
     return await get_maintenance_schedule_status(db, generator_id)
 
 
@@ -35,6 +43,7 @@ async def api_recalculate_schedule(
     current_user: User = Depends(require_permission("maintenance:perform_scheduled"))
 ):
     """Перерахувати графік планового ТО згідно з нормативом та фактичними мотогодинами"""
+    await verify_generator_facility_access(db, current_user, generator_id)
     client_ip = get_client_ip(request) if request else None
     return await recalculate_schedule(db, generator_id=generator_id, user_id=current_user.id, ip_address=client_ip)
 
@@ -53,6 +62,8 @@ async def create_maintenance_record(
     else:
         checker = require_permission("maintenance:create_intermediate")
         await checker(current_user)
+
+    await verify_generator_facility_access(db, current_user, data.generator_id)
 
     record = await record_maintenance(
         db=db,
@@ -84,9 +95,14 @@ async def list_maintenance_records(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("maintenance:view"))
 ):
+    await verify_generator_facility_access(db, current_user, generator_id)
     q = select(MaintenanceRecord).options(selectinload(MaintenanceRecord.user)).order_by(MaintenanceRecord.id.desc()).limit(limit)
     if generator_id:
         q = q.where(MaintenanceRecord.generator_id == generator_id)
+    elif not is_user_admin_or_super(current_user) and current_user.facility_id:
+        q = q.join(Generator, MaintenanceRecord.generator_id == Generator.id).where(
+            Generator.facility_id == current_user.facility_id
+        )
     res = await db.execute(q)
     records = res.scalars().all()
     return [

@@ -37,10 +37,13 @@ uploads/*
 backups/*
 !backups/.gitkeep
 
-# Environment variables & custom SSL certificates
+# Environment variables & SSL certificates
 .env
 docker/ssl/*
 !docker/ssl/.gitkeep
+docker/ssl-fallback/*.pem
+docker/ssl-fallback/*.key
+!docker/ssl-fallback/.gitkeep
 
 # OS
 .DS_Store

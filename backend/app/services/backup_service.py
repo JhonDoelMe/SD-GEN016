@@ -53,6 +53,59 @@ def compute_sha256(file_path: Path) -> str:
     return sha.hexdigest()
 
 
+SENSITIVE_ENV_KEYWORDS = ("SECRET", "PASSWORD", "PRIVATE_KEY", "TOKEN", "DATABASE_URL")
+MAX_ZIP_FILES = 10_000
+MAX_UNCOMPRESSED_BYTES = 500 * 1024 * 1024  # 500 MB
+
+
+def _copy_env_redacted(src_env: Path, dst_env: Path) -> None:
+    """Copies .env file while masking sensitive secret values."""
+    lines = src_env.read_text(encoding="utf-8", errors="replace").splitlines()
+    redacted_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            redacted_lines.append(line)
+            continue
+        key, _, val = line.partition("=")
+        key_upper = key.strip().upper()
+        if any(kw in key_upper for kw in SENSITIVE_ENV_KEYWORDS):
+            redacted_lines.append(f"{key.strip()}=***REDACTED***")
+        else:
+            redacted_lines.append(line)
+    dst_env.write_text("\n".join(redacted_lines) + "\n", encoding="utf-8")
+
+
+def _safe_extract_zip(zf: zipfile.ZipFile, dest_dir: Path) -> None:
+    """
+    Safely extracts a ZIP archive into dest_dir with protection against:
+    - Zip Slip (path traversal outside dest_dir)
+    - Zip Bomb (excessive uncompressed size or file count)
+    """
+    dest_resolved = dest_dir.resolve()
+    infolist = zf.infolist()
+
+    if len(infolist) > MAX_ZIP_FILES:
+        raise ValueError(f"Архів містить забагато файлів ({len(infolist)} > {MAX_ZIP_FILES}). Можлива Zip-бомба.")
+
+    total_uncompressed = 0
+    for info in infolist:
+        total_uncompressed += info.file_size
+        if total_uncompressed > MAX_UNCOMPRESSED_BYTES:
+            raise ValueError("Розмір розпакованих даних перевищує допустимий ліміт (500 МБ). Можлива Zip-бомба.")
+
+        member_path = Path(info.filename)
+        if member_path.is_absolute() or ".." in member_path.parts:
+            raise ValueError(f"Виявлено небезпечний шлях у архіві (Path Traversal): {info.filename}")
+
+        target_path = (dest_resolved / member_path).resolve()
+        if not target_path.is_relative_to(dest_resolved):
+            raise ValueError(f"Виявлено спробу виходу за межі цільової директорії: {info.filename}")
+
+    for info in infolist:
+        zf.extract(info, path=dest_resolved)
+
+
 # Strict topological order of tables for data export, import, and cascade-free deletion
 TABLE_ORDER = [
     ("permissions", Permission),
@@ -93,7 +146,8 @@ def model_row_to_dict(row: Any) -> Dict[str, Any]:
     return data
 
 
-def prepare_rows_for_insert(model_cls: Any, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def prepare_rows_for_insert(model_cls: Any, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]:
+]:
     """Clean and deserialize row dictionaries matching the model column types."""
     cols = model_cls.__table__.columns
     cleaned_rows = []
@@ -156,7 +210,7 @@ async def create_backup(
     """
     Creates a full or partial backup packaged as a .zip archive:
     - 'full': Complete copy of the server (all files, code, configs, uploads, scripts) + DB dump.
-    - 'partial' (or 'db_only'): Dump of database tables + SQLite DB + system configs + .env.
+    - 'partial' (or 'db_only'): Dump of database tables + SQLite DB + system configs + redacted .env.
     """
     backup_dir = get_backup_dir()
     now = now_facility()
@@ -187,13 +241,16 @@ async def create_backup(
                 shutil.copy2(root_db, staging_dir / "service_desk.db")
                 included_components.append("service_desk.db (фізична база даних)")
 
-        # 3. Copy configuration files (.env, .env.example, docker-compose.yml, nginx.conf)
+        # 3. Copy configuration files (.env with secrets redacted, .env.example, docker-compose.yml, nginx.conf)
         config_staging = staging_dir / "config"
         config_staging.mkdir(exist_ok=True)
         for env_name in [".env", ".env.example"]:
             env_file = project_root / env_name
             if env_file.exists():
-                shutil.copy2(env_file, config_staging / env_name)
+                if env_name == ".env":
+                    _copy_env_redacted(env_file, config_staging / env_name)
+                else:
+                    shutil.copy2(env_file, config_staging / env_name)
                 included_components.append(f"config/{env_name}")
 
         for cfg_rel in ["docker-compose.yml", "alembic.ini", "Dockerfile"]:
@@ -217,7 +274,7 @@ async def create_backup(
                 ".git", ".pytest_cache", "__pycache__", "backups", "venv", ".venv",
                 ".idea", ".vscode", "node_modules"
             }
-            exclude_extensions = {".pyc", ".pyo", ".zip"}
+            exclude_extensions = {".pyc", ".pyo", ".zip", ".pem", ".key"}
 
             target_dirs = ["backend", "frontend", "docker", "scripts", "docs", "uploads"]
             for dir_name in target_dirs:
@@ -238,11 +295,14 @@ async def create_backup(
                             except Exception:
                                 pass
 
-            # Copy root project files
+            # Copy root project files (redact .env if present)
             for root_f in project_root.iterdir():
                 if root_f.is_file() and not any(root_f.name.endswith(ext) for ext in exclude_extensions):
                     try:
-                        shutil.copy2(root_f, server_staging / root_f.name)
+                        if root_f.name == ".env":
+                            _copy_env_redacted(root_f, server_staging / root_f.name)
+                        else:
+                            shutil.copy2(root_f, server_staging / root_f.name)
                         total_server_files += 1
                     except Exception:
                         pass
@@ -475,7 +535,7 @@ async def restore_backup(
 ) -> Dict[str, Any]:
     """
     Performs full system restore from backup .zip:
-    1. Validates zip file and manifest.
+    1. Validates zip file and manifest (with Zip Slip & Zip Bomb protection).
     2. Creates an automated safety snapshot before starting.
     3. Cleans up existing DB tables (handling foreign keys and engines).
     4. Populates database from database_export.json with proper deserialization.
@@ -492,9 +552,9 @@ async def restore_backup(
     staging_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        # 1. Unzip archive into staging
+        # 1. Safely unzip archive into staging (protects against Zip Slip & Zip Bomb)
         with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(staging_dir)
+            _safe_extract_zip(zf, staging_dir)
 
         # 2. Validate manifest and database_export.json
         manifest_file = staging_dir / "manifest.json"
@@ -582,10 +642,13 @@ async def restore_backup(
                 if u_src.exists() and u_src.is_dir():
                     for root, _, files in os.walk(u_src):
                         rel_dir = Path(root).relative_to(u_src)
-                        cur_target = uploads_dest / rel_dir
+                        cur_target = (uploads_dest / rel_dir).resolve()
+                        if not cur_target.is_relative_to(uploads_dest):
+                            continue
                         cur_target.mkdir(parents=True, exist_ok=True)
                         for f_name in files:
-                            shutil.copy2(Path(root) / f_name, cur_target / f_name)
+                            safe_f = Path(f_name).name
+                            shutil.copy2(Path(root) / safe_f, cur_target / safe_f)
                             restored_files_count += 1
 
         # 8. Audit log
