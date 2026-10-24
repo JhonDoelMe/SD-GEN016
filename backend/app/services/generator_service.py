@@ -358,6 +358,19 @@ async def stop_generator(
             duration_hours = round(end_hours - run.start_hours, 2)
             duration_seconds = max(elapsed_seconds, int(round(duration_hours * 3600)))
             calculated_consumption = round(duration_hours * generator.nominal_consumption_l_per_h, 2)
+
+            # Typo Guard ("Запобіжник опечатки мотогодин"):
+            elapsed_hours = elapsed_seconds / 3600.0
+            is_suspicious = (duration_hours > 14.0) or (elapsed_seconds >= 60 and abs(duration_hours - elapsed_hours) > 2.0)
+            if is_suspicious and not stop_data.force_confirm:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Запобіжник опечатки: напрацювання за лічильником ({duration_hours:.2f} год) суттєво відрізняється "
+                        f"від часу роботи за таймером ({elapsed_hours:.2f} год). "
+                        f"Перевірте введені мотогодини або встановіть підтвердження."
+                    )
+                )
         else:
             # Operator entered same counter value (very short run)
             duration_seconds = elapsed_seconds
@@ -731,6 +744,19 @@ async def add_manual_run(
         hours_worked = round(end_hours - start_hours, 2)
         if hours_worked > 0:
             duration_hours = hours_worked
+
+        # Typo Guard for manual log entries:
+        time_diff_hours = duration_seconds / 3600.0
+        is_suspicious_manual = (hours_worked > 24.0) or (abs(hours_worked - time_diff_hours) > 3.0)
+        if is_suspicious_manual and not data.force_confirm:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Запобіжник опечатки: напрацювання за лічильником ({hours_worked:.2f} год) суттєво розходиться "
+                    f"із часовим інтервалом запису ({time_diff_hours:.2f} год). "
+                    f"Перевірте мотогодини або підтвердіть дію."
+                )
+            )
     else:
         end_hours = round(start_hours + duration_hours, 2)
 

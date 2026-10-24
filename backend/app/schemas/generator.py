@@ -83,6 +83,7 @@ class GeneratorOut(BaseModel):
 class GeneratorStartRequest(BaseModel):
     generator_id: Optional[int] = None
     fuel_level_l: Optional[float] = None
+    force_start_with_maintenance: bool = Field(False, description="Дозвіл запуску генератора при простроченому ТО")
 
 
 class GeneratorStopRequest(BaseModel):
@@ -90,6 +91,7 @@ class GeneratorStopRequest(BaseModel):
     end_hours: Optional[float] = Field(None, description="Показання лічильника мотогодин при зупинці (якщо не вказано, розраховується автоматично)")
     end_fuel_level_l: Optional[float] = None
     note: Optional[str] = None
+    force_confirm: bool = Field(False, description="Підтвердження операції при підозрілій різниці мотогодин")
 
 
 class GeneratorManualRunCreate(BaseModel):
@@ -100,6 +102,7 @@ class GeneratorManualRunCreate(BaseModel):
     end_hours: Optional[float] = Field(None, ge=0, description="Кінцеві мотогодини (якщо відомі)")
     fuel_consumed_l: Optional[float] = Field(None, ge=0, description="Фактично витрачене паливо (якщо відомо)")
     note: Optional[str] = Field(None, max_length=500, description="Примітки (напр. Внесено з паперового журналу)")
+    force_confirm: bool = Field(False, description="Підтвердження при розходженні мотогодин із часом")
 
 
 class GeneratorRunOut(BaseModel):

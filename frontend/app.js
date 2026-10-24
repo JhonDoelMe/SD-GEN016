@@ -1182,13 +1182,16 @@ function stopRunStopwatch() {
   }
 }
 
-// Start / Stop Main Button Handler
+// Start / Stop Main Button Handler with Debounce and Safeguards
 document.getElementById('mainActionBtn').addEventListener('click', async () => {
   if (!currentGenerator) return;
   if (isViewerOnly() || !hasPermission('generator:start')) {
     showToast('Керування генератором недоступне для ролі Спостерігач', 'warning');
     return;
   }
+
+  const btn = document.getElementById('mainActionBtn');
+  if (btn.disabled || btn.dataset.busy === 'true') return;
 
   if (currentGenerator.status === 'RUNNING') {
     // Open Stop Modal
@@ -1206,15 +1209,33 @@ document.getElementById('mainActionBtn').addEventListener('click', async () => {
     }
     openModal('modalStopGen');
   } else {
-    // Start Generator directly
+    // Safeguard: Maintenance Overdue Warning modal
+    if (currentGenerator.status === 'MAINTENANCE_REQUIRED') {
+      const confirmStart = confirm(
+        '⚠️ УВАГА: Регламент технічного обслуговування (ТО) цього генератора прострочено!\n\nВи впевнені, що хочете запустити генератор до виконання регламентних робіт?'
+      );
+      if (!confirmStart) return;
+    }
+
+    // Debounce & start generator
+    btn.disabled = true;
+    btn.dataset.busy = 'true';
+    const oldText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Запуск...';
+
     try {
       await api('/generator/start', {
         method: 'POST',
         body: JSON.stringify({ generator_id: currentGeneratorId, fuel_level_l: currentGenerator.fuel_tank_level_l })
       });
       showToast('Генератор успішно запущено!', 'success');
-      loadAllData();
-    } catch (_) {}
+      await loadAllData();
+    } catch (_) {
+    } finally {
+      btn.disabled = false;
+      btn.dataset.busy = 'false';
+      btn.innerHTML = oldText;
+    }
   }
 });
 
@@ -1359,16 +1380,57 @@ document.getElementById('manualRunForm')?.addEventListener('submit', async (e) =
 
 document.getElementById('stopGenForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn && submitBtn.disabled) return;
+
   const endHoursVal = document.getElementById('stopEndHours').value;
   const endHours = endHoursVal !== '' && !isNaN(parseFloat(endHoursVal)) ? parseFloat(endHoursVal) : null;
   const endFuelVal = document.getElementById('stopEndFuel').value;
   const endFuel = endFuelVal !== '' && !isNaN(parseFloat(endFuelVal)) ? parseFloat(endFuelVal) : null;
   const note = document.getElementById('stopNote').value;
 
+  let forceConfirm = false;
+
+  // Typo Safeguard check on frontend
+  if (endHours !== null && currentGenerator) {
+    const startH = activeRun?.start_hours ?? currentGenerator.current_operating_hours;
+    const deltaH = endHours - startH;
+    let elapsedH = 0;
+    if (activeRun?.start_time) {
+      elapsedH = Math.max(0, (Date.now() - new Date(activeRun.start_time).getTime()) / 3600000);
+    }
+
+    const isSuspicious = (deltaH > 14.0) || (elapsedH > 0.02 && Math.abs(deltaH - elapsedH) > 2.0);
+    if (isSuspicious) {
+      const confirmed = confirm(
+        `⚠️ Запобіжник опечатки мотогодин!\n\n` +
+        `Напрацювання за введеним лічильником: ${deltaH.toFixed(2)} год.\n` +
+        `Час роботи за таймером: ${elapsedH.toFixed(2)} год.\n\n` +
+        `Різниця суттєва. Можлива опечатка (зайва цифра або пропущена крапка)!\n` +
+        `Ви впевнені, що показник ${endHours} правильний?`
+      );
+      if (!confirmed) {
+        return;
+      }
+      forceConfirm = true;
+    }
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Зупинка...';
+  }
+
   try {
     const res = await api('/generator/stop', {
       method: 'POST',
-      body: JSON.stringify({ generator_id: currentGeneratorId, end_hours: endHours, end_fuel_level_l: endFuel, note: note })
+      body: JSON.stringify({
+        generator_id: currentGeneratorId,
+        end_hours: endHours,
+        end_fuel_level_l: endFuel,
+        note: note,
+        force_confirm: forceConfirm
+      })
     });
     closeModal('modalStopGen');
     stopRunStopwatch();
@@ -1376,7 +1438,14 @@ document.getElementById('stopGenForm').addEventListener('submit', async (e) => {
     const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l} л` : '-';
     showToast(`Генератор зупинено! Відпрацьовано: ${durText}, розхід: ${fuelText}`, 'success');
     loadAllData();
-  } catch (_) {}
+  } catch (err) {
+    showToast(err.message || 'Помилка при зупинці генератора', 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = 'Зупинити генератор';
+    }
+  }
 });
 
 // 2. Fuel Management
@@ -1592,9 +1661,12 @@ async function loadFuelData() {
   } catch (_) {}
 }
 
-// Receipt Form Submit
+// Receipt Form Submit with Volume and Price Safeguards
 document.getElementById('receiptForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn && submitBtn.disabled) return;
+
   const stockVal = document.getElementById('recStock').value;
   if (!stockVal) {
     showToast('Будь ласка, оберіть склад ГСМ або створіть його', 'error');
@@ -1602,17 +1674,51 @@ document.getElementById('receiptForm').addEventListener('submit', async (e) => {
   }
   const rawCost = document.getElementById('recCostTotal').value.trim();
   const parsedCost = rawCost ? parseFloat(rawCost) : null;
+  const liters = parseFloat(document.getElementById('recLiters').value);
+
+  let forceConfirm = false;
+
+  // Safeguard: Fuel Volume & Price Sanity Check
+  if (liters > 1000.0) {
+    const confirmed = confirm(
+      `⚠️ Запобіжник об'єму палива!\n\n` +
+      `Вказано ${liters.toFixed(1)} л палива (більше 1000 л).\n` +
+      `Перевірте, чи немає опечатки в кількості літрів.\n\nПродовжити збереження?`
+    );
+    if (!confirmed) return;
+    forceConfirm = true;
+  }
+
+  if (parsedCost && parsedCost > 0 && liters > 0) {
+    const pricePerL = parsedCost / liters;
+    if (pricePerL < 15.0 || pricePerL > 250.0) {
+      const confirmed = confirm(
+        `⚠️ Запобіжник вартості палива!\n\n` +
+        `Розрахункова ціна становить ${pricePerL.toFixed(2)} грн/л (незвичний діапазон).\n` +
+        `Перевірте загальну суму чека (${parsedCost.toFixed(2)} грн) та літри (${liters.toFixed(1)} л).\n\n` +
+        `Зберегти чек з цією сумою?`
+      );
+      if (!confirmed) return;
+      forceConfirm = true;
+    }
+  }
 
   const body = {
     facility_id: parseInt(document.getElementById('recFacility').value),
     stock_id: parseInt(stockVal),
-    liters: parseFloat(document.getElementById('recLiters').value),
+    liters: liters,
     cost_total: parsedCost && parsedCost > 0 ? parsedCost : null,
     driver_name: document.getElementById('recDriver').value,
     receipt_number: document.getElementById('recNumber').value,
     fuel_type: document.getElementById('recFuelType').value,
-    comment: document.getElementById('recComment').value
+    comment: document.getElementById('recComment').value,
+    force_confirm: forceConfirm
   };
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Збереження...';
+  }
 
   try {
     const saved = await api('/fuel/receipt', { method: 'POST', body: JSON.stringify(body) });
@@ -1626,7 +1732,14 @@ document.getElementById('receiptForm').addEventListener('submit', async (e) => {
     );
     loadFuelData();
     loadFuelSummary();
-  } catch (_) {}
+  } catch (err) {
+    showToast(err.message || 'Помилка оприбуткування палива', 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = 'Зберегти надходження';
+    }
+  }
 });
 
 // Create New Fuel Stock Form Submit

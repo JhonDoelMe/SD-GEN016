@@ -82,6 +82,14 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "backup_frequency": "daily",
     "backup_retention_count": 7,
     "backup_default_type": "full",
+    # Operational Safeguards ("Запобіжники")
+    "max_continuous_run_hours": 12.0,
+    "auto_stop_on_schedule_end": True,
+    "notify_running_heartbeat": True,
+    "heartbeat_interval_hours": 4.0,
+    "fuel_receipt_max_liters_warning": 1000.0,
+    "fuel_receipt_min_price": 15.0,
+    "fuel_receipt_max_price": 250.0,
 }
 
 # In-memory cache of runtime settings for fast synchronous reads (e.g. timezone.py)

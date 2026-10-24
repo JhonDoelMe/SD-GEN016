@@ -250,6 +250,31 @@ async def add_fuel_receipt(
         price_per_l, price_source = await resolve_fuel_price_per_liter(db, effective_fuel_type)
         cost_total = round(receipt_data.liters * price_per_l, 2)
 
+    # Fuel Receipt Safeguard: Scale & Price Sanity Checks
+    from backend.app.services.settings_service import get_runtime_setting
+    max_liters_warn = float(get_runtime_setting("fuel_receipt_max_liters_warning", 1000.0))
+    min_price_warn = float(get_runtime_setting("fuel_receipt_min_price", 15.0))
+    max_price_warn = float(get_runtime_setting("fuel_receipt_max_price", 250.0))
+
+    if not receipt_data.force_confirm:
+        if receipt_data.liters > max_liters_warn:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Запобіжник об'єму палива: вказано значний об'єм ({receipt_data.liters:.1f} л > {max_liters_warn:.0f} л). "
+                    f"Перевірте введені дані (можлива опечатка) або підтвердіть дію."
+                )
+            )
+        if price_per_l < min_price_warn or price_per_l > max_price_warn:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Запобіжник вартості палива: розрахункова ціна ({price_per_l:.2f} грн/л) виходить за межі "
+                    f"очікуваного діапазону ({min_price_warn:.0f} - {max_price_warn:.0f} грн/л). "
+                    f"Перевірте суму чека або підтвердіть дію."
+                )
+            )
+
     comment_text = receipt_data.comment
     if price_source in ("system_settings", "internet"):
         src_ua = "Налаштування системи" if price_source == "system_settings" else "Авто-ціна з інтернету"

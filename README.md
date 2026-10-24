@@ -1,11 +1,11 @@
 # SERVICE DESK ДЛЯ ЕКСПЛУАТАЦІЇ БЕНЗИНОВИХ ТА ДИЗЕЛЬНИХ ГЕНЕРАТОРІВ (SD-GEN016)
 
-[![Release](https://img.shields.io/badge/Release-v4.2.0-blue.svg)](https://github.com/JhonDoelMe/SD-GEN016/releases)
+[![Release](https://img.shields.io/badge/Release-v4.3.0-blue.svg)](https://github.com/JhonDoelMe/SD-GEN016/releases)
 [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg)](https://www.sqlalchemy.org/)
-[![Tests](https://img.shields.io/badge/Tests-53%2F53%20Passed%20(100%25)-brightgreen.svg)]()
-[![PWA](https://img.shields.io/badge/PWA-v4.2%20(Android%20%26%20iOS)-purple.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-58%2F58%20Passed%20(100%25)-brightgreen.svg)]()
+[![PWA](https://img.shields.io/badge/PWA-v4.3%20(Android%20%26%20iOS)-purple.svg)]()
 [![Web Push](https://img.shields.io/badge/Web%20Push-VAPID%20%26%20SSRF%20Safe-blue.svg)]()
 [![Compliance](https://img.shields.io/badge/Compliance-DSTU%204163%3A2020%20%7C%20GDPR-success.svg)]()
 [![Security](https://img.shields.io/badge/Security-Enterprise%20Hardened%20(RBAC%20%2B%20Isolation%20%2B%20Dual--Key%20Lockout)-blueviolet.svg)]()
@@ -57,6 +57,14 @@
 - **Повна де-статизація**: графік роботи, часовий пояс, тарифи та цінова політика зберігаються в базі даних (`SystemSettings`) та редагуються адміністратором через веб-інтерфейс у вкладці налаштувань.
 - Файл оточення `.env` використовується виключно для початкової інфраструктури (підключення до БД, JWT секрет, первинний обліковий запис SuperAdmin).
 - Кнопка **«🟢 Оновити ціни АЗК WOG»** для миттєвої актуалізації вартості пального за офіційними даними мережі АЗК.
+
+### 7. Експлуатаційні запобіжники та захист від людських помилок (Operational Safeguards)
+- **Запобіжник опечатки мотогодин (Typo Guard)**: валідація приросту мотогодин проти показників секундоміра; блокування очевидних опечаток (напрацювання за один запуск > 14 год або відхилення > 2 год) без явного підтвердження оператора (`force_confirm: true`).
+- **Захист від порожнього бака (Empty Tank Overrun Fuse)**: автоматична аварійна зупинка при перевищенні 12 годин безперервної роботи із фіксацією в аудиті (`GENERATOR_SAFETY_STOP`) та push-сповіщенням.
+- **Автозупинка за графіком (Strict Day-Shift Auto-Stop)**: фоновий вартовий моніторить завершення зміни та автоматично зупиняє генератор, якщо оператор забув натиснути «Зупинити» наприкінці робочого дня.
+- **Пульс-нагадування кожні 4 години (Heartbeat Reminder)**: періодичні повідомлення черговим операторам про генератори, що перебувають у тривалому робочому циклі (*«Генератор досі працює?»*).
+- **Контроль чека палива**: обов'язкове підтвердження при спробі оприбуткування великих партій (> 1000 л) або при розрахунку аномальної ціни (поза діапазоном 15–250 грн/л).
+- **Клієнтський захист (Debounce & Warning Modals)**: блокування повторних кліків по кнопках старту/зупинки під час запиту та модальне попередження при спробі пуску генератора із простроченим ТО.
 
 ### 7. Безпечне скидання та очищення бази даних (Clean DB / System Reset)
 - Спеціальний функціонал очищення системи перед продажем об'єкта, передачею іншому власнику або введенням нового об'єкта в експлуатацію.

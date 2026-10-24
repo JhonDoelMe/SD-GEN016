@@ -13,6 +13,7 @@ from backend.app.database import engine, Base, AsyncSessionLocal
 from backend.app.models import *  # noqa: F401, F403 Ensure all models loaded
 from backend.app.services.init_service import seed_initial_data
 from backend.app.services.backup_service import run_backup_scheduler
+from backend.app.services.operational_guard_service import run_operational_guard_loop
 from backend.app.api.v1 import api_v1_router
 
 
@@ -110,18 +111,20 @@ async def lifespan(app: FastAPI):
 
     # 4. Start background backup scheduler
     backup_scheduler_task = asyncio.create_task(run_backup_scheduler())
+    guard_worker_task = asyncio.create_task(run_operational_guard_loop())
 
     yield
 
     # Shutdown
     backup_scheduler_task.cancel()
+    guard_worker_task.cancel()
     await engine.dispose()
 
 
 app = FastAPI(
     title="Service Desk Бензинового Генератора (SD-GEN016)",
     description="Система оперативного обліку фактичної експлуатації бензинового генератора",
-    version="4.2.0",
+    version="4.3.0",
     lifespan=lifespan
 )
 

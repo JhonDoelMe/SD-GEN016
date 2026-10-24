@@ -46,6 +46,7 @@ class FuelReceiptCreate(BaseModel):
     driver_name: str = Field(..., min_length=2, description="ПІБ водія бензовоза")
     receipt_number: str = Field(..., min_length=1, description="Номер чека або накладної")
     comment: Optional[str] = None
+    force_confirm: bool = Field(False, description="Підтвердження операції при значному об'ємі або нетиповій ціні")
 
 
 class FuelReceiptOut(BaseModel):
