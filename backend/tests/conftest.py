@@ -1,4 +1,6 @@
 import os
+os.environ["APP_ENV"] = "testing"
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -11,6 +13,8 @@ from backend.app.services.init_service import seed_initial_data
 from backend.app.models.user import User, Role
 from backend.app.core.security import get_password_hash, clear_all_login_attempts
 from backend.app.config import settings
+
+settings.APP_ENV = "testing"
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 

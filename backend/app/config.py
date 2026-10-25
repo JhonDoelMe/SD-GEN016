@@ -10,7 +10,7 @@ DEFAULT_ADMIN_PASSWORD = "SuperAdminPass123!"
 
 
 class Settings(BaseSettings):
-    APP_ENV: str = "production"
+    APP_ENV: str = "development"
     APP_SECRET_KEY: str = DEFAULT_SECRET_KEY
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 
@@ -56,12 +56,32 @@ class Settings(BaseSettings):
         )
 
     def check_security_warnings(self) -> None:
-        if self.APP_SECRET_KEY in (DEFAULT_SECRET_KEY, "change_this_to_a_secure_random_secret_key_minimum_32_chars") or len(self.APP_SECRET_KEY) < 32:
+        is_prod = self.APP_ENV.strip().lower() in ("production", "prod")
+        insecure_key = (
+            self.APP_SECRET_KEY in (DEFAULT_SECRET_KEY, "change_this_to_a_secure_random_secret_key_minimum_32_chars")
+            or len(self.APP_SECRET_KEY) < 32
+        )
+        insecure_pass = self.INITIAL_ADMIN_PASSWORD in (DEFAULT_ADMIN_PASSWORD, "SuperAdminSecretPass123!")
+
+        if is_prod and (insecure_key or insecure_pass):
+            reasons = []
+            if insecure_key:
+                reasons.append("APP_SECRET_KEY містить дефолтне/слабке значення або має довжину менше 32 символів")
+            if insecure_pass:
+                reasons.append("INITIAL_ADMIN_PASSWORD містить публічно відомий дефолтний пароль")
+            err_msg = (
+                f"[FATAL SECURITY ERROR] Запуск SD-GEN016 у режимі 'production' заблоковано з міркувань безпеки: "
+                f"{'; '.join(reasons)}. Будь ласка, задайте унікальні та надійні секрети у файлі .env або змінних середовища перед розгортанням."
+            )
+            logger.critical(err_msg)
+            raise RuntimeError(err_msg)
+
+        if insecure_key:
             logger.warning(
                 "[SECURITY WARNING] APP_SECRET_KEY uses a default or weak value (<32 chars). "
                 "Override APP_SECRET_KEY in .env for production deployment!"
             )
-        if self.INITIAL_ADMIN_PASSWORD in (DEFAULT_ADMIN_PASSWORD, "SuperAdminSecretPass123!"):
+        if insecure_pass:
             logger.warning(
                 "[SECURITY WARNING] INITIAL_ADMIN_PASSWORD uses a default value. "
                 "Change the SuperAdmin password via POST /api/v1/auth/change-password or override in .env!"

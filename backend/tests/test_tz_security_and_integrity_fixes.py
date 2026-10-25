@@ -409,7 +409,7 @@ async def test_system_settings_server_validation_domain_integrity(client, supera
     res2 = await client.put(
         "/api/v1/system/settings",
         headers=superadmin_auth,
-        json={"default_generator_id": 99999}
+        json={"default_facility_id": 1, "default_generator_id": 99999}
     )
     assert res2.status_code == 400
     assert "не знайдено в системі" in res2.json()["detail"]
@@ -418,7 +418,7 @@ async def test_system_settings_server_validation_domain_integrity(client, supera
     res3 = await client.put(
         "/api/v1/system/settings",
         headers=superadmin_auth,
-        json={"default_fuel_stock_id": 99999}
+        json={"default_facility_id": 1, "default_fuel_stock_id": 99999}
     )
     assert res3.status_code == 400
     assert "не знайдено в системі" in res3.json()["detail"]
@@ -477,3 +477,141 @@ async def test_system_settings_server_validation_domain_integrity(client, supera
     assert res_valid.status_code == 200
     assert get_runtime_setting("default_facility_id") == fac2_id
     assert get_runtime_setting("default_generator_id") == gen2_id
+
+
+@pytest.mark.asyncio
+async def test_unassigned_generator_and_stock_rejected_for_default_facility(client, superadmin_auth, db_session):
+    """
+    Перевіряє, що генератор або склад ГСМ без закріпленого об'єкта (facility_id=None)
+    відхиляються при спробі встановити їх за замовчуванням для конкретної філії.
+    """
+    # Create unassigned generator directly
+    unassigned_gen = Generator(
+        facility_id=None,
+        name="Генератор без філії",
+        model="NoFacilityGen",
+        manufacturer="TestMaker",
+        serial_number="SN-NO-FAC-01",
+        rated_power_kw=3.0,
+        tank_capacity_l=15.0,
+        fuel_type="А-95",
+        nominal_consumption_l_per_h=1.5,
+        current_operating_hours=0.0,
+        fuel_tank_level_l=5.0,
+        status="STOPPED",
+        is_configured=True,
+        timezone="Europe/Kyiv"
+    )
+    db_session.add(unassigned_gen)
+
+    # Create unassigned fuel stock directly
+    unassigned_stock = FuelStock(
+        facility_id=None,
+        name="Склад без філії",
+        fuel_type="А-95",
+        current_balance_l=100.0
+    )
+    db_session.add(unassigned_stock)
+    await db_session.commit()
+
+    # 1. Reject unassigned generator for facility 1
+    res1 = await client.put(
+        "/api/v1/system/settings",
+        headers=superadmin_auth,
+        json={
+            "default_facility_id": 1,
+            "default_generator_id": unassigned_gen.id
+        }
+    )
+    assert res1.status_code == 400
+    assert "не закріплений за жодним об'єктом" in res1.json()["detail"]
+
+    # 2. Reject unassigned fuel stock for facility 1
+    res2 = await client.put(
+        "/api/v1/system/settings",
+        headers=superadmin_auth,
+        json={
+            "default_facility_id": 1,
+            "default_fuel_stock_id": unassigned_stock.id
+        }
+    )
+    assert res2.status_code == 400
+    assert "не закріплений за жодним об'єктом" in res2.json()["detail"]
+
+    # 3. Reject setting default generator without default facility
+    res3 = await client.put(
+        "/api/v1/system/settings",
+        headers=superadmin_auth,
+        json={
+            "default_facility_id": None,
+            "default_generator_id": 1
+        }
+    )
+    assert res3.status_code == 400
+    assert "без визначення об'єкта за замовчуванням" in res3.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_settings_atomic_rollback_on_db_commit_failure(db_session):
+    """
+    Перевіряє, що якщо під час збереження налаштувань у БД стається збій транзакції (commit error),
+    оперативні налаштування RUNTIME_SETTINGS НЕ зазнають змін.
+    """
+    from backend.app.services.settings_service import update_system_settings, RUNTIME_SETTINGS
+
+    old_org_name = RUNTIME_SETTINGS.get("organization_name")
+    candidate_name = "CorruptedOrgNameThatMustRollback"
+
+    # Mock commit to raise an exception simulating database crash/timeout
+    with patch.object(db_session, "commit", side_effect=Exception("Simulated Database Commit Error")):
+        with pytest.raises(Exception, match="Simulated Database Commit Error"):
+            await update_system_settings(
+                db=db_session,
+                updates={"organization_name": candidate_name}
+            )
+
+    # In-memory settings MUST remain the previous valid value
+    assert RUNTIME_SETTINGS.get("organization_name") == old_org_name
+    assert RUNTIME_SETTINGS.get("organization_name") != candidate_name
+
+
+def test_production_mode_blocks_startup_with_insecure_defaults():
+    """
+    Перевіряє, що режим production суворо блокує запуск сервера при наявності дефолтних або слабких секретів.
+    """
+    from backend.app.config import Settings, DEFAULT_SECRET_KEY, DEFAULT_ADMIN_PASSWORD
+
+    # 1. Insecure secret key in production -> raises RuntimeError
+    prod_insecure = Settings(
+        APP_ENV="production",
+        APP_SECRET_KEY=DEFAULT_SECRET_KEY,
+        INITIAL_ADMIN_PASSWORD="StrongSuperAdminPassword99!"
+    )
+    with pytest.raises(RuntimeError, match="FATAL SECURITY ERROR.*APP_SECRET_KEY"):
+        prod_insecure.check_security_warnings()
+
+    # 2. Insecure default admin password in production -> raises RuntimeError
+    prod_insecure_pass = Settings(
+        APP_ENV="production",
+        APP_SECRET_KEY="A" * 32,
+        INITIAL_ADMIN_PASSWORD=DEFAULT_ADMIN_PASSWORD
+    )
+    with pytest.raises(RuntimeError, match="FATAL SECURITY ERROR.*INITIAL_ADMIN_PASSWORD"):
+        prod_insecure_pass.check_security_warnings()
+
+    # 3. Secure custom credentials in production -> succeeds cleanly
+    prod_secure = Settings(
+        APP_ENV="production",
+        APP_SECRET_KEY="A" * 32,
+        INITIAL_ADMIN_PASSWORD="StrongCustomPassword12345!"
+    )
+    prod_secure.check_security_warnings()  # No exception!
+
+    # 4. In development/testing -> allows default credentials with warning (does not raise)
+    dev_settings = Settings(
+        APP_ENV="development",
+        APP_SECRET_KEY=DEFAULT_SECRET_KEY,
+        INITIAL_ADMIN_PASSWORD=DEFAULT_ADMIN_PASSWORD
+    )
+    dev_settings.check_security_warnings()  # Allowed!
+

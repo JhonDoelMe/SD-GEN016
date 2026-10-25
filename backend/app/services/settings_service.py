@@ -323,25 +323,38 @@ async def update_system_settings(
             if not fac:
                 raise ValueError(f"Об'єкт за замовчуванням з ID {target_fac_id} не знайдено в системі")
 
-        if target_gen_id is not None:
-            gen = await db.get(Generator, target_gen_id)
-            if not gen:
-                raise ValueError(f"Генератор за замовчуванням з ID {target_gen_id} не знайдено в системі")
-            if target_fac_id is not None and gen.facility_id is not None and int(gen.facility_id) != int(target_fac_id):
-                raise ValueError(
-                    f"Генератор '{gen.name}' закріплений за об'єктом ID {gen.facility_id}, "
-                    f"а не за вказаним об'єктом за замовчуванням ID {target_fac_id}"
-                )
+            if target_gen_id is not None:
+                gen = await db.get(Generator, target_gen_id)
+                if not gen:
+                    raise ValueError(f"Генератор за замовчуванням з ID {target_gen_id} не знайдено в системі")
+                if gen.facility_id is None:
+                    raise ValueError(
+                        f"Генератор '{gen.name}' (ID {gen.id}) не закріплений за жодним об'єктом "
+                        f"і не може бути генератором за замовчуванням для об'єкта ID {target_fac_id}"
+                    )
+                if int(gen.facility_id) != int(target_fac_id):
+                    raise ValueError(
+                        f"Генератор '{gen.name}' закріплений за об'єктом ID {gen.facility_id}, "
+                        f"а не за вказаним об'єктом за замовчуванням ID {target_fac_id}"
+                    )
 
-        if target_stock_id is not None:
-            stock = await db.get(FuelStock, target_stock_id)
-            if not stock:
-                raise ValueError(f"Склад ГСМ за замовчуванням з ID {target_stock_id} не знайдено в системі")
-            if target_fac_id is not None and stock.facility_id is not None and int(stock.facility_id) != int(target_fac_id):
-                raise ValueError(
-                    f"Склад ГСМ '{stock.name}' закріплений за об'єктом ID {stock.facility_id}, "
-                    f"а не за вказаним об'єктом за замовчуванням ID {target_fac_id}"
-                )
+            if target_stock_id is not None:
+                stock = await db.get(FuelStock, target_stock_id)
+                if not stock:
+                    raise ValueError(f"Склад ГСМ за замовчуванням з ID {target_stock_id} не знайдено в системі")
+                if stock.facility_id is None:
+                    raise ValueError(
+                        f"Склад ГСМ '{stock.name}' (ID {stock.id}) не закріплений за жодним об'єктом "
+                        f"і не може бути складом за замовчуванням для об'єкта ID {target_fac_id}"
+                    )
+                if int(stock.facility_id) != int(target_fac_id):
+                    raise ValueError(
+                        f"Склад ГСМ '{stock.name}' закріплений за об'єктом ID {stock.facility_id}, "
+                        f"а не за вказаним об'єктом за замовчуванням ID {target_fac_id}"
+                    )
+        else:
+            if target_gen_id is not None or target_stock_id is not None:
+                raise ValueError("Неможливо встановити генератор або склад за замовчуванням без визначення об'єкта за замовчуванням")
 
     # Validate Weekly Email Report chain
     weekly_keys = {"email_weekly_facility_id", "email_weekly_generator_id"}
@@ -354,22 +367,32 @@ async def update_system_settings(
             if not fac:
                 raise ValueError(f"Об'єкт для щотижневого звіту з ID {w_fac_id} не знайдено в системі")
 
-        if w_gen_id is not None:
-            gen = await db.get(Generator, w_gen_id)
-            if not gen:
-                raise ValueError(f"Генератор для щотижневого звіту з ID {w_gen_id} не знайдено в системі")
-            if w_fac_id is not None and gen.facility_id is not None and int(gen.facility_id) != int(w_fac_id):
-                raise ValueError(
-                    f"Генератор для щотижневого звіту '{gen.name}' закріплений за об'єктом ID {gen.facility_id}, "
-                    f"а не за вказаним об'єктом звіту ID {w_fac_id}"
-                )
+            if w_gen_id is not None:
+                gen = await db.get(Generator, w_gen_id)
+                if not gen:
+                    raise ValueError(f"Генератор для щотижневого звіту з ID {w_gen_id} не знайдено в системі")
+                if gen.facility_id is None:
+                    raise ValueError(
+                        f"Генератор для щотижневого звіту '{gen.name}' не закріплений за жодним об'єктом "
+                        f"і не може бути призначений для об'єкта звіту ID {w_fac_id}"
+                    )
+                if int(gen.facility_id) != int(w_fac_id):
+                    raise ValueError(
+                        f"Генератор для щотижневого звіту '{gen.name}' закріплений за об'єктом ID {gen.facility_id}, "
+                        f"а не за вказаним об'єктом звіту ID {w_fac_id}"
+                    )
+        else:
+            if w_gen_id is not None:
+                raise ValueError("Неможливо призначити генератор для щотижневого звіту без визначення об'єкта звіту")
 
     now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
+    # Collect valid updates into pending dict to guarantee atomic in-memory publish only after successful commit
+    pending_updates: Dict[str, Any] = {}
     for k, val in updates.items():
         if k not in DEFAULT_SYSTEM_SETTINGS:
             continue
-        RUNTIME_SETTINGS[k] = val
+        pending_updates[k] = val
         json_str = json.dumps(val, ensure_ascii=False)
         if k in existing_map:
             existing_map[k].value_json = json_str
@@ -383,10 +406,10 @@ async def update_system_settings(
             ))
 
     if apply_to_all_generators or updates.get("apply_to_all_generators"):
-        tz = RUNTIME_SETTINGS.get("facility_timezone", "Europe/Kyiv")
-        w_start = RUNTIME_SETTINGS.get("work_schedule_start", "08:00")
-        w_end = RUNTIME_SETTINGS.get("work_schedule_end", "20:00")
-        maint_int = float(RUNTIME_SETTINGS.get("default_maintenance_interval_hours", 300.0))
+        tz = pending_updates.get("facility_timezone", RUNTIME_SETTINGS.get("facility_timezone", "Europe/Kyiv"))
+        w_start = pending_updates.get("work_schedule_start", RUNTIME_SETTINGS.get("work_schedule_start", "08:00"))
+        w_end = pending_updates.get("work_schedule_end", RUNTIME_SETTINGS.get("work_schedule_end", "20:00"))
+        maint_int = float(pending_updates.get("default_maintenance_interval_hours", RUNTIME_SETTINGS.get("default_maintenance_interval_hours", 300.0)))
 
         # Update all facilities timezone
         await db.execute(update(Facility).values(timezone=tz, updated_at=now))
@@ -411,7 +434,14 @@ async def update_system_settings(
             if m_sched and maint_int > 0:
                 m_sched.interval_hours = maint_int
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as db_err:
+        await db.rollback()
+        raise db_err
+
+    # Atomic publish to in-memory runtime cache strictly AFTER successful commit
+    RUNTIME_SETTINGS.update(pending_updates)
     return dict(RUNTIME_SETTINGS)
 
 
