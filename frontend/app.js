@@ -1414,10 +1414,10 @@ document.getElementById('mainActionBtn').addEventListener('click', async () => {
       showToast('Генератор успішно запущено!', 'success');
       await loadAllData();
     } catch (_) {
+      btn.innerHTML = oldText;
     } finally {
       btn.disabled = false;
       btn.dataset.busy = 'false';
-      btn.innerHTML = oldText;
     }
   }
 });
