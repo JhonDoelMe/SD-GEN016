@@ -1,7 +1,7 @@
 # Архітектура системи: Service Desk Генератора (SD-GEN016)
 
-**Версія архітектури:** 4.2.0 (Security Hardened & Multi-site Isolated)  
-**Дата оновлення:** 24 жовтня 2026 року  
+**Версія архітектури:** 4.5.1 (Special Security, Multi-site Lockdown & Data Integrity)  
+**Дата оновлення:** 25 жовтня 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 
 ---
@@ -58,11 +58,15 @@
 |                                         │                                          |
 |  +-------------------------------------------------------------------------------+ |
 |  |                              SECURITY & MIDDLEWARE                            | |
+|  |  - Fail-Closed SMTP TLS: обов'язкове STARTTLS, відмова від відкритого логіну| |
+|  |  - Audit Log Redaction: sanitize_audit_details + startup historical scrub   | |
+|  |  - Production Boot-Lock: фатальна помилка при дефолтних секретах у production| |
+|  |  - Strict Multi-site Lockdown: 403 Forbidden для незакріплених операторів    | |
+|  |  - Exclusive SuperAdmin Facility Deletion Guard                             | |
 |  |  - Dual-Key Rate Limiter: блокування за ip:{ip}:{login} та acct:{login}       | |
 |  |  - X-Forwarded-For Anti-Spoofing & X-Real-IP Resolution                       | |
 |  |  - JWT Password Signature (pwd_sig): миттєва інвалідація сесій при зміні пароля| |
 |  |  - In-memory Token Revocation Registry (_REVOKED_TOKENS) при logout          | |
-|  |  - Strict Multi-site Facility Isolation (Variant B: verify_facility_access)    | |
 |  |  - Web Push SSRF Allowlist: перевірка офіційних доменів FCM/Apple/Mozilla/WNS | |
 |  |  - Backup Security: _copy_env_redacted, _safe_extract_zip (Zip Slip/Bomb)     | |
 |  |  - Timing Attack Mitigation (verify_dummy_password)                           | |
@@ -71,10 +75,13 @@
 |                                         │                                          |
 |  +-------------------------------------------------------------------------------+ |
 |  |                                БІЗНЕС-СЕРВІСИ                                 | |
-|  |  - FacilityService     : баланси філій, прив'язка генераторів та складів      | |
+|  |  - FacilityService     : баланси філій, прив'язка ресурсів, SuperAdmin delete  | |
 |  |  - GeneratorService    : життєвий цикл, мотогодини, офлайн-внесення, валідація | |
-|  |  - FuelService         : рух палива, розрахунок розходу, автоціни WOG         | |
-|  |  - MaintenanceService  : регламентні інтервали, захист від збиття лічильника  | |
+|  |  - FuelService         : рух палива, автоціни WOG, блокування міжоб'єктних рухів| |
+|  |  - EmailService        : SMTP Failover (Gmail/Ukr.net), Fail-Closed TLS        | |
+|  |  - AuditService        : незмінний аудит, рекурсивне маскування секретів       | |
+|  |  - SettingsService     : доменна перевірка ланцюжка, транзакційна атомарність  | |
+|  |  - MaintenanceService  : регламентні інтервали, адмін-скидання лічильника      | |
 |  |  - FaultService        : обробка інцидентів, аварійний статус FAULTY          | |
 |  |  - NotificationService : VAPID Web Push, анти-спам обмеження ТО (<=2/добу)    | |
 |  |  - BackupService       : генерація/відновлення дампів, захист від атак архіву | |
