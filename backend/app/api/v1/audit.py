@@ -1,3 +1,4 @@
+import json
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -9,8 +10,20 @@ from backend.app.models.user import User
 from backend.app.models.audit import AuditLog
 from backend.app.schemas.audit import AuditLogOut
 from backend.app.api.deps import require_permission
+from backend.app.services.audit_service import sanitize_audit_details
 
 router = APIRouter(prefix="/audit", tags=["Аудит"])
+
+
+def _safe_details_json(raw_json: Optional[str]) -> Optional[str]:
+    if not raw_json:
+        return None
+    try:
+        data = json.loads(raw_json)
+        sanitized = sanitize_audit_details(data)
+        return json.dumps(sanitized, ensure_ascii=False, default=str)
+    except Exception:
+        return raw_json
 
 
 @router.get("", response_model=List[AuditLogOut])
@@ -37,7 +50,7 @@ async def list_audit_logs(
             action=log.action,
             entity_type=log.entity_type,
             entity_id=log.entity_id,
-            details_json=log.details_json,
+            details_json=_safe_details_json(log.details_json),
             ip_address=log.ip_address,
             created_at=log.created_at
         )

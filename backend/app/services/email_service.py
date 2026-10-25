@@ -215,12 +215,26 @@ def send_smtp_message_sync(
     else:
         with smtplib.SMTP(host, port, timeout=timeout) as server:
             server.ehlo()
+            # Fail-closed security rule: STARTTLS is mandatory to prevent cleartext password transmission
+            if not server.has_extn("starttls"):
+                raise smtplib.SMTPNotSupportedError(
+                    f"Сервер {host}:{port} не підтримує обов'язковий протокол шифрування STARTTLS. "
+                    "Передавання облікових даних без захищеного TLS-з'єднання заборонено."
+                )
+            ssl_ctx = ssl.create_default_context()
             try:
-                ssl_ctx = ssl.create_default_context()
                 server.starttls(context=ssl_ctx)
                 server.ehlo()
             except Exception as tls_err:
-                logger.debug(f"STARTTLS negotiation note: {tls_err}")
+                logger.error(
+                    f"STARTTLS negotiation failed for {host}:{port}: {tls_err}. "
+                    "Aborting delivery to prevent cleartext credential transmission."
+                )
+                raise smtplib.SMTPException(
+                    f"Помилка встановлення захищеного з'єднання STARTTLS з сервером {host}:{port} ({tls_err}). "
+                    "Автентифікацію скасовано задля безпеки облікових даних."
+                ) from tls_err
+
             if user and password:
                 server.login(user, password)
             server.send_message(msg)
@@ -266,6 +280,9 @@ def get_smtp_diagnostic_hint(error_msg: str, host: str = "") -> str:
 
     if "getaddrinfo failed" in err_lower or "not known" in err_lower or "name or service not known" in err_lower:
         return f"Не вдалося знайти хост '{host}' через DNS. Перевірте правильність написання адреси сервера (наприклад: smtp.gmail.com або smtp.ukr.net)."
+
+    if "starttls" in err_lower or "не підтримує обов'язковий протокол шифрування" in err_lower:
+        return f"Сервер {host} не підтримує або відхилив захищене з'єднання STARTTLS. Перевірте порт (587 для STARTTLS, 465 для прямого SSL) та дійсність SSL/TLS-сертифіката."
 
     return "Перевірте параметри налаштувань пошти, адресу хоста, порт, логін та наявність доступу до інтернету."
 

@@ -7,6 +7,7 @@ from backend.app.models.user import User
 from backend.app.schemas.facility import FacilityCreate, FacilityUpdate, FacilityOut
 from backend.app.api.deps import (
     get_current_user,
+    get_current_superadmin,
     require_permission,
     get_client_ip,
     is_user_admin_or_super,
@@ -27,7 +28,9 @@ async def list_facilities(
 ):
     """Отримати перелік об'єктів/локацій (для операторів — лише їхній закріплений об'єкт)"""
     all_facs = await get_all_facilities(db)
-    if not is_user_admin_or_super(current_user) and current_user.facility_id:
+    if not is_user_admin_or_super(current_user):
+        if not current_user.facility_id:
+            return []
         return [f for f in all_facs if f.id == current_user.facility_id]
     return all_facs
 
@@ -75,9 +78,9 @@ async def remove_facility(
     request: Request,
     cascade: bool = False,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_permission("facility:configure"))
+    current_user: User = Depends(get_current_superadmin)
 ):
-    """Видалити об'єкт"""
+    """Видалити об'єкт (доступно виключно для SuperAdmin)"""
     verify_facility_access(current_user, facility_id)
     client_ip = get_client_ip(request)
     return await delete_facility(db, facility_id, current_user.id, cascade=cascade, ip_address=client_ip)

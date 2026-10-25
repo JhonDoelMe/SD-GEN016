@@ -12,6 +12,7 @@ from backend.app.config import settings
 from backend.app.database import engine, Base, AsyncSessionLocal
 from backend.app.models import *  # noqa: F401, F403 Ensure all models loaded
 from backend.app.services.init_service import seed_initial_data
+from backend.app.services.audit_service import sanitize_historical_audit_logs
 from backend.app.services.backup_service import run_backup_scheduler
 from backend.app.services.operational_guard_service import run_operational_guard_loop
 from backend.app.api.v1 import api_v1_router
@@ -130,6 +131,9 @@ async def lifespan(app: FastAPI):
     try:
         async with AsyncSessionLocal() as session:
             await seed_initial_data(session)
+            sanitized_count = await sanitize_historical_audit_logs(session)
+            if sanitized_count > 0:
+                print(f"[AUDIT] Sanitized {sanitized_count} historical audit records containing plaintext secrets.", flush=True)
         print(f"[AUTH] SuperAdmin user '{settings.INITIAL_ADMIN_LOGIN}' successfully ensured. Ready for login.", flush=True)
     except Exception as e:
         import traceback

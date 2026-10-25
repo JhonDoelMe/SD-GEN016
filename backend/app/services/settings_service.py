@@ -311,6 +311,59 @@ async def update_system_settings(
             # Always normalize to HH:MM format
             updates[time_key] = f"{m.group(1)}:{m.group(2)}"
 
+    # Validate Default Facility, Generator & Fuel Stock chain binding (Domain Integrity)
+    chain_keys = {"default_facility_id", "default_generator_id", "default_fuel_stock_id"}
+    if chain_keys.intersection(updates.keys()):
+        target_fac_id = updates["default_facility_id"] if "default_facility_id" in updates else RUNTIME_SETTINGS.get("default_facility_id")
+        target_gen_id = updates["default_generator_id"] if "default_generator_id" in updates else RUNTIME_SETTINGS.get("default_generator_id")
+        target_stock_id = updates["default_fuel_stock_id"] if "default_fuel_stock_id" in updates else RUNTIME_SETTINGS.get("default_fuel_stock_id")
+
+        if target_fac_id is not None:
+            fac = await db.get(Facility, target_fac_id)
+            if not fac:
+                raise ValueError(f"Об'єкт за замовчуванням з ID {target_fac_id} не знайдено в системі")
+
+        if target_gen_id is not None:
+            gen = await db.get(Generator, target_gen_id)
+            if not gen:
+                raise ValueError(f"Генератор за замовчуванням з ID {target_gen_id} не знайдено в системі")
+            if target_fac_id is not None and gen.facility_id is not None and int(gen.facility_id) != int(target_fac_id):
+                raise ValueError(
+                    f"Генератор '{gen.name}' закріплений за об'єктом ID {gen.facility_id}, "
+                    f"а не за вказаним об'єктом за замовчуванням ID {target_fac_id}"
+                )
+
+        if target_stock_id is not None:
+            stock = await db.get(FuelStock, target_stock_id)
+            if not stock:
+                raise ValueError(f"Склад ГСМ за замовчуванням з ID {target_stock_id} не знайдено в системі")
+            if target_fac_id is not None and stock.facility_id is not None and int(stock.facility_id) != int(target_fac_id):
+                raise ValueError(
+                    f"Склад ГСМ '{stock.name}' закріплений за об'єктом ID {stock.facility_id}, "
+                    f"а не за вказаним об'єктом за замовчуванням ID {target_fac_id}"
+                )
+
+    # Validate Weekly Email Report chain
+    weekly_keys = {"email_weekly_facility_id", "email_weekly_generator_id"}
+    if weekly_keys.intersection(updates.keys()):
+        w_fac_id = updates["email_weekly_facility_id"] if "email_weekly_facility_id" in updates else RUNTIME_SETTINGS.get("email_weekly_facility_id")
+        w_gen_id = updates["email_weekly_generator_id"] if "email_weekly_generator_id" in updates else RUNTIME_SETTINGS.get("email_weekly_generator_id")
+
+        if w_fac_id is not None:
+            fac = await db.get(Facility, w_fac_id)
+            if not fac:
+                raise ValueError(f"Об'єкт для щотижневого звіту з ID {w_fac_id} не знайдено в системі")
+
+        if w_gen_id is not None:
+            gen = await db.get(Generator, w_gen_id)
+            if not gen:
+                raise ValueError(f"Генератор для щотижневого звіту з ID {w_gen_id} не знайдено в системі")
+            if w_fac_id is not None and gen.facility_id is not None and int(gen.facility_id) != int(w_fac_id):
+                raise ValueError(
+                    f"Генератор для щотижневого звіту '{gen.name}' закріплений за об'єктом ID {gen.facility_id}, "
+                    f"а не за вказаним об'єктом звіту ID {w_fac_id}"
+                )
+
     now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
     for k, val in updates.items():

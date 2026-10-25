@@ -342,6 +342,13 @@ async def transfer_fuel_to_tank(
     if not generator:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
 
+    # Invariant: cross-facility fuel transfer protection
+    if generator.facility_id and stock.facility_id and int(generator.facility_id) != int(stock.facility_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Неможливо виконати заправку: генератор '{generator.name}' (об'єкт ID {generator.facility_id}) та склад ГСМ '{stock.name}' (об'єкт ID {stock.facility_id}) належать до різних об'єктів"
+        )
+
     facility_id = transfer_data.facility_id or generator.facility_id or stock.facility_id or 1
 
     if transfer_data.liters <= 0:

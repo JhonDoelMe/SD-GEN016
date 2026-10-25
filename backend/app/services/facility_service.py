@@ -258,13 +258,23 @@ async def delete_facility(
         set_runtime_setting("email_weekly_generator_id", None)
     await db.flush()
 
+    deleted_gen_names = [g.name for g in facility.generators] if cascade else []
+    deleted_stock_names = [s.name for s in facility.fuel_stocks]
+    unbound_users_count = len(facility.users)
+
     await log_audit(
         db=db,
         action="FACILITY_DELETED",
         entity_type="Facility",
         entity_id=str(facility_id),
         user_id=user_id,
-        details={"name": facility_name},
+        details={
+            "name": facility_name,
+            "cascade": cascade,
+            "generators_deleted": deleted_gen_names,
+            "fuel_stocks_deleted": deleted_stock_names,
+            "users_unbound_count": unbound_users_count
+        },
         ip_address=ip_address
     )
     await db.commit()

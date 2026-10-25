@@ -368,6 +368,7 @@ async def update_admin_system_settings(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+    from backend.app.services.audit_service import sanitize_audit_details
     await log_audit(
         db=db,
         action="SYSTEM_SETTINGS_UPDATED",
@@ -375,7 +376,7 @@ async def update_admin_system_settings(
         entity_id="global",
         user_id=current_user.id,
         details={
-            "updates": updates,
+            "updates": sanitize_audit_details(updates),
             "applied_to_all_generators": payload.apply_to_all_generators
         },
         ip_address=get_client_ip(request)

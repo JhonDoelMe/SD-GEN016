@@ -51,7 +51,9 @@ def verify_facility_access(current_user: User, facility_id: Optional[int]) -> Op
     """
     Enforces strict Multi-site facility isolation (Variant B):
     - SuperAdmin and Admin have access to all facilities.
-    - Operators and Viewers are restricted to their assigned `current_user.facility_id`.
+    - Operators and Viewers are strictly restricted to their assigned `current_user.facility_id`.
+      If their profile has no facility_id assigned (None), access is denied (fail-closed)
+      with a message that they await assignment by an administrator.
       If they request a different facility_id, raises 403 Forbidden.
       If facility_id is None, returns their assigned facility_id.
     """
@@ -60,7 +62,10 @@ def verify_facility_access(current_user: User, facility_id: Optional[int]) -> Op
 
     user_fac_id = current_user.facility_id
     if not user_fac_id:
-        return facility_id
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Доступ заборонено: ваш обліковий запис очікує закріплення за об'єктом адміністратором"
+        )
 
     if facility_id is not None and int(facility_id) != int(user_fac_id):
         raise HTTPException(
@@ -77,7 +82,8 @@ async def verify_generator_facility_access(
 ) -> None:
     """
     Verifies that the target generator exists (404 if not found) and that
-    a non-admin user has access to the generator's facility (403 if mismatch).
+    a non-admin user has access to the generator's facility (403 if mismatch
+    or if user has no assigned facility).
     """
     if generator_id is None:
         return
@@ -89,11 +95,16 @@ async def verify_generator_facility_access(
             detail="Генератор не знайдено"
         )
 
-    if not is_user_admin_or_super(current_user) and current_user.facility_id:
-        if gen.facility_id and int(gen.facility_id) != int(current_user.facility_id):
+    if not is_user_admin_or_super(current_user):
+        if not current_user.facility_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Доступ заборонено: ваш обліковий запис очікує закріплення за об'єктом адміністратором"
+            )
+        if gen.facility_id is None or int(gen.facility_id) != int(current_user.facility_id):
             from backend.app.models.facility import Facility
-            fac = await db.get(Facility, gen.facility_id)
-            fac_name = fac.name if fac else f"ID {gen.facility_id}"
+            fac = await db.get(Facility, gen.facility_id) if gen.facility_id else None
+            fac_name = fac.name if fac else (f"ID {gen.facility_id}" if gen.facility_id else "не закріплено")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Ви не можете вибрати генератор '{gen.name}', він закріплений за об'єктом '{fac_name}'"
