@@ -636,6 +636,29 @@ body {
   filter: brightness(1.1);
 }
 
+/* Empty / Deficit Tank Warning Halo for Start Button */
+.btn-hero.btn-start.btn-fuel-warning {
+  border: 2px solid var(--accent-red) !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4), 0 0 22px rgba(239, 68, 68, 0.45) !important;
+  animation: pulse-fuel-warning 1.8s infinite ease-in-out !important;
+}
+
+[data-theme="light"] .btn-hero.btn-start.btn-fuel-warning {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.45), 0 0 20px rgba(220, 38, 38, 0.4) !important;
+}
+
+@keyframes pulse-fuel-warning {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.35), 0 0 16px rgba(239, 68, 68, 0.35);
+    border-color: #ef4444;
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.65), 0 0 30px rgba(239, 68, 68, 0.7);
+    border-color: #f87171;
+  }
+}
+
 .btn-stop {
   background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
   color: white;
@@ -756,6 +779,65 @@ body {
 .btn-action span.icon {
   font-size: 1.8rem;
   line-height: 1;
+}
+
+/* Amber / Orange Highlight for Quick Action "Заправити бак" when tank is empty/deficit */
+.btn-action.btn-action-refuel-highlight {
+  position: relative;
+  border: 2px solid var(--accent-amber) !important;
+  background: rgba(245, 158, 11, 0.12) !important;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25), 0 4px 14px rgba(245, 158, 11, 0.2) !important;
+  animation: pulse-refuel-amber 2s infinite ease-in-out;
+}
+
+[data-theme="light"] .btn-action.btn-action-refuel-highlight {
+  border-color: #d97706 !important;
+  background: rgba(217, 119, 6, 0.08) !important;
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.2), 0 4px 14px rgba(217, 119, 6, 0.12) !important;
+}
+
+.btn-action.btn-action-refuel-highlight:hover {
+  background: rgba(245, 158, 11, 0.2) !important;
+  border-color: #fbbf24 !important;
+  transform: translateY(-2px);
+}
+
+.btn-action.btn-action-refuel-highlight span.icon {
+  color: var(--accent-amber);
+  filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.45));
+}
+
+.btn-action.btn-action-refuel-highlight::after {
+  content: "ПОТРІБНА ЗАПРАВКА";
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent-amber);
+  color: #0f172a;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  z-index: 2;
+}
+
+[data-theme="light"] .btn-action.btn-action-refuel-highlight::after {
+  background: #d97706;
+  color: #ffffff;
+}
+
+@keyframes pulse-refuel-amber {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2), 0 4px 12px rgba(245, 158, 11, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.4), 0 4px 20px rgba(245, 158, 11, 0.3);
+  }
 }
 
 /* ==========================================================================

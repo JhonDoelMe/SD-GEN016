@@ -262,6 +262,15 @@ function applyRolePermissionsUI() {
 
   // Quick Action Buttons on Dashboard
   setBtnState('btnQuickTransfer', !viewer && hasPermission('fuel:transfer'), 'Заправка генератора недоступна для вашої ролі 🔒', '<span class="icon">⛽</span><span>Заправити бак 🔒</span>');
+  const btnTransferEl = document.getElementById('btnQuickTransfer');
+  if (btnTransferEl) {
+    const isDeficit = currentGenerator && (currentGenerator.fuel_tank_level_l <= 0);
+    if (isDeficit && !viewer && hasPermission('fuel:transfer')) {
+      btnTransferEl.classList.add('btn-action-refuel-highlight');
+    } else {
+      btnTransferEl.classList.remove('btn-action-refuel-highlight');
+    }
+  }
   setBtnState('btnQuickReceipt', !viewer && hasPermission('fuel:receipt'), 'Оприбуткування палива недоступне для вашої ролі 🔒', '<span class="icon">📥</span><span>+ Прийняти паливо 🔒</span>');
   setBtnState('btnQuickMaint', !viewer && (hasPermission('maintenance:create_intermediate') || hasPermission('maintenance:perform_scheduled')), 'Фіксація ТО недоступна для вашої ролі 🔒', '<span class="icon">🛠️</span><span>Зафіксувати ТО 🔒</span>');
   setBtnState('btnQuickFault', !viewer && hasPermission('faults:create'), 'Реєстрація несправності недоступна для вашої ролі 🔒', '<span class="icon">⚠️</span><span>Несправність 🔒</span>');
@@ -1175,6 +1184,9 @@ async function loadGeneratorData() {
     const badge = document.getElementById('genStatusBadge');
     const btn = document.getElementById('mainActionBtn');
     const banner = document.getElementById('activeRunBanner');
+    const btnTransfer = document.getElementById('btnQuickTransfer');
+
+    const isFuelDeficit = (fuelL <= 0);
 
     badge.className = 'badge';
     if (currentGenerator.status === 'RUNNING') {
@@ -1182,26 +1194,51 @@ async function loadGeneratorData() {
       badge.innerText = 'ПРАЦЮЄ';
       btn.className = 'btn-hero btn-stop';
       btn.innerHTML = '<span>⏹</span><span>ЗУПИНИТИ ГЕНЕРАТОР</span>';
+      btn.removeAttribute('title');
     } else if (currentGenerator.status === 'MAINTENANCE_REQUIRED') {
       badge.classList.add('badge-maintenance');
       badge.innerText = 'ПОТРІБНЕ ТО';
-      btn.className = 'btn-hero btn-start';
-      btn.innerHTML = '<span>▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>';
+      btn.className = 'btn-hero btn-start' + (isFuelDeficit ? ' btn-fuel-warning' : '');
+      btn.innerHTML = isFuelDeficit
+        ? '<span style="font-size: 1.35rem;">⚠️</span><span style="font-size: 1.4rem;">▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>'
+        : '<span>▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>';
+      if (isFuelDeficit) {
+        btn.title = 'Увага: у баку за обліком 0 л (дефіцит)! Запуск дозволено за фактичним залишком палива.';
+      } else {
+        btn.removeAttribute('title');
+      }
     } else if (currentGenerator.status === 'FAULTY') {
       badge.classList.add('badge-faulty');
       badge.innerText = 'НЕСПРАВНИЙ';
       btn.className = 'btn-hero btn-start';
       btn.innerHTML = '<span>⚠️</span><span>НЕСПРАВНІСТЬ (БЛОК)</span>';
+      btn.removeAttribute('title');
     } else if (currentGenerator.status === 'BLOCKED') {
       badge.classList.add('badge-blocked');
       badge.innerText = 'ЗАБЛОКОВАНО';
       btn.className = 'btn-hero btn-start';
       btn.innerHTML = '<span>🔒</span><span>ЗАБЛОКОВАНО</span>';
+      btn.removeAttribute('title');
     } else {
       badge.classList.add('badge-stopped');
       badge.innerText = 'ЗУПИНЕНО';
-      btn.className = 'btn-hero btn-start';
-      btn.innerHTML = '<span>▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>';
+      btn.className = 'btn-hero btn-start' + (isFuelDeficit ? ' btn-fuel-warning' : '');
+      btn.innerHTML = isFuelDeficit
+        ? '<span style="font-size: 1.35rem;">⚠️</span><span style="font-size: 1.4rem;">▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>'
+        : '<span>▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>';
+      if (isFuelDeficit) {
+        btn.title = 'Увага: у баку за обліком 0 л (дефіцит)! Запуск дозволено за фактичним залишком палива.';
+      } else {
+        btn.removeAttribute('title');
+      }
+    }
+
+    if (btnTransfer) {
+      if (isFuelDeficit && !isViewerOnly() && hasPermission('fuel:transfer')) {
+        btnTransfer.classList.add('btn-action-refuel-highlight');
+      } else {
+        btnTransfer.classList.remove('btn-action-refuel-highlight');
+      }
     }
 
     // Active Run Check
@@ -1268,11 +1305,15 @@ function updateRunStopwatchDisplay() {
 
     if (cardTank) {
       cardTank.innerText = liveTank.toFixed(1).replace('.', ',');
-      if (liveTank < 0) {
+      const btnTransfer = document.getElementById('btnQuickTransfer');
+      if (liveTank <= 0) {
         cardTank.style.color = '#ef4444';
         if (tankProgress) tankProgress.style.width = '0%';
         if (cardTankHoursRem) {
           cardTankHoursRem.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ Дефіцит: ${formatLiters(Math.abs(liveTank))} (потрібна заправка!)</span>`;
+        }
+        if (btnTransfer && !isViewerOnly() && hasPermission('fuel:transfer')) {
+          btnTransfer.classList.add('btn-action-refuel-highlight');
         }
       } else {
         cardTank.style.color = 'inherit';
@@ -1286,6 +1327,9 @@ function updateRunStopwatchDisplay() {
           } else {
             cardTankHoursRem.innerHTML = `вистачить на ~<b>${remHours.toFixed(1).replace('.', ',')}</b> год (при ${nominal} л/год)`;
           }
+        }
+        if (btnTransfer) {
+          btnTransfer.classList.remove('btn-action-refuel-highlight');
         }
       }
     }
