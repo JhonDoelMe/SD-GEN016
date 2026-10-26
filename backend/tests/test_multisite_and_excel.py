@@ -222,10 +222,10 @@ async def test_dynamic_excel_report_generation(client, superadmin_auth, operator
     assert "Звіт по днях" in sheet_names
     assert "Рух палива та Склад ГСМ" in sheet_names
     assert "Технічне обслуговування" in sheet_names
-    assert "Журнал несправностей та інцидентів" in sheet_names
+    assert "Несправності та інциденти" in sheet_names
 
     # Verify Sheet 5 does NOT contain audit logs anymore (removed per management decision)
-    ws5 = wb["Журнал несправностей та інцидентів"]
+    ws5 = wb["Несправності та інциденти"]
     ws5_text = " ".join(str(cell.value) for row in ws5.iter_rows() for cell in row if cell.value)
     assert "Журнал несправностей та інцидентів" in ws5_text
     assert "Журнал операційного аудиту" not in ws5_text
