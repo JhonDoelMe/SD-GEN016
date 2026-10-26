@@ -10,6 +10,7 @@ from backend.app.services.yasno_service import (
     _format_minutes,
     _format_time_left,
     _SENT_YASNO_ALERTS,
+    _YASNO_ALERT_ATTEMPTS,
 )
 
 
@@ -126,3 +127,64 @@ async def test_check_and_notify_yasno_outages(db_session):
                 dispatched_again = await check_and_notify_yasno_outages(db_session)
                 assert len(dispatched_again) == 0
                 assert mock_push.call_count == 1  # Still 1, not called again
+
+                # Simulate container restart (clear in-memory set) - DB NotificationLog must still prevent duplicate!
+                _SENT_YASNO_ALERTS.clear()
+                _YASNO_ALERT_ATTEMPTS.clear()
+                dispatched_after_restart = await check_and_notify_yasno_outages(db_session)
+                assert len(dispatched_after_restart) == 0
+                assert mock_push.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_yasno_push_retry_on_zero_sent_and_bounded_attempts(db_session):
+    fac = Facility(
+        name="Самар Склад",
+        address="вул. Центральна, 10",
+        yasno_enabled=True,
+        yasno_group="4.1",
+        yasno_region_id=3,
+        yasno_dso_id=301
+    )
+    db_session.add(fac)
+    await db_session.flush()
+
+    _SENT_YASNO_ALERTS.clear()
+    _YASNO_ALERT_ATTEMPTS.clear()
+
+    mock_raw = {
+        "4.1": {
+            "today": {
+                "slots": [
+                    {"start": 0, "end": 900, "type": "NotPlanned"},   # 00:00 - 15:00
+                    {"start": 900, "end": 1080, "type": "Definite"}   # 15:00 - 18:00
+                ]
+            }
+        }
+    }
+
+    with patch("backend.app.services.yasno_service.fetch_raw_yasno_schedule", new=AsyncMock(return_value=mock_raw)):
+        with patch("backend.app.services.yasno_service.datetime") as mock_dt:
+            fake_now = datetime.datetime(2026, 10, 26, 14, 30, tzinfo=ZoneInfo("Europe/Kyiv"))
+            mock_dt.datetime.now.return_value = fake_now
+            mock_dt.timezone = datetime.timezone
+
+            # 1st attempt fails (sent=0) -> should NOT permanently lock the alert slot
+            with patch(
+                "backend.app.services.notification_service.send_push_notification",
+                new=AsyncMock(side_effect=[{"sent": 0, "failed": 1}, {"sent": 2, "failed": 0}])
+            ) as mock_push:
+                res1 = await check_and_notify_yasno_outages(db_session)
+                assert len(res1) == 0
+                assert mock_push.call_count == 1
+
+                # 2nd attempt retries and succeeds (sent=2)
+                res2 = await check_and_notify_yasno_outages(db_session)
+                assert len(res2) == 1
+                assert res2[0]["slot"] == "15:00"
+                assert mock_push.call_count == 2
+
+                # 3rd call does not send again because 2nd attempt succeeded
+                res3 = await check_and_notify_yasno_outages(db_session)
+                assert len(res3) == 0
+                assert mock_push.call_count == 2

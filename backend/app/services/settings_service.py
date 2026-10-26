@@ -114,6 +114,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "email_weekly_recipients": "",
     "email_weekly_send_day": 0,
     "email_weekly_send_time": "08:00",
+    "last_weekly_digest_date": "",
     # Default Facility, Generator & Fuel Stock Chain (Fixed Binding)
     "default_facility_id": None,
     "default_generator_id": None,

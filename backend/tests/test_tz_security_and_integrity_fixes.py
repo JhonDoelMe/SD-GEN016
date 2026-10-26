@@ -615,3 +615,16 @@ def test_production_mode_blocks_startup_with_insecure_defaults():
     )
     dev_settings.check_security_warnings()  # Allowed!
 
+
+@pytest.mark.asyncio
+async def test_lifespan_aborts_if_audit_sanitization_fails_and_version_matches():
+    from unittest.mock import AsyncMock
+    from backend.app.main import app, lifespan
+
+    assert app.version == "4.5.3"
+
+    with patch("backend.app.main.sanitize_historical_audit_logs", new=AsyncMock(side_effect=Exception("DB lock during sanitization"))):
+        with pytest.raises(RuntimeError, match="CRITICAL SECURITY FAILURE: Historical audit log sanitization failed"):
+            async with lifespan(app):
+                pass
+

@@ -55,13 +55,13 @@ def ensure_schema_updates(sync_conn):
                 ),
                 {
                     "name": "Основний об'єкт",
-                    "address": "Головна локація (м. Самар)",
+                    "address": "Головна локація",
                     "desc": "Базовий об'єкт генератора",
                     "tz": "Europe/Kyiv",
-                    "yasno_enabled": True,
+                    "yasno_enabled": False,
                     "region_id": 3,
                     "dso_id": 301,
-                    "group": "3.2",
+                    "group": None,
                 }
             )
         default_facility_id = sync_conn.execute(text("SELECT id FROM facilities ORDER BY id ASC LIMIT 1")).scalar()
@@ -155,14 +155,28 @@ async def lifespan(app: FastAPI):
     try:
         async with AsyncSessionLocal() as session:
             await seed_initial_data(session)
-            sanitized_count = await sanitize_historical_audit_logs(session)
-            if sanitized_count > 0:
-                print(f"[AUDIT] Sanitized {sanitized_count} historical audit records containing plaintext secrets.", flush=True)
         print(f"[AUTH] SuperAdmin user '{settings.INITIAL_ADMIN_LOGIN}' successfully ensured. Ready for login.", flush=True)
     except Exception as e:
         import traceback
-        print(f"[ERROR] Failed to seed initial data: {e}")
+        print(f"[ERROR] Failed to seed initial data: {e}", flush=True)
         traceback.print_exc()
+        if str(getattr(settings, "APP_ENV", "")).strip().lower() in ("production", "prod"):
+            raise RuntimeError(f"CRITICAL: Initial data seeding failed in production: {e}") from e
+
+    # 2.1. Mandatory historical audit log sanitization (fail-closed)
+    try:
+        async with AsyncSessionLocal() as session:
+            sanitized_count = await sanitize_historical_audit_logs(session)
+            if sanitized_count > 0:
+                print(f"[AUDIT] Sanitized {sanitized_count} historical audit records containing plaintext secrets.", flush=True)
+    except Exception as e:
+        import traceback
+        print(f"[CRITICAL] Historical audit log sanitization failed: {e}", flush=True)
+        traceback.print_exc()
+        raise RuntimeError(
+            f"CRITICAL SECURITY FAILURE: Historical audit log sanitization failed ({e}). "
+            "Application startup aborted to prevent unredacted secret exposure."
+        ) from e
 
     # 3. Ensure uploads and backups directories exist
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
@@ -185,7 +199,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Service Desk Генератора (SD-GEN016)",
     description="Система оперативного обліку фактичної експлуатації бензинового генератора",
-    version="4.5.1",
+    version="4.5.3",
     lifespan=lifespan
 )
 

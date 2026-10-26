@@ -1,7 +1,7 @@
 # Документація REST API (/api/v1)
 
-**Версія API:** 4.5.0 (Security Hardened, Universal Email, Multi-site Scoped)  
-**Дата набрання чинності:** 24 жовтня 2026 року  
+**Версія API:** 4.5.3 (Security Hardened, Universal Email, YASNO Outages & Multi-site Scoped)  
+**Дата набрання чинності:** 26 жовтня 2026 року  
 
 Усі маршрути API згруповані за доменними модулями та захищені за допомогою JWT Bearer токенів або HTTP-only Cookie.
 Інтерактивна документація OpenAPI/Swagger доступна за адресою: `http://localhost:8000/docs` (або `http://localhost:8000/redoc`).

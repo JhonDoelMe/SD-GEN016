@@ -267,7 +267,45 @@ async def check_and_send_weekly_digest(db: AsyncSession) -> bool:
 
     target_time_str = str(get_runtime_setting("email_weekly_send_time", "08:00")).strip()
     today_str = now_fac.strftime("%Y-%m-%d")
+
+    # 1. Check in-memory and runtime cache
     if _LAST_WEEKLY_DIGEST_DATE == today_str:
+        return False
+    if str(get_runtime_setting("last_weekly_digest_date", "")).strip() == today_str:
+        _LAST_WEEKLY_DIGEST_DATE = today_str
+        return False
+
+    # 2. Check persistent DB state (survives container restarts, code reloads, VPS reboots)
+    import json
+    from sqlalchemy import func
+    from backend.app.models.settings import SystemSetting
+    from backend.app.services.settings_service import update_system_settings
+
+    setting_res = await db.execute(
+        select(SystemSetting.value_json).where(SystemSetting.key == "last_weekly_digest_date")
+    )
+    raw_setting_val = setting_res.scalar()
+    if raw_setting_val:
+        try:
+            db_last_date = str(json.loads(raw_setting_val)).strip()
+        except Exception:
+            db_last_date = str(raw_setting_val).strip('" ')
+        if db_last_date == today_str:
+            _LAST_WEEKLY_DIGEST_DATE = today_str
+            return False
+
+    today_start_utc = now_fac.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    existing_log_res = await db.execute(
+        select(func.count(NotificationLog.id)).where(
+            and_(
+                NotificationLog.event_type == "EMAIL_DIGEST_WEEKLY",
+                NotificationLog.created_at >= today_start_utc,
+                NotificationLog.success_count > 0
+            )
+        )
+    )
+    if (existing_log_res.scalar() or 0) > 0:
+        _LAST_WEEKLY_DIGEST_DATE = today_str
         return False
 
     cur_time_str = now_fac.strftime("%H:%M")
@@ -283,13 +321,38 @@ async def check_and_send_weekly_digest(db: AsyncSession) -> bool:
         excel_bytes = await generate_excel_report(db=db, facility_id=target_fac, generator_id=target_gen)
         week_ago = now_fac - datetime.timedelta(days=7)
         period_label = f"{week_ago.strftime('%d.%m.%Y')} — {now_fac.strftime('%d.%m.%Y')}"
-        await send_weekly_digest_email(
+        send_res = await send_weekly_digest_email(
             recipients=rec_list,
             excel_bytes=excel_bytes,
             period_label=period_label,
             summary_text="Щотижневий автоматичний звіт за розкладом.",
             db=db
         )
+        if isinstance(send_res, dict) and send_res.get("status") == "error":
+            print(f"[EMAIL] Weekly digest email failed to deliver: {send_res.get('error')}", flush=True)
+            return False
+
+        # Persist state to DB so container restarts on the same day never re-send the digest
+        await update_system_settings(db, {"last_weekly_digest_date": today_str})
+        db.add(NotificationLog(
+            event_type="EMAIL_DIGEST_WEEKLY",
+            facility_id=target_fac,
+            generator_id=target_gen,
+            title=f"📊 Щотижневий звіт роботи генераторів — {period_label}",
+            body=f"Щотижневий автоматичний звіт за розкладом надіслано на: {', '.join(rec_list)}",
+            recipients_count=len(rec_list),
+            success_count=len(rec_list),
+            failure_count=0
+        ))
+        await log_audit(
+            db=db,
+            action="WEEKLY_DIGEST_AUTO_SENT",
+            entity_type="Report",
+            entity_id=today_str,
+            details={"recipients": rec_list, "period": period_label, "date": today_str}
+        )
+        await db.commit()
+
         _LAST_WEEKLY_DIGEST_DATE = today_str
         print(f"[EMAIL] Weekly digest email successfully dispatched to {rec_list}", flush=True)
         return True

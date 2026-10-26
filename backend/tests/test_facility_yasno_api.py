@@ -3,6 +3,23 @@ from unittest.mock import AsyncMock, patch
 
 
 @pytest.mark.asyncio
+async def test_initial_facility_yasno_disabled_by_default(client, superadmin_auth):
+    # Initial seeded facility (id=1) MUST NOT have YASNO enabled or hardcoded group 3.2
+    facs_res = await client.get("/api/v1/facilities", headers=superadmin_auth)
+    assert facs_res.status_code == 200
+    facs = facs_res.json()
+    default_fac = next(f for f in facs if f["id"] == 1)
+    assert default_fac["yasno_enabled"] is False
+    assert default_fac["yasno_group"] is None
+
+    sched_res = await client.get("/api/v1/facilities/1/outage-schedule", headers=superadmin_auth)
+    assert sched_res.status_code == 200
+    sched_data = sched_res.json()
+    assert sched_data["enabled"] is False
+    assert sched_data["status"] == "DISABLED"
+
+
+@pytest.mark.asyncio
 async def test_facility_yasno_configuration_and_schedule_api(client, superadmin_auth):
     # 1. Create facility with YASNO monitoring enabled
     create_res = await client.post(

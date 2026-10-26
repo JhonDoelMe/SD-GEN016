@@ -213,3 +213,52 @@ async def test_audit_excel_export_and_rbac(client, superadmin_auth, admin_auth, 
     assert ws2.freeze_panes == "A5"
     ws2_text = " ".join(str(cell.value) for row in ws2.iter_rows() for cell in row if cell.value)
     assert "РЕЄСТР СИСТЕМНИХ КОРИГУВАНЬ" in ws2_text
+
+
+def test_audit_sanitizer_nested_structures_and_extended_keys():
+    from backend.app.services.audit_service import sanitize_audit_details, is_sensitive_key
+
+    assert is_sensitive_key("encryption_key") is True
+    assert is_sensitive_key("master_key") is True
+    assert is_sensitive_key("signing_key") is True
+    assert is_sensitive_key("access_key") is True
+    assert is_sensitive_key("key") is True
+    assert is_sensitive_key("database_url") is True
+    assert is_sensitive_key("updated_keys") is False
+    assert is_sensitive_key("facility_id") is False
+
+    payload = {
+        "action_by": "admin",
+        "updated_keys": ["smtp_primary_host", "encryption_key"],
+        "encryption_key": "AES256-SUPER-SECRET-KEY",
+        "database_url": "postgresql://admin:pass@localhost/db",
+        "nested_config": {
+            "signing_key": "RSA-SIGN-KEY",
+            "public_note": "visible",
+            "providers": [
+                {"name": "primary", "auth_key": "AUTH-123", "token": "TOK-456"},
+                {"name": "backup", "custom_key": "CUSTOM-789"},
+            ],
+        },
+        "adjustment_entry": {
+            "field": "encryption_key",
+            "old_value": "old_raw_key",
+            "new_value": "new_raw_key",
+            "reason": "Rotation"
+        }
+    }
+
+    sanitized = sanitize_audit_details(payload)
+    assert sanitized["action_by"] == "admin"
+    assert sanitized["updated_keys"] == ["smtp_primary_host", "encryption_key"]
+    assert sanitized["encryption_key"] == "[REDACTED]"
+    assert sanitized["database_url"] == "[REDACTED]"
+    assert sanitized["nested_config"]["signing_key"] == "[REDACTED]"
+    assert sanitized["nested_config"]["public_note"] == "visible"
+    assert sanitized["nested_config"]["providers"][0]["auth_key"] == "[REDACTED]"
+    assert sanitized["nested_config"]["providers"][0]["token"] == "[REDACTED]"
+    assert sanitized["nested_config"]["providers"][0]["name"] == "primary"
+    assert sanitized["nested_config"]["providers"][1]["custom_key"] == "[REDACTED]"
+    assert sanitized["adjustment_entry"]["old_value"] == "[REDACTED]"
+    assert sanitized["adjustment_entry"]["new_value"] == "[REDACTED]"
+    assert sanitized["adjustment_entry"]["reason"] == "Rotation"

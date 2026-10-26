@@ -6,30 +6,49 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.audit import AuditLog, SystemAdjustment
 
 SENSITIVE_KEY_MARKERS = (
-    "password", "passwd", "pwd", "secret", "token", "credential", "api_key", "private_key"
+    "password", "passwd", "pwd", "secret", "token", "credential",
+    "api_key", "apikey", "private_key", "encryption_key", "access_key",
+    "auth_key", "signing_key", "master_key", "session_key", "client_secret",
+    "database_url", "conn_str", "connection_string", "bearer", "key"
 )
+
+NON_SENSITIVE_KEY_ALLOWLIST = {
+    "updated_keys",
+    "changed_keys",
+    "foreign_key",
+    "primary_key",
+    "sort_key",
+}
 
 
 def is_sensitive_key(key: str) -> bool:
     """Returns True if the key name indicates a sensitive secret."""
-    k = str(key).lower()
+    k = str(key).strip().lower()
+    if k in NON_SENSITIVE_KEY_ALLOWLIST:
+        return False
     return any(marker in k for marker in SENSITIVE_KEY_MARKERS)
 
 
 def sanitize_audit_details(data: Any) -> Any:
     """
-    Recursively inspects dicts and lists, redacting any sensitive fields such as
-    passwords, tokens, API keys and secrets with '[REDACTED]'.
+    Recursively inspects dicts, lists, tuples and sets, redacting any sensitive fields
+    such as passwords, tokens, API keys, encryption keys and secrets with '[REDACTED]'.
     """
     if isinstance(data, dict):
         sanitized = {}
+        # Check if this dict describes a field change where 'field' or 'field_name' itself is sensitive
+        target_field = data.get("field") or data.get("field_name")
+        field_is_sensitive = is_sensitive_key(target_field) if isinstance(target_field, str) else False
+
         for k, v in data.items():
             if is_sensitive_key(k):
+                sanitized[k] = "[REDACTED]"
+            elif field_is_sensitive and str(k).lower() in ("old_value", "new_value", "value"):
                 sanitized[k] = "[REDACTED]"
             else:
                 sanitized[k] = sanitize_audit_details(v)
         return sanitized
-    elif isinstance(data, (list, tuple)):
+    elif isinstance(data, (list, tuple, set)):
         return [sanitize_audit_details(item) for item in data]
     return data
 

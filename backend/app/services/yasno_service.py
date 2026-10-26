@@ -5,10 +5,11 @@ import logging
 from zoneinfo import ZoneInfo
 from typing import Dict, Any, Optional, Tuple, List, Set
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.facility import Facility
+from backend.app.models.notification import NotificationLog
 
 logger = logging.getLogger("sd_gen016.yasno")
 
@@ -23,8 +24,11 @@ DSO_MAP: Dict[int, str] = {
 _YASNO_SCHEDULE_CACHE: Dict[Tuple[int, int], Tuple[float, Dict[str, Any]]] = {}
 CACHE_TTL_SECONDS = 900  # 15 minutes cache to protect upstream API
 
-# Set of already dispatched alert keys: (facility_id, date_iso, slot_start_minute)
+# Set of already successfully dispatched alert keys: (facility_id, date_iso, slot_start_minute)
 _SENT_YASNO_ALERTS: Set[Tuple[int, str, int]] = set()
+# Counter of delivery attempts per alert key for bounded retries when sent == 0
+_YASNO_ALERT_ATTEMPTS: Dict[Tuple[int, str, int], int] = {}
+MAX_YASNO_ALERT_RETRIES = 3
 
 
 def _format_minutes(mins: int) -> str:
@@ -282,8 +286,8 @@ def get_facility_outage_schedule(
 async def check_and_notify_yasno_outages(db: AsyncSession) -> List[Dict[str, Any]]:
     """
     Scans all facilities with YASNO monitoring enabled.
-    Sends push notification to facility operators 25-35 minutes prior to scheduled outages.
-    Anti-duplicate protection ensures only 1 notification per facility per outage slot.
+    Sends push notification to facility operators 20-35 minutes prior to scheduled outages.
+    Persistent anti-duplicate protection via NotificationLog + bounded retry on delivery failure.
     """
     from backend.app.services.notification_service import send_push_notification
 
@@ -299,7 +303,9 @@ async def check_and_notify_yasno_outages(db: AsyncSession) -> List[Dict[str, Any
         return []
 
     dispatched = []
-    today_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    today_iso = now_utc.strftime("%Y-%m-%d")
+    today_start_naive_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
 
     for fac in facilities:
         try:
@@ -329,6 +335,30 @@ async def check_and_notify_yasno_outages(db: AsyncSession) -> List[Dict[str, Any
                 if alert_key in _SENT_YASNO_ALERTS:
                     continue
 
+                slot_marker = f"(о {start_str})"
+                # Persistent DB check: verify if already delivered today or count failed attempts
+                existing_logs_res = await db.execute(
+                    select(NotificationLog).where(
+                        and_(
+                            NotificationLog.event_type == "YASNO_OUTAGE_ALERT",
+                            NotificationLog.facility_id == fac.id,
+                            NotificationLog.created_at >= today_start_naive_utc,
+                            NotificationLog.body.contains(slot_marker)
+                        )
+                    )
+                )
+                existing_logs = existing_logs_res.scalars().all()
+                if any((lg.success_count or 0) > 0 for lg in existing_logs):
+                    _SENT_YASNO_ALERTS.add(alert_key)
+                    continue
+
+                db_failed_attempts = len(existing_logs)
+                mem_attempts = _YASNO_ALERT_ATTEMPTS.get(alert_key, 0)
+                total_attempts = max(mem_attempts, db_failed_attempts)
+                if total_attempts >= MAX_YASNO_ALERT_RETRIES:
+                    _SENT_YASNO_ALERTS.add(alert_key)
+                    continue
+
                 type_label = "планове знеструмлення" if next_outage.get("type") == "Definite" else "можливе відключення"
                 title = f"⚡ YASNO: {type_label.capitalize()} (Черга {fac.yasno_group})"
                 body = (
@@ -344,9 +374,46 @@ async def check_and_notify_yasno_outages(db: AsyncSession) -> List[Dict[str, Any
                     facility_id=fac.id,
                     url="/"
                 )
-                _SENT_YASNO_ALERTS.add(alert_key)
-                dispatched.append({"facility_id": fac.id, "slot": start_str, "push": push_res})
-                logger.info(f"Dispatched YASNO outage alert for facility {fac.id} (group {fac.yasno_group}) at {start_str}")
+                sent_count = int((push_res or {}).get("sent", 0))
+                if sent_count > 0:
+                    # Ensure persistent NotificationLog exists even when send_push_notification is mocked in tests
+                    check_after = await db.execute(
+                        select(func.count(NotificationLog.id)).where(
+                            and_(
+                                NotificationLog.event_type == "YASNO_OUTAGE_ALERT",
+                                NotificationLog.facility_id == fac.id,
+                                NotificationLog.created_at >= today_start_naive_utc,
+                                NotificationLog.body.contains(slot_marker),
+                                NotificationLog.success_count > 0
+                            )
+                        )
+                    )
+                    if (check_after.scalar() or 0) == 0:
+                        db.add(NotificationLog(
+                            event_type="YASNO_OUTAGE_ALERT",
+                            facility_id=fac.id,
+                            title=title,
+                            body=body,
+                            recipients_count=sent_count,
+                            success_count=sent_count,
+                            failure_count=int((push_res or {}).get("failed", 0)),
+                            created_at=now_utc.replace(tzinfo=None)
+                        ))
+                        await db.commit()
+
+                    _SENT_YASNO_ALERTS.add(alert_key)
+                    _YASNO_ALERT_ATTEMPTS.pop(alert_key, None)
+                    dispatched.append({"facility_id": fac.id, "slot": start_str, "push": push_res})
+                    logger.info(f"Dispatched YASNO outage alert for facility {fac.id} (group {fac.yasno_group}) at {start_str}")
+                else:
+                    new_attempts = total_attempts + 1
+                    _YASNO_ALERT_ATTEMPTS[alert_key] = new_attempts
+                    if new_attempts >= MAX_YASNO_ALERT_RETRIES:
+                        _SENT_YASNO_ALERTS.add(alert_key)
+                    logger.warning(
+                        f"YASNO outage alert for facility {fac.id} at {start_str} returned sent=0 "
+                        f"(attempt {new_attempts}/{MAX_YASNO_ALERT_RETRIES}); will retry if within window."
+                    )
         except Exception as ex:
             logger.error(f"Error checking YASNO outage for facility {fac.id}: {ex}")
 

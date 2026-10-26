@@ -348,3 +348,46 @@ async def test_settings_update_does_not_wipe_password_with_empty_string(client, 
     from backend.app.services.settings_service import get_runtime_setting
     assert get_runtime_setting("smtp_primary_password") == "preserved_gmail_pass"
     assert get_runtime_setting("smtp_fallback_password") == "preserved_ukr_pass"
+
+
+@pytest.mark.asyncio
+async def test_weekly_digest_persistent_deduplication_across_container_restarts(db_session):
+    import datetime
+    from zoneinfo import ZoneInfo
+    from unittest.mock import AsyncMock
+    import backend.app.services.operational_guard_service as guard_svc
+    from backend.app.services.settings_service import update_system_settings, set_runtime_setting, get_runtime_setting
+
+    # Suppose today is Monday 2026-10-26 10:30 Kyiv (weekday=0), scheduled at 08:00
+    fake_now = datetime.datetime(2026, 10, 26, 10, 30, tzinfo=ZoneInfo("Europe/Kyiv"))
+
+    await update_system_settings(db_session, {
+        "smtp_enabled": True,
+        "email_weekly_report_enabled": True,
+        "email_weekly_recipients": "director@maxi-ua.com, engineer@maxi-ua.com",
+        "email_weekly_send_day": 0,
+        "email_weekly_send_time": "08:00",
+        "last_weekly_digest_date": ""
+    })
+    guard_svc._LAST_WEEKLY_DIGEST_DATE = None
+
+    with patch("backend.app.services.operational_guard_service.now_facility", return_value=fake_now):
+        with patch("backend.app.services.report_service.generate_excel_report", new=AsyncMock(return_value=b"FAKE_XLSX")):
+            with patch(
+                "backend.app.services.email_service.send_weekly_digest_email",
+                new=AsyncMock(return_value={"status": "ok", "provider": "primary"})
+            ) as mock_send:
+                # 1. First execution at 10:30 -> sends the weekly digest and persists state in DB
+                sent1 = await guard_svc.check_and_send_weekly_digest(db_session)
+                assert sent1 is True
+                assert mock_send.call_count == 1
+                assert get_runtime_setting("last_weekly_digest_date") == "2026-10-26"
+
+                # 2. Simulate Docker container restart (wipe in-memory variable AND in-memory runtime cache)
+                guard_svc._LAST_WEEKLY_DIGEST_DATE = None
+                set_runtime_setting("last_weekly_digest_date", "")
+
+                # 3. Guard runs again after container restart at 14:00 on the same Monday -> MUST NOT re-send!
+                sent2 = await guard_svc.check_and_send_weekly_digest(db_session)
+                assert sent2 is False
+                assert mock_send.call_count == 1

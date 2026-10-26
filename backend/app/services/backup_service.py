@@ -312,7 +312,7 @@ async def create_backup(
         # 5. Generate manifest.json
         manifest = {
             "app_name": "Service Desk Бензинового Генератора (SD-GEN016)",
-            "app_version": "4.5.0",
+            "app_version": "4.5.3",
             "backup_id": backup_id,
             "filename": zip_filename,
             "backup_type": clean_type,

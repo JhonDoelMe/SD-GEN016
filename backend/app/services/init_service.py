@@ -130,9 +130,11 @@ async def seed_initial_data(db: AsyncSession) -> None:
     if not default_fac:
         default_fac = Facility(
             name="Основний об'єкт",
-            address="вул. Центральна, 1",
+            address="Головна локація",
             description="Головна виробничо-офісна локація",
-            timezone="Europe/Kyiv"
+            timezone="Europe/Kyiv",
+            yasno_enabled=False,
+            yasno_group=None
         )
         db.add(default_fac)
         await db.flush()
