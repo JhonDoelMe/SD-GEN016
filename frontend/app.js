@@ -475,6 +475,7 @@ window.openModal = function (id) {
   if (id === 'modalTransfer') setupTransferModal();
   if (id === 'modalNewStock') setupNewStockModal();
   if (id === 'modalAdjustment') openAdjustmentModal();
+  if (id === 'modalExportAudit') openAuditExportModal();
 };
 
 window.closeModal = function (id) {
@@ -2623,11 +2624,22 @@ async function loadAuditData() {
 
 window.openAuditExportModal = function () {
   if (!isSuperAdmin()) {
-    showToast('Експорт аудиту в Excel доступний виключно Головному Суперадміністратору', 'warning');
+    showToast('Експорт аудиту в Excel доступний виключно Головному Суперадміністратору 🔒', 'warning');
     return;
   }
-  setAuditExportPeriod('month');
-  openModal('modalExportAudit');
+  const modal = document.getElementById('modalExportAudit');
+  if (modal) {
+    modal.style.display = 'flex';
+    document.body.classList.add('modal-open');
+    if (typeof toggleMobileMoreSheet === 'function') {
+      toggleMobileMoreSheet(false);
+    }
+  }
+  try {
+    setAuditExportPeriod('month');
+  } catch (err) {
+    console.warn('Failed to set default audit export period:', err);
+  }
 };
 
 window.setAuditExportPeriod = function (period) {
@@ -5314,6 +5326,12 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshServerStatus();
   setInterval(refreshServerStatus, 30000);
   setTimeout(checkPushSubscriptionStatus, 1500);
+
+  // Audit export modal trigger listener
+  document.getElementById('btnOpenExportAudit')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    openAuditExportModal();
+  });
 
   // Forgot password link listener
   document.getElementById('linkForgotPassword')?.addEventListener('click', (e) => {

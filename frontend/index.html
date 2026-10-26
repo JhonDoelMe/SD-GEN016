@@ -37,7 +37,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.5">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.6">
 </head>
 <body>
 
@@ -590,7 +590,7 @@
         <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
           <h3>Журнал аудиту та Системні коригування</h3>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button id="btnOpenExportAudit" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #38bdf8; color: #38bdf8;" onclick="openAuditExportModal()">📊 Експорт аудиту в Excel</button>
+            <button type="button" id="btnOpenExportAudit" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #38bdf8; color: #38bdf8;" onclick="openAuditExportModal()">📊 Експорт аудиту в Excel</button>
             <button id="btnOpenAdjustment" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #a855f7; color: #c084fc;" onclick="openAdjustmentModal()">⚙️ Системне коригування (Головний адміністратор)</button>
           </div>
         </div>
@@ -1695,7 +1695,7 @@
   </div>
 
   <!-- Modal: Export Audit (SuperAdmin) -->
-  <div id="modalExportAudit" class="modal-overlay">
+  <div id="modalExportAudit" class="modal-overlay" onclick="if (event.target === this) closeModal('modalExportAudit')">
     <div class="modal-content" style="max-width: 480px;">
       <div class="modal-header">
         <h3>📊 Експорт аудиту в Excel</h3>
@@ -2901,7 +2901,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.9.5"></script>
+  <script src="/frontend/app.js?v=4.9.6"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

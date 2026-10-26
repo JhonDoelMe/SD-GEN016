@@ -234,7 +234,7 @@ if FRONTEND_DIR.exists():
     async def get_service_worker():
         sw_path = FRONTEND_DIR / "sw.js"
         if sw_path.exists():
-            return FileResponse(sw_path, media_type="application/javascript")
+            return FileResponse(sw_path, media_type="application/javascript", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
         return JSONResponse({"error": "Service worker not found"}, status_code=404)
 
     @app.get("/robots.txt", include_in_schema=False)
