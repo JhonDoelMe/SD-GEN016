@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="frontend/icons/logo.png" alt="SD-GEN016 Official Logo" width="160">
+</p>
+
 # SERVICE DESK ДЛЯ ЕКСПЛУАТАЦІЇ БЕНЗИНОВИХ ТА ДИЗЕЛЬНИХ ГЕНЕРАТОРІВ (SD-GEN016)
 
 [![Release](https://img.shields.io/badge/Release-v4.5.3-blue.svg)](https://github.com/JhonDoelMe/SD-GEN016/releases)

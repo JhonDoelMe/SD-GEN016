@@ -1,11 +1,15 @@
-const CACHE_NAME = 'sd-gen016-v4.9.9';
+const CACHE_NAME = 'sd-gen016-v4.9.10';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
-  '/frontend/styles.css?v=4.9.9',
+  '/frontend/styles.css?v=4.9.10',
   '/frontend/app.js?v=4.9.9',
+  '/frontend/icons/logo.png',
+  '/frontend/icons/apple-touch-icon.png',
   '/frontend/icons/icon-192.png',
   '/frontend/icons/icon-512.png',
+  '/frontend/icons/icon-maskable-192.png',
+  '/frontend/icons/icon-maskable-512.png',
   '/frontend/favicon.ico'
 ];
 
