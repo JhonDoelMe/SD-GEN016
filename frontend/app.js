@@ -1115,6 +1115,7 @@ async function loadAllData() {
     if (cardMaintSub) cardMaintSub.innerText = `доступно для оператора`;
   }
   await loadRecentRuns();
+  await loadFacilityOutageSchedule(currentFacilityId);
   applyRolePermissionsUI();
 }
 
@@ -3797,10 +3798,14 @@ document.getElementById('facilityCreateForm')?.addEventListener('submit', async 
     return;
   }
 
+  const yasno_enabled = document.getElementById('newFacilityYasnoEnabled')?.checked ?? false;
+  const yasno_dso_id = parseInt(document.getElementById('newFacilityYasnoDso')?.value || '301');
+  const yasno_group = document.getElementById('newFacilityYasnoGroup')?.value || null;
+
   try {
     const created = await api('/facilities', {
       method: 'POST',
-      body: JSON.stringify({ name, address, description, timezone: 'Europe/Kyiv' })
+      body: JSON.stringify({ name, address, description, timezone: 'Europe/Kyiv', yasno_enabled, yasno_dso_id, yasno_group, yasno_region_id: 3 })
     });
     closeModal('modalCreateFacility');
     showToast(`Об'єкт "${created.name}" успішно створено!`, 'success');
@@ -3935,6 +3940,18 @@ window.openQuickEditFacilityModal = async function() {
     document.getElementById('quickEditFacilityName').value = fac.name || '';
     document.getElementById('quickEditFacilityAddress').value = fac.address || '';
     document.getElementById('quickEditFacilityDescription').value = fac.description || '';
+
+    const yasnoEn = document.getElementById('quickEditFacilityYasnoEnabled');
+    if (yasnoEn) {
+      yasnoEn.checked = !!fac.yasno_enabled;
+      const fFields = document.getElementById('quickEditFacilityYasnoFields');
+      if (fFields) fFields.style.display = yasnoEn.checked ? 'grid' : 'none';
+    }
+    const dsoSel = document.getElementById('quickEditFacilityYasnoDso');
+    if (dsoSel) dsoSel.value = fac.yasno_dso_id || 301;
+    const grpSel = document.getElementById('quickEditFacilityYasnoGroup');
+    if (grpSel) grpSel.value = fac.yasno_group || '3.2';
+
     openModal('modalQuickEditFacility');
   } catch (err) {
     showToast(err.message || "Не вдалося завантажити дані об'єкта", 'error');
@@ -3948,10 +3965,14 @@ document.getElementById('quickEditFacilityForm')?.addEventListener('submit', asy
   const address = document.getElementById('quickEditFacilityAddress').value.trim();
   const description = document.getElementById('quickEditFacilityDescription').value.trim();
 
+  const yasno_enabled = document.getElementById('quickEditFacilityYasnoEnabled')?.checked ?? false;
+  const yasno_dso_id = parseInt(document.getElementById('quickEditFacilityYasnoDso')?.value || '301');
+  const yasno_group = document.getElementById('quickEditFacilityYasnoGroup')?.value || null;
+
   try {
     const updated = await api(`/facilities/${facId}`, {
       method: 'PUT',
-      body: JSON.stringify({ name, address, description })
+      body: JSON.stringify({ name, address, description, yasno_enabled, yasno_dso_id, yasno_group, yasno_region_id: 3 })
     });
     closeModal('modalQuickEditFacility');
     showToast(`Об'єкт "${updated.name}" успішно оновлено!`, 'success');
@@ -5366,6 +5387,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!isViewerOnly() && hasPermission('maintenance:view')) {
         loadMaintenanceSummary();
       }
+      loadFacilityOutageSchedule(currentFacilityId);
     }
   }, 15000);
 });
@@ -5789,4 +5811,113 @@ window.triggerSmtpTest = function (provider) {
 
 window.triggerManualWeeklyReportEmail = function () {
   openSendWeeklyReportModal();
+};
+
+
+// ===========================================================================
+// YASNO Outage Schedule Functions
+// ===========================================================================
+window.loadFacilityOutageSchedule = async function(facilityId = null, forceRefresh = false) {
+  const facId = facilityId || currentFacilityId;
+  const card = document.getElementById('yasnoScheduleCard');
+  if (!card) return;
+
+  if (!facId) {
+    card.style.display = 'none';
+    return;
+  }
+
+  try {
+    const url = `/facilities/${facId}/outage-schedule${forceRefresh ? '?force_refresh=true' : ''}`;
+    const data = await api(url);
+    if (!data || !data.enabled || !data.configured) {
+      card.style.display = 'none';
+      return;
+    }
+
+    card.style.display = 'block';
+
+    // Title & Subtitle
+    const titleEl = document.getElementById('yasnoCardTitle');
+    if (titleEl) titleEl.innerText = 'Графік відключень YASNO';
+    const subEl = document.getElementById('yasnoCardSubtitle');
+    if (subEl) subEl.innerText = `${data.dso_name || 'ОСР'} • Черга ${data.group} (${data.facility_name})`;
+
+    // Status Badge
+    const badgeEl = document.getElementById('yasnoStatusBadge');
+    if (badgeEl) {
+      badgeEl.innerText = data.status_label || 'СВІТЛО Є 🟢';
+      badgeEl.className = `badge badge-${data.status_color || 'success'}`;
+    }
+
+    // Message
+    const msgEl = document.getElementById('yasnoStatusMessage');
+    if (msgEl) msgEl.innerText = data.message || 'Електропостачання в нормі';
+
+    // Next Outage Badge
+    const nextEl = document.getElementById('yasnoNextOutageBadge');
+    if (nextEl) {
+      if (data.next_outage) {
+        nextEl.style.display = 'inline-block';
+        const dayWord = data.next_outage.day === 'today' ? 'сьогодні' : 'завтра';
+        nextEl.innerHTML = `Наступне знеструмлення: <b>${data.next_outage.start} — ${data.next_outage.end}</b> (${dayWord}, через ${data.next_outage.human_until})`;
+      } else {
+        nextEl.style.display = 'inline-block';
+        nextEl.innerHTML = 'Відключень не заплановано ✨';
+      }
+    }
+
+    // 24h Timeline bar
+    const barEl = document.getElementById('yasnoTimelineBar');
+    if (barEl && Array.isArray(data.timeline_today)) {
+      barEl.innerHTML = data.timeline_today.map(h => {
+        let cls = 'cell-not-planned';
+        let tooltip = `${h.time_range}: Світло є 🟢`;
+        if (h.status === 'DEFINITE') {
+          cls = 'cell-definite';
+          tooltip = `${h.time_range}: Планове відключення 🔴`;
+        } else if (h.status === 'PROBABLE') {
+          cls = 'cell-probable';
+          tooltip = `${h.time_range}: Можливе відключення 🟡`;
+        }
+        if (h.is_current) cls += ' cell-current';
+
+        return `<div class="yasno-hour-cell ${cls}" title="${tooltip}">
+          <span class="hour-label">${h.label}</span>
+          ${h.is_current ? '<span class="current-dot"></span>' : ''}
+        </div>`;
+      }).join('');
+    }
+
+    // Indicator of current hour
+    const curHourInd = document.getElementById('yasnoCurrentHourIndicator');
+    if (curHourInd) {
+      const nowH = new Date().getHours();
+      curHourInd.innerText = `Зараз: ${String(nowH).padStart(2, '0')}:00`;
+    }
+
+    // Updated Time
+    const updEl = document.getElementById('yasnoUpdatedTime');
+    if (updEl) {
+      if (data.updated_at) {
+        try {
+          const dt = new Date(data.updated_at);
+          updEl.innerText = `Оновлено YASNO: ${dt.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}`;
+        } catch (_) {
+          updEl.innerText = `Оновлено YASNO: ${data.updated_at}`;
+        }
+      } else {
+        updEl.innerText = 'Оновлено: щойно';
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load YASNO outage schedule:', err);
+  }
+};
+
+window.refreshYasnoSchedule = function(force = false) {
+  if (currentFacilityId) {
+    loadFacilityOutageSchedule(currentFacilityId, force);
+    if (force) showToast('Оновлення графіка YASNO...', 'info');
+  }
 };

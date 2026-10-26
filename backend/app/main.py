@@ -15,6 +15,7 @@ from backend.app.services.init_service import seed_initial_data
 from backend.app.services.audit_service import sanitize_historical_audit_logs
 from backend.app.services.backup_service import run_backup_scheduler
 from backend.app.services.operational_guard_service import run_operational_guard_loop
+from backend.app.services.yasno_service import run_yasno_checker_loop
 from backend.app.api.v1 import api_v1_router
 
 
@@ -34,11 +35,21 @@ def ensure_schema_updates(sync_conn):
     # 2. facilities default record
     default_facility_id = None
     if "facilities" in tables:
+        fac_cols = [c["name"] for c in inspector.get_columns("facilities")]
+        if "yasno_enabled" not in fac_cols:
+            sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN yasno_enabled BOOLEAN DEFAULT 0"))
+        if "yasno_region_id" not in fac_cols:
+            sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN yasno_region_id INTEGER DEFAULT 3"))
+        if "yasno_dso_id" not in fac_cols:
+            sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN yasno_dso_id INTEGER DEFAULT 301"))
+        if "yasno_group" not in fac_cols:
+            sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN yasno_group VARCHAR(10)"))
+
         res = sync_conn.execute(text("SELECT COUNT(*) FROM facilities")).scalar()
         if res == 0:
             sync_conn.execute(text(
-                "INSERT INTO facilities (name, address, description, timezone, created_at, updated_at) "
-                "VALUES ('Основний об''єкт', 'Головна локація', 'Базовий об''єкт генератора', 'Europe/Kyiv', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                "INSERT INTO facilities (name, address, description, timezone, yasno_enabled, yasno_region_id, yasno_dso_id, yasno_group, created_at, updated_at) "
+                "VALUES ('Основний об''єкт', 'Головна локація (м. Самар)', 'Базовий об''єкт генератора', 'Europe/Kyiv', 1, 3, 301, '3.2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
             ))
         default_facility_id = sync_conn.execute(text("SELECT id FROM facilities ORDER BY id ASC LIMIT 1")).scalar()
 
@@ -147,12 +158,14 @@ async def lifespan(app: FastAPI):
     # 4. Start background backup scheduler
     backup_scheduler_task = asyncio.create_task(run_backup_scheduler())
     guard_worker_task = asyncio.create_task(run_operational_guard_loop())
+    yasno_worker_task = asyncio.create_task(run_yasno_checker_loop())
 
     yield
 
     # Shutdown
     backup_scheduler_task.cancel()
     guard_worker_task.cancel()
+    yasno_worker_task.cancel()
     await engine.dispose()
 
 

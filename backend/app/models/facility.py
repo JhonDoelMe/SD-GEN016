@@ -1,6 +1,6 @@
 import datetime
 from typing import Optional, List
-from sqlalchemy import String, DateTime, Integer
+from sqlalchemy import String, DateTime, Integer, Boolean, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.database import Base
 
@@ -15,6 +15,12 @@ class Facility(Base):
     timezone: Mapped[str] = mapped_column(String(50), default="Europe/Kyiv")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
+
+    # YASNO blackout schedules integration
+    yasno_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default=text("0"))
+    yasno_region_id: Mapped[Optional[int]] = mapped_column(Integer, default=3, nullable=True, server_default=text("3"))
+    yasno_dso_id: Mapped[Optional[int]] = mapped_column(Integer, default=301, nullable=True, server_default=text("301"))
+    yasno_group: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
     generators: Mapped[List["Generator"]] = relationship("Generator", back_populates="facility", cascade="all, delete-orphan")
     fuel_stocks: Mapped[List["FuelStock"]] = relationship("FuelStock", back_populates="facility", cascade="all, delete-orphan")

@@ -35,6 +35,10 @@ async def get_all_facilities(db: AsyncSession) -> List[FacilityOut]:
                 address=f.address,
                 description=f.description,
                 timezone=f.timezone,
+                yasno_enabled=bool(f.yasno_enabled),
+                yasno_region_id=f.yasno_region_id,
+                yasno_dso_id=f.yasno_dso_id,
+                yasno_group=f.yasno_group,
                 created_at=f.created_at,
                 updated_at=f.updated_at,
                 generator_count=len(f.generators),
@@ -64,6 +68,10 @@ async def get_facility_by_id(db: AsyncSession, facility_id: int) -> FacilityOut:
         address=f.address,
         description=f.description,
         timezone=f.timezone,
+        yasno_enabled=bool(f.yasno_enabled),
+        yasno_region_id=f.yasno_region_id,
+        yasno_dso_id=f.yasno_dso_id,
+        yasno_group=f.yasno_group,
         created_at=f.created_at,
         updated_at=f.updated_at,
         generator_count=len(f.generators),
@@ -91,6 +99,10 @@ async def create_facility(
         address=data.address.strip() if data.address else None,
         description=data.description.strip() if data.description else None,
         timezone=data.timezone.strip() if data.timezone else "Europe/Kyiv",
+        yasno_enabled=bool(data.yasno_enabled),
+        yasno_region_id=data.yasno_region_id if data.yasno_region_id is not None else 3,
+        yasno_dso_id=data.yasno_dso_id if data.yasno_dso_id is not None else 301,
+        yasno_group=data.yasno_group.strip() if data.yasno_group else None,
         created_at=now,
         updated_at=now,
     )
@@ -153,6 +165,14 @@ async def update_facility(
         facility.description = data.description.strip() if data.description else None
     if data.timezone is not None:
         facility.timezone = data.timezone.strip()
+    if data.yasno_enabled is not None:
+        facility.yasno_enabled = bool(data.yasno_enabled)
+    if data.yasno_region_id is not None:
+        facility.yasno_region_id = data.yasno_region_id
+    if data.yasno_dso_id is not None:
+        facility.yasno_dso_id = data.yasno_dso_id
+    if data.yasno_group is not None:
+        facility.yasno_group = data.yasno_group.strip() if data.yasno_group else None
 
     facility.updated_at = utc_now()
     await db.flush()

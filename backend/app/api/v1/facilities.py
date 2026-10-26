@@ -1,5 +1,7 @@
 from typing import List
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, status, HTTPException
+from backend.app.models.facility import Facility
+from backend.app.services.yasno_service import fetch_raw_yasno_schedule, get_facility_outage_schedule
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
@@ -84,3 +86,27 @@ async def remove_facility(
     verify_facility_access(current_user, facility_id)
     client_ip = get_client_ip(request)
     return await delete_facility(db, facility_id, current_user.id, cascade=cascade, ip_address=client_ip)
+
+
+@router.get("/{facility_id}/outage-schedule")
+async def get_facility_outage(
+    facility_id: int,
+    force_refresh: bool = False,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Отримати розпарсений графік відключень YASNO для конкретного об'єкта"""
+    verify_facility_access(current_user, facility_id)
+    fac = await db.get(Facility, facility_id)
+    if not fac:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Об'єкт #{facility_id} не знайдено")
+
+    if not fac.yasno_enabled or not fac.yasno_group:
+        return get_facility_outage_schedule(fac)
+
+    raw_data = await fetch_raw_yasno_schedule(
+        region_id=fac.yasno_region_id or 3,
+        dso_id=fac.yasno_dso_id or 301,
+        force_refresh=force_refresh
+    )
+    return get_facility_outage_schedule(fac, raw_schedule=raw_data)

@@ -134,8 +134,56 @@
 - **Потрібен дозвіл**: `facilities:view`. Для `operator`/`viewer` дозволено лише якщо `facility_id == user.facility_id` (інакше `403 Forbidden`).
 
 ### `PUT /api/v1/facilities/{facility_id}`
-- **Опис**: Оновлення реквізитів або статусу локації.
+- **Опис**: Оновлення реквізитів або статусу локації, включаючи налаштування моніторингу графіків відключень YASNO (`yasno_enabled`, `yasno_region_id`, `yasno_dso_id`, `yasno_group`).
 - **Потрібен дозвіл**: `facilities:manage`.
+
+### `GET /api/v1/facilities/{facility_id}/outage-schedule`
+- **Опис**: Отримання актуального прогнозу та погодинного графіка планових/ймовірних відключень електроенергії (YASNO / ДТЕК / ЦЕК) для обраного об'єкта за його чергою/підгрупою (наприклад, група `3.2` у м. Самар). Кешується на 15 хвилин для оптимізації зовнішніх запитів.
+- **Потрібен дозвіл**: `facilities:view`. Для `operator`/`viewer` дозволено лише для свого закріпленого об'єкта.
+- **Відповідь (200 OK)**:
+```json
+{
+  "facility_id": 1,
+  "facility_name": "Основний об'єкт (м. Самар)",
+  "enabled": true,
+  "region_id": 3,
+  "dso_id": 301,
+  "group": "3.2",
+  "today": {
+    "date": "2026-10-26",
+    "status": "SCHEDULE_APPLIED",
+    "slots": [
+      {
+        "start": "06:00",
+        "end": "10:00",
+        "type": "DEFINITE"
+      },
+      {
+        "start": "14:00",
+        "end": "18:00",
+        "type": "PROBABLE"
+      }
+    ],
+    "timeline": [
+      { "hour": 0, "type": "DEFINITE", "is_current": false },
+      { "hour": 10, "type": "NOT_PLANNED", "is_current": true }
+    ]
+  },
+  "tomorrow": {
+    "date": "2026-10-27",
+    "status": "NO_OUTAGES",
+    "slots": [],
+    "timeline": []
+  },
+  "next_outage": {
+    "type": "DEFINITE",
+    "start": "14:00",
+    "minutes_left": 185,
+    "time_left_formatted": "3 год 5 хв"
+  },
+  "last_updated_at": "2026-10-26T10:15:00"
+}
+```
 
 ### `DELETE /api/v1/facilities/{facility_id}`
 - **Опис**: Видалення або каскадне очищення об'єкта.
