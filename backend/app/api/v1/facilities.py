@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends, Request, status, HTTPException
+from fastapi import APIRouter, Depends, Request, Response, status, HTTPException
 from backend.app.models.facility import Facility
 from backend.app.services.yasno_service import fetch_raw_yasno_schedule, get_facility_outage_schedule
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -92,11 +92,14 @@ async def remove_facility(
 async def get_facility_outage(
     facility_id: int,
     force_refresh: bool = False,
+    response: Response = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Отримати розпарсений графік відключень YASNO для конкретного об'єкта"""
     verify_facility_access(current_user, facility_id)
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     fac = await db.get(Facility, facility_id)
     if not fac:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Об'єкт #{facility_id} не знайдено")

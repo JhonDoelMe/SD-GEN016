@@ -129,6 +129,8 @@ def get_facility_outage_schedule(
         "slots_today": [],
         "slots_tomorrow": [],
         "updated_at": None,
+        "yasno_updated_on": None,
+        "checked_at": now_local.isoformat(),
         "is_cached": False,
     }
 
@@ -171,6 +173,8 @@ def get_facility_outage_schedule(
     base_response["slots_today"] = slots_today
     base_response["slots_tomorrow"] = slots_tomorrow
     base_response["updated_at"] = updated_on
+    base_response["yasno_updated_on"] = updated_on
+    base_response["checked_at"] = now_local.isoformat()
 
     # 1. Determine current slot and status right now
     current_slot = None

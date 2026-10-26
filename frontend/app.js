@@ -5828,7 +5828,8 @@ window.loadFacilityOutageSchedule = async function(facilityId = null, forceRefre
   }
 
   try {
-    const url = `/facilities/${facId}/outage-schedule${forceRefresh ? '?force_refresh=true' : ''}`;
+    const tsBuster = Date.now();
+    const url = `/facilities/${facId}/outage-schedule?_t=${tsBuster}${forceRefresh ? '&force_refresh=true' : ''}`;
     const data = await api(url);
     if (!data || !data.enabled || !data.configured) {
       card.style.display = 'none';
@@ -5892,32 +5893,53 @@ window.loadFacilityOutageSchedule = async function(facilityId = null, forceRefre
     // Indicator of current hour
     const curHourInd = document.getElementById('yasnoCurrentHourIndicator');
     if (curHourInd) {
-      const nowH = new Date().getHours();
-      curHourInd.innerText = `Зараз: ${String(nowH).padStart(2, '0')}:00`;
+      const now = new Date();
+      const nowH = String(now.getHours()).padStart(2, '0');
+      const nowM = String(now.getMinutes()).padStart(2, '0');
+      curHourInd.innerText = `Зараз: ${nowH}:${nowM}`;
     }
 
     // Updated Time
     const updEl = document.getElementById('yasnoUpdatedTime');
     if (updEl) {
-      if (data.updated_at) {
+      const checkDt = data.checked_at ? new Date(data.checked_at) : new Date();
+      const checkTimeStr = checkDt.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+
+      let yasnoInfo = '';
+      const yasnoTimeRaw = data.yasno_updated_on || data.updated_at;
+      if (yasnoTimeRaw) {
         try {
-          const dt = new Date(data.updated_at);
-          updEl.innerText = `Оновлено YASNO: ${dt.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}`;
-        } catch (_) {
-          updEl.innerText = `Оновлено YASNO: ${data.updated_at}`;
-        }
-      } else {
-        updEl.innerText = 'Оновлено: щойно';
+          const dtY = new Date(yasnoTimeRaw);
+          const yTime = dtY.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+          yasnoInfo = ` <span style="opacity: 0.85; margin-left: 0.35rem;">• Розклад YASNO від ${yTime}</span>`;
+        } catch (_) {}
       }
+
+      updEl.innerHTML = `<span title="Час останньої синхронізації з сервером">Перевірено: <b>${checkTimeStr}</b></span>${yasnoInfo}`;
     }
   } catch (err) {
     console.warn('Failed to load YASNO outage schedule:', err);
+    throw err;
   }
 };
 
-window.refreshYasnoSchedule = function(force = false) {
-  if (currentFacilityId) {
-    loadFacilityOutageSchedule(currentFacilityId, force);
-    if (force) showToast('Оновлення графіка YASNO...', 'info');
+window.refreshYasnoSchedule = async function(force = false) {
+  if (!currentFacilityId) return;
+  const btn = document.getElementById('btnRefreshYasno');
+  if (btn) btn.classList.add('spinning');
+
+  try {
+    await loadFacilityOutageSchedule(currentFacilityId, force);
+    if (force) {
+      const now = new Date();
+      const nowStr = now.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+      showToast(`Графік YASNO перевірено (${nowStr}) — дані актуальні`, 'info');
+    }
+  } catch (err) {
+    if (force) {
+      showToast('Не вдалося оновити графік YASNO. Спробуйте пізніше', 'error');
+    }
+  } finally {
+    if (btn) btn.classList.remove('spinning');
   }
 };

@@ -37,7 +37,7 @@
   <link rel="icon" type="image/x-icon" href="/frontend/favicon.ico">
   <link rel="apple-touch-icon" href="/frontend/icons/icon-192.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.8">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.9">
 </head>
 <body>
 
@@ -256,7 +256,7 @@
           </div>
           <div style="display: flex; align-items: center; gap: 0.5rem;">
             <div id="yasnoStatusBadge" class="badge badge-success" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;">СВІТЛО Є 🟢</div>
-            <button type="button" class="btn-action" style="padding: 0.3rem 0.6rem; min-height: auto; font-size: 0.8rem;" onclick="refreshYasnoSchedule(true)" title="Оновити графік YASNO">🔄</button>
+            <button type="button" id="btnRefreshYasno" class="btn-action" style="padding: 0.3rem 0.6rem; min-height: auto; font-size: 0.8rem;" onclick="refreshYasnoSchedule(true)" title="Оновити графік YASNO">🔄</button>
           </div>
         </div>
 
@@ -3024,7 +3024,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.9.8"></script>
+  <script src="/frontend/app.js?v=4.9.9"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

@@ -2857,3 +2857,15 @@ button[disabled] {
     font-size: 0.65rem;
   }
 }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinning {
+  display: inline-block !important;
+  animation: spin 0.75s linear infinite !important;
+  pointer-events: none !important;
+  opacity: 0.75;
+}
