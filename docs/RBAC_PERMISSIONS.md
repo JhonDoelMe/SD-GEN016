@@ -1,7 +1,7 @@
 # Система ролей та дозволів (RBAC)
 **SD-GEN016: Role-Based Access Control Specification**
 
-**Версія документа:** 4.5.1 (Special Security, Multi-site Scoped & Facility Isolation Hardening)  
+**Версія документа:** 4.5.3 (Special Security, Multi-site Scoped & Facility Isolation Hardening)  
 **Дата набрання чинності:** 25 жовтня 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 

@@ -1,7 +1,7 @@
 # Політика управління даними, аудиту та інвентаризації
 **SD-GEN016: Data Governance, Audit Trail & Inventory Policy**
 
-**Версія документа:** 4.5.1 (Special Security, Audit Redaction & Multi-site Scoped)  
+**Версія документа:** 4.5.3 (Audit Redaction, Separate Audit Export & Multi-site Scoped)  
 **Дата набрання чинності:** 25 жовтня 2026 року  
 **Розробник та правовласник:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 **Цільова аудиторія:** головні бухгалтери, начальники СБ, фінансові директори, IT-адміністратори, інженери  

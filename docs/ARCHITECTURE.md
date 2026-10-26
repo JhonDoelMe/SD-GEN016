@@ -1,6 +1,6 @@
 # Архітектура системи: Service Desk Генератора (SD-GEN016)
 
-**Версія архітектури:** 4.5.1 (Special Security, Multi-site Lockdown & Data Integrity)  
+**Версія архітектури:** 4.5.3 (YASNO Outages Integration, Audit Export & Multi-site Lockdown)  
 **Дата оновлення:** 25 жовтня 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 
@@ -121,3 +121,11 @@
 11. **Fault (`faults`)**: інциденти та дефекти обладнання.
 12. **PushSubscription (`push_subscriptions`)**: зареєстровані Web Push підписки клієнтських браузерів з прив'язкою до `user_id` та валідацією endpoint.
 13. **AuditLog (`audit_logs`)** та **SystemAdjustment (`system_adjustments`)**: незмінні реєстри аудиту та офіційних інвентаризаційних коригувань.
+14. **Facility YASNO-поля** (розширення acilities, міграція Alembic `004_add_yasno_fields`): `yasno_enabled`, `yasno_region_id` (за замовчуванням 3), `yasno_dso_id` (за замовчуванням 301), `yasno_group` (`1.1`–`6.2`).
+
+## 4. Фонові служби та інтеграція YASNO
+
+- **`yasno_service.py`**: асинхронний клієнт API YASNO (`planned-outages`) з обходом WAF, перетворенням хвилинних слотів (0–1440) у погодинну карту та серверним кешем із TTL 15 хв. Відповідь містить `checked_at` (час перевірки, `Europe/Kyiv`) та `yasno_updated_on` (час публікації графіка оператором).
+- **`run_yasno_checker_loop`**: фоновий цикл, що запускається у `lifespan` застосунку (`main.py`) і скасовується під час зупинки; за 25–35 хв до відключення (`DEFINITE` / `PROBABLE`) розсилає Web Push операторам об'єкта, дублювання у межах доби блокується (`notified_slots`).
+- **Ендпоінт** `GET /api/v1/facilities/{id}/outage-schedule` повертає `Cache-Control: no-cache, no-store, must-revalidate`.
+- **Експорт аудиту**: `GET /api/v1/audit/export-excel` (SuperAdmin) формує окрему книгу Excel з аркушами «Журнал дій аудиту» та «Системні коригування»; загальний звіт `GET /api/v1/reports/export-excel` більше не містить журналу аудиту.

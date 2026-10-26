@@ -1,12 +1,12 @@
 # SERVICE DESK ДЛЯ ЕКСПЛУАТАЦІЇ БЕНЗИНОВИХ ТА ДИЗЕЛЬНИХ ГЕНЕРАТОРІВ (SD-GEN016)
 
-[![Release](https://img.shields.io/badge/Release-v4.5.1-blue.svg)](https://github.com/JhonDoelMe/SD-GEN016/releases)
+[![Release](https://img.shields.io/badge/Release-v4.5.3-blue.svg)](https://github.com/JhonDoelMe/SD-GEN016/releases)
 [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg)](https://www.sqlalchemy.org/)
 [![Tests](https://img.shields.io/badge/Tests-84%2F84%20Passed%20(100%25)-brightgreen.svg)]()
 [![Email](https://img.shields.io/badge/Email-SMTP%20Failover%20(TLS%20Fail--Closed)-blue.svg)]()
-[![PWA](https://img.shields.io/badge/PWA-v4.9.3%20(Android%20%26%20iOS)-purple.svg)]()
+[![PWA](https://img.shields.io/badge/PWA-v4.9.9%20(Android%20%26%20iOS)-purple.svg)]()
 [![Web Push](https://img.shields.io/badge/Web%20Push-VAPID%20%26%20SSRF%20Safe-blue.svg)]()
 [![Compliance](https://img.shields.io/badge/Compliance-DSTU%204163%3A2020%20%7C%20GDPR-success.svg)]()
 [![Security](https://img.shields.io/badge/Security-Enterprise%20Hardened%20(RBAC%20%2B%20Isolation%20%2B%20Audit%20Redaction%20%2B%20Boot--Lock)-blueviolet.svg)]()
@@ -129,13 +129,21 @@
   - **Вкладка 2: Напрацювання по днях** — щоденні підсумки та хронометраж запусків;
   - **Вкладка 3: Рух палива** — залишки на складах ГСМ, прибуткування та витрати;
   - **Вкладка 4: Журнал ТО** — регламентні та проміжні сервісні роботи;
-  - **Вкладка 5: Несправності та аудит** — перелік інцидентів та журнал операцій.
+  - **Вкладка 5: Несправності та інциденти** — реєстр дефектів, поломок та статусів їх усунення (журнал аудиту винесено в окремий звіт).
+- Окремий звіт операційного аудиту та системних коригувань (`GET /api/v1/audit/export-excel`, **лише SuperAdmin**) із двома аркушами: «Журнал дій аудиту» та «Системні коригування»; період вибірки: Сьогодні / 7 днів / 30 днів / Весь час.
 
-### 15. Мобільна та десктопна ергономіка (PWA версія 4.9.3)
+### 15. Мобільна та десктопна ергономіка (PWA версія 4.9.9)
 - **Адаптивний рідкий десктоп**: плавна градація контейнера (`1200px` ➔ `1420px`) на широких та ультрашироких моніторах, ідеальне центрування перемикача об'єктів та генераторів.
 - **Мобільна нижня панель навігації (Bottom Navigation Bar)**: швидке перемикання між основними вкладками великим пальцем однієї руки біля генератора.
 - Працює як повноцінний офлайн-готовий PWA-додаток на Android, iOS Safari, Windows та Linux.
 - Оптимізовані контрастні темна та світла теми з підтримкою системних налаштувань ОС.
+
+### 16. Графіки відключень електроенергії YASNO (v4.5.3)
+- **Моніторинг планових та ймовірних відключень** за даними YASNO (ДТЕК Дніпровські електромережі, ЦЕК, ДТЕК Київські електромережі) із кешуванням на 15 хвилин.
+- **Індивідуальна черга/підгрупа для кожного об'єкта** (`yasno_enabled`, `yasno_region_id`, `yasno_dso_id`, `yasno_group` — від `1.1` до `6.2`), налаштовується в редагуванні об'єкта.
+- **Плитка на дашборді**: 24-годинна шкала (зелений — є світло, червоний — планове відключення, жовтий — ймовірне), маркер `ЗАРАЗ`, зворотний відлік до найближчого відключення, час перевірки та час публікації графіка оператором.
+- **Web Push за 30 хвилин** до відключення для операторів закріпленого об'єкта (вікно 25–35 хв, без дублювання протягом доби).
+- Ендпоінт: `GET /api/v1/facilities/{id}/outage-schedule` (див. [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md)).
 
 ---
 
@@ -211,7 +219,7 @@ uvicorn backend.app.main:app --reload --port 8000
 
 ## 🧪 Тестування
 
-Для запуску повного набору тестів (84 тести, 100% успішне проходження):
+Для запуску повного набору тестів (90 тестів, 100% успішне проходження):
 
 ```bash
 python -m pytest backend/tests -v
@@ -222,6 +230,7 @@ python -m pytest backend/tests -v
 ## 📄 Документація проєкту
 
 Повний комплект документації доступний у директорії [`docs/`](docs/) та релізних нотатках:
+- [`RELEASE_NOTES_v4.5.3.md`](RELEASE_NOTES_v4.5.3.md) — **Графіки відключень YASNO, окремий експорт аудиту (v4.5.3)**;
 - [`RELEASE_NOTES_v4.5.1.md`](RELEASE_NOTES_v4.5.1.md) — **Спеціальний реліз безпеки та цілісності даних (v4.5.1)**;
 - [`RELEASE_NOTES_v4.5.0.md`](RELEASE_NOTES_v4.5.0.md) — Примітки до релізу версії 4.5.0;
 - [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) — Повний довідник усіх ендпоінтів REST API;
