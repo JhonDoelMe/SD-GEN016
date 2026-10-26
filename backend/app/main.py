@@ -36,8 +36,9 @@ def ensure_schema_updates(sync_conn):
     default_facility_id = None
     if "facilities" in tables:
         fac_cols = [c["name"] for c in inspector.get_columns("facilities")]
+        bool_def = "FALSE" if sync_conn.dialect.name == "postgresql" else "0"
         if "yasno_enabled" not in fac_cols:
-            sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN yasno_enabled BOOLEAN DEFAULT 0"))
+            sync_conn.execute(text(f"ALTER TABLE facilities ADD COLUMN yasno_enabled BOOLEAN DEFAULT {bool_def}"))
         if "yasno_region_id" not in fac_cols:
             sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN yasno_region_id INTEGER DEFAULT 3"))
         if "yasno_dso_id" not in fac_cols:
@@ -47,10 +48,22 @@ def ensure_schema_updates(sync_conn):
 
         res = sync_conn.execute(text("SELECT COUNT(*) FROM facilities")).scalar()
         if res == 0:
-            sync_conn.execute(text(
-                "INSERT INTO facilities (name, address, description, timezone, yasno_enabled, yasno_region_id, yasno_dso_id, yasno_group, created_at, updated_at) "
-                "VALUES ('Основний об''єкт', 'Головна локація (м. Самар)', 'Базовий об''єкт генератора', 'Europe/Kyiv', 1, 3, 301, '3.2', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-            ))
+            sync_conn.execute(
+                text(
+                    "INSERT INTO facilities (name, address, description, timezone, yasno_enabled, yasno_region_id, yasno_dso_id, yasno_group, created_at, updated_at) "
+                    "VALUES (:name, :address, :desc, :tz, :yasno_enabled, :region_id, :dso_id, :group, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ),
+                {
+                    "name": "Основний об'єкт",
+                    "address": "Головна локація (м. Самар)",
+                    "desc": "Базовий об'єкт генератора",
+                    "tz": "Europe/Kyiv",
+                    "yasno_enabled": True,
+                    "region_id": 3,
+                    "dso_id": 301,
+                    "group": "3.2",
+                }
+            )
         default_facility_id = sync_conn.execute(text("SELECT id FROM facilities ORDER BY id ASC LIMIT 1")).scalar()
 
     # 3. Add facility_id to related tables (strictly whitelisted identifiers)
