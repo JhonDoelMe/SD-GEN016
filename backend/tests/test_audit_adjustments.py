@@ -1,3 +1,5 @@
+import io
+import openpyxl
 import pytest
 
 
@@ -167,3 +169,47 @@ async def test_adjustments_negative_fuel_and_generator_lookup(client, superadmin
     gen_check = await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=superadmin_auth)
     assert gen_check.status_code == 200
     assert gen_check.json()["fuel_tank_level_l"] == -5.5
+
+
+@pytest.mark.asyncio
+async def test_audit_excel_export_and_rbac(client, superadmin_auth, admin_auth, operator_auth, viewer_auth):
+    # 1. Operator attempts export -> 403 Forbidden
+    op_res = await client.get("/api/v1/audit/export-excel", headers=operator_auth)
+    assert op_res.status_code == 403
+    assert "виключно головному системному адміністратору" in op_res.json()["detail"]
+
+    # 2. Viewer attempts export -> 403 Forbidden
+    view_res = await client.get("/api/v1/audit/export-excel", headers=viewer_auth)
+    assert view_res.status_code == 403
+
+    # 3. Regular admin attempts export -> 403 Forbidden (Audit excel export is strictly SuperAdmin)
+    adm_res = await client.get("/api/v1/audit/export-excel", headers=admin_auth)
+    assert adm_res.status_code == 403
+    assert "виключно головному системному адміністратору" in adm_res.json()["detail"]
+
+    # 4. SuperAdmin performs export with period filter
+    sa_res = await client.get(
+        "/api/v1/audit/export-excel?start_date=2020-01-01&end_date=2030-12-31",
+        headers=superadmin_auth
+    )
+    assert sa_res.status_code == 200
+    assert "spreadsheetml.sheet" in sa_res.headers["content-type"]
+    assert "Audit_Report_" in sa_res.headers["content-disposition"]
+    assert len(sa_res.content) > 1000
+
+    # 5. Parse and inspect sheets
+    wb = openpyxl.load_workbook(io.BytesIO(sa_res.content))
+    assert "Журнал дій аудиту" in wb.sheetnames
+    assert "Системні коригування" in wb.sheetnames
+
+    # Check Sheet 1 contents
+    ws1 = wb["Журнал дій аудиту"]
+    assert ws1.freeze_panes == "A5"
+    ws1_text = " ".join(str(cell.value) for row in ws1.iter_rows() for cell in row if cell.value)
+    assert "ЖУРНАЛ ОПЕРАЦІЙНОГО АУДИТУ" in ws1_text
+
+    # Check Sheet 2 contents
+    ws2 = wb["Системні коригування"]
+    assert ws2.freeze_panes == "A5"
+    ws2_text = " ".join(str(cell.value) for row in ws2.iter_rows() for cell in row if cell.value)
+    assert "РЕЄСТР СИСТЕМНИХ КОРИГУВАНЬ" in ws2_text

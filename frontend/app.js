@@ -315,7 +315,8 @@ function applyRolePermissionsUI() {
   // Faults button
   setBtnState('btnOpenFaultModal', hasPermission('faults:create'), 'Реєстрація несправностей недоступна для вашої ролі 🔒', '+ Зафіксувати дефект 🔒');
 
-  // Audit adjustments button (SuperAdmin only!)
+  // Audit & adjustments buttons (SuperAdmin only!)
+  setBtnState('btnOpenExportAudit', superadmin, 'Експорт аудиту в Excel доступний виключно Головному Суперадміністратору 🔒', '📊 Експорт аудиту в Excel 🔒');
   setBtnState('btnOpenAdjustment', superadmin, 'Системні коригування лічильників доступні виключно Головному Суперадміністратору 🔒', '⚙️ Системне коригування 🔒');
 
   // Admin tab buttons
@@ -411,6 +412,10 @@ window.openModal = function (id) {
   }
   if (id === 'modalAdjustment' && !isSuperAdmin()) {
     showToast('Системне коригування лічильників доступне виключно Головному Суперадміністратору', 'warning');
+    return;
+  }
+  if (id === 'modalExportAudit' && !isSuperAdmin()) {
+    showToast('Експорт аудиту в Excel доступний виключно Головному Суперадміністратору', 'warning');
     return;
   }
   if ((id === 'modalCreateBackup' || id === 'modalBackupSettings' || id === 'modalDeleteBackup' || id === 'modalConfirmRestore' || id === 'modalUploadRestore') && !isSuperAdmin()) {
@@ -2615,6 +2620,108 @@ async function loadAuditData() {
     }).join('') || '<tr><td colspan="9" style="text-align:center; color:var(--text-muted)">Коригувань не виконувалось</td></tr>';
   } catch (_) {}
 }
+
+window.openAuditExportModal = function () {
+  if (!isSuperAdmin()) {
+    showToast('Експорт аудиту в Excel доступний виключно Головному Суперадміністратору', 'warning');
+    return;
+  }
+  setAuditExportPeriod('month');
+  openModal('modalExportAudit');
+};
+
+window.setAuditExportPeriod = function (period) {
+  const startInput = document.getElementById('auditExportStartDate');
+  const endInput = document.getElementById('auditExportEndDate');
+  if (!startInput || !endInput) return;
+
+  const now = new Date();
+  const toDateVal = (d) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayStr = toDateVal(now);
+  endInput.value = todayStr;
+
+  if (period === 'today') {
+    startInput.value = todayStr;
+  } else if (period === 'week') {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    startInput.value = toDateVal(d);
+  } else if (period === 'month') {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    startInput.value = toDateVal(d);
+  } else if (period === 'all') {
+    startInput.value = '';
+    endInput.value = '';
+  }
+};
+
+window.handleExportAuditExcel = async function (e) {
+  if (e && e.preventDefault) e.preventDefault();
+  if (!isSuperAdmin()) {
+    showToast('Експорт аудиту в Excel доступний виключно Головному Суперадміністратору', 'warning');
+    return;
+  }
+
+  const startInput = document.getElementById('auditExportStartDate');
+  const endInput = document.getElementById('auditExportEndDate');
+  const startVal = startInput ? startInput.value : '';
+  const endVal = endInput ? endInput.value : '';
+
+  let url = '/api/v1/audit/export-excel';
+  const params = [];
+  if (startVal) params.push(`start_date=${encodeURIComponent(startVal)}`);
+  if (endVal) params.push(`end_date=${encodeURIComponent(endVal)}`);
+  if (currentFacilityId) params.push(`facility_id=${encodeURIComponent(currentFacilityId)}`);
+  if (params.length) url += `?${params.join('&')}`;
+
+  const submitBtn = document.getElementById('btnSubmitAuditExport');
+  const origText = submitBtn ? submitBtn.innerHTML : '';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '⏳ Формування...';
+  }
+
+  try {
+    showToast('Формування аудиторського Excel звіту (.xlsx)...', 'info');
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(url, { headers, credentials: 'same-origin' });
+    if (!res.ok) {
+      let errMsg = `Помилка сервера при створенні Excel аудиту (${res.status})`;
+      try {
+        const errJson = await res.json();
+        errMsg = extractErrorMessage(errJson, errMsg);
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = window.URL.createObjectURL(blob);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.download = `Audit_Report_${dateStr}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast('Аудиторський звіт Excel (.xlsx) успішно згенеровано та завантажено!', 'success');
+    closeModal('modalExportAudit');
+  } catch (err) {
+    showToast(err.message || 'Помилка завантаження аудиторського звіту Excel', 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = origText;
+    }
+  }
+};
 
 window.openAdjustmentModal = async function() {
   if (!isSuperAdmin()) {

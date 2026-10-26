@@ -1,6 +1,7 @@
+import datetime
 import json
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,8 +10,9 @@ from backend.app.database import get_db
 from backend.app.models.user import User
 from backend.app.models.audit import AuditLog
 from backend.app.schemas.audit import AuditLogOut
-from backend.app.api.deps import require_permission
+from backend.app.api.deps import require_permission, get_current_superadmin
 from backend.app.services.audit_service import sanitize_audit_details
+from backend.app.services.report_service import generate_audit_excel_report, parse_report_dt
 
 router = APIRouter(prefix="/audit", tags=["Аудит"])
 
@@ -56,3 +58,42 @@ async def list_audit_logs(
         )
         for log in logs
     ]
+
+
+@router.get("/export-excel")
+async def export_audit_excel(
+    facility_id: Optional[int] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    action: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_superadmin)
+):
+    """
+    Експорт журналу дій операційного аудиту та системних коригувань в Excel (.xlsx).
+    Формує двоаркушеву книгу за стандартом ДСТУ 4163:2020.
+    Доступно виключно Головному суперадміністратору.
+    """
+    start_dt = parse_report_dt(start_date, is_end=False)
+    end_dt = parse_report_dt(end_date, is_end=True)
+
+    excel_bytes = await generate_audit_excel_report(
+        db=db,
+        facility_id=facility_id,
+        start_date=start_dt,
+        end_date=end_dt,
+        action=action,
+        entity_type=entity_type
+    )
+
+    date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"Audit_Report_{date_str}.xlsx"
+
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )

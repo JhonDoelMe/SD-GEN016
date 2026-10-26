@@ -587,9 +587,12 @@
     <!-- TAB 6: AUDIT & ADJUSTMENTS -->
     <section id="tab-audit" class="tab-pane" style="display: none;">
       <div class="panel">
-        <div class="panel-header">
+        <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
           <h3>Журнал аудиту та Системні коригування</h3>
-          <button id="btnOpenAdjustment" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #a855f7; color: #c084fc;" onclick="openAdjustmentModal()">⚙️ Системне коригування (Головний адміністратор)</button>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button id="btnOpenExportAudit" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #38bdf8; color: #38bdf8;" onclick="openAuditExportModal()">📊 Експорт аудиту в Excel</button>
+            <button id="btnOpenAdjustment" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #a855f7; color: #c084fc;" onclick="openAdjustmentModal()">⚙️ Системне коригування (Головний адміністратор)</button>
+          </div>
         </div>
 
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
@@ -1686,6 +1689,39 @@
         <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
           <button type="submit" class="btn-primary" style="flex: 1; background: #22c55e;">Позначити як усунену</button>
           <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalResolveFault')">Скасувати</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Export Audit (SuperAdmin) -->
+  <div id="modalExportAudit" class="modal-overlay">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3>📊 Експорт аудиту в Excel</h3>
+        <button class="close-btn" onclick="closeModal('modalExportAudit')">&times;</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+        🔒 Вивантаження офіційної книги Excel (.xlsx) за стандартом ДСТУ 4163:2020. Містить 2 аркуші: <b>«Журнал дій аудиту»</b> та <b>«Системні коригування»</b>.
+      </p>
+      <form id="formExportAudit" onsubmit="handleExportAuditExcel(event)">
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label for="auditExportStartDate" style="display: block; font-size: 0.9rem; margin-bottom: 0.35rem; color: var(--text-main);">Дата початку періоду (00:00):</label>
+          <input type="date" id="auditExportStartDate" class="form-control" style="width: 100%;" />
+        </div>
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label for="auditExportEndDate" style="display: block; font-size: 0.9rem; margin-bottom: 0.35rem; color: var(--text-main);">Дата завершення періоду (23:59):</label>
+          <input type="date" id="auditExportEndDate" class="form-control" style="width: 100%;" />
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; margin-bottom: 1.25rem;">
+          <button type="button" class="btn-action" style="flex: 1; padding: 0.4rem 0.5rem; font-size: 0.8rem; min-height: auto;" onclick="setAuditExportPeriod('today')">Сьогодні</button>
+          <button type="button" class="btn-action" style="flex: 1; padding: 0.4rem 0.5rem; font-size: 0.8rem; min-height: auto;" onclick="setAuditExportPeriod('week')">7 днів</button>
+          <button type="button" class="btn-action" style="flex: 1; padding: 0.4rem 0.5rem; font-size: 0.8rem; min-height: auto;" onclick="setAuditExportPeriod('month')">30 днів</button>
+          <button type="button" class="btn-action" style="flex: 1; padding: 0.4rem 0.5rem; font-size: 0.8rem; min-height: auto;" onclick="setAuditExportPeriod('all')">Весь час</button>
+        </div>
+        <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalExportAudit')">Скасувати</button>
+          <button type="submit" id="btnSubmitAuditExport" class="btn-primary" style="min-height: auto; padding: 0.75rem 1.5rem; background: #0284c7;">📥 Завантажити .xlsx</button>
         </div>
       </form>
     </div>

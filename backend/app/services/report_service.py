@@ -14,7 +14,7 @@ from backend.app.models.generator import Generator, GeneratorRun
 from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer
 from backend.app.models.maintenance import MaintenanceRecord, MaintenanceSchedule
 from backend.app.models.fault import Fault
-from backend.app.models.audit import AuditLog
+from backend.app.models.audit import AuditLog, SystemAdjustment
 from backend.app.models.facility import Facility
 from backend.app.schemas.report import (
     OperationalReportOut,
@@ -27,6 +27,20 @@ from backend.app.schemas.report import (
 
 def utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
+def parse_report_dt(dt_str: Optional[str], is_end: bool = False) -> Optional[datetime.datetime]:
+    if not dt_str:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(dt_str)
+    except ValueError:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    if is_end and len(dt_str) <= 10:
+        dt = dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return dt
 
 
 def fmt_dt(dt: Optional[datetime.datetime]) -> str:
@@ -747,7 +761,7 @@ async def generate_excel_report(
     2. Звіт по днях (Детальні цикли роботи, години, паливо, тривалість)
     3. Рух палива та Склад ГСМ (Надходження, заправки в бак, залишки)
     4. Технічне обслуговування (Журнал регламентних та проміжних ТО, витрати)
-    5. Журнал інцидентів та дій (Несправності та аудит дій)
+    5. Журнал несправностей та інцидентів (Облік несправностей, критичність та усунення)
     """
     now = utc_now()
     if not end_date:
@@ -883,13 +897,6 @@ async def generate_excel_report(
         f_q = f_q.join(Generator).where(Generator.facility_id == facility.id)
     f_q = f_q.order_by(Fault.created_at.asc())
     faults = (await db.execute(f_q)).scalars().all()
-
-    # 10. Fetch Audit Logs
-    audit_q = select(AuditLog).options(selectinload(AuditLog.user)).where(
-        AuditLog.created_at >= start_date,
-        AuditLog.created_at <= end_date
-    ).order_by(AuditLog.created_at.desc()).limit(1000)
-    audit_logs = (await db.execute(audit_q)).scalars().all()
 
     # Create Workbook
     wb = openpyxl.Workbook()
@@ -1488,16 +1495,16 @@ async def generate_excel_report(
     auto_adjust_column_widths(ws4, min_width=12)
 
     # -------------------------------------------------------------
-    # ВКЛАДКА 5: ЖУРНАЛ ІНЦИДЕНТІВ ТА АУДИТ
+    # ВКЛАДКА 5: ЖУРНАЛ НЕСПРАВНОСТЕЙ ТА ІНЦИДЕНТІВ
     # -------------------------------------------------------------
-    ws5 = wb.create_sheet(title="Журнал інцидентів та дій")
+    ws5 = wb.create_sheet(title="Журнал несправностей та інцидентів")
     ws5.views.sheetView[0].showGridLines = True
     ws5.freeze_panes = "A3"
 
-    # Section 1: Faults
+    # Faults Section
     ws5.merge_cells("A1:I1")
     f_title = ws5["A1"]
-    f_title.value = "1. Журнал несправностей та інцидентів"
+    f_title.value = "Журнал несправностей та інцидентів"
     f_title.font = SECTION_FONT
     f_title.fill = PRIMARY_FILL
     f_title.alignment = ALIGN_LEFT
@@ -1548,58 +1555,236 @@ async def generate_excel_report(
                 cell.alignment = ALIGN_LEFT
         row_f += 1
 
-    row_f += 2
+    if row_f > 3:
+        ws5.auto_filter.ref = f"A2:I{row_f - 1}"
 
-    # Section 2: Audit Logs
-    ws5.merge_cells(start_row=row_f, start_column=1, end_row=row_f, end_column=7)
-    a_title = ws5.cell(row=row_f, column=1, value="2. Журнал операційного аудиту (останні ключові дії)")
-    a_title.font = SECTION_FONT
-    a_title.fill = PRIMARY_FILL
-    a_title.alignment = ALIGN_LEFT
-    ws5.row_dimensions[row_f].height = 24
-    row_f += 1
+    auto_adjust_column_widths(ws5, min_width=12)
 
-    headers5_a = [
-        "№", "Дата / Час", "Дія", "Сутність", "Користувач", "IP-адреса", "Деталі"
+    # Save workbook to memory
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output.getvalue()
+
+
+ADJUSTMENT_FIELD_UA = {
+    "current_operating_hours": "Мотогодини",
+    "fuel_tank_level_l": "Рівень у баку (л)",
+    "status": "Статус генератора",
+    "nominal_consumption_l_per_h": "Нормативний розхід (л/год)",
+    "current_balance_l": "Залишок на складі (л)",
+    "interval_hours": "Інтервал ТО (год)",
+    "next_due_hours": "Наступне ТО (мотогодини)",
+    "last_performed_hours": "Останнє ТО (мотогодини)",
+    "name": "Назва",
+    "address": "Адреса",
+}
+
+
+async def generate_audit_excel_report(
+    db: AsyncSession,
+    facility_id: Optional[int] = None,
+    start_date: Optional[datetime.datetime] = None,
+    end_date: Optional[datetime.datetime] = None,
+    action: Optional[str] = None,
+    entity_type: Optional[str] = None
+) -> bytes:
+    """
+    Генерує спеціалізований аудиторський звіт у форматі Excel (.xlsx) для Головного Суперадміністратора.
+    Містить 2 окремі аркуші відповідно до стандартів ДСТУ 4163:2020:
+    1. Журнал дій аудиту (Повний хронологічний аудит операцій персоналу)
+    2. Системні коригування (Реєстр коригувань лічильників мотогодин та палива з підставами)
+    """
+    now = utc_now()
+    if not end_date:
+        end_date = now
+
+    # 1. Fetch Audit Logs
+    audit_q = select(AuditLog).options(selectinload(AuditLog.user))
+    if start_date:
+        audit_q = audit_q.where(AuditLog.created_at >= start_date)
+    if end_date:
+        audit_q = audit_q.where(AuditLog.created_at <= end_date)
+    if action:
+        audit_q = audit_q.where(AuditLog.action == action)
+    if entity_type:
+        audit_q = audit_q.where(AuditLog.entity_type == entity_type)
+    audit_q = audit_q.order_by(AuditLog.created_at.desc())
+    audit_logs = (await db.execute(audit_q)).scalars().all()
+
+    # 2. Fetch System Adjustments
+    adj_q = select(SystemAdjustment).options(
+        selectinload(SystemAdjustment.user),
+        selectinload(SystemAdjustment.facility)
+    )
+    if start_date:
+        adj_q = adj_q.where(SystemAdjustment.created_at >= start_date)
+    if end_date:
+        adj_q = adj_q.where(SystemAdjustment.created_at <= end_date)
+    if facility_id:
+        adj_q = adj_q.where(SystemAdjustment.facility_id == facility_id)
+    adj_q = adj_q.order_by(SystemAdjustment.created_at.desc())
+    adjustments = (await db.execute(adj_q)).scalars().all()
+
+    # Create Workbook
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    start_fmt = fmt_date_ua(start_date) if start_date else "Початок ведення журналу"
+    end_fmt = fmt_date_ua(end_date)
+    export_now_str = fmt_dt(now_facility())
+
+    # -------------------------------------------------------------
+    # ВКЛАДКА 1: ЖУРНАЛ ДІЙ АУДИТУ
+    # -------------------------------------------------------------
+    ws1 = wb.create_sheet(title="Журнал дій аудиту")
+    ws1.views.sheetView[0].showGridLines = True
+    ws1.freeze_panes = "A5"
+
+    # Title
+    ws1.merge_cells("A1:H1")
+    t1 = ws1["A1"]
+    t1.value = "SERVICE DESK SD-GEN016 — ЖУРНАЛ ОПЕРАЦІЙНОГО АУДИТУ"
+    t1.font = TITLE_FONT
+    t1.alignment = ALIGN_LEFT
+    ws1.row_dimensions[1].height = 28
+
+    # Metadata
+    ws1.cell(row=2, column=1, value="Період звіту:").font = BOLD_FONT
+    ws1.cell(row=2, column=2, value=f"{start_fmt} — {end_fmt}").font = REGULAR_FONT
+    ws1.cell(row=2, column=4, value="Дата вивантаження:").font = BOLD_FONT
+    ws1.cell(row=2, column=5, value=export_now_str).font = REGULAR_FONT
+
+    ws1.cell(row=3, column=1, value="Рівень доступу:").font = BOLD_FONT
+    ws1.cell(row=3, column=2, value="Головний адміністратор (Суперадмін)").font = REGULAR_FONT
+    ws1.cell(row=3, column=4, value="Всього записів аудиту:").font = BOLD_FONT
+    ws1.cell(row=3, column=5, value=len(audit_logs)).font = REGULAR_FONT
+    ws1.row_dimensions[2].height = 20
+    ws1.row_dimensions[3].height = 20
+
+    # Headers
+    headers1 = [
+        "№", "Дата / Час", "Користувач", "Дія", "Сутність", "ID сутності", "Деталі операції", "IP-адреса"
     ]
-    ws5.row_dimensions[row_f].height = 24
-    for c_idx, h in enumerate(headers5_a, start=1):
-        cell = ws5.cell(row=row_f, column=c_idx, value=h)
+    ws1.row_dimensions[4].height = 24
+    for c_idx, h in enumerate(headers1, start=1):
+        cell = ws1.cell(row=4, column=c_idx, value=h)
         cell.fill = SECONDARY_FILL
         cell.font = HEADER_FONT
         cell.alignment = ALIGN_CENTER
         cell.border = CELL_BORDER
-    row_f += 1
 
+    row1 = 5
     for idx, al in enumerate(audit_logs, start=1):
-        a_user = al.user.full_name if al.user else "Система"
+        a_user = al.user.full_name if al.user else (al.user.login if al.user else "Система")
         details_str = format_audit_details_ua(al.details_json, str(al.action))
         act_ua = AUDIT_ACTION_UA.get(str(al.action), str(al.action))
         ent_ua = AUDIT_ENTITY_UA.get(str(al.entity_type), str(al.entity_type))
         vals = [
             idx,
             fmt_dt(al.created_at),
-            sanitize_spreadsheet_cell(act_ua),
-            sanitize_spreadsheet_cell(f"{ent_ua} #{al.entity_id or ''}"),
             sanitize_spreadsheet_cell(a_user),
+            sanitize_spreadsheet_cell(act_ua),
+            sanitize_spreadsheet_cell(ent_ua),
+            sanitize_spreadsheet_cell(str(al.entity_id or "-")),
+            sanitize_spreadsheet_cell(details_str),
             sanitize_spreadsheet_cell(al.ip_address or "-"),
-            sanitize_spreadsheet_cell(details_str)
         ]
-        ws5.row_dimensions[row_f].height = 20
+        ws1.row_dimensions[row1].height = 20
         fill = ZEBRA_FILL if idx % 2 == 0 else PatternFill(fill_type=None)
         for c_idx, val in enumerate(vals, start=1):
-            cell = ws5.cell(row=row_f, column=c_idx, value=val)
+            cell = ws1.cell(row=row1, column=c_idx, value=val)
             cell.font = REGULAR_FONT
             cell.border = CELL_BORDER
             if fill.fill_type:
                 cell.fill = fill
-            if c_idx in [1, 2, 3, 4, 6]:
+            if c_idx in [1, 2, 4, 5, 6, 8]:
                 cell.alignment = ALIGN_CENTER
             else:
                 cell.alignment = ALIGN_LEFT
-        row_f += 1
+        row1 += 1
 
-    auto_adjust_column_widths(ws5, min_width=12)
+    if row1 > 5:
+        ws1.auto_filter.ref = f"A4:H{row1 - 1}"
+    auto_adjust_column_widths(ws1, min_width=12)
+
+    # -------------------------------------------------------------
+    # ВКЛАДКА 2: СИСТЕМНІ КОРИГУВАННЯ
+    # -------------------------------------------------------------
+    ws2 = wb.create_sheet(title="Системні коригування")
+    ws2.views.sheetView[0].showGridLines = True
+    ws2.freeze_panes = "A5"
+
+    # Title
+    ws2.merge_cells("A1:J1")
+    t2 = ws2["A1"]
+    t2.value = "SERVICE DESK SD-GEN016 — РЕЄСТР СИСТЕМНИХ КОРИГУВАНЬ ЛІЧИЛЬНИКІВ"
+    t2.font = TITLE_FONT
+    t2.alignment = ALIGN_LEFT
+    ws2.row_dimensions[1].height = 28
+
+    # Metadata
+    ws2.cell(row=2, column=1, value="Період звіту:").font = BOLD_FONT
+    ws2.cell(row=2, column=2, value=f"{start_fmt} — {end_fmt}").font = REGULAR_FONT
+    ws2.cell(row=2, column=4, value="Дата вивантаження:").font = BOLD_FONT
+    ws2.cell(row=2, column=5, value=export_now_str).font = REGULAR_FONT
+
+    ws2.cell(row=3, column=1, value="Підстава операцій:").font = BOLD_FONT
+    ws2.cell(row=3, column=2, value="Акти інвентаризації та звірки показників").font = REGULAR_FONT
+    ws2.cell(row=3, column=4, value="Всього коригувань:").font = BOLD_FONT
+    ws2.cell(row=3, column=5, value=len(adjustments)).font = REGULAR_FONT
+    ws2.row_dimensions[2].height = 20
+    ws2.row_dimensions[3].height = 20
+
+    # Headers
+    headers2 = [
+        "№", "Дата / Час", "Адміністратор", "Об'єкт (локація)", "Цільова сутність",
+        "Тип сутності", "Поле коригування", "Старе значення", "Нове значення", "Причина (Акт інвентаризації)"
+    ]
+    ws2.row_dimensions[4].height = 24
+    for c_idx, h in enumerate(headers2, start=1):
+        cell = ws2.cell(row=4, column=c_idx, value=h)
+        cell.fill = SECTION_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = ALIGN_CENTER
+        cell.border = CELL_BORDER
+
+    row2 = 5
+    for idx, adj in enumerate(adjustments, start=1):
+        adj_user = adj.user.full_name if adj.user else (adj.user.login if adj.user else "Система")
+        fac_name = adj.facility.name if adj.facility else (f"Об'єкт #{adj.facility_id}" if adj.facility_id else "-")
+        ent_ua = AUDIT_ENTITY_UA.get(str(adj.entity_type), str(adj.entity_type))
+        field_ua = ADJUSTMENT_FIELD_UA.get(str(adj.field_name), str(adj.field_name))
+        target_disp = adj.target_name or f"{ent_ua} #{adj.entity_id}"
+        vals = [
+            idx,
+            fmt_dt(adj.created_at),
+            sanitize_spreadsheet_cell(adj_user),
+            sanitize_spreadsheet_cell(fac_name),
+            sanitize_spreadsheet_cell(target_disp),
+            sanitize_spreadsheet_cell(ent_ua),
+            sanitize_spreadsheet_cell(field_ua),
+            sanitize_spreadsheet_cell(adj.old_value),
+            sanitize_spreadsheet_cell(adj.new_value),
+            sanitize_spreadsheet_cell(adj.reason),
+        ]
+        ws2.row_dimensions[row2].height = 20
+        fill = ZEBRA_FILL if idx % 2 == 0 else PatternFill(fill_type=None)
+        for c_idx, val in enumerate(vals, start=1):
+            cell = ws2.cell(row=row2, column=c_idx, value=val)
+            cell.font = REGULAR_FONT
+            cell.border = CELL_BORDER
+            if fill.fill_type:
+                cell.fill = fill
+            if c_idx in [1, 2, 6, 8, 9]:
+                cell.alignment = ALIGN_CENTER
+            else:
+                cell.alignment = ALIGN_LEFT
+        row2 += 1
+
+    if row2 > 5:
+        ws2.auto_filter.ref = f"A4:J{row2 - 1}"
+    auto_adjust_column_widths(ws2, min_width=12)
 
     # Save workbook to memory
     output = io.BytesIO()
