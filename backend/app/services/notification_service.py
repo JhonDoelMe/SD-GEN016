@@ -1,5 +1,6 @@
 import json
 import base64
+import logging
 import datetime
 import asyncio
 from typing import Dict, Any, Optional, Tuple, List
@@ -14,13 +15,12 @@ import pywebpush
 from backend.app.models.settings import SystemSetting
 from backend.app.models.notification import PushSubscription, NotificationLog
 from backend.app.models.generator import Generator
+from backend.app.models.facility import Facility
 from backend.app.models.maintenance import MaintenanceSchedule
 from backend.app.services.settings_service import get_runtime_setting, set_runtime_setting
-from backend.app.core.timezone import now_facility
+from backend.app.core.timezone import now_utc, now_facility, get_facility_tz
 
-
-def utc_now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+logger = logging.getLogger(__name__)
 
 
 def _clean_sub_claim(raw_val: Any) -> str:
@@ -45,26 +45,37 @@ def _clean_sub_claim(raw_val: Any) -> str:
 
 
 async def get_or_create_vapid_keys(db: AsyncSession) -> Tuple[str, str, str]:
-    """Retrieve existing VAPID keys from system_settings or generate and persist new ones."""
+    """
+    Retrieve existing VAPID keys from system_settings or generate and persist new ones.
+    NOTIF-01: Перевіряє цілісність пари ключів та валідність приватного ключа.
+    При відновленні неповної або пошкодженої пари оновлення виконується атомарно без конфліктів primary key.
+    """
     q = select(SystemSetting).where(SystemSetting.key.in_(["vapid_public_key", "vapid_private_key_pem", "vapid_claims_sub"]))
     res = await db.execute(q)
-    rows = {r.key: r.value_json for r in res.scalars().all()}
+    rows_map = {r.key: r for r in res.scalars().all()}
 
-    pub_b64 = rows.get("vapid_public_key")
-    priv_pem = rows.get("vapid_private_key_pem")
-    sub_claim = _clean_sub_claim(rows.get("vapid_claims_sub"))
+    pub_row = rows_map.get("vapid_public_key")
+    priv_row = rows_map.get("vapid_private_key_pem")
+    sub_row = rows_map.get("vapid_claims_sub")
 
-    if pub_b64 and priv_pem:
-        # Strip quotes if stored as JSON string
+    sub_claim = _clean_sub_claim(sub_row.value_json if sub_row else None)
+
+    if pub_row and priv_row:
         try:
-            pub_clean = json.loads(pub_b64)
+            pub_clean = json.loads(pub_row.value_json)
         except Exception:
-            pub_clean = pub_b64
+            pub_clean = pub_row.value_json
         try:
-            priv_clean = json.loads(priv_pem)
+            priv_clean = json.loads(priv_row.value_json)
         except Exception:
-            priv_clean = priv_pem
-        return pub_clean, priv_clean, sub_claim
+            priv_clean = priv_row.value_json
+
+        # NOTIF-01: Перевіряємо валідність приватного ключа
+        try:
+            Vapid.from_pem(priv_clean.encode("utf-8"))
+            return pub_clean, priv_clean, sub_claim
+        except Exception as ex:
+            logger.warning("NOTIF-01: Пошкоджений VAPID приватний ключ (%s). Виконується контрольоване перестворення пари ключів.", ex)
 
     # Generate new VAPID EC P-256 keys
     vapid = Vapid()
@@ -73,13 +84,22 @@ async def get_or_create_vapid_keys(db: AsyncSession) -> Tuple[str, str, str]:
     new_pub_b64 = base64.urlsafe_b64encode(raw_pub).decode("ascii").rstrip("=")
     new_priv_pem = vapid.private_pem().decode("utf-8")
 
-    # Persist in database
-    db.add(SystemSetting(key="vapid_public_key", value_json=json.dumps(new_pub_b64), description="VAPID Web Push Public Key (base64url)"))
-    db.add(SystemSetting(key="vapid_private_key_pem", value_json=json.dumps(new_priv_pem), description="VAPID Web Push Private Key (PEM)"))
-    if "vapid_claims_sub" not in rows:
-        db.add(SystemSetting(key="vapid_claims_sub", value_json=json.dumps(sub_claim), description="VAPID Web Push Subject Claim"))
-    await db.commit()
+    # Persist / Upsert in database atomically
+    if pub_row:
+        pub_row.value_json = json.dumps(new_pub_b64)
+    else:
+        db.add(SystemSetting(key="vapid_public_key", value_json=json.dumps(new_pub_b64), description="VAPID Web Push Public Key (base64url)"))
 
+    if priv_row:
+        priv_row.value_json = json.dumps(new_priv_pem)
+    else:
+        db.add(SystemSetting(key="vapid_private_key_pem", value_json=json.dumps(new_priv_pem), description="VAPID Web Push Private Key (PEM)"))
+
+    if not sub_row:
+        db.add(SystemSetting(key="vapid_claims_sub", value_json=json.dumps(sub_claim), description="VAPID Web Push Subject Claim"))
+
+    await db.commit()
+    logger.info("NOTIF-01: Успішно збережено нову пару VAPID ключів.")
     return new_pub_b64, new_priv_pem, sub_claim
 
 
@@ -102,16 +122,26 @@ async def subscribe_device(
     res = await db.execute(q)
     sub = res.scalars().first()
 
-    now = utc_now()
+    now = now_utc(naive=True)
     if sub:
-        # Prevent IDOR hijacking of another user's active subscription unless same user or admin
+        # NOTIF-02: Захист власності підписки. Звичайний користувач може оновлювати лише власну підписку.
+        # Збіг криптографічних ключів не є підставою для зміни власника.
         if sub.user_id != user_id and not is_admin:
-            if sub.p256dh != p256dh or sub.auth != auth:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Ця підписка вже зареєстрована за іншим користувачем"
-                )
-        sub.user_id = user_id
+            logger.warning(
+                "NOTIF-02: Спроба перепризначення підписки ID %s користувача %s на користувача %s без прав адміністратора",
+                sub.id, sub.user_id, user_id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Ця підписка вже зареєстрована за іншим користувачем. Зміна власника заборонена."
+            )
+        if is_admin and sub.user_id != user_id:
+            logger.info(
+                "NOTIF-02: Адміністративне перепризначення підписки ID %s з користувача %s на користувача %s",
+                sub.id, sub.user_id, user_id
+            )
+            sub.user_id = user_id
+
         sub.facility_id = facility_id
         sub.p256dh = p256dh
         sub.auth = auth
@@ -147,14 +177,20 @@ async def unsubscribe_device(
     res = await db.execute(q)
     sub = res.scalars().first()
     if sub:
-        # Prevent IDOR: non-admin users can only unsubscribe their own device endpoints
-        if user_id is not None and sub.user_id != user_id and not is_admin:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Ви можете відписати лише власний пристрій"
-            )
+        # NOTIF-03: Безпечне скасування підписки.
+        # Для не-адміністратора обов'язково перевіряється відповідність user_id.
+        if not is_admin:
+            if user_id is None or sub.user_id != user_id:
+                logger.warning(
+                    "NOTIF-03: Відхилено спробу деактивації підписки ID %s користувача %s неавторизованим запитом (user_id=%s)",
+                    sub.id, sub.user_id, user_id
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Ви можете відписати лише власний пристрій"
+                )
         sub.is_active = False
-        sub.updated_at = utc_now()
+        sub.updated_at = now_utc(naive=True)
         await db.commit()
         return True
     return False
@@ -186,8 +222,12 @@ async def get_notification_settings_data(db: AsyncSession) -> Dict[str, Any]:
 def _send_single_webpush_sync(sub_info: Dict[str, Any], payload_str: str, vapid_obj: Vapid, claims: Dict[str, str]) -> Tuple[bool, bool]:
     """
     Synchronous WebPush sender executed in threadpool.
+    NOTIF-08 / NOTIF-09: Безпечне логування через logger без витоку секретів,
+    деактивація підписки виключно при підтверджених HTTP 404/410.
     Returns: (success: bool, is_expired: bool)
     """
+    endpoint = sub_info.get("endpoint", "")
+    masked_ep = (endpoint[:35] + "...") if len(endpoint) > 35 else endpoint
     try:
         # Use copy of claims to avoid cross-request mutation of 'aud' by pywebpush
         claims_copy = dict(claims)
@@ -201,13 +241,13 @@ def _send_single_webpush_sync(sub_info: Dict[str, Any], payload_str: str, vapid_
         return True, False
     except pywebpush.WebPushException as ex:
         status_code = getattr(getattr(ex, "response", None), "status_code", None)
-        print(f"[WEBPUSH] WebPushException (status={status_code}): {ex}", flush=True)
+        logger.warning("NOTIF-08: WebPushException для endpoint %s (status=%s): %s", masked_ep, status_code, ex)
         # Only 404 or 410 mean the subscription is definitively expired or unsubscribed
         if status_code in (404, 410):
             return False, True
         return False, False
     except Exception as ex:
-        print(f"[WEBPUSH] Unexpected error sending push: {ex}", flush=True)
+        logger.error("NOTIF-08: Непередбачена помилка відправки Web Push для %s: %s", masked_ep, ex)
         return False, False
 
 
@@ -243,50 +283,68 @@ async def send_push_notification(
     if toggle_key and not get_runtime_setting(toggle_key, True):
         return {"sent": 0, "failed": 0, "skipped": True, "reason": f"Тип сповіщення {event_type} вимкнено"}
 
-    now = utc_now()
+    now = now_utc(naive=True)
 
     # 3. Rate limiting for MAINTENANCE_DUE (strictly <= max_maintenance_notifications_per_day, default 2)
     if event_type == "MAINTENANCE_DUE" and generator_id:
-        max_daily = int(get_runtime_setting("max_maintenance_notifications_per_day", 2))
-        # Start of current calendar day in facility timezone
-        fac_now = now_facility()
+        max_daily = max(1, int(get_runtime_setting("max_maintenance_notifications_per_day", 2)))
+
+        # NOTIF-05: Визначаємо календарний початок доби згідно з локальним часовим поясом об'єкта
+        target_tz_str = None
+        if facility_id:
+            fac = await db.get(Facility, facility_id)
+            if fac and fac.timezone:
+                target_tz_str = fac.timezone
+        elif generator_id:
+            gen = await db.get(Generator, generator_id)
+            if gen and gen.facility_id:
+                fac = await db.get(Facility, gen.facility_id)
+                if fac and fac.timezone:
+                    target_tz_str = fac.timezone
+
+        fac_now = now_facility(target_tz_str)
         today_start_fac = fac_now.replace(hour=0, minute=0, second=0, microsecond=0)
         today_start_utc = today_start_fac.astimezone(datetime.timezone.utc).replace(tzinfo=None)
 
-        # Count maintenance notifications sent today for this generator
-        q_count = select(func.count(NotificationLog.id)).where(
+        # Отримуємо всі сповіщення ТО за сьогодні для даного генератора
+        q_today = select(NotificationLog).where(
             and_(
                 NotificationLog.event_type == "MAINTENANCE_DUE",
                 NotificationLog.generator_id == generator_id,
                 NotificationLog.created_at >= today_start_utc
             )
-        )
-        res_count = await db.execute(q_count)
-        today_count = res_count.scalar() or 0
-        if today_count >= max_daily:
-            return {
-                "sent": 0,
-                "failed": 0,
-                "skipped": True,
-                "reason": f"Денний ліміт нагадувань про ТО ({max_daily} на добу) для цього генератора вже досягнуто"
-            }
+        ).order_by(NotificationLog.created_at.desc())
+        res_today = await db.execute(q_today)
+        logs_today = res_today.scalars().all()
+        today_count = len(logs_today)
 
-        # Also prevent back-to-back spam: require at least 3 hours since the last notification
-        q_last = select(NotificationLog.created_at).where(
-            and_(
-                NotificationLog.event_type == "MAINTENANCE_DUE",
-                NotificationLog.generator_id == generator_id
-            )
-        ).order_by(NotificationLog.created_at.desc()).limit(1)
-        res_last = await db.execute(q_last)
-        last_time = res_last.scalar()
-        if last_time and (now - last_time).total_seconds() < 10800:  # 3 hours
-            return {
-                "sent": 0,
-                "failed": 0,
-                "skipped": True,
-                "reason": "Нагадування про ТО було надіслано менше 3 годин тому"
-            }
+        is_overdue_alert = "прострочено" in title.lower()
+
+        # Ескалація пріоритету: якщо надходить критичне сповіщення про прострочене ТО,
+        # воно не блокується попереднім попередженням про наближення ТО
+        if today_count >= max_daily:
+            if is_overdue_alert:
+                has_overdue_today = any("прострочено" in (l.title or "").lower() for l in logs_today)
+                if has_overdue_today:
+                    return {
+                        "sent": 0, "failed": 0, "skipped": True,
+                        "reason": f"Денний ліміт нагадувань про ТО ({max_daily} на добу) для цього генератора вже досягнуто"
+                    }
+            else:
+                return {
+                    "sent": 0, "failed": 0, "skipped": True,
+                    "reason": f"Денний ліміт нагадувань про ТО ({max_daily} на добу) для цього генератора вже досягнуто"
+                }
+
+        # Також вимагається інтервал не менше 3 годин між однотипними нагадуваннями
+        if logs_today:
+            last_time = logs_today[0].created_at
+            if (now - last_time).total_seconds() < 10800:  # 3 hours
+                if not (is_overdue_alert and "прострочено" not in (logs_today[0].title or "").lower()):
+                    return {
+                        "sent": 0, "failed": 0, "skipped": True,
+                        "reason": "Нагадування про ТО було надіслано менше 3 годин тому"
+                    }
 
     # 4. Rate limiting for LOW_FUEL (cooldown: 3 hours)
     if event_type == "LOW_FUEL" and generator_id:
@@ -303,7 +361,7 @@ async def send_push_notification(
                 "sent": 0,
                 "failed": 0,
                 "skipped": True,
-                "reason": "Сповіщення про низький рівень палива вже надсилалося нещодавно"
+                "reason": "Сповіщення про низький рівень палива вже надсилалося менше 3 годин тому"
             }
 
     # 5. Fetch active subscriptions (with User eagerly loaded)

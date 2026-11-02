@@ -1,12 +1,17 @@
 import json
 import re
 import gzip
+import math
+import logging
+import asyncio
 import datetime
 import urllib.request
 from zoneinfo import ZoneInfo
 from typing import Dict, Any, Optional, Tuple
 from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from backend.app.models.settings import SystemSetting
 from backend.app.models.facility import Facility
@@ -68,7 +73,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "work_schedule_start": "08:00",
     "work_schedule_end": "20:00",
     "enforce_work_schedule": True,
-    "apply_to_all_generators": True,
+    "apply_to_all_generators": False,
     "default_maintenance_interval_hours": 300.0,
     "login_max_attempts": 5,
     "login_lockout_seconds": 300,
@@ -89,6 +94,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "wog_lineup": DEFAULT_WOG_LINEUP,
     "internet_prices_updated_at": "",
     "internet_prices_source": "АЗК WOG (https://wog.ua/ua/fuels/)",
+    "internet_prices_is_live": True,
     # Cached OKKO internet prices
     "okko_price_a95": DEFAULT_OKKO_PRICES["А-95"],
     "okko_price_a95_pulls": DEFAULT_OKKO_PRICES["А-95 Pulls"],
@@ -101,6 +107,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "okko_lineup": DEFAULT_OKKO_LINEUP,
     "okko_prices_updated_at": "",
     "okko_prices_source": "АЗК OKKO (https://www.okko.ua/fuels)",
+    "okko_prices_is_live": True,
     # Push Notifications configuration
     "notifications_enabled": True,
     "notify_generator_start": True,
@@ -252,9 +259,10 @@ def fetch_wog_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, float]
                     prices["А-92"] = p
 
             return prices, lineup, "АЗК WOG (wog.ua/ua/fuels)", True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("INF-41: Помилка отримання або парсингу цін АЗК WOG (wog.ua): %s", e)
 
+    logger.info("Використано резервний кеш цін для АЗК WOG")
     return prices, list(DEFAULT_WOG_LINEUP), "АЗК WOG (резервний кеш)", False
 
 
@@ -348,9 +356,10 @@ def fetch_okko_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, float
                 {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": p_adblue},
             ]
             return prices, lineup, "АЗК OKKO (okko.ua/fuels)", True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("INF-41: Помилка отримання або парсингу цін АЗК OKKO (okko.ua): %s", e)
 
+    logger.info("Використано резервний кеш цін для АЗК OKKO")
     return prices, list(DEFAULT_OKKO_LINEUP), "АЗК OKKO (резервний кеш)", False
 
 
@@ -415,9 +424,42 @@ async def update_system_settings(
 ) -> Dict[str, Any]:
     """
     Оновлює системні налаштування в БД та в RUNTIME_SETTINGS.
-    Опціонально синхронізує часовий пояс та робочий графік для всіх об'єктів та генераторів.
+    Тільки за явної вказівки apply_to_all_generators=True синхронізує часовий пояс
+    та робочий графік для всіх об'єктів та генераторів.
+    Звичайне збереження налаштувань не видаляє індивідуальні графіки генераторів.
     """
     await load_system_settings(db)
+
+    # INF-43: Валідація числових параметрів
+    numeric_constraints = {
+        "default_maintenance_interval_hours": {"min": 0.0, "allow_zero": False, "is_int": False},
+        "low_fuel_threshold_l": {"min": 0.0, "allow_zero": True, "is_int": False},
+        "max_maintenance_notifications_per_day": {"min": 1, "allow_zero": False, "is_int": True},
+        "fuel_price_a95": {"min": 0.0, "allow_zero": True, "is_int": False},
+        "fuel_price_a92": {"min": 0.0, "allow_zero": True, "is_int": False},
+        "fuel_price_dp": {"min": 0.0, "allow_zero": True, "is_int": False},
+        "login_max_attempts": {"min": 1, "allow_zero": False, "is_int": True},
+        "login_lockout_seconds": {"min": 1, "allow_zero": False, "is_int": True},
+        "max_continuous_run_hours": {"min": 0.0, "allow_zero": False, "is_int": False},
+        "min_rest_hours_between_runs": {"min": 0.0, "allow_zero": True, "is_int": False},
+    }
+    for num_key, constraint in numeric_constraints.items():
+        if num_key in updates and updates[num_key] is not None:
+            raw_v = updates[num_key]
+            try:
+                val = int(raw_v) if constraint["is_int"] else float(raw_v)
+            except (ValueError, TypeError):
+                raise ValueError(f"Параметр '{num_key}' повинен бути дійсним числом, отримано: {raw_v}")
+            if math.isnan(val) or math.isinf(val):
+                raise ValueError(f"Параметр '{num_key}' не може бути NaN або нескінченністю")
+            min_lim = constraint["min"]
+            if constraint["allow_zero"] and val == 0:
+                pass
+            elif not constraint["allow_zero"] and val <= min_lim:
+                raise ValueError(f"Параметр '{num_key}' повинен бути більше ніж {min_lim}, отримано: {val}")
+            elif val < min_lim:
+                raise ValueError(f"Параметр '{num_key}' не може бути меншим ніж {min_lim}, отримано: {val}")
+            updates[num_key] = val
 
     if apply_to_all_generators is not None:
         updates["apply_to_all_generators"] = bool(apply_to_all_generators)
@@ -538,7 +580,9 @@ async def update_system_settings(
                 updated_at=now
             ))
 
-    if apply_to_all_generators or updates.get("apply_to_all_generators"):
+    updated_generators_count = 0
+    # INF-36: Масове застосування графіка виконується виключно за явної команди apply_to_all_generators=True
+    if apply_to_all_generators is True:
         tz = pending_updates.get("facility_timezone", RUNTIME_SETTINGS.get("facility_timezone", "Europe/Kyiv"))
         w_start = pending_updates.get("work_schedule_start", RUNTIME_SETTINGS.get("work_schedule_start", "08:00"))
         w_end = pending_updates.get("work_schedule_end", RUNTIME_SETTINGS.get("work_schedule_end", "20:00"))
@@ -549,9 +593,11 @@ async def update_system_settings(
         # Update all generators timezone
         await db.execute(update(Generator).values(timezone=tz, updated_at=now))
 
-        # Update or create schedules for all generators
+        # Update schedules for all generators
         gens_res = await db.execute(select(Generator))
-        for gen in gens_res.scalars().all():
+        gens = gens_res.scalars().all()
+        updated_generators_count = len(gens)
+        for gen in gens:
             await db.execute(delete(GeneratorSchedule).where(GeneratorSchedule.generator_id == gen.id))
             db.add(GeneratorSchedule(
                 generator_id=gen.id,
@@ -575,13 +621,17 @@ async def update_system_settings(
 
     # Atomic publish to in-memory runtime cache strictly AFTER successful commit
     RUNTIME_SETTINGS.update(pending_updates)
-    return dict(RUNTIME_SETTINGS)
+    res_dict = dict(RUNTIME_SETTINGS)
+    res_dict["updated_generators_count"] = updated_generators_count
+    return res_dict
 
 
 async def refresh_internet_fuel_prices(db: AsyncSession, provider: str = "all") -> Dict[str, Any]:
     """
     Запитує актуальні ціни на пальне з офіційного сайту АЗК WOG (https://wog.ua/ua/fuels/)
     та/або АЗК OKKO (https://www.okko.ua/fuels) та зберігає їх у SystemSetting.
+    INF-35 / INF-40: Виконує запити у фоновому потоці через asyncio.to_thread.
+    Якщо запит завершується помилкою, останні дійсні ціни не перезаписуються резервними.
     provider: 'wog' | 'okko' | 'all'
     """
     now_str = datetime.datetime.now(ZoneInfo(get_runtime_timezone())).strftime("%Y-%m-%d %H:%M:%S")
@@ -589,36 +639,73 @@ async def refresh_internet_fuel_prices(db: AsyncSession, provider: str = "all") 
     p_norm = (provider or "all").lower().strip()
 
     if p_norm in ("wog", "all"):
-        prices_wog, lineup_wog, source_wog, is_live_wog = fetch_wog_fuel_prices_online()
-        updates.update({
-            "internet_price_a95": prices_wog.get("А-95", DEFAULT_INTERNET_PRICES["А-95"]),
-            "internet_price_a95_mustang": prices_wog.get("А-95 Mustang", DEFAULT_INTERNET_PRICES["А-95 Mustang"]),
-            "internet_price_a100_mustang": prices_wog.get("А-100 Mustang", DEFAULT_INTERNET_PRICES["А-100 Mustang"]),
-            "internet_price_a92": prices_wog.get("А-92", DEFAULT_INTERNET_PRICES["А-92"]),
-            "internet_price_dp": prices_wog.get("ДП", DEFAULT_INTERNET_PRICES["ДП"]),
-            "internet_price_dp_mustang": prices_wog.get("ДП Mustang+", DEFAULT_INTERNET_PRICES["ДП Mustang+"]),
-            "internet_price_gas": prices_wog.get("ГАЗ", DEFAULT_INTERNET_PRICES["ГАЗ"]),
-            "internet_price_adblue": prices_wog.get("AdBlue", DEFAULT_INTERNET_PRICES["AdBlue"]),
-            "wog_lineup": lineup_wog,
-            "internet_prices_updated_at": now_str,
-            "internet_prices_source": source_wog,
-        })
+        prices_wog, lineup_wog, source_wog, is_live_wog = await asyncio.to_thread(fetch_wog_fuel_prices_online)
+        if is_live_wog:
+            updates.update({
+                "internet_price_a95": prices_wog.get("А-95", DEFAULT_INTERNET_PRICES["А-95"]),
+                "internet_price_a95_mustang": prices_wog.get("А-95 Mustang", DEFAULT_INTERNET_PRICES["А-95 Mustang"]),
+                "internet_price_a100_mustang": prices_wog.get("А-100 Mustang", DEFAULT_INTERNET_PRICES["А-100 Mustang"]),
+                "internet_price_a92": prices_wog.get("А-92", DEFAULT_INTERNET_PRICES["А-92"]),
+                "internet_price_dp": prices_wog.get("ДП", DEFAULT_INTERNET_PRICES["ДП"]),
+                "internet_price_dp_mustang": prices_wog.get("ДП Mustang+", DEFAULT_INTERNET_PRICES["ДП Mustang+"]),
+                "internet_price_gas": prices_wog.get("ГАЗ", DEFAULT_INTERNET_PRICES["ГАЗ"]),
+                "internet_price_adblue": prices_wog.get("AdBlue", DEFAULT_INTERNET_PRICES["AdBlue"]),
+                "wog_lineup": lineup_wog,
+                "internet_prices_updated_at": now_str,
+                "internet_prices_source": source_wog,
+                "internet_prices_is_live": True,
+            })
+        else:
+            logger.warning("INF-35: Отримання цін з АЗК WOG неуспішне. Останні збережені ціни залишаються без змін.")
+            # If prices were never loaded before, set default fallback
+            if not RUNTIME_SETTINGS.get("internet_price_a95"):
+                updates.update({
+                    "internet_price_a95": DEFAULT_INTERNET_PRICES["А-95"],
+                    "internet_price_a95_mustang": DEFAULT_INTERNET_PRICES["А-95 Mustang"],
+                    "internet_price_a100_mustang": DEFAULT_INTERNET_PRICES["А-100 Mustang"],
+                    "internet_price_a92": DEFAULT_INTERNET_PRICES["А-92"],
+                    "internet_price_dp": DEFAULT_INTERNET_PRICES["ДП"],
+                    "internet_price_dp_mustang": DEFAULT_INTERNET_PRICES["ДП Mustang+"],
+                    "internet_price_gas": DEFAULT_INTERNET_PRICES["ГАЗ"],
+                    "internet_price_adblue": DEFAULT_INTERNET_PRICES["AdBlue"],
+                    "wog_lineup": list(DEFAULT_WOG_LINEUP),
+                    "internet_prices_source": source_wog,
+                    "internet_prices_is_live": False,
+                })
 
     if p_norm in ("okko", "all"):
-        prices_okko, lineup_okko, source_okko, is_live_okko = fetch_okko_fuel_prices_online()
-        updates.update({
-            "okko_price_a95": prices_okko.get("А-95", DEFAULT_OKKO_PRICES["А-95"]),
-            "okko_price_a95_pulls": prices_okko.get("А-95 Pulls", DEFAULT_OKKO_PRICES["А-95 Pulls"]),
-            "okko_price_a100_pulls": prices_okko.get("А-100 Pulls", DEFAULT_OKKO_PRICES["А-100 Pulls"]),
-            "okko_price_a92": prices_okko.get("А-92", DEFAULT_OKKO_PRICES["А-92"]),
-            "okko_price_dp": prices_okko.get("ДП", DEFAULT_OKKO_PRICES["ДП"]),
-            "okko_price_dp_pulls": prices_okko.get("ДП Pulls", DEFAULT_OKKO_PRICES["ДП Pulls"]),
-            "okko_price_gas": prices_okko.get("ГАЗ", DEFAULT_OKKO_PRICES["ГАЗ"]),
-            "okko_price_adblue": prices_okko.get("AdBlue", DEFAULT_OKKO_PRICES["AdBlue"]),
-            "okko_lineup": lineup_okko,
-            "okko_prices_updated_at": now_str,
-            "okko_prices_source": source_okko,
-        })
+        prices_okko, lineup_okko, source_okko, is_live_okko = await asyncio.to_thread(fetch_okko_fuel_prices_online)
+        if is_live_okko:
+            updates.update({
+                "okko_price_a95": prices_okko.get("А-95", DEFAULT_OKKO_PRICES["А-95"]),
+                "okko_price_a95_pulls": prices_okko.get("А-95 Pulls", DEFAULT_OKKO_PRICES["А-95 Pulls"]),
+                "okko_price_a100_pulls": prices_okko.get("А-100 Pulls", DEFAULT_OKKO_PRICES["А-100 Pulls"]),
+                "okko_price_a92": prices_okko.get("А-92", DEFAULT_OKKO_PRICES["А-92"]),
+                "okko_price_dp": prices_okko.get("ДП", DEFAULT_OKKO_PRICES["ДП"]),
+                "okko_price_dp_pulls": prices_okko.get("ДП Pulls", DEFAULT_OKKO_PRICES["ДП Pulls"]),
+                "okko_price_gas": prices_okko.get("ГАЗ", DEFAULT_OKKO_PRICES["ГАЗ"]),
+                "okko_price_adblue": prices_okko.get("AdBlue", DEFAULT_OKKO_PRICES["AdBlue"]),
+                "okko_lineup": lineup_okko,
+                "okko_prices_updated_at": now_str,
+                "okko_prices_source": source_okko,
+                "okko_prices_is_live": True,
+            })
+        else:
+            logger.warning("INF-35: Отримання цін з АЗК OKKO неуспішне. Останні збережені ціни залишаються без змін.")
+            if not RUNTIME_SETTINGS.get("okko_price_a95"):
+                updates.update({
+                    "okko_price_a95": DEFAULT_OKKO_PRICES["А-95"],
+                    "okko_price_a95_pulls": DEFAULT_OKKO_PRICES["А-95 Pulls"],
+                    "okko_price_a100_pulls": DEFAULT_OKKO_PRICES["А-100 Pulls"],
+                    "okko_price_a92": DEFAULT_OKKO_PRICES["А-92"],
+                    "okko_price_dp": DEFAULT_OKKO_PRICES["ДП"],
+                    "okko_price_dp_pulls": DEFAULT_OKKO_PRICES["ДП Pulls"],
+                    "okko_price_gas": DEFAULT_OKKO_PRICES["ГАЗ"],
+                    "okko_price_adblue": DEFAULT_OKKO_PRICES["AdBlue"],
+                    "okko_lineup": list(DEFAULT_OKKO_LINEUP),
+                    "okko_prices_source": source_okko,
+                    "okko_prices_is_live": False,
+                })
 
     if updates:
         await update_system_settings(db, updates)
@@ -630,18 +717,19 @@ def get_fuel_prices_info() -> Dict[str, Any]:
     Повертає повну інформацію про ціни на пальне:
     налаштовані вручну, ціни з мережі WOG (https://wog.ua/ua/fuels/) та OKKO (https://www.okko.ua/fuels),
     а також діючі ціни для розрахунку.
+    INF-37: ГАЗ повністю відв'язано від ручної ціни А-92.
     """
     mapping_wog = [
         ("А-95", "fuel_price_a95", "internet_price_a95"),
         ("А-95 Mustang", "fuel_price_a95", "internet_price_a95_mustang"),
         ("ДП", "fuel_price_dp", "internet_price_dp"),
         ("ДП Mustang+", "fuel_price_dp", "internet_price_dp_mustang"),
-        ("ГАЗ", "fuel_price_a92", "internet_price_gas"),
+        ("ГАЗ", None, "internet_price_gas"),
         ("А-92", "fuel_price_a92", "internet_price_a92"),
     ]
     fuels: Dict[str, Dict[str, Any]] = {}
     for label, conf_key, net_key in mapping_wog:
-        conf_val = float(RUNTIME_SETTINGS.get(conf_key) or 0.0)
+        conf_val = float(RUNTIME_SETTINGS.get(conf_key) or 0.0) if conf_key else 0.0
         net_val = float(RUNTIME_SETTINGS.get(net_key) or DEFAULT_INTERNET_PRICES.get(label, 92.90))
         if conf_val > 0 and label in ("А-95", "ДП", "А-92"):
             effective = round(conf_val, 2)
@@ -667,7 +755,7 @@ def get_fuel_prices_info() -> Dict[str, Any]:
         ("ДП", "fuel_price_dp", "okko_price_dp"),
         ("ДП Pulls", "fuel_price_dp", "okko_price_dp_pulls"),
         ("А-100 Pulls", None, "okko_price_a100_pulls"),
-        ("ГАЗ", "fuel_price_a92", "okko_price_gas"),
+        ("ГАЗ", None, "okko_price_gas"),
         ("А-92", "fuel_price_a92", "okko_price_a92"),
     ]
     okko_fuels: Dict[str, Dict[str, Any]] = {}
@@ -700,8 +788,10 @@ def get_fuel_prices_info() -> Dict[str, Any]:
         "auto_fetch_fuel_prices": bool(RUNTIME_SETTINGS.get("auto_fetch_fuel_prices", True)),
         "internet_prices_updated_at": RUNTIME_SETTINGS.get("internet_prices_updated_at") or "",
         "internet_prices_source": RUNTIME_SETTINGS.get("internet_prices_source") or "АЗК WOG (wog.ua/ua/fuels/)",
+        "internet_prices_is_live": bool(RUNTIME_SETTINGS.get("internet_prices_is_live", True)),
         "okko_prices_updated_at": RUNTIME_SETTINGS.get("okko_prices_updated_at") or "",
         "okko_prices_source": RUNTIME_SETTINGS.get("okko_prices_source") or "АЗК OKKO (https://www.okko.ua/fuels)",
+        "okko_prices_is_live": bool(RUNTIME_SETTINGS.get("okko_prices_is_live", True)),
     }
 
 
@@ -937,22 +1027,33 @@ async def perform_system_reset(
         return {"status": "ok", "mode": mode, "message": "Усі експлуатаційні журнали, історія та лічильники очищено. Звіти чисті."}
 
     elif mode == "settings_reset":
-        await db.execute(delete(SystemSetting))
-        await db.commit()
-        RUNTIME_SETTINGS.clear()
-        RUNTIME_SETTINGS.update(DEFAULT_SYSTEM_SETTINGS)
-        await load_system_settings(db)
-        await log_audit(
-            db=db,
-            action="SYSTEM_SETTINGS_RESET",
-            entity_type="SystemSetting",
-            entity_id="all",
-            user_id=user_id,
-            details={"mode": mode},
-            ip_address=ip_address
-        )
-        await db.commit()
-        return {"status": "ok", "mode": mode, "message": "Системні налаштування скинуто до заводських значень."}
+        # INF-39: Атомарне скидання налаштувань в єдиній транзакції
+        try:
+            await db.execute(delete(SystemSetting))
+            for k, default_val in DEFAULT_SYSTEM_SETTINGS.items():
+                db.add(SystemSetting(
+                    key=k,
+                    value_json=json.dumps(default_val, ensure_ascii=False),
+                    description=f"Системний параметр {k}"
+                ))
+            await log_audit(
+                db=db,
+                action="SYSTEM_SETTINGS_RESET",
+                entity_type="SystemSetting",
+                entity_id="all",
+                user_id=user_id,
+                details={"mode": mode},
+                ip_address=ip_address
+            )
+            await db.commit()
+            # Оновлюємо RUNTIME_SETTINGS виключно після успішного коміту
+            RUNTIME_SETTINGS.clear()
+            RUNTIME_SETTINGS.update(DEFAULT_SYSTEM_SETTINGS)
+            return {"status": "ok", "mode": mode, "message": "Системні налаштування скинуто до заводських значень."}
+        except Exception as e:
+            await db.rollback()
+            logger.error("INF-39: Помилка скидання налаштувань settings_reset: %s", e)
+            raise e
 
     elif mode == "factory_reset":
         # Complete wipe of operational & structural data except superadmin
@@ -1024,7 +1125,7 @@ async def perform_system_reset(
             current_operating_hours=0.0,
             fuel_tank_level_l=0.0,
             status="STOPPED",
-            is_configured=True,
+            is_configured=False,  # INF-38: Потребує первинного налаштування майстром перед експлуатацією
             timezone="Europe/Kyiv",
             created_at=now,
             updated_at=now
