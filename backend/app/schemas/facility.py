@@ -12,6 +12,7 @@ class FacilityBase(BaseModel):
     yasno_region_id: Optional[int] = Field(3, description="ID регіону YASNO (3 = Дніпропетровська обл)")
     yasno_dso_id: Optional[int] = Field(301, description="ID оператора ОСР (301 = ДТЕК ДнЕМ, 303 = ЦЕК)")
     yasno_group: Optional[str] = Field(None, max_length=10, description="Група / черга відключення (напр. 3.2)")
+    default_fuel_provider: str = Field("wog", max_length=30, description="Основна мережа АЗС (wog або okko)")
 
 
 class FacilityCreate(FacilityBase):
@@ -27,6 +28,7 @@ class FacilityUpdate(BaseModel):
     yasno_region_id: Optional[int] = None
     yasno_dso_id: Optional[int] = None
     yasno_group: Optional[str] = None
+    default_fuel_provider: Optional[str] = Field(None, max_length=30)
 
 
 class FacilityOut(FacilityBase):

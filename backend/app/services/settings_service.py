@@ -1,5 +1,6 @@
 import json
 import re
+import gzip
 import datetime
 import urllib.request
 from zoneinfo import ZoneInfo
@@ -38,6 +39,28 @@ DEFAULT_WOG_LINEUP = [
     {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": 61.90},
 ]
 
+# Default OKKO Ukraine retail fuel prices fallback (UAH per liter)
+DEFAULT_OKKO_PRICES: Dict[str, float] = {
+    "А-95": 92.90,
+    "А-95 Pulls": 95.90,
+    "А-100 Pulls": 102.90,
+    "А-92": 92.90,
+    "ДП": 106.90,
+    "ДП Pulls": 109.90,
+    "ГАЗ": 59.90,
+    "AdBlue": 61.90,
+}
+
+DEFAULT_OKKO_LINEUP = [
+    {"type": "ДП", "brand": "Євро", "label": "ДП Євро", "price": 106.90},
+    {"type": "ДП", "brand": "Pulls", "label": "Pulls Дизель", "price": 109.90},
+    {"type": "95", "brand": "Євро", "label": "А-95 Євро", "price": 92.90},
+    {"type": "95", "brand": "Pulls", "label": "Pulls 95", "price": 95.90},
+    {"type": "100", "brand": "Pulls", "label": "Pulls 100", "price": 102.90},
+    {"type": "ГАЗ", "brand": "СПБТ", "label": "ГАЗ (СПБТ)", "price": 59.90},
+    {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": 61.90},
+]
+
 # Default dynamic system settings (stored in DB table `system_settings`)
 DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "organization_name": "MAXI-UA LLC",
@@ -66,6 +89,18 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "wog_lineup": DEFAULT_WOG_LINEUP,
     "internet_prices_updated_at": "",
     "internet_prices_source": "АЗК WOG (https://wog.ua/ua/fuels/)",
+    # Cached OKKO internet prices
+    "okko_price_a95": DEFAULT_OKKO_PRICES["А-95"],
+    "okko_price_a95_pulls": DEFAULT_OKKO_PRICES["А-95 Pulls"],
+    "okko_price_a100_pulls": DEFAULT_OKKO_PRICES["А-100 Pulls"],
+    "okko_price_a92": DEFAULT_OKKO_PRICES["А-92"],
+    "okko_price_dp": DEFAULT_OKKO_PRICES["ДП"],
+    "okko_price_dp_pulls": DEFAULT_OKKO_PRICES["ДП Pulls"],
+    "okko_price_gas": DEFAULT_OKKO_PRICES["ГАЗ"],
+    "okko_price_adblue": DEFAULT_OKKO_PRICES["AdBlue"],
+    "okko_lineup": DEFAULT_OKKO_LINEUP,
+    "okko_prices_updated_at": "",
+    "okko_prices_source": "АЗК OKKO (https://www.okko.ua/fuels)",
     # Push Notifications configuration
     "notifications_enabled": True,
     "notify_generator_start": True,
@@ -146,7 +181,7 @@ def get_runtime_timezone() -> str:
         return "Europe/Kyiv"
 
 
-def fetch_ukraine_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, float], list, str, bool]:
+def fetch_wog_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, float], list, str, bool]:
     """
     Парсить офіційні актуальні ціни на пальне з сайту АЗК WOG:
     https://wog.ua/ua/fuels/
@@ -220,6 +255,102 @@ def fetch_ukraine_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, fl
         pass
 
     return prices, list(DEFAULT_WOG_LINEUP), "АЗК WOG (резервний кеш)", False
+
+
+# Backward compatibility alias
+fetch_ukraine_fuel_prices_online = fetch_wog_fuel_prices_online
+
+
+def fetch_okko_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, float], list, str, bool]:
+    """
+    Парсить офіційні актуальні ціни на пальне з сайту АЗК OKKO:
+    https://www.okko.ua/fuels
+    Повертає: (prices_dict, okko_lineup_list, source_label, is_live_from_internet)
+    """
+    prices = dict(DEFAULT_OKKO_PRICES)
+    lineup = []
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate",
+    }
+    try:
+        req = urllib.request.Request("https://www.okko.ua/fuels", headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = resp.read()
+            if resp.headers.get("Content-Encoding") == "gzip" or data[:2] == b"\x1f\x8b":
+                data = gzip.decompress(data)
+            html = data.decode("utf-8", errors="ignore")
+
+        # Method 1: Extract prices from bullets: { items: [...] } in window.__NUXT__
+        bm = re.search(r'bullets\s*:\s*\{items:\s*\[(.*?)\]\}', html)
+        if bm:
+            b_text = bm.group(1)
+            raw_items = re.findall(r'\{[^{}]*?price\s*:\s*["\']([0-9.]+)["\'][^{}]*?\}', b_text)
+            if len(raw_items) >= 5:
+                p_pulls100 = float(raw_items[0])
+                p_pulls_dp = float(raw_items[1])
+                p_dp_euro = float(raw_items[2])
+                p_pulls95 = float(raw_items[3])
+                p_a95_euro = float(raw_items[4])
+                p_gas = float(raw_items[5]) if len(raw_items) > 5 else DEFAULT_OKKO_PRICES["ГАЗ"]
+                p_adblue = float(raw_items[6]) if len(raw_items) > 6 else DEFAULT_OKKO_PRICES["AdBlue"]
+
+                prices["А-100 Pulls"] = p_pulls100
+                prices["ДП Pulls"] = p_pulls_dp
+                prices["ДП"] = p_dp_euro
+                prices["А-95 Pulls"] = p_pulls95
+                prices["А-95"] = p_a95_euro
+                prices["А-92"] = p_a95_euro
+                prices["ГАЗ"] = p_gas
+                prices["AdBlue"] = p_adblue
+
+                lineup = [
+                    {"type": "ДП", "brand": "Євро", "label": "ДП Євро", "price": p_dp_euro},
+                    {"type": "ДП", "brand": "Pulls", "label": "Pulls Дизель", "price": p_pulls_dp},
+                    {"type": "95", "brand": "Євро", "label": "А-95 Євро", "price": p_a95_euro},
+                    {"type": "95", "brand": "Pulls", "label": "Pulls 95", "price": p_pulls95},
+                    {"type": "100", "brand": "Pulls", "label": "Pulls 100", "price": p_pulls100},
+                    {"type": "ГАЗ", "brand": "СПБТ", "label": "ГАЗ (СПБТ)", "price": p_gas},
+                    {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": p_adblue},
+                ]
+                return prices, lineup, "АЗК OKKO (okko.ua/fuels)", True
+
+        # Method 2: Fallback to rendered DOM elements if Nuxt SSR layout differs
+        dom_prices = re.findall(r'class="price"[^>]*>\s*(\d+)\s*<sup[^>]*>(\d+)</sup>\s*</span>', html)
+        if len(dom_prices) >= 5:
+            p_pulls100 = float(f"{dom_prices[0][0]}.{dom_prices[0][1]}")
+            p_pulls_dp = float(f"{dom_prices[1][0]}.{dom_prices[1][1]}")
+            p_dp_euro = float(f"{dom_prices[2][0]}.{dom_prices[2][1]}")
+            p_pulls95 = float(f"{dom_prices[3][0]}.{dom_prices[3][1]}")
+            p_a95_euro = float(f"{dom_prices[4][0]}.{dom_prices[4][1]}")
+            p_gas = float(f"{dom_prices[5][0]}.{dom_prices[5][1]}") if len(dom_prices) > 5 else DEFAULT_OKKO_PRICES["ГАЗ"]
+            p_adblue = float(f"{dom_prices[6][0]}.{dom_prices[6][1]}") if len(dom_prices) > 6 else DEFAULT_OKKO_PRICES["AdBlue"]
+
+            prices["А-100 Pulls"] = p_pulls100
+            prices["ДП Pulls"] = p_pulls_dp
+            prices["ДП"] = p_dp_euro
+            prices["А-95 Pulls"] = p_pulls95
+            prices["А-95"] = p_a95_euro
+            prices["А-92"] = p_a95_euro
+            prices["ГАЗ"] = p_gas
+            prices["AdBlue"] = p_adblue
+
+            lineup = [
+                {"type": "ДП", "brand": "Євро", "label": "ДП Євро", "price": p_dp_euro},
+                {"type": "ДП", "brand": "Pulls", "label": "Pulls Дизель", "price": p_pulls_dp},
+                {"type": "95", "brand": "Євро", "label": "А-95 Євро", "price": p_a95_euro},
+                {"type": "95", "brand": "Pulls", "label": "Pulls 95", "price": p_pulls95},
+                {"type": "100", "brand": "Pulls", "label": "Pulls 100", "price": p_pulls100},
+                {"type": "ГАЗ", "brand": "СПБТ", "label": "ГАЗ (СПБТ)", "price": p_gas},
+                {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": p_adblue},
+            ]
+            return prices, lineup, "АЗК OKKO (okko.ua/fuels)", True
+    except Exception:
+        pass
+
+    return prices, list(DEFAULT_OKKO_LINEUP), "АЗК OKKO (резервний кеш)", False
 
 
 async def load_system_settings(db: AsyncSession) -> Dict[str, Any]:
@@ -446,36 +577,60 @@ async def update_system_settings(
     return dict(RUNTIME_SETTINGS)
 
 
-async def refresh_internet_fuel_prices(db: AsyncSession) -> Dict[str, Any]:
+async def refresh_internet_fuel_prices(db: AsyncSession, provider: str = "all") -> Dict[str, Any]:
     """
     Запитує актуальні ціни на пальне з офіційного сайту АЗК WOG (https://wog.ua/ua/fuels/)
-    та зберігає їх у SystemSetting.
+    та/або АЗК OKKO (https://www.okko.ua/fuels) та зберігає їх у SystemSetting.
+    provider: 'wog' | 'okko' | 'all'
     """
-    prices, lineup, source_label, is_live = fetch_ukraine_fuel_prices_online()
     now_str = datetime.datetime.now(ZoneInfo(get_runtime_timezone())).strftime("%Y-%m-%d %H:%M:%S")
-    updates = {
-        "internet_price_a95": prices.get("А-95", DEFAULT_INTERNET_PRICES["А-95"]),
-        "internet_price_a95_mustang": prices.get("А-95 Mustang", DEFAULT_INTERNET_PRICES["А-95 Mustang"]),
-        "internet_price_a100_mustang": prices.get("А-100 Mustang", DEFAULT_INTERNET_PRICES["А-100 Mustang"]),
-        "internet_price_a92": prices.get("А-92", DEFAULT_INTERNET_PRICES["А-92"]),
-        "internet_price_dp": prices.get("ДП", DEFAULT_INTERNET_PRICES["ДП"]),
-        "internet_price_dp_mustang": prices.get("ДП Mustang+", DEFAULT_INTERNET_PRICES["ДП Mustang+"]),
-        "internet_price_gas": prices.get("ГАЗ", DEFAULT_INTERNET_PRICES["ГАЗ"]),
-        "internet_price_adblue": prices.get("AdBlue", DEFAULT_INTERNET_PRICES["AdBlue"]),
-        "wog_lineup": lineup,
-        "internet_prices_updated_at": now_str,
-        "internet_prices_source": source_label,
-    }
-    await update_system_settings(db, updates)
+    updates: Dict[str, Any] = {}
+    p_norm = (provider or "all").lower().strip()
+
+    if p_norm in ("wog", "all"):
+        prices_wog, lineup_wog, source_wog, is_live_wog = fetch_wog_fuel_prices_online()
+        updates.update({
+            "internet_price_a95": prices_wog.get("А-95", DEFAULT_INTERNET_PRICES["А-95"]),
+            "internet_price_a95_mustang": prices_wog.get("А-95 Mustang", DEFAULT_INTERNET_PRICES["А-95 Mustang"]),
+            "internet_price_a100_mustang": prices_wog.get("А-100 Mustang", DEFAULT_INTERNET_PRICES["А-100 Mustang"]),
+            "internet_price_a92": prices_wog.get("А-92", DEFAULT_INTERNET_PRICES["А-92"]),
+            "internet_price_dp": prices_wog.get("ДП", DEFAULT_INTERNET_PRICES["ДП"]),
+            "internet_price_dp_mustang": prices_wog.get("ДП Mustang+", DEFAULT_INTERNET_PRICES["ДП Mustang+"]),
+            "internet_price_gas": prices_wog.get("ГАЗ", DEFAULT_INTERNET_PRICES["ГАЗ"]),
+            "internet_price_adblue": prices_wog.get("AdBlue", DEFAULT_INTERNET_PRICES["AdBlue"]),
+            "wog_lineup": lineup_wog,
+            "internet_prices_updated_at": now_str,
+            "internet_prices_source": source_wog,
+        })
+
+    if p_norm in ("okko", "all"):
+        prices_okko, lineup_okko, source_okko, is_live_okko = fetch_okko_fuel_prices_online()
+        updates.update({
+            "okko_price_a95": prices_okko.get("А-95", DEFAULT_OKKO_PRICES["А-95"]),
+            "okko_price_a95_pulls": prices_okko.get("А-95 Pulls", DEFAULT_OKKO_PRICES["А-95 Pulls"]),
+            "okko_price_a100_pulls": prices_okko.get("А-100 Pulls", DEFAULT_OKKO_PRICES["А-100 Pulls"]),
+            "okko_price_a92": prices_okko.get("А-92", DEFAULT_OKKO_PRICES["А-92"]),
+            "okko_price_dp": prices_okko.get("ДП", DEFAULT_OKKO_PRICES["ДП"]),
+            "okko_price_dp_pulls": prices_okko.get("ДП Pulls", DEFAULT_OKKO_PRICES["ДП Pulls"]),
+            "okko_price_gas": prices_okko.get("ГАЗ", DEFAULT_OKKO_PRICES["ГАЗ"]),
+            "okko_price_adblue": prices_okko.get("AdBlue", DEFAULT_OKKO_PRICES["AdBlue"]),
+            "okko_lineup": lineup_okko,
+            "okko_prices_updated_at": now_str,
+            "okko_prices_source": source_okko,
+        })
+
+    if updates:
+        await update_system_settings(db, updates)
     return get_fuel_prices_info()
 
 
 def get_fuel_prices_info() -> Dict[str, Any]:
     """
     Повертає повну інформацію про ціни на пальне:
-    налаштовані вручну, ціни з мережі WOG (https://wog.ua/ua/fuels/) та ефективні (діючі) ціни.
+    налаштовані вручну, ціни з мережі WOG (https://wog.ua/ua/fuels/) та OKKO (https://www.okko.ua/fuels),
+    а також діючі ціни для розрахунку.
     """
-    mapping = [
+    mapping_wog = [
         ("А-95", "fuel_price_a95", "internet_price_a95"),
         ("А-95 Mustang", "fuel_price_a95", "internet_price_a95_mustang"),
         ("ДП", "fuel_price_dp", "internet_price_dp"),
@@ -484,10 +639,9 @@ def get_fuel_prices_info() -> Dict[str, Any]:
         ("А-92", "fuel_price_a92", "internet_price_a92"),
     ]
     fuels: Dict[str, Dict[str, Any]] = {}
-    for label, conf_key, net_key in mapping:
+    for label, conf_key, net_key in mapping_wog:
         conf_val = float(RUNTIME_SETTINGS.get(conf_key) or 0.0)
         net_val = float(RUNTIME_SETTINGS.get(net_key) or DEFAULT_INTERNET_PRICES.get(label, 92.90))
-        # Якщо обрано преміум пальне Mustang і базова ручна ціна = 0, беремо інтернет-ціну Mustang
         if conf_val > 0 and label in ("А-95", "ДП", "А-92"):
             effective = round(conf_val, 2)
             source = "settings"
@@ -506,80 +660,175 @@ def get_fuel_prices_info() -> Dict[str, Any]:
             "source_name": source_name,
         }
 
+    mapping_okko = [
+        ("А-95", "fuel_price_a95", "okko_price_a95"),
+        ("А-95 Pulls", "fuel_price_a95", "okko_price_a95_pulls"),
+        ("ДП", "fuel_price_dp", "okko_price_dp"),
+        ("ДП Pulls", "fuel_price_dp", "okko_price_dp_pulls"),
+        ("А-100 Pulls", None, "okko_price_a100_pulls"),
+        ("ГАЗ", "fuel_price_a92", "okko_price_gas"),
+        ("А-92", "fuel_price_a92", "okko_price_a92"),
+    ]
+    okko_fuels: Dict[str, Dict[str, Any]] = {}
+    for label, conf_key, net_key in mapping_okko:
+        conf_val = float(RUNTIME_SETTINGS.get(conf_key) or 0.0) if conf_key else 0.0
+        net_val = float(RUNTIME_SETTINGS.get(net_key) or DEFAULT_OKKO_PRICES.get(label, 92.90))
+        if conf_val > 0 and label in ("А-95", "ДП", "А-92"):
+            effective = round(conf_val, 2)
+            source = "settings"
+            source_name = "Встановлено в налаштуваннях"
+        else:
+            effective = round(net_val, 2)
+            source = "internet"
+            source_name = str(RUNTIME_SETTINGS.get("okko_prices_source") or "АЗК OKKO (okko.ua/fuels)")
+
+        okko_fuels[label] = {
+            "fuel_type": label,
+            "effective_price": effective,
+            "configured_price": round(conf_val, 2) if label in ("А-95", "ДП", "А-92") else 0.0,
+            "internet_price": round(net_val, 2),
+            "source": source,
+            "source_name": source_name,
+        }
+
     return {
         "fuels": fuels,
+        "okko_fuels": okko_fuels,
         "wog_lineup": RUNTIME_SETTINGS.get("wog_lineup") or list(DEFAULT_WOG_LINEUP),
+        "okko_lineup": RUNTIME_SETTINGS.get("okko_lineup") or list(DEFAULT_OKKO_LINEUP),
         "auto_fetch_fuel_prices": bool(RUNTIME_SETTINGS.get("auto_fetch_fuel_prices", True)),
         "internet_prices_updated_at": RUNTIME_SETTINGS.get("internet_prices_updated_at") or "",
         "internet_prices_source": RUNTIME_SETTINGS.get("internet_prices_source") or "АЗК WOG (wog.ua/ua/fuels/)",
+        "okko_prices_updated_at": RUNTIME_SETTINGS.get("okko_prices_updated_at") or "",
+        "okko_prices_source": RUNTIME_SETTINGS.get("okko_prices_source") or "АЗК OKKO (https://www.okko.ua/fuels)",
     }
 
 
-async def resolve_fuel_price_per_liter(db: AsyncSession, fuel_type: str) -> Tuple[float, str]:
+async def resolve_fuel_price_per_liter(
+    db: AsyncSession,
+    fuel_type: str,
+    provider: str = "wog"
+) -> Tuple[float, str]:
     """
     Визначає ціну за літр для оприбуткування палива, якщо сума чека не була вказана:
-    1) Якщо в налаштуваннях задана ціна > 0 для цього типу палива -> використовує її.
-    2) Інакше використовує актуальну ціну з АЗК WOG (https://wog.ua/ua/fuels/).
+    1) Якщо в налаштуваннях задана власна ціна > 0 для базового типу палива -> використовує її.
+    2) Інакше використовує актуальну ціну з обраної мережі АЗК (WOG або OKKO).
     """
     await load_system_settings(db)
     ft = (fuel_type or "А-95").strip().upper()
-    is_mustang = "MUSTANG" in ft or "+" in ft
+    prov = (provider or "wog").strip().lower()
 
-    if "100" in ft:
-        norm_ft = "А-100 Mustang"
-        conf_key = None
-        net_key = "internet_price_a100_mustang"
-    elif "ГАЗ" in ft or "LPG" in ft or "GAS" in ft:
-        norm_ft = "ГАЗ"
-        conf_key = None
-        net_key = "internet_price_gas"
-    elif "ADBLUE" in ft:
-        norm_ft = "AdBlue"
-        conf_key = None
-        net_key = "internet_price_adblue"
-    elif "92" in ft:
-        norm_ft = "А-92"
-        conf_key = "fuel_price_a92"
-        net_key = "internet_price_a92"
-    elif "ДП" in ft or "ДИЗ" in ft or "DIESEL" in ft:
-        if is_mustang:
-            norm_ft = "ДП Mustang+"
+    is_premium = "MUSTANG" in ft or "PULLS" in ft or "+" in ft
+    is_okko = "okko" in prov
+
+    if is_okko:
+        if "100" in ft:
+            norm_ft = "А-100 Pulls"
             conf_key = None
-            net_key = "internet_price_dp_mustang"
+            net_key = "okko_price_a100_pulls"
+            fallback_val = DEFAULT_OKKO_PRICES["А-100 Pulls"]
+        elif "ГАЗ" in ft or "LPG" in ft or "GAS" in ft or "СПБТ" in ft:
+            norm_ft = "ГАЗ"
+            conf_key = None
+            net_key = "okko_price_gas"
+            fallback_val = DEFAULT_OKKO_PRICES["ГАЗ"]
+        elif "ADBLUE" in ft:
+            norm_ft = "AdBlue"
+            conf_key = None
+            net_key = "okko_price_adblue"
+            fallback_val = DEFAULT_OKKO_PRICES["AdBlue"]
+        elif "92" in ft:
+            norm_ft = "А-92"
+            conf_key = "fuel_price_a92"
+            net_key = "okko_price_a92"
+            fallback_val = DEFAULT_OKKO_PRICES["А-92"]
+        elif "ДП" in ft or "ДИЗ" in ft or "DIESEL" in ft:
+            if is_premium:
+                norm_ft = "ДП Pulls"
+                conf_key = None
+                net_key = "okko_price_dp_pulls"
+                fallback_val = DEFAULT_OKKO_PRICES["ДП Pulls"]
+            else:
+                norm_ft = "ДП"
+                conf_key = "fuel_price_dp"
+                net_key = "okko_price_dp"
+                fallback_val = DEFAULT_OKKO_PRICES["ДП"]
         else:
-            norm_ft = "ДП"
-            conf_key = "fuel_price_dp"
-            net_key = "internet_price_dp"
+            if is_premium:
+                norm_ft = "А-95 Pulls"
+                conf_key = None
+                net_key = "okko_price_a95_pulls"
+                fallback_val = DEFAULT_OKKO_PRICES["А-95 Pulls"]
+            else:
+                norm_ft = "А-95"
+                conf_key = "fuel_price_a95"
+                net_key = "okko_price_a95"
+                fallback_val = DEFAULT_OKKO_PRICES["А-95"]
     else:
-        if is_mustang:
-            norm_ft = "А-95 Mustang"
+        # WOG or default fallback
+        if "100" in ft:
+            norm_ft = "А-100 Mustang"
             conf_key = None
-            net_key = "internet_price_a95_mustang"
+            net_key = "internet_price_a100_mustang"
+            fallback_val = DEFAULT_INTERNET_PRICES["А-100 Mustang"]
+        elif "ГАЗ" in ft or "LPG" in ft or "GAS" in ft:
+            norm_ft = "ГАЗ"
+            conf_key = None
+            net_key = "internet_price_gas"
+            fallback_val = DEFAULT_INTERNET_PRICES["ГАЗ"]
+        elif "ADBLUE" in ft:
+            norm_ft = "AdBlue"
+            conf_key = None
+            net_key = "internet_price_adblue"
+            fallback_val = DEFAULT_INTERNET_PRICES["AdBlue"]
+        elif "92" in ft:
+            norm_ft = "А-92"
+            conf_key = "fuel_price_a92"
+            net_key = "internet_price_a92"
+            fallback_val = DEFAULT_INTERNET_PRICES["А-92"]
+        elif "ДП" in ft or "ДИЗ" in ft or "DIESEL" in ft:
+            if is_premium:
+                norm_ft = "ДП Mustang+"
+                conf_key = None
+                net_key = "internet_price_dp_mustang"
+                fallback_val = DEFAULT_INTERNET_PRICES["ДП Mustang+"]
+            else:
+                norm_ft = "ДП"
+                conf_key = "fuel_price_dp"
+                net_key = "internet_price_dp"
+                fallback_val = DEFAULT_INTERNET_PRICES["ДП"]
         else:
-            norm_ft = "А-95"
-            conf_key = "fuel_price_a95"
-            net_key = "internet_price_a95"
+            if is_premium:
+                norm_ft = "А-95 Mustang"
+                conf_key = None
+                net_key = "internet_price_a95_mustang"
+                fallback_val = DEFAULT_INTERNET_PRICES["А-95 Mustang"]
+            else:
+                norm_ft = "А-95"
+                conf_key = "fuel_price_a95"
+                net_key = "internet_price_a95"
+                fallback_val = DEFAULT_INTERNET_PRICES["А-95"]
 
     if conf_key:
         conf_price = float(RUNTIME_SETTINGS.get(conf_key) or 0.0)
         if conf_price > 0:
             return round(conf_price, 2), "system_settings"
 
-    # Try refreshing from WOG if never updated or if legacy non-WOG source is cached
-    cur_source = str(RUNTIME_SETTINGS.get("internet_prices_source") or "")
-    if RUNTIME_SETTINGS.get("auto_fetch_fuel_prices", True) and (
-        not RUNTIME_SETTINGS.get("internet_prices_updated_at") or "WOG" not in cur_source.upper()
-    ):
-        try:
-            await refresh_internet_fuel_prices(db)
-        except Exception:
-            pass
+    # Auto-fetch if not updated
+    if RUNTIME_SETTINGS.get("auto_fetch_fuel_prices", True):
+        upd_key = "okko_prices_updated_at" if is_okko else "internet_prices_updated_at"
+        if not RUNTIME_SETTINGS.get(upd_key):
+            try:
+                await refresh_internet_fuel_prices(db, provider="okko" if is_okko else "wog")
+            except Exception:
+                pass
 
-    net_price = float(RUNTIME_SETTINGS.get(net_key) or DEFAULT_INTERNET_PRICES.get(norm_ft, 92.90))
+    net_price = float(RUNTIME_SETTINGS.get(net_key) or fallback_val)
     if net_price <= 0:
-        net_price = DEFAULT_INTERNET_PRICES.get(norm_ft, 92.90)
+        net_price = fallback_val
 
-    return round(net_price, 2), "internet"
+    source_tag = "internet_okko" if is_okko else "internet"
+    return round(net_price, 2), source_tag
 
 
 async def perform_system_reset(

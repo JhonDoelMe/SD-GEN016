@@ -618,7 +618,8 @@ async def generate_operational_report(
             cost_total=round(rec.cost_total or 0.0, 2),
             receipt_number=rec.receipt_number or "-",
             driver_name=rec.driver_name or "-",
-            supplier=rec.receipt_number or "-",
+            supplier=f"АЗК {rec.fuel_provider.upper()}" if getattr(rec, "fuel_provider", None) else "АЗК WOG",
+            fuel_provider=getattr(rec, "fuel_provider", "wog") or "wog",
             stock_name=rec.stock.name if rec.stock else "Склад ГСМ",
             operator_name=(rec.user.full_name or rec.user.login) if rec.user else "Система"
         )
@@ -1198,7 +1199,7 @@ async def generate_excel_report(
     ws3.freeze_panes = "A3"
 
     # Section 1: Receipts
-    ws3.merge_cells("A1:L1")
+    ws3.merge_cells("A1:M1")
     s1_title = ws3["A1"]
     s1_title.value = "1. Оприбуткування палива на склад ГСМ (закупівля / чеки)"
     s1_title.font = SECTION_FONT
@@ -1208,7 +1209,7 @@ async def generate_excel_report(
 
     headers3_rec = [
         "№", "Дата / Час", "Об'єкт (локація)", "Склад ГСМ", "Чек / Накладна №",
-        "Водій / Постачальник", "Тип палива", "Об'єм (л)",
+        "Мережа АЗС", "Водій / Постачальник", "Тип палива", "Об'єм (л)",
         "Сума (грн)", "Ціна за літр (грн/л)", "Хто прийняв", "Коментар"
     ]
     ws3.row_dimensions[2].height = 24
@@ -1228,12 +1229,14 @@ async def generate_excel_report(
         fac_rec_name = rc.stock.facility.name if rc.stock and rc.stock.facility else facility_name
         stock_name = rc.stock.name if rc.stock else "Склад ГСМ"
         rec_user = rc.user.full_name if rc.user else "Користувач"
+        prov_label = (rc.fuel_provider or "wog").upper()
         vals = [
             idx,
             fmt_dt(rc.created_at),
             fac_rec_name,
             stock_name,
             rc.receipt_number,
+            prov_label,
             rc.driver_name,
             rc.fuel_type,
             rc.liters,
@@ -1250,9 +1253,9 @@ async def generate_excel_report(
             cell.border = CELL_BORDER
             if fill.fill_type:
                 cell.fill = fill
-            if c_idx in [1, 2, 5, 7]:
+            if c_idx in [1, 2, 5, 6, 8]:
                 cell.alignment = ALIGN_CENTER
-            elif c_idx in [8, 9, 10]:
+            elif c_idx in [9, 10, 11]:
                 cell.alignment = ALIGN_RIGHT
                 if isinstance(val, (int, float)):
                     cell.number_format = "#,##0.00"
@@ -1268,14 +1271,14 @@ async def generate_excel_report(
         cell.border = TOTAL_BORDER
         cell.font = TOTAL_FONT
     ws3.cell(row=row_cur, column=1, value="РАЗОМ").alignment = ALIGN_CENTER
-    c_tot_l = ws3.cell(row=row_cur, column=8, value=round(tot_rec_l, 2))
+    c_tot_l = ws3.cell(row=row_cur, column=9, value=round(tot_rec_l, 2))
     c_tot_l.alignment = ALIGN_RIGHT
     c_tot_l.number_format = "#,##0.00"
-    c_tot_u = ws3.cell(row=row_cur, column=9, value=round(tot_rec_uah, 2))
+    c_tot_u = ws3.cell(row=row_cur, column=10, value=round(tot_rec_uah, 2))
     c_tot_u.alignment = ALIGN_RIGHT
     c_tot_u.number_format = "#,##0.00"
     if tot_rec_l > 0:
-        c_avg = ws3.cell(row=row_cur, column=10, value=round(tot_rec_uah / tot_rec_l, 2))
+        c_avg = ws3.cell(row=row_cur, column=11, value=round(tot_rec_uah / tot_rec_l, 2))
         c_avg.alignment = ALIGN_RIGHT
         c_avg.number_format = "#,##0.00"
     row_cur += 3

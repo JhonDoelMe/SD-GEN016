@@ -34,6 +34,7 @@ class FuelReceipt(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     fuel_type = Column(String(50), nullable=False)
+    fuel_provider = Column(String(50), nullable=True, default="wog", server_default="wog")
     liters = Column(Float, nullable=False)
     cost_total = Column(Float, nullable=False)
     price_per_liter = Column(Float, nullable=False)

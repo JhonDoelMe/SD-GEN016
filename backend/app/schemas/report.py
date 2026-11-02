@@ -32,6 +32,7 @@ class ReportFuelReceiptItem(BaseModel):
     receipt_number: Optional[str] = "-"
     driver_name: Optional[str] = "-"
     supplier: Optional[str] = "-"
+    fuel_provider: Optional[str] = "wog"
     stock_name: str
     operator_name: str
 

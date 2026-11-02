@@ -39,6 +39,7 @@ async def get_all_facilities(db: AsyncSession) -> List[FacilityOut]:
                 yasno_region_id=f.yasno_region_id,
                 yasno_dso_id=f.yasno_dso_id,
                 yasno_group=f.yasno_group,
+                default_fuel_provider=getattr(f, "default_fuel_provider", "wog") or "wog",
                 created_at=f.created_at,
                 updated_at=f.updated_at,
                 generator_count=len(f.generators),
@@ -72,6 +73,7 @@ async def get_facility_by_id(db: AsyncSession, facility_id: int) -> FacilityOut:
         yasno_region_id=f.yasno_region_id,
         yasno_dso_id=f.yasno_dso_id,
         yasno_group=f.yasno_group,
+        default_fuel_provider=getattr(f, "default_fuel_provider", "wog") or "wog",
         created_at=f.created_at,
         updated_at=f.updated_at,
         generator_count=len(f.generators),
@@ -103,6 +105,7 @@ async def create_facility(
         yasno_region_id=data.yasno_region_id if data.yasno_region_id is not None else 3,
         yasno_dso_id=data.yasno_dso_id if data.yasno_dso_id is not None else 301,
         yasno_group=data.yasno_group.strip() if data.yasno_group else None,
+        default_fuel_provider=(data.default_fuel_provider.strip().lower() if data.default_fuel_provider else "wog") or "wog",
         created_at=now,
         updated_at=now,
     )
@@ -173,6 +176,8 @@ async def update_facility(
         facility.yasno_dso_id = data.yasno_dso_id
     if data.yasno_group is not None:
         facility.yasno_group = data.yasno_group.strip() if data.yasno_group else None
+    if data.default_fuel_provider is not None:
+        facility.default_fuel_provider = data.default_fuel_provider.strip().lower() or "wog"
 
     facility.updated_at = utc_now()
     await db.flush()

@@ -231,6 +231,11 @@ async def add_fuel_receipt(
 
     facility_id = receipt_data.facility_id or stock.facility_id or 1
 
+    receipt_provider = (receipt_data.fuel_provider or "").strip().lower()
+    if not receipt_provider:
+        fac = await db.get(Facility, facility_id)
+        receipt_provider = (fac.default_fuel_provider if fac and fac.default_fuel_provider else "wog").lower()
+
     if receipt_data.liters <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Кількість літрів має бути більше 0")
 
@@ -247,7 +252,7 @@ async def add_fuel_receipt(
         price_source = "manual_unit_price"
     else:
         from backend.app.services.settings_service import resolve_fuel_price_per_liter
-        price_per_l, price_source = await resolve_fuel_price_per_liter(db, effective_fuel_type)
+        price_per_l, price_source = await resolve_fuel_price_per_liter(db, effective_fuel_type, provider=receipt_provider)
         cost_total = round(receipt_data.liters * price_per_l, 2)
 
     # Fuel Receipt Safeguard: Scale & Price Sanity Checks
@@ -276,8 +281,13 @@ async def add_fuel_receipt(
             )
 
     comment_text = receipt_data.comment
-    if price_source in ("system_settings", "internet"):
-        src_ua = "Налаштування системи" if price_source == "system_settings" else "Авто-ціна з інтернету"
+    if price_source in ("system_settings", "internet", "internet_okko"):
+        if price_source == "system_settings":
+            src_ua = "Налаштування системи"
+        elif price_source == "internet_okko":
+            src_ua = "АЗК OKKO (авторозрахунок)"
+        else:
+            src_ua = "АЗК WOG (авторозрахунок)"
         auto_note = f"[Авторозрахунок: {price_per_l:.2f} грн/л ({src_ua})]"
         comment_text = f"{comment_text} {auto_note}".strip() if comment_text else auto_note
 
@@ -285,6 +295,7 @@ async def add_fuel_receipt(
         facility_id=facility_id,
         stock_id=stock.id,
         user_id=user_id,
+        fuel_provider=receipt_provider,
         fuel_type=effective_fuel_type,
         liters=round(receipt_data.liters, 2),
         cost_total=cost_total,
@@ -311,6 +322,7 @@ async def add_fuel_receipt(
             "facility_id": facility_id,
             "stock_id": stock.id,
             "stock_name": stock.name,
+            "fuel_provider": receipt_provider,
             "liters": receipt.liters,
             "cost_total": receipt.cost_total,
             "price_per_l": price_per_l,

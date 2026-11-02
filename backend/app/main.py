@@ -43,6 +43,8 @@ def ensure_schema_updates(sync_conn):
             sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN yasno_dso_id INTEGER DEFAULT 301"))
         if "yasno_group" not in fac_cols:
             sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN yasno_group VARCHAR(10)"))
+        if "default_fuel_provider" not in fac_cols:
+            sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN default_fuel_provider VARCHAR(30) DEFAULT 'wog'"))
 
         res = sync_conn.execute(text("SELECT COUNT(*) FROM facilities")).scalar()
         if res == 0:
@@ -106,6 +108,11 @@ def ensure_schema_updates(sync_conn):
         cols = [c["name"] for c in inspector.get_columns("system_adjustments")]
         if "target_name" not in cols:
             sync_conn.execute(text("ALTER TABLE system_adjustments ADD COLUMN target_name VARCHAR(200)"))
+
+    if "fuel_receipts" in tables:
+        cols = [c["name"] for c in inspector.get_columns("fuel_receipts")]
+        if "fuel_provider" not in cols:
+            sync_conn.execute(text("ALTER TABLE fuel_receipts ADD COLUMN fuel_provider VARCHAR(50) DEFAULT 'wog'"))
 
     # 4. Fix maintenance schedule anomaly: interval=300, next_due=535 -> next_due=300, last_performed=0
     if "maintenance_schedules" in tables:

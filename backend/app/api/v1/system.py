@@ -245,13 +245,15 @@ async def get_fuel_prices(
 @router.post("/fuel-prices/refresh")
 async def force_refresh_fuel_prices(
     request: Request,
+    provider: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ) -> Dict[str, Any]:
     """
-    Примусове оновлення середніх цін на паливо по Україні з інтернету (тільки для Адміністратора).
+    Примусове оновлення середніх цін на паливо з офіційних табло АЗК WOG / OKKO (тільки для Адміністратора).
     """
-    info = await refresh_internet_fuel_prices(db)
+    prov = (provider or "all").lower().strip()
+    info = await refresh_internet_fuel_prices(db, provider=prov)
     await log_audit(
         db=db,
         action="FUEL_PRICES_REFRESHED",
@@ -259,11 +261,13 @@ async def force_refresh_fuel_prices(
         entity_id="fuel_prices",
         user_id=current_user.id,
         details={
-            "source": info.get("internet_prices_source"),
-            "updated_at": info.get("internet_prices_updated_at"),
-            "a95": info["fuels"]["А-95"]["internet_price"],
-            "a92": info["fuels"]["А-92"]["internet_price"],
-            "dp": info["fuels"]["ДП"]["internet_price"],
+            "provider": prov,
+            "source_wog": info.get("internet_prices_source"),
+            "updated_at_wog": info.get("internet_prices_updated_at"),
+            "source_okko": info.get("okko_prices_source"),
+            "updated_at_okko": info.get("okko_prices_updated_at"),
+            "wog_dp": info.get("fuels", {}).get("ДП", {}).get("internet_price"),
+            "okko_dp": info.get("okko_fuels", {}).get("ДП", {}).get("internet_price"),
         },
         ip_address=get_client_ip(request)
     )

@@ -31,6 +31,7 @@ class FuelStockOut(BaseModel):
 class FuelReceiptCreate(BaseModel):
     facility_id: Optional[int] = None
     stock_id: Optional[int] = None
+    fuel_provider: Optional[str] = Field(default="wog", description="Мережа АЗС / Постачальник (wog, okko, other)")
     fuel_type: str = Field(default="А-95")
     liters: float = Field(..., gt=0, description="Кількість літрів за чеком")
     cost_total: Optional[float] = Field(
@@ -57,6 +58,7 @@ class FuelReceiptOut(BaseModel):
     stock_name: Optional[str] = None
     user_id: int
     user_name: Optional[str] = None
+    fuel_provider: Optional[str] = "wog"
     fuel_type: str
     liters: float
     cost_total: float

@@ -1652,34 +1652,90 @@ async function fetchFuelPricesCache() {
   return cachedFuelPrices;
 }
 
+let cachedReceiptFacilities = [];
+
+window.onReceiptFuelProviderChange = function () {
+  const provider = (document.getElementById('recFuelProvider')?.value || 'wog').toLowerCase();
+  const typeSel = document.getElementById('recFuelType');
+  if (!typeSel) return;
+  const curVal = typeSel.value;
+
+  if (provider === 'okko') {
+    typeSel.innerHTML = `
+      <option value="А-95" selected>А-95 (OKKO А-95 Євро)</option>
+      <option value="А-95 Pulls">А-95 Pulls (OKKO Pulls 95)</option>
+      <option value="ДП">ДП (OKKO ДП Євро)</option>
+      <option value="ДП Pulls">ДП Pulls (OKKO Pulls Дизель)</option>
+      <option value="А-100 Pulls">А-100 Pulls (OKKO Pulls 100)</option>
+      <option value="ГАЗ">ГАЗ (OKKO СПБТ)</option>
+      <option value="А-92">А-92</option>
+    `;
+  } else if (provider === 'other') {
+    typeSel.innerHTML = `
+      <option value="А-95" selected>А-95</option>
+      <option value="ДП">ДП</option>
+      <option value="А-92">А-92</option>
+      <option value="ГАЗ">ГАЗ</option>
+    `;
+  } else {
+    // WOG
+    typeSel.innerHTML = `
+      <option value="А-95" selected>А-95 (WOG 95 Євро5-Е10)</option>
+      <option value="А-95 Mustang">А-95 Mustang (WOG 95 Mustang)</option>
+      <option value="ДП">ДП (WOG ДП Євро5)</option>
+      <option value="ДП Mustang+">ДП Mustang+ (WOG ДП Mustang+)</option>
+      <option value="ГАЗ">ГАЗ (WOG LPG)</option>
+      <option value="А-92">А-92</option>
+    `;
+  }
+  if ([...typeSel.options].some((o) => o.value === curVal)) {
+    typeSel.value = curVal;
+  }
+  updateReceiptPriceEstimate();
+};
+
 window.updateReceiptPriceEstimate = function () {
   const hintEl = document.getElementById('recAutoPriceHint');
   if (!hintEl) return;
+  const provider = (document.getElementById('recFuelProvider')?.value || 'wog').toLowerCase();
   const fuelType = document.getElementById('recFuelType')?.value || 'А-95';
   const litersVal = parseFloat(document.getElementById('recLiters')?.value || '0');
   const rawCost = document.getElementById('recCostTotal')?.value?.trim() || '';
   const costVal = rawCost ? parseFloat(rawCost) : 0;
 
-  const wogFallbacks = {
+  const isOkko = provider === 'okko';
+  const fallbacks = isOkko ? {
+    'А-95': 92.90,
+    'А-95 Pulls': 95.90,
+    'А-100 Pulls': 102.90,
+    'ДП': 106.90,
+    'ДП Pulls': 109.90,
+    'ГАЗ': 59.90,
+    'А-92': 92.90
+  } : {
     'А-95': 92.90,
     'А-95 Mustang': 95.90,
+    'А-100 Mustang': 102.90,
     'ДП': 103.50,
     'ДП Mustang+': 106.50,
     'ГАЗ': 52.50,
     'А-92': 89.90
   };
-  const fuelEntry = cachedFuelPrices?.fuels?.[fuelType];
-  const unitPrice = fuelEntry ? Number(fuelEntry.effective_price) : (wogFallbacks[fuelType] || 92.90);
-  const srcName = fuelEntry ? fuelEntry.source_name : 'АЗК WOG (wog.ua/ua/fuels/)';
+
+  const fuelsMap = isOkko ? cachedFuelPrices?.okko_fuels : cachedFuelPrices?.fuels;
+  const fuelEntry = fuelsMap?.[fuelType] || cachedFuelPrices?.fuels?.[fuelType];
+  const unitPrice = fuelEntry ? Number(fuelEntry.effective_price) : (fallbacks[fuelType] || 92.90);
+  const defaultSrc = isOkko ? 'АЗК OKKO (okko.ua/fuels)' : 'АЗК WOG (wog.ua/ua/fuels/)';
+  const srcName = fuelEntry ? fuelEntry.source_name : defaultSrc;
 
   if (costVal > 0 && litersVal > 0) {
     const manualPerL = (costVal / litersVal).toFixed(2);
     hintEl.innerHTML = `✅ Сума вказана за чеком: <b style="color:#4ade80;">${costVal.toFixed(2)} грн</b> (виходить <b>${manualPerL} грн/л</b>)`;
   } else if (litersVal > 0) {
     const autoSum = (litersVal * unitPrice).toFixed(2);
-    hintEl.innerHTML = `💡 Авторозрахунок <b>${escapeHtml(fuelType)}</b>: <b>${unitPrice.toFixed(2)} грн/л</b> <span style="color:var(--text-muted);">(${escapeHtml(srcName)})</span> → буде нараховано: <b style="color:#4ade80;">${autoSum} грн</b>`;
+    hintEl.innerHTML = `💡 Авторозрахунок <b>${escapeHtml(fuelType)}</b> (${isOkko ? 'АЗК OKKO' : 'АЗК WOG'}): <b>${unitPrice.toFixed(2)} грн/л</b> <span style="color:var(--text-muted);">(${escapeHtml(srcName)})</span> → буде нараховано: <b style="color:#4ade80;">${autoSum} грн</b>`;
   } else {
-    hintEl.innerHTML = `💡 Діюча ціна <b>${escapeHtml(fuelType)}</b>: <b>${unitPrice.toFixed(2)} грн/л</b> <span style="color:var(--text-muted);">(${escapeHtml(srcName)})</span>. Введіть літри для авторозрахунку суми.`;
+    hintEl.innerHTML = `💡 Діюча ціна <b>${escapeHtml(fuelType)}</b> (${isOkko ? 'АЗК OKKO' : 'АЗК WOG'}): <b>${unitPrice.toFixed(2)} грн/л</b> <span style="color:var(--text-muted);">(${escapeHtml(srcName)})</span>. Введіть літри для авторозрахунку суми.`;
   }
 };
 
@@ -1689,6 +1745,7 @@ async function setupReceiptModal() {
       api('/facilities'),
       fetchFuelPricesCache()
     ]);
+    cachedReceiptFacilities = facilities || [];
     const facSel = document.getElementById('recFacility');
     if (facSel && facilities && facilities.length > 0) {
       facSel.innerHTML = facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
@@ -1706,8 +1763,17 @@ async function setupReceiptModal() {
 async function updateReceiptStocks() {
   const facSel = document.getElementById('recFacility');
   const stockSel = document.getElementById('recStock');
+  const provSel = document.getElementById('recFuelProvider');
   if (!facSel || !stockSel) return;
-  const facId = facSel.value;
+  const facId = parseInt(facSel.value, 10);
+
+  if (provSel && cachedReceiptFacilities && cachedReceiptFacilities.length > 0) {
+    const fac = cachedReceiptFacilities.find(f => Number(f.id) === facId);
+    if (fac && fac.default_fuel_provider) {
+      provSel.value = fac.default_fuel_provider.toLowerCase();
+      onReceiptFuelProviderChange();
+    }
+  }
   try {
     const stocks = await api(`/fuel/stocks?facility_id=${encodeURIComponent(facId)}`);
     if (!stocks || stocks.length === 0) {
@@ -1820,11 +1886,17 @@ async function loadFuelData() {
     const receipts = await api(`/fuel/receipts${qFac}`);
     const rTbody = document.querySelector('#fuelReceiptsTable tbody');
     if (rTbody) {
-      rTbody.innerHTML = receipts.map((r) => `
+      rTbody.innerHTML = receipts.map((r) => {
+        const isOkko = (r.fuel_provider || 'wog').toLowerCase() === 'okko';
+        const provBadge = isOkko
+          ? '<span class="badge" style="background: rgba(234, 179, 8, 0.2); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.4);">OKKO</span>'
+          : '<span class="badge" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4);">WOG</span>';
+        return `
         <tr>
           <td>${formatDateTime(r.created_at)}</td>
           <td>${escapeHtml(r.facility_name || '-')}</td>
           <td><b>${escapeHtml(r.stock_name || '-')}</b></td>
+          <td>${provBadge}</td>
           <td><b>${formatLiters(r.liters)}</b></td>
           <td>${formatMoney(r.cost_total)}</td>
           <td>${formatPricePerLiter(r.price_per_liter)}</td>
@@ -1832,7 +1904,8 @@ async function loadFuelData() {
           <td>${escapeHtml(r.receipt_number)}</td>
           <td>${escapeHtml(r.user_name || '-')}</td>
         </tr>
-      `).join('') || '<tr><td colspan="9" style="text-align:center; color:var(--text-muted)">Надходжень не зареєстровано</td></tr>';
+      `;
+      }).join('') || '<tr><td colspan="10" style="text-align:center; color:var(--text-muted)">Надходжень не зареєстровано</td></tr>';
     }
 
     // Transfers Table
@@ -1900,6 +1973,7 @@ document.getElementById('receiptForm').addEventListener('submit', async (e) => {
   const body = {
     facility_id: parseInt(document.getElementById('recFacility').value),
     stock_id: parseInt(stockVal),
+    fuel_provider: document.getElementById('recFuelProvider')?.value || 'wog',
     liters: liters,
     cost_total: parsedCost && parsedCost > 0 ? parsedCost : null,
     driver_name: document.getElementById('recDriver').value,
@@ -3955,6 +4029,8 @@ window.openQuickEditFacilityModal = async function() {
     if (dsoSel) dsoSel.value = fac.yasno_dso_id || 301;
     const grpSel = document.getElementById('quickEditFacilityYasnoGroup');
     if (grpSel) grpSel.value = fac.yasno_group || '3.2';
+    const provSel = document.getElementById('quickEditFacilityFuelProvider');
+    if (provSel) provSel.value = (fac.default_fuel_provider || 'wog').toLowerCase();
 
     openModal('modalQuickEditFacility');
   } catch (err) {
@@ -4178,19 +4254,82 @@ async function refreshServerStatus() {
   } catch (_) {}
 }
 
-// Admin System Settings, WOG Fuel Prices & DB Reset
+// Admin System Settings, WOG & OKKO Fuel Prices & DB Reset
+let activeSettingsFuelProvider = 'wog';
+
+window.switchSettingsFuelProvider = function(prov) {
+  activeSettingsFuelProvider = (prov || 'wog').toLowerCase();
+  const tabWog = document.getElementById('tabFuelProviderWog');
+  const tabOkko = document.getElementById('tabFuelProviderOkko');
+  const boardWog = document.getElementById('wogPriceBoard');
+  const boardOkko = document.getElementById('okkoPriceBoard');
+  const metaEl = document.getElementById('sysInternetPricesMeta');
+  const urlEl = document.getElementById('sysFuelProviderUrl');
+  const btnRefresh = document.getElementById('btnRefreshFuelPrices');
+  const fp = cachedFuelPrices;
+
+  if (activeSettingsFuelProvider === 'okko') {
+    if (tabWog) {
+      tabWog.style.borderColor = 'rgba(255,255,255,0.15)';
+      tabWog.style.color = 'var(--text-muted)';
+      tabWog.style.background = 'transparent';
+    }
+    if (tabOkko) {
+      tabOkko.style.borderColor = '#eab308';
+      tabOkko.style.color = '#facc15';
+      tabOkko.style.background = 'rgba(234, 179, 8, 0.18)';
+    }
+    if (boardWog) boardWog.style.display = 'none';
+    if (boardOkko) boardOkko.style.display = 'grid';
+    if (urlEl) {
+      urlEl.href = 'https://www.okko.ua/fuels';
+      urlEl.textContent = 'okko.ua/fuels';
+    }
+    if (metaEl && fp) {
+      const upd = fp.okko_prices_updated_at ? ` (оновлено: ${fp.okko_prices_updated_at})` : '';
+      metaEl.textContent = `Джерело: ${fp.okko_prices_source || 'АЗК OKKO (okko.ua/fuels)'}${upd}`;
+    }
+    if (btnRefresh) {
+      btnRefresh.style.borderColor = '#eab308';
+      btnRefresh.style.color = '#facc15';
+      btnRefresh.textContent = '🟡 Оновити ціни OKKO';
+    }
+  } else {
+    if (tabWog) {
+      tabWog.style.borderColor = '#22c55e';
+      tabWog.style.color = '#4ade80';
+      tabWog.style.background = 'rgba(34, 197, 94, 0.18)';
+    }
+    if (tabOkko) {
+      tabOkko.style.borderColor = 'rgba(255,255,255,0.15)';
+      tabOkko.style.color = 'var(--text-muted)';
+      tabOkko.style.background = 'transparent';
+    }
+    if (boardWog) boardWog.style.display = 'grid';
+    if (boardOkko) boardOkko.style.display = 'none';
+    if (urlEl) {
+      urlEl.href = 'https://wog.ua/ua/fuels/';
+      urlEl.textContent = 'wog.ua/ua/fuels';
+    }
+    if (metaEl && fp) {
+      const upd = fp.internet_prices_updated_at ? ` (оновлено: ${fp.internet_prices_updated_at})` : '';
+      metaEl.textContent = `Джерело: ${fp.internet_prices_source || 'АЗК WOG (wog.ua/ua/fuels/)'}${upd}`;
+    }
+    if (btnRefresh) {
+      btnRefresh.style.borderColor = '#22c55e';
+      btnRefresh.style.color = '#4ade80';
+      btnRefresh.textContent = '🟢 Оновити ціни WOG';
+    }
+  }
+};
+
 function renderAdminFuelPricesHints(fp) {
   if (!fp || !fp.fuels) return;
   cachedFuelPrices = fp;
-  const metaEl = document.getElementById('sysInternetPricesMeta');
-  if (metaEl) {
-    const upd = fp.internet_prices_updated_at ? ` (оновлено: ${fp.internet_prices_updated_at})` : '';
-    metaEl.textContent = `Джерело: ${fp.internet_prices_source || 'АЗК WOG (wog.ua/ua/fuels/)'}${upd}`;
-  }
 
   // Render WOG Price Board
-  const boardEl = document.getElementById('wogPriceBoard');
-  if (boardEl) {
+  const boardWog = document.getElementById('wogPriceBoard');
+  if (boardWog) {
     const lineup = Array.isArray(fp.wog_lineup) && fp.wog_lineup.length > 0 ? fp.wog_lineup : [
       { type: 'ДП', brand: 'Євро5', price: fp.fuels['ДП']?.internet_price ?? 103.50 },
       { type: 'ДП', brand: 'Mustang+', price: fp.fuels['ДП Mustang+']?.internet_price ?? 106.50 },
@@ -4200,9 +4339,9 @@ function renderAdminFuelPricesHints(fp) {
       { type: 'ГАЗ', brand: '', price: fp.fuels['ГАЗ']?.internet_price ?? 52.50 },
       { type: 'AdBlue', brand: '', price: 61.90 }
     ];
-    boardEl.innerHTML = lineup.map((item) => {
+    boardWog.innerHTML = lineup.map((item) => {
       const isMustang = String(item.brand || '').toLowerCase().includes('mustang');
-      const badgeColor = isMustang ? '#ef4444' : '#3b82f6';
+      const badgeColor = isMustang ? '#ef4444' : '#22c55e';
       return `<div style="background: var(--bg-subtle); border: 1px solid var(--border-color); border-left: 3px solid ${badgeColor}; border-radius: 0.5rem; padding: 0.55rem 0.7rem; display: flex; justify-content: space-between; align-items: center; gap: 0.4rem;">
         <div>
           <div style="font-weight: 800; font-size: 0.95rem; color: var(--text-primary); line-height: 1.1;">${escapeHtml(item.type)}</div>
@@ -4213,16 +4352,49 @@ function renderAdminFuelPricesHints(fp) {
     }).join('');
   }
 
-  const map = [
-    ['А-95', 'sysNetHintA95', 'WOG 95 Євро5'],
-    ['ДП', 'sysNetHintDP', 'WOG ДП Євро5'],
-    ['А-92', 'sysNetHintA92', 'Індикатор А-92']
+  // Render OKKO Price Board
+  const boardOkko = document.getElementById('okkoPriceBoard');
+  if (boardOkko) {
+    const okkoLineup = Array.isArray(fp.okko_lineup) && fp.okko_lineup.length > 0 ? fp.okko_lineup : [
+      { type: 'ДП', brand: 'Євро', price: fp.okko_fuels?.['ДП']?.internet_price ?? 106.90 },
+      { type: 'ДП', brand: 'Pulls', price: fp.okko_fuels?.['ДП Pulls']?.internet_price ?? 109.90 },
+      { type: '95', brand: 'Євро', price: fp.okko_fuels?.['А-95']?.internet_price ?? 92.90 },
+      { type: '95', brand: 'Pulls', price: fp.okko_fuels?.['А-95 Pulls']?.internet_price ?? 95.90 },
+      { type: '100', brand: 'Pulls', price: 102.90 },
+      { type: 'ГАЗ', brand: 'СПБТ', price: fp.okko_fuels?.['ГАЗ']?.internet_price ?? 59.90 },
+      { type: 'AdBlue', brand: '', price: 61.90 }
+    ];
+    boardOkko.innerHTML = okkoLineup.map((item) => {
+      const isPulls = String(item.brand || '').toLowerCase().includes('pulls');
+      const badgeColor = isPulls ? '#ef4444' : '#eab308';
+      return `<div style="background: var(--bg-subtle); border: 1px solid var(--border-color); border-left: 3px solid ${badgeColor}; border-radius: 0.5rem; padding: 0.55rem 0.7rem; display: flex; justify-content: space-between; align-items: center; gap: 0.4rem;">
+        <div>
+          <div style="font-weight: 800; font-size: 0.95rem; color: var(--text-primary); line-height: 1.1;">${escapeHtml(item.type)}</div>
+          <div style="font-size: 0.72rem; color: ${isPulls ? 'var(--accent-red)' : 'var(--text-muted)'};">${escapeHtml(item.brand || 'Стандарт')}</div>
+        </div>
+        <div style="font-weight: 800; font-size: 1.05rem; color: #facc15; white-space: nowrap;">${Number(item.price).toFixed(2)} <span style="font-size: 0.7rem; font-weight: 500; color: var(--text-muted);">₴</span></div>
+      </div>`;
+    }).join('');
+  }
+
+  // Sync active view
+  switchSettingsFuelProvider(activeSettingsFuelProvider);
+
+  // Render hints showing both WOG and OKKO prices
+  const hintMap = [
+    { key: 'А-95', elId: 'sysNetHintA95' },
+    { key: 'ДП', elId: 'sysNetHintDP' },
+    { key: 'А-92', elId: 'sysNetHintA92' }
   ];
-  for (const [fKey, elId, labelPrefix] of map) {
+  for (const { key, elId } of hintMap) {
     const el = document.getElementById(elId);
-    const info = fp.fuels[fKey];
-    if (el && info) {
-      el.textContent = `${labelPrefix}: ${Number(info.internet_price).toFixed(2)} грн/л | Діюча: ${Number(info.effective_price).toFixed(2)} грн/л`;
+    const wogInfo = fp.fuels?.[key];
+    const okkoInfo = fp.okko_fuels?.[key];
+    if (el && wogInfo) {
+      const wogP = Number(wogInfo.internet_price).toFixed(2);
+      const okkoP = okkoInfo ? Number(okkoInfo.internet_price).toFixed(2) : wogP;
+      const effP = Number(wogInfo.effective_price).toFixed(2);
+      el.textContent = `WOG: ${wogP} грн/л | OKKO: ${okkoP} грн/л | Діюча: ${effP} грн/л`;
     }
   }
 }
@@ -4451,13 +4623,16 @@ window.onAdminEmailWeeklyFacilityChange = async function(preselectGenId = null) 
 
 window.refreshFuelPricesFromInternet = async function () {
   try {
-    showToast('Запит актуальних цін з офіційного сайту АЗК WOG (wog.ua)...', 'info');
-    const fp = await api('/system/fuel-prices/refresh', { method: 'POST' });
+    const prov = (activeSettingsFuelProvider || 'wog').toLowerCase();
+    const provLabel = prov === 'okko' ? 'АЗК OKKO (okko.ua)' : 'АЗК WOG (wog.ua)';
+    showToast(`Запит актуальних цін з офіційного сайту ${provLabel}...`, 'info');
+    const fp = await api(`/system/fuel-prices/refresh?provider=${encodeURIComponent(prov)}`, { method: 'POST' });
     renderAdminFuelPricesHints(fp);
-    const dp = Number(fp?.fuels?.['ДП']?.internet_price ?? 103.50).toFixed(2);
-    const a95 = Number(fp?.fuels?.['А-95']?.internet_price ?? 92.90).toFixed(2);
-    const gas = Number(fp?.fuels?.['ГАЗ']?.internet_price ?? 52.50).toFixed(2);
-    showToast(`Ціни АЗК WOG оновлено! ДП: ${dp} грн | А-95: ${a95} грн | ГАЗ: ${gas} грн`, 'success');
+    const fuelsDict = prov === 'okko' ? (fp?.okko_fuels || fp?.fuels) : fp?.fuels;
+    const dp = Number(fuelsDict?.['ДП']?.internet_price ?? 103.50).toFixed(2);
+    const a95 = Number(fuelsDict?.['А-95']?.internet_price ?? 92.90).toFixed(2);
+    const gas = Number(fuelsDict?.['ГАЗ']?.internet_price ?? 52.50).toFixed(2);
+    showToast(`Ціни ${prov === 'okko' ? 'АЗК OKKO' : 'АЗК WOG'} оновлено! ДП: ${dp} грн | А-95: ${a95} грн | ГАЗ: ${gas} грн`, 'success');
   } catch (_) {}
 };
 

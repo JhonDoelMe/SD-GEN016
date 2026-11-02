@@ -22,6 +22,9 @@ class Facility(Base):
     yasno_dso_id: Mapped[Optional[int]] = mapped_column(Integer, default=301, nullable=True, server_default="301")
     yasno_group: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
+    # Preferred fuel station network (wog / okko)
+    default_fuel_provider: Mapped[str] = mapped_column(String(30), default="wog", nullable=False, server_default="wog")
+
     generators: Mapped[List["Generator"]] = relationship("Generator", back_populates="facility", cascade="all, delete-orphan")
     fuel_stocks: Mapped[List["FuelStock"]] = relationship("FuelStock", back_populates="facility", cascade="all, delete-orphan")
     users: Mapped[List["User"]] = relationship("User", back_populates="facility")
