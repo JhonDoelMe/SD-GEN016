@@ -1,6 +1,6 @@
 """Add adjustments facility columns and fix maintenance schedule anomaly
 
-Revision ID: 005_adjustments_and_maintenance_fix
+Revision ID: 005_adjustments_fix
 Revises: 004_add_yasno_fields
 Create Date: 2026-11-02 14:30:00.000000
 
@@ -8,7 +8,7 @@ Create Date: 2026-11-02 14:30:00.000000
 from alembic import op
 import sqlalchemy as sa
 
-revision = '005_adjustments_and_maintenance_fix'
+revision = '005_adjustments_fix'
 down_revision = '004_add_yasno_fields'
 branch_labels = None
 depends_on = None
