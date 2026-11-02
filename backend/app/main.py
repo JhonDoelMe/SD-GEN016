@@ -109,31 +109,38 @@ def ensure_schema_updates(sync_conn):
         if "target_name" not in cols:
             sync_conn.execute(text("ALTER TABLE system_adjustments ADD COLUMN target_name VARCHAR(200)"))
 
-    if "fuel_stocks" in tables:
-        cols = [c["name"] for c in inspector.get_columns("fuel_stocks")]
-        bool_def = "TRUE" if sync_conn.dialect.name == "postgresql" else "1"
-        if "is_active" not in cols:
-            sync_conn.execute(text(f"ALTER TABLE fuel_stocks ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT {bool_def}"))
+    if sync_conn.dialect.name == "postgresql":
+        sync_conn.execute(text("ALTER TABLE fuel_stocks ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"))
+        sync_conn.execute(text("ALTER TABLE fuel_receipts ADD COLUMN IF NOT EXISTS fuel_provider VARCHAR(50) DEFAULT 'wog'"))
+        sync_conn.execute(text("ALTER TABLE fuel_receipts ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)"))
+        sync_conn.execute(text("ALTER TABLE fuel_transfers ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)"))
+        sync_conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_fuel_receipts_idempotency_key ON fuel_receipts(idempotency_key)"))
+        sync_conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_fuel_transfers_idempotency_key ON fuel_transfers(idempotency_key)"))
+    else:
+        if "fuel_stocks" in tables:
+            cols = [c["name"] for c in inspector.get_columns("fuel_stocks")]
+            if "is_active" not in cols:
+                sync_conn.execute(text("ALTER TABLE fuel_stocks ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1"))
 
-    if "fuel_receipts" in tables:
-        cols = [c["name"] for c in inspector.get_columns("fuel_receipts")]
-        if "fuel_provider" not in cols:
-            sync_conn.execute(text("ALTER TABLE fuel_receipts ADD COLUMN fuel_provider VARCHAR(50) DEFAULT 'wog'"))
-        if "idempotency_key" not in cols:
-            sync_conn.execute(text("ALTER TABLE fuel_receipts ADD COLUMN idempotency_key VARCHAR(64)"))
-            try:
-                sync_conn.execute(text("CREATE UNIQUE INDEX ix_fuel_receipts_idempotency_key ON fuel_receipts(idempotency_key)"))
-            except Exception:
-                pass
+        if "fuel_receipts" in tables:
+            cols = [c["name"] for c in inspector.get_columns("fuel_receipts")]
+            if "fuel_provider" not in cols:
+                sync_conn.execute(text("ALTER TABLE fuel_receipts ADD COLUMN fuel_provider VARCHAR(50) DEFAULT 'wog'"))
+            if "idempotency_key" not in cols:
+                sync_conn.execute(text("ALTER TABLE fuel_receipts ADD COLUMN idempotency_key VARCHAR(64)"))
+                try:
+                    sync_conn.execute(text("CREATE UNIQUE INDEX ix_fuel_receipts_idempotency_key ON fuel_receipts(idempotency_key)"))
+                except Exception:
+                    pass
 
-    if "fuel_transfers" in tables:
-        cols = [c["name"] for c in inspector.get_columns("fuel_transfers")]
-        if "idempotency_key" not in cols:
-            sync_conn.execute(text("ALTER TABLE fuel_transfers ADD COLUMN idempotency_key VARCHAR(64)"))
-            try:
-                sync_conn.execute(text("CREATE UNIQUE INDEX ix_fuel_transfers_idempotency_key ON fuel_transfers(idempotency_key)"))
-            except Exception:
-                pass
+        if "fuel_transfers" in tables:
+            cols = [c["name"] for c in inspector.get_columns("fuel_transfers")]
+            if "idempotency_key" not in cols:
+                sync_conn.execute(text("ALTER TABLE fuel_transfers ADD COLUMN idempotency_key VARCHAR(64)"))
+                try:
+                    sync_conn.execute(text("CREATE UNIQUE INDEX ix_fuel_transfers_idempotency_key ON fuel_transfers(idempotency_key)"))
+                except Exception:
+                    pass
 
     # 4. Fix maintenance schedule anomaly: interval=300, next_due=535 -> next_due=300, last_performed=0
     if "maintenance_schedules" in tables:

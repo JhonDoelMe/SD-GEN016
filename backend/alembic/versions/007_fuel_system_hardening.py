@@ -20,23 +20,25 @@ def upgrade() -> None:
         conn.info_cache.clear()
 
     if conn.dialect.name == "postgresql":
-        # Direct PostgreSQL idempotent DDL execution
-        conn.execute(sa.text("""
-            ALTER TABLE fuel_stocks ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
-            ALTER TABLE fuel_receipts ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64);
-            ALTER TABLE fuel_transfers ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64);
-            CREATE UNIQUE INDEX IF NOT EXISTS ix_fuel_receipts_idempotency_key ON fuel_receipts(idempotency_key);
-            CREATE UNIQUE INDEX IF NOT EXISTS ix_fuel_transfers_idempotency_key ON fuel_transfers(idempotency_key);
-            ALTER TABLE fuel_stocks ALTER COLUMN current_balance_l TYPE NUMERIC(10, 3) USING current_balance_l::numeric(10, 3);
-            ALTER TABLE fuel_receipts ALTER COLUMN liters TYPE NUMERIC(10, 3) USING liters::numeric(10, 3);
-            ALTER TABLE fuel_receipts ALTER COLUMN cost_total TYPE NUMERIC(12, 2) USING cost_total::numeric(12, 2);
-            ALTER TABLE fuel_receipts ALTER COLUMN price_per_liter TYPE NUMERIC(12, 2) USING price_per_liter::numeric(12, 2);
-            ALTER TABLE fuel_transfers ALTER COLUMN liters TYPE NUMERIC(10, 3) USING liters::numeric(10, 3);
-            ALTER TABLE fuel_transfers ALTER COLUMN source_balance_before TYPE NUMERIC(10, 3) USING source_balance_before::numeric(10, 3);
-            ALTER TABLE fuel_transfers ALTER COLUMN source_balance_after TYPE NUMERIC(10, 3) USING source_balance_after::numeric(10, 3);
-            ALTER TABLE fuel_transfers ALTER COLUMN tank_balance_before TYPE NUMERIC(10, 3) USING tank_balance_before::numeric(10, 3);
-            ALTER TABLE fuel_transfers ALTER COLUMN tank_balance_after TYPE NUMERIC(10, 3) USING tank_balance_after::numeric(10, 3);
-        """))
+        # Direct PostgreSQL idempotent DDL execution (one command per prepared statement for asyncpg)
+        pg_statements = [
+            "ALTER TABLE fuel_stocks ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+            "ALTER TABLE fuel_receipts ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)",
+            "ALTER TABLE fuel_transfers ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_fuel_receipts_idempotency_key ON fuel_receipts(idempotency_key)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_fuel_transfers_idempotency_key ON fuel_transfers(idempotency_key)",
+            "ALTER TABLE fuel_stocks ALTER COLUMN current_balance_l TYPE NUMERIC(10, 3) USING current_balance_l::numeric(10, 3)",
+            "ALTER TABLE fuel_receipts ALTER COLUMN liters TYPE NUMERIC(10, 3) USING liters::numeric(10, 3)",
+            "ALTER TABLE fuel_receipts ALTER COLUMN cost_total TYPE NUMERIC(12, 2) USING cost_total::numeric(12, 2)",
+            "ALTER TABLE fuel_receipts ALTER COLUMN price_per_liter TYPE NUMERIC(12, 2) USING price_per_liter::numeric(12, 2)",
+            "ALTER TABLE fuel_transfers ALTER COLUMN liters TYPE NUMERIC(10, 3) USING liters::numeric(10, 3)",
+            "ALTER TABLE fuel_transfers ALTER COLUMN source_balance_before TYPE NUMERIC(10, 3) USING source_balance_before::numeric(10, 3)",
+            "ALTER TABLE fuel_transfers ALTER COLUMN source_balance_after TYPE NUMERIC(10, 3) USING source_balance_after::numeric(10, 3)",
+            "ALTER TABLE fuel_transfers ALTER COLUMN tank_balance_before TYPE NUMERIC(10, 3) USING tank_balance_before::numeric(10, 3)",
+            "ALTER TABLE fuel_transfers ALTER COLUMN tank_balance_after TYPE NUMERIC(10, 3) USING tank_balance_after::numeric(10, 3)",
+        ]
+        for stmt in pg_statements:
+            conn.execute(sa.text(stmt))
     else:
         # SQLite dialect handling
         insp = sa.inspect(conn)
