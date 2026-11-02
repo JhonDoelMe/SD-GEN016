@@ -1825,18 +1825,14 @@ async function setupTransferModal() {
       }
     }
 
-    const gens = await api(`/generator/list${qFac}`);
+    const gens = await api(`/generator/list${qFac}`); window._transferModalStocks = stocks || []; window._transferModalGens = gens || [];
     if (genSel) {
       if (!gens || gens.length === 0) {
         genSel.innerHTML = '<option value="">(Немає генераторів)</option>';
       } else {
         genSel.innerHTML = gens.map(g => { const cap = Number(g.tank_capacity_l || 25.0); const cur = Number(g.fuel_tank_level_l || 0); const free = Math.max(0, cap - cur); return `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)}, в баку: ${cur.toFixed(1)} / ${cap.toFixed(1)} л • вільно: ${free.toFixed(1)} л)</option>`; }).join('');
-        if (currentGeneratorId && gens.some(g => g.id === currentGeneratorId)) {
+        if (currentGeneratorId && gens.some(g => g.id === currentGeneratorId)) genSel.value = currentGeneratorId; if (typeof window.updateTransferCapacityHint === 'function') window.updateTransferCapacityHint(); if (false) {
           genSel.value = currentGeneratorId;
-        }
-      }
-    }
-    window._transferModalStocks = stocks || []; window._transferModalGens = gens || []; if (typeof window.updateTransferCapacityHint === 'function') window.updateTransferCapacityHint();
         }
       }
     }
