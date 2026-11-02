@@ -409,6 +409,7 @@ async def create_backup(
             },
             ip_address=creator_ip
         )
+        await session.commit()
 
         return manifest
 

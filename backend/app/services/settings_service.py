@@ -612,6 +612,12 @@ async def update_system_settings(
             m_sched = m_res.scalars().first()
             if m_sched and maint_int > 0:
                 m_sched.interval_hours = maint_int
+                m_sched.next_due_hours = round(m_sched.last_performed_hours + maint_int, 1)
+                if gen.status in ("STOPPED", "MAINTENANCE_REQUIRED"):
+                    if m_sched.next_due_hours <= gen.current_operating_hours:
+                        gen.status = "MAINTENANCE_REQUIRED"
+                    else:
+                        gen.status = "STOPPED"
 
     try:
         await db.commit()
@@ -962,7 +968,7 @@ async def perform_system_reset(
             for g in gens:
                 g.current_operating_hours = 0.0
                 g.fuel_tank_level_l = 0.0
-                g.status = "STOPPED"
+                g.status = "STOPPED" if getattr(g, "is_active", True) else "ARCHIVED"
                 g.updated_at = now
 
             m_res = await db.execute(select(MaintenanceSchedule).where(MaintenanceSchedule.generator_id.in_(gen_ids)))
@@ -999,12 +1005,26 @@ async def perform_system_reset(
         await db.execute(delete(SystemAdjustment))
         await db.execute(delete(AuditLog))
 
-        await db.execute(update(Generator).values(
-            current_operating_hours=0.0,
-            fuel_tank_level_l=0.0,
-            status="STOPPED",
-            updated_at=now
-        ))
+        await db.execute(
+            update(Generator)
+            .where(Generator.is_active == True)  # noqa: E712
+            .values(
+                current_operating_hours=0.0,
+                fuel_tank_level_l=0.0,
+                status="STOPPED",
+                updated_at=now
+            )
+        )
+        await db.execute(
+            update(Generator)
+            .where(Generator.is_active == False)  # noqa: E712
+            .values(
+                current_operating_hours=0.0,
+                fuel_tank_level_l=0.0,
+                status="ARCHIVED",
+                updated_at=now
+            )
+        )
         await db.execute(update(FuelStock).values(
             current_balance_l=0.0,
             updated_at=now

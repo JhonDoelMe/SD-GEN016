@@ -189,7 +189,6 @@ async def clear_notification_logs(
         stmt = stmt.where(NotificationLog.facility_id == facility_id)
 
     res = await db.execute(stmt)
-    await db.commit()
 
     client_ip = get_client_ip(request) if request else None
     await log_audit(
@@ -201,6 +200,7 @@ async def clear_notification_logs(
         user_id=current_user.id,
         ip_address=client_ip
     )
+    await db.commit()
 
     return {"success": True, "status": "success", "deleted_count": res.rowcount}
 

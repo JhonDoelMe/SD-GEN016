@@ -15,6 +15,8 @@ from backend.app.models.audit import SystemAdjustment
 from backend.app.schemas.audit import SystemAdjustmentCreate, SystemAdjustmentOut
 from backend.app.api.deps import get_current_superadmin, require_permission, get_client_ip
 from backend.app.services.audit_service import record_system_adjustment
+from backend.app.services.fuel_service import to_liters
+from backend.app.services.generator_service import _evaluate_generator_resting_status
 
 router = APIRouter(prefix="/adjustments", tags=["Системні коригування (SuperAdmin)"])
 
@@ -39,7 +41,7 @@ def _parse_float(raw: str, field_name: str) -> float:
 
 def _parse_non_negative_float(raw: str, field_name: str) -> float:
     try:
-        val = float(raw)
+        val = float(str(raw).replace(",", ".").strip())
     except (ValueError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -50,7 +52,7 @@ def _parse_non_negative_float(raw: str, field_name: str) -> float:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Значення поля '{field_name}' повинно бути скінченним невід'ємним числом"
         )
-    return val
+    return round(val, 3)
 
 
 @router.get("", response_model=List[SystemAdjustmentOut])
@@ -118,10 +120,20 @@ async def perform_adjustment(
 
         if data.field_name == "current_operating_hours":
             old_val_str = str(gen.current_operating_hours)
-            gen.current_operating_hours = _parse_non_negative_float(data.new_value, data.field_name)
+            gen.current_operating_hours = round(_parse_non_negative_float(data.new_value, data.field_name), 1)
+            await db.flush()
+            if gen.status not in ("RUNNING", "ARCHIVED"):
+                gen.status = await _evaluate_generator_resting_status(db, gen)
         elif data.field_name == "fuel_tank_level_l":
             old_val_str = str(float(gen.fuel_tank_level_l))
-            gen.fuel_tank_level_l = _parse_float(data.new_value, data.field_name)
+            new_tank_val = _parse_float(data.new_value, data.field_name)
+            cap = float(gen.tank_capacity_l or 0.0)
+            if cap > 0 and new_tank_val > cap + 1e-6:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Рівень палива в баку ({new_tank_val} л) не може перевищувати місткість бака ({cap} л)"
+                )
+            gen.fuel_tank_level_l = to_liters(new_tank_val)
         elif data.field_name == "status":
             new_status = str(data.new_value).strip().upper()
             if new_status not in ALLOWED_GENERATOR_STATUSES:
@@ -129,11 +141,27 @@ async def perform_adjustment(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Недопустимий статус генератора: {new_status}"
                 )
+            if new_status == "RUNNING" and gen.status != "RUNNING":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Переведення генератора в статус RUNNING через коригування заборонено (використовуйте штатний запуск генератора)"
+                )
+            if gen.status == "RUNNING" and new_status != "RUNNING":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Генератор наразі працює (RUNNING). Спочатку виконайте штатну зупинку генератора"
+                )
             old_val_str = str(gen.status)
             gen.status = new_status
         elif data.field_name == "nominal_consumption_l_per_h":
+            new_cons = _parse_non_negative_float(data.new_value, data.field_name)
+            if new_cons <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Нормативний розхід палива повинен бути більшим за 0"
+                )
             old_val_str = str(gen.nominal_consumption_l_per_h)
-            gen.nominal_consumption_l_per_h = _parse_non_negative_float(data.new_value, data.field_name)
+            gen.nominal_consumption_l_per_h = new_cons
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Непідтримуване поле: {data.field_name}")
 
@@ -146,7 +174,7 @@ async def perform_adjustment(
 
         if data.field_name == "current_balance_l":
             old_val_str = str(float(stock.current_balance_l))
-            stock.current_balance_l = _parse_non_negative_float(data.new_value, data.field_name)
+            stock.current_balance_l = to_liters(_parse_non_negative_float(data.new_value, data.field_name))
         elif data.field_name == "name":
             old_val_str = str(stock.name)
             stock.name = str(data.new_value).strip()
@@ -159,19 +187,31 @@ async def perform_adjustment(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Графік ТО не знайдено")
         gen = await db.get(Generator, sched.generator_id) if sched.generator_id else None
         target_facility_id = (gen.facility_id if gen else None) or target_facility_id
-        target_name = f"{sched.title or 'Графік ТО'} ({gen.name if gen else 'Генератор'})"
+        target_name = f"Графік ТО ({gen.name if gen else f'Генератор #{sched.generator_id}'})"
 
         if data.field_name == "interval_hours":
+            new_int = _parse_non_negative_float(data.new_value, data.field_name)
+            if new_int <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Інтервал ТО повинен бути більшим за 0"
+                )
             old_val_str = str(sched.interval_hours)
-            sched.interval_hours = _parse_non_negative_float(data.new_value, data.field_name)
+            sched.interval_hours = round(new_int, 1)
+            sched.next_due_hours = round(sched.last_performed_hours + sched.interval_hours, 1)
         elif data.field_name == "next_due_hours":
             old_val_str = str(sched.next_due_hours)
-            sched.next_due_hours = _parse_non_negative_float(data.new_value, data.field_name)
+            sched.next_due_hours = round(_parse_non_negative_float(data.new_value, data.field_name), 1)
         elif data.field_name == "last_performed_hours":
             old_val_str = str(sched.last_performed_hours)
-            sched.last_performed_hours = _parse_non_negative_float(data.new_value, data.field_name)
+            sched.last_performed_hours = round(_parse_non_negative_float(data.new_value, data.field_name), 1)
+            sched.next_due_hours = round(sched.last_performed_hours + sched.interval_hours, 1)
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Непідтримуване поле: {data.field_name}")
+
+        await db.flush()
+        if gen and gen.status not in ("RUNNING", "ARCHIVED"):
+            gen.status = await _evaluate_generator_resting_status(db, gen)
 
     elif target_entity_type == "Facility":
         fac = await db.get(Facility, data.entity_id)

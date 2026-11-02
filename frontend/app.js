@@ -1405,11 +1405,13 @@ document.getElementById('mainActionBtn').addEventListener('click', async () => {
     openModal('modalStopGen');
   } else {
     // Safeguard: Maintenance Overdue Warning modal
+    let forceStart = false;
     if (currentGenerator.status === 'MAINTENANCE_REQUIRED') {
       const confirmStart = confirm(
         '⚠️ УВАГА: Регламент технічного обслуговування (ТО) цього генератора прострочено!\n\nВи впевнені, що хочете запустити генератор до виконання регламентних робіт?'
       );
       if (!confirmStart) return;
+      forceStart = true;
     }
 
     // Debounce & start generator
@@ -1421,7 +1423,11 @@ document.getElementById('mainActionBtn').addEventListener('click', async () => {
     try {
       await api('/generator/start', {
         method: 'POST',
-        body: JSON.stringify({ generator_id: currentGeneratorId, fuel_level_l: currentGenerator.fuel_tank_level_l })
+        body: JSON.stringify({
+          generator_id: currentGeneratorId,
+          fuel_level_l: currentGenerator.fuel_tank_level_l,
+          force_start: forceStart
+        })
       });
       showToast('Генератор успішно запущено!', 'success');
       await loadAllData();
@@ -2463,6 +2469,24 @@ const AUDIT_ACTION_MAP_UA = {
   'GENERATOR_UPDATED': 'Оновлення параметрів генератора',
   'GENERATOR_DELETE': 'Видалення генератора',
   'GENERATOR_DELETED': 'Видалення генератора',
+  'GENERATOR_ARCHIVED': 'Архівація генератора',
+  'GENERATOR_RESTORED': 'Відновлення генератора з архіву',
+  'GENERATOR_FACILITY_TRANSFERRED': 'Переміщення генератора між об\'єктами',
+  'GENERATOR_FORCE_START_MAINTENANCE': 'Примусовий запуск при простроченому ТО',
+  'GENERATOR_FUEL_RECONCILED': 'Звірка залишку пального в баку',
+  'GENERATOR_SAFETY_STOP': 'Аварійна зупинка генератора (захист)',
+  'GENERATOR_AUTO_STOP': 'Автоматична зупинка генератора (розклад)',
+  'FUEL_STOCK_ARCHIVED': 'Архівація складу ГСМ',
+  'BACKUP_CREATE': 'Створення резервної копії БД',
+  'BACKUP_CREATED': 'Створення резервної копії БД',
+  'BACKUP_RESTORE': 'Відновлення БД з резервної копії',
+  'BACKUP_RESTORED': 'Відновлення БД з резервної копії',
+  'BACKUP_DELETE': 'Видалення резервної копії БД',
+  'BACKUP_DELETED': 'Видалення резервної копії БД',
+  'BACKUP_DOWNLOAD': 'Завантаження архіву резервної копії',
+  'BACKUP_SETTINGS_UPDATE': 'Оновлення налаштувань автобекапу',
+  'NOTIFICATION_LOGS_CLEARED': 'Очищення журналу сповіщень',
+  'WEEKLY_DIGEST_AUTO_SENT': 'Автоматичне відправлення щотижневого звіту',
   'GENERATOR_MANUAL_RUN_ADDED': 'Ручне внесення мотогодин',
   'GENERATOR_QUICK_CONFIG': 'Швидке налаштування генератора',
   'GENERATOR_WIZARD_CONFIGURED': 'Первинне налаштування генератора',
@@ -2640,7 +2664,9 @@ function formatAuditDetailsUa(detailsRaw, action) {
     name: 'Назва', fuel_type: 'Тип палива', reason: 'Причина', field: 'Поле', old_value: 'Було', new_value: 'Стало'
   };
   const valTrans = {
-    STOPPED: 'Зупинено', RUNNING: 'В роботі', MAINTENANCE: 'На обслуговуванні', FAULT: 'Несправність',
+    STOPPED: 'Зупинено', RUNNING: 'В роботі', MAINTENANCE: 'На обслуговуванні',
+    MAINTENANCE_REQUIRED: 'Потрібне ТО', FAULT: 'Несправність', FAULTY: 'Несправний',
+    BLOCKED: 'Заблоковано', ARCHIVED: 'В архіві',
     LOW: 'Низький', MEDIUM: 'Середній', HIGH: 'Високий', CRITICAL: 'Критичний',
     SCHEDULED: 'Регламентне ТО', INTERMEDIATE: 'Проміжне ТО'
   };

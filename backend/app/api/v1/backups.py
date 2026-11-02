@@ -160,9 +160,11 @@ async def update_backup_settings(
             action="BACKUP_SETTINGS_UPDATE",
             entity_type="system_settings",
             entity_id="backups",
+            user_id=current_user.id,
             details={"updated_settings": update_data},
             ip_address=client_ip
         )
+        await db.commit()
 
     res = await get_backup_settings(db=db, current_user=current_user)
     return {
@@ -201,9 +203,11 @@ async def download_backup_file(
         action="BACKUP_DOWNLOAD",
         entity_type="backup",
         entity_id=safe_name,
+        user_id=current_user.id,
         details={"message": f"Завантажено архів резервної копії '{safe_name}'"},
         ip_address=client_ip
     )
+    await db.commit()
 
     return FileResponse(
         path=str(file_path),

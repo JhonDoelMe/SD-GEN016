@@ -86,6 +86,9 @@ async def seed_initial_data(db: AsyncSession) -> None:
                 "ALTER TABLE fuel_receipts ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)",
                 "ALTER TABLE fuel_transfers ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)",
                 "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS default_fuel_provider VARCHAR(30) NOT NULL DEFAULT 'wog'",
+                "ALTER TABLE generators ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+                "ALTER TABLE generators ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
+                "ALTER TABLE generator_runs ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)",
             ]
             for stmt in pg_safeguards:
                 await db.execute(sa_text(stmt))

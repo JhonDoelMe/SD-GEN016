@@ -14,6 +14,7 @@ from backend.app.api.deps import (
     require_permission,
     get_client_ip,
     is_user_admin_or_super,
+    verify_facility_access,
     verify_generator_facility_access,
 )
 from backend.app.services.fault_service import create_fault, update_fault_status
@@ -30,6 +31,7 @@ async def list_faults(
     current_user: User = Depends(require_permission("faults:view"))
 ):
     await verify_generator_facility_access(db, current_user, generator_id)
+    user_fac_id = verify_facility_access(current_user, None)
     q = (
         select(Fault)
         .options(selectinload(Fault.user), selectinload(Fault.resolved_by))
@@ -38,9 +40,9 @@ async def list_faults(
     )
     if generator_id:
         q = q.where(Fault.generator_id == generator_id)
-    elif not is_user_admin_or_super(current_user) and current_user.facility_id:
+    elif user_fac_id is not None:
         q = q.join(Generator, Fault.generator_id == Generator.id).where(
-            Generator.facility_id == current_user.facility_id
+            Generator.facility_id == user_fac_id
         )
     if status_filter:
         q = q.where(Fault.status == status_filter)
@@ -77,11 +79,13 @@ async def report_fault(
     current_user: User = Depends(require_permission("faults:create"))
 ):
     await verify_generator_facility_access(db, current_user, data.generator_id)
+    user_fac_id = verify_facility_access(current_user, None)
     fault = await create_fault(
         db=db,
         fault_data=data,
         user_id=current_user.id,
-        ip_address=get_client_ip(request)
+        ip_address=get_client_ip(request),
+        facility_id=user_fac_id,
     )
     return FaultOut(
         id=fault.id,

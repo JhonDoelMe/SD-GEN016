@@ -7,17 +7,53 @@ from backend.app.models.generator import Generator
 from backend.app.models.maintenance import MaintenanceSchedule, MaintenanceRecord
 from backend.app.schemas.maintenance import MaintenanceRecordCreate, MaintenanceScheduleOut
 from backend.app.services.audit_service import log_audit
+from backend.app.services.generator_service import _evaluate_generator_resting_status
 
 
-async def get_maintenance_schedule_status(db: AsyncSession, generator_id: Optional[int] = None) -> MaintenanceScheduleOut:
-    gen_query = select(Generator)
+async def _resolve_maintenance_generator(
+    db: AsyncSession,
+    generator_id: Optional[int],
+    facility_id: Optional[int] = None,
+    allow_archived: bool = False,
+) -> Generator:
     if generator_id is not None:
-        gen_query = gen_query.where(Generator.id == generator_id)
-    gen_res = await db.execute(gen_query)
-    generator = gen_res.scalars().first()
+        generator = await db.get(Generator, generator_id)
+        if not generator:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+        if not allow_archived and (not getattr(generator, "is_active", True) or generator.status == "ARCHIVED"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Неможливо виконати операцію ТО для архівованого генератора",
+            )
+        if facility_id is not None and generator.facility_id != facility_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Доступ заборонено: генератор закріплений за іншим об'єктом",
+            )
+        return generator
 
-    if not generator:
+    q = select(Generator).where(Generator.is_active == True)  # noqa: E712
+    if facility_id is not None:
+        q = q.where(Generator.facility_id == facility_id)
+    gens = list((await db.execute(q.order_by(Generator.id.asc()))).scalars().all())
+    if not gens:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+    if len(gens) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Оберіть конкретний генератор (generator_id), оскільки в області доступу знайдено декілька активних генераторів",
+        )
+    return gens[0]
+
+
+async def get_maintenance_schedule_status(
+    db: AsyncSession,
+    generator_id: Optional[int] = None,
+    facility_id: Optional[int] = None,
+) -> MaintenanceScheduleOut:
+    generator = await _resolve_maintenance_generator(
+        db, generator_id, facility_id=facility_id, allow_archived=True
+    )
 
     m_res = await db.execute(select(MaintenanceSchedule).where(MaintenanceSchedule.generator_id == generator.id))
     m_sched = m_res.scalars().first()
@@ -61,15 +97,10 @@ async def record_maintenance(
     db: AsyncSession,
     data: MaintenanceRecordCreate,
     user_id: int,
-    ip_address: Optional[str] = None
+    ip_address: Optional[str] = None,
+    facility_id: Optional[int] = None,
 ) -> MaintenanceRecord:
-    gen_query = select(Generator)
-    if data.generator_id:
-        gen_query = gen_query.where(Generator.id == data.generator_id)
-    gen_res = await db.execute(gen_query)
-    generator = gen_res.scalars().first()
-    if not generator:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+    generator = await _resolve_maintenance_generator(db, data.generator_id, facility_id=facility_id)
 
     target_hours = data.operating_hours if data.operating_hours is not None else generator.current_operating_hours
     target_hours = round(float(target_hours), 1)
@@ -96,10 +127,9 @@ async def record_maintenance(
         if m_sched:
             m_sched.last_performed_hours = target_hours
             m_sched.next_due_hours = round(target_hours + m_sched.interval_hours, 1)
-
-        # Clear MAINTENANCE_REQUIRED state if it was set
-        if generator.status == "MAINTENANCE_REQUIRED":
-            generator.status = "STOPPED"
+        await db.flush()
+        if generator.status != "RUNNING":
+            generator.status = await _evaluate_generator_resting_status(db, generator)
 
     elif data.maintenance_type == "INTERMEDIATE":
         # Critical business rule: INTERMEDIATE maintenance DOES NOT advance or reset scheduled maintenance!
@@ -115,6 +145,8 @@ async def record_maintenance(
         entity_id=str(record.id),
         user_id=user_id,
         details={
+            "generator_id": generator.id,
+            "facility_id": generator.facility_id,
             "type": data.maintenance_type,
             "operating_hours": record.operating_hours,
             "work": record.work_description,
@@ -131,15 +163,10 @@ async def recalculate_schedule(
     db: AsyncSession,
     generator_id: Optional[int] = None,
     user_id: Optional[int] = None,
-    ip_address: Optional[str] = None
+    ip_address: Optional[str] = None,
+    facility_id: Optional[int] = None,
 ) -> MaintenanceScheduleOut:
-    gen_query = select(Generator)
-    if generator_id:
-        gen_query = gen_query.where(Generator.id == generator_id)
-    gen_res = await db.execute(gen_query)
-    generator = gen_res.scalars().first()
-    if not generator:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+    generator = await _resolve_maintenance_generator(db, generator_id, facility_id=facility_id)
 
     m_res = await db.execute(select(MaintenanceSchedule).where(MaintenanceSchedule.generator_id == generator.id))
     m_sched = m_res.scalars().first()
@@ -175,6 +202,8 @@ async def recalculate_schedule(
         m_sched.next_due_hours = round(next_due, 1)
 
     await db.flush()
+    if generator.status != "RUNNING":
+        generator.status = await _evaluate_generator_resting_status(db, generator)
 
     if user_id:
         await log_audit(
@@ -194,5 +223,5 @@ async def recalculate_schedule(
         )
     await db.commit()
 
-    return await get_maintenance_schedule_status(db, generator.id)
+    return await get_maintenance_schedule_status(db, generator.id, facility_id=facility_id)
 

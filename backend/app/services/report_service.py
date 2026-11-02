@@ -9,7 +9,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from backend.app.core.timezone import to_facility_time, now_facility
+from backend.app.core.timezone import to_facility_time, now_facility, get_facility_tz
 from backend.app.models.generator import Generator, GeneratorRun
 from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer
 from backend.app.models.maintenance import MaintenanceRecord, MaintenanceSchedule
@@ -32,14 +32,20 @@ def utc_now() -> datetime.datetime:
 def parse_report_dt(dt_str: Optional[str], is_end: bool = False) -> Optional[datetime.datetime]:
     if not dt_str:
         return None
+    raw = dt_str.strip()
     try:
-        dt = datetime.datetime.fromisoformat(dt_str)
+        dt = datetime.datetime.fromisoformat(raw)
     except ValueError:
         return None
     if dt.tzinfo is not None:
-        dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
-    if is_end and len(dt_str) <= 10:
-        dt = dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+        return dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    if len(raw) <= 10:
+        if is_end:
+            dt = dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+        else:
+            dt = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        local_dt = dt.replace(tzinfo=get_facility_tz())
+        return local_dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
     return dt
 
 
@@ -179,17 +185,25 @@ GENERATOR_STATUS_UA = {
     "STOPPED": "Зупинено",
     "RUNNING": "В роботі",
     "MAINTENANCE": "На обслуговуванні",
+    "MAINTENANCE_REQUIRED": "Потрібне ТО",
     "FAULT": "Несправність / Аварія",
+    "FAULTY": "Несправний / Аварія",
+    "BLOCKED": "Заблоковано",
+    "ARCHIVED": "В архіві",
 }
 
 RUN_STATUS_UA = {
     "ACTIVE": "В роботі",
+    "RUNNING": "В роботі",
     "COMPLETED": "Завершено",
 }
 
 FAULT_STATUS_UA = {
+    "NEW": "Нова",
+    "ACCEPTED": "Прийнято",
     "OPEN": "Відкрито",
     "IN_PROGRESS": "В роботі",
+    "PENDING": "В очікуванні",
     "RESOLVED": "Усунено",
     "CLOSED": "Закрито",
 }
@@ -205,9 +219,16 @@ AUDIT_ACTION_UA = {
     # Generator
     "GENERATOR_START": "Запуск генератора",
     "GENERATOR_STOP": "Зупинка генератора",
+    "GENERATOR_SAFETY_STOP": "Аварійна зупинка генератора (захист)",
+    "GENERATOR_AUTO_STOP": "Автоматична зупинка генератора (розклад)",
+    "GENERATOR_FORCE_START_MAINTENANCE": "Примусовий запуск при простроченому ТО",
+    "GENERATOR_FUEL_RECONCILED": "Звірка залишку пального в баку",
     "GENERATOR_CREATED": "Створення генератора",
     "GENERATOR_UPDATED": "Оновлення параметрів генератора",
     "GENERATOR_DELETED": "Видалення генератора",
+    "GENERATOR_ARCHIVED": "Архівація генератора",
+    "GENERATOR_RESTORED": "Відновлення генератора з архіву",
+    "GENERATOR_FACILITY_TRANSFERRED": "Переміщення генератора між об'єктами",
     "GENERATOR_MANUAL_RUN_ADDED": "Ручне внесення мотогодин",
     "GENERATOR_WIZARD_CONFIGURED": "Первинне налаштування генератора",
 
@@ -219,6 +240,7 @@ AUDIT_ACTION_UA = {
     "FUEL_STOCK_CREATED": "Створення складу ГСМ",
     "FUEL_STOCK_UPDATED": "Оновлення складу ГСМ",
     "FUEL_STOCK_DELETED": "Видалення складу ГСМ",
+    "FUEL_STOCK_ARCHIVED": "Архівація складу ГСМ",
     "FUEL_PRICES_REFRESHED": "Оновлення цін АЗК WOG",
 
     # Maintenance
@@ -247,17 +269,27 @@ AUDIT_ACTION_UA = {
     "USER_UPDATED": "Редагування користувача",
     "USER_DELETED": "Видалення користувача",
     "USER_PASSWORD_RESET": "Скидання пароля користувача",
+    "USER_CHANGED_OWN_PASSWORD": "Зміна власного пароля",
+    "USER_PASSWORD_RESET_REQUESTED": "Запит на відновлення пароля",
+    "USER_PASSWORD_RESET_COMPLETED": "Завершення відновлення пароля",
 
-    # System & Adjustments
+    # System, Backups & Adjustments
     "SYSTEM_ADJUSTMENT": "Системне коригування лічильників",
     "ADJUSTMENT_APPLIED": "Системне коригування лічильників",
     "NOTIFICATION_SETTINGS_UPDATED": "Оновлення налаштувань сповіщень",
+    "NOTIFICATION_LOGS_CLEARED": "Очищення журналу сповіщень",
     "SYSTEM_SETTINGS_UPDATED": "Оновлення системних налаштувань",
     "SYSTEM_SETTINGS_RESET": "Скидання системних налаштувань",
     "SYSTEM_FACILITY_CLEAN": "Очищення даних об'єкта",
     "SYSTEM_REPORTS_CLEAN": "Очищення звітів",
     "SYSTEM_FACTORY_RESET": "Повне заводське скидання",
     "SYSTEM_RESET": "Очищення / скидання даних",
+    "BACKUP_CREATED": "Створення резервної копії БД",
+    "BACKUP_RESTORED": "Відновлення БД з резервної копії",
+    "BACKUP_DELETED": "Видалення резервної копії БД",
+    "BACKUP_DOWNLOAD": "Завантаження файлу резервної копії",
+    "BACKUP_SETTINGS_UPDATE": "Оновлення розкладу резервного копіювання",
+    "WEEKLY_DIGEST_AUTO_SENT": "Автоматичне відправлення щотижневого звіту",
 
     # Facility
     "FACILITY_CREATED": "Створення об'єкта",
@@ -445,15 +477,34 @@ async def generate_operational_report(
     start_date: Optional[datetime.datetime] = None,
     end_date: Optional[datetime.datetime] = None
 ) -> OperationalReportOut:
-    gen_query = select(Generator).options(selectinload(Generator.facility))
+    gen_query = select(Generator).options(selectinload(Generator.facility)).order_by(Generator.id.asc())
     if generator_id:
         gen_query = gen_query.where(Generator.id == generator_id)
     elif facility_id:
         gen_query = gen_query.where(Generator.facility_id == facility_id)
     gen_res = await db.execute(gen_query)
-    generator = gen_res.scalars().first()
-    gen_name = generator.name if generator else "Генератор"
+    matched_gens = list(gen_res.scalars().all())
+
+    # If generator_id was explicitly requested (or only 1 generator exists in the scope), bind `generator`
+    if generator_id:
+        generator = matched_gens[0] if matched_gens else None
+    elif len(matched_gens) == 1:
+        generator = matched_gens[0]
+    else:
+        generator = None
+
+    if generator:
+        gen_name = generator.name
+        if not facility_id and generator.facility_id:
+            facility_id = generator.facility_id
+    elif len(matched_gens) > 1:
+        gen_name = f"Усі генератори ({len(matched_gens)} од.)"
+    else:
+        gen_name = "Генератор"
+
     facility_name = generator.facility.name if generator and generator.facility else None
+    if not facility_name and matched_gens and matched_gens[0].facility:
+        facility_name = matched_gens[0].facility.name
     if not facility_name and facility_id:
         fac = (await db.execute(select(Facility).where(Facility.id == facility_id))).scalars().first()
         if fac:
@@ -475,8 +526,13 @@ async def generate_operational_report(
         GeneratorRun.start_time <= end_date,
         GeneratorRun.status == "COMPLETED"
     )
-    if generator:
-        runs_q = runs_q.where(GeneratorRun.generator_id == generator.id)
+    if generator_id or generator:
+        target_gid = generator.id if generator else generator_id
+        runs_q = runs_q.where(GeneratorRun.generator_id == target_gid)
+    elif facility_id:
+        runs_q = runs_q.join(Generator, GeneratorRun.generator_id == Generator.id).where(
+            Generator.facility_id == facility_id
+        )
     runs_res = await db.execute(runs_q)
     total_runs, total_hours, total_cons = runs_res.first()
 
@@ -509,29 +565,50 @@ async def generate_operational_report(
         FuelTransfer.created_at >= start_date,
         FuelTransfer.created_at <= end_date
     )
-    if generator:
-        tr_q = tr_q.where(FuelTransfer.generator_id == generator.id)
+    if generator_id or generator:
+        target_gid = generator.id if generator else generator_id
+        tr_q = tr_q.where(FuelTransfer.generator_id == target_gid)
     elif facility_id:
-        tr_q = tr_q.where(FuelTransfer.facility_id == facility_id)
+        tr_q = tr_q.outerjoin(Generator, FuelTransfer.generator_id == Generator.id).where(
+            or_(FuelTransfer.facility_id == facility_id, Generator.facility_id == facility_id)
+        )
     tr_res = await db.execute(tr_q)
     fuel_transferred_l = float(tr_res.scalar_one() or 0.0)
 
     # Stock & tank
     if facility_id:
-        stock_bal_q = select(func.coalesce(func.sum(FuelStock.current_balance_l), 0.0)).where(FuelStock.facility_id == facility_id)
+        stock_bal_q = select(func.coalesce(func.sum(FuelStock.current_balance_l), 0.0)).where(
+            FuelStock.facility_id == facility_id,
+            FuelStock.is_active == True,  # noqa: E712
+        )
         stock_bal = float((await db.execute(stock_bal_q)).scalar_one() or 0.0)
     else:
-        stock_bal_q = select(func.coalesce(func.sum(FuelStock.current_balance_l), 0.0))
+        stock_bal_q = select(func.coalesce(func.sum(FuelStock.current_balance_l), 0.0)).where(
+            FuelStock.is_active == True  # noqa: E712
+        )
         stock_bal = float((await db.execute(stock_bal_q)).scalar_one() or 0.0)
-    tank_bal = float(generator.fuel_tank_level_l if generator else 0.0)
+
+    if generator:
+        tank_bal = float(generator.fuel_tank_level_l or 0.0)
+    else:
+        tank_bal = sum(
+            float(g.fuel_tank_level_l or 0.0)
+            for g in matched_gens
+            if getattr(g, "is_active", True)
+        )
 
     # 4. Maintenance aggregate
     m_all_q = select(func.count(MaintenanceRecord.id), func.coalesce(func.sum(MaintenanceRecord.cost), 0.0)).where(
         MaintenanceRecord.created_at >= start_date,
         MaintenanceRecord.created_at <= end_date
     )
-    if generator:
-        m_all_q = m_all_q.where(MaintenanceRecord.generator_id == generator.id)
+    if generator_id or generator:
+        target_gid = generator.id if generator else generator_id
+        m_all_q = m_all_q.where(MaintenanceRecord.generator_id == target_gid)
+    elif facility_id:
+        m_all_q = m_all_q.join(Generator, MaintenanceRecord.generator_id == Generator.id).where(
+            Generator.facility_id == facility_id
+        )
     m_all_res = await db.execute(m_all_q)
     m_count, m_cost = m_all_res.first()
 
@@ -540,8 +617,13 @@ async def generate_operational_report(
         MaintenanceRecord.created_at <= end_date,
         MaintenanceRecord.maintenance_type == "SCHEDULED"
     )
-    if generator:
-        m_sched_q = m_sched_q.where(MaintenanceRecord.generator_id == generator.id)
+    if generator_id or generator:
+        target_gid = generator.id if generator else generator_id
+        m_sched_q = m_sched_q.where(MaintenanceRecord.generator_id == target_gid)
+    elif facility_id:
+        m_sched_q = m_sched_q.join(Generator, MaintenanceRecord.generator_id == Generator.id).where(
+            Generator.facility_id == facility_id
+        )
     m_sched_cnt = (await db.execute(m_sched_q)).scalar_one()
     m_inter_cnt = m_count - m_sched_cnt
 
@@ -550,8 +632,13 @@ async def generate_operational_report(
         Fault.created_at >= start_date,
         Fault.created_at <= end_date
     )
-    if generator:
-        f_total_q = f_total_q.where(Fault.generator_id == generator.id)
+    if generator_id or generator:
+        target_gid = generator.id if generator else generator_id
+        f_total_q = f_total_q.where(Fault.generator_id == target_gid)
+    elif facility_id:
+        f_total_q = f_total_q.join(Generator, Fault.generator_id == Generator.id).where(
+            Generator.facility_id == facility_id
+        )
     f_total = (await db.execute(f_total_q)).scalar_one()
 
     f_res_q = select(func.count(Fault.id)).where(
@@ -559,8 +646,13 @@ async def generate_operational_report(
         Fault.created_at <= end_date,
         Fault.status.in_(["RESOLVED", "CLOSED"])
     )
-    if generator:
-        f_res_q = f_res_q.where(Fault.generator_id == generator.id)
+    if generator_id or generator:
+        target_gid = generator.id if generator else generator_id
+        f_res_q = f_res_q.where(Fault.generator_id == target_gid)
+    elif facility_id:
+        f_res_q = f_res_q.join(Generator, Fault.generator_id == Generator.id).where(
+            Generator.facility_id == facility_id
+        )
     f_resolved = (await db.execute(f_res_q)).scalar_one()
 
     # 6. Detailed records for the period
@@ -570,8 +662,9 @@ async def generate_operational_report(
         GeneratorRun.start_time <= end_date,
         GeneratorRun.status == "COMPLETED"
     )
-    if generator:
-        runs_detail_q = runs_detail_q.where(GeneratorRun.generator_id == generator.id)
+    if generator_id or generator:
+        target_gid = generator.id if generator else generator_id
+        runs_detail_q = runs_detail_q.where(GeneratorRun.generator_id == target_gid)
     elif facility_id:
         runs_detail_q = runs_detail_q.join(Generator).where(Generator.facility_id == facility_id)
     runs_detail_q = runs_detail_q.order_by(GeneratorRun.start_time.desc()).limit(200)
@@ -637,8 +730,9 @@ async def generate_operational_report(
         FuelTransfer.created_at >= start_date,
         FuelTransfer.created_at <= end_date
     )
-    if generator:
-        tr_detail_q = tr_detail_q.where(FuelTransfer.generator_id == generator.id)
+    if generator_id or generator:
+        target_gid = generator.id if generator else generator_id
+        tr_detail_q = tr_detail_q.where(FuelTransfer.generator_id == target_gid)
     elif facility_id:
         tr_detail_q = tr_detail_q.outerjoin(Generator, FuelTransfer.generator_id == Generator.id).where(
             or_(FuelTransfer.facility_id == facility_id, Generator.facility_id == facility_id)
@@ -665,8 +759,13 @@ async def generate_operational_report(
         MaintenanceRecord.created_at >= start_date,
         MaintenanceRecord.created_at <= end_date
     )
-    if generator:
-        m_detail_q = m_detail_q.where(MaintenanceRecord.generator_id == generator.id)
+    if generator_id or generator:
+        target_gid = generator.id if generator else generator_id
+        m_detail_q = m_detail_q.where(MaintenanceRecord.generator_id == target_gid)
+    elif facility_id:
+        m_detail_q = m_detail_q.join(Generator, MaintenanceRecord.generator_id == Generator.id).where(
+            Generator.facility_id == facility_id
+        )
     m_detail_q = m_detail_q.order_by(MaintenanceRecord.created_at.desc()).limit(200)
     m_rows = (await db.execute(m_detail_q)).scalars().all()
     maintenance_list = [
@@ -689,8 +788,8 @@ async def generate_operational_report(
     avg_run_dur = round(total_hours / total_runs, 2) if total_runs > 0 else 0.0
 
     return OperationalReportOut(
-        start_date=start_date.strftime("%Y-%m-%d"),
-        end_date=end_date.strftime("%Y-%m-%d"),
+        start_date=to_facility_time(start_date).strftime("%Y-%m-%d"),
+        end_date=to_facility_time(end_date).strftime("%Y-%m-%d"),
         start_date_human=fmt_date_ua(start_date),
         end_date_human=fmt_date_ua(end_date),
         generator_name=gen_name,
@@ -772,18 +871,27 @@ async def generate_excel_report(
     if not start_date:
         start_date = end_date - datetime.timedelta(days=30)
 
-    # 1. Fetch Facility & Generator
-    gen_query = select(Generator).options(selectinload(Generator.facility))
+    # 1. Fetch Facility & Generator(s)
+    gen_query = select(Generator).options(selectinload(Generator.facility)).order_by(Generator.id.asc())
     if generator_id:
         gen_query = gen_query.where(Generator.id == generator_id)
     elif facility_id:
         gen_query = gen_query.where(Generator.facility_id == facility_id)
     gen_res = await db.execute(gen_query)
-    generator = gen_res.scalars().first()
+    matched_gens = list(gen_res.scalars().all())
+
+    if generator_id:
+        generator = matched_gens[0] if matched_gens else None
+    elif len(matched_gens) == 1:
+        generator = matched_gens[0]
+    else:
+        generator = None
+
+    primary_gen = generator or (matched_gens[0] if matched_gens else None)
 
     facility = None
-    if generator and generator.facility:
-        facility = generator.facility
+    if primary_gen and primary_gen.facility:
+        facility = primary_gen.facility
     elif facility_id:
         fac_res = await db.execute(select(Facility).where(Facility.id == facility_id))
         facility = fac_res.scalars().first()
@@ -792,28 +900,37 @@ async def generate_excel_report(
         facility = fac_res.scalars().first()
 
     facility_name = facility.name if facility else "Основний об'єкт"
-    generator_name = generator.name if generator else "Бензиновий генератор"
-    gen_model = generator.model if generator else "-"
-    gen_serial = generator.serial_number if generator else "-"
+    if generator:
+        generator_name = generator.name
+        gen_model = generator.model or "-"
+        gen_serial = generator.serial_number or "-"
+    elif len(matched_gens) > 1:
+        generator_name = f"Усі генератори ({len(matched_gens)} од.)"
+        gen_model = ", ".join(g.model for g in matched_gens if g.model) or "-"
+        gen_serial = ", ".join(g.serial_number for g in matched_gens if g.serial_number) or "-"
+    else:
+        generator_name = "Бензиновий генератор"
+        gen_model = "-"
+        gen_serial = "-"
 
     # 2. Fetch Operational Report Metrics
     op_report = await generate_operational_report(
         db=db,
         generator_id=generator.id if generator else None,
-        facility_id=facility.id if facility else None,
+        facility_id=facility.id if facility else facility_id,
         start_date=start_date,
         end_date=end_date
     )
 
     # 3. Fetch Maintenance Schedule
     m_sched_q = select(MaintenanceSchedule)
-    if generator:
-        m_sched_q = m_sched_q.where(MaintenanceSchedule.generator_id == generator.id)
+    if primary_gen:
+        m_sched_q = m_sched_q.where(MaintenanceSchedule.generator_id == primary_gen.id)
     m_sched = (await db.execute(m_sched_q)).scalars().first()
     interval_hours = m_sched.interval_hours if m_sched else 300.0
     last_maint_hours = m_sched.last_performed_hours if m_sched else 0.0
     next_due_hours = m_sched.next_due_hours if m_sched else 300.0
-    current_hours = generator.current_operating_hours if generator else 0.0
+    current_hours = primary_gen.current_operating_hours if primary_gen else 0.0
     hours_remaining = round(next_due_hours - current_hours, 1)
 
     # 4. Fetch Generator Runs
@@ -924,12 +1041,12 @@ async def generate_excel_report(
     export_now_str = fmt_dt(now_facility())
     start_fmt = fmt_date(start_date)
     end_fmt = fmt_date(end_date)
-    current_status_ua = GENERATOR_STATUS_UA.get(str(generator.status).upper(), str(generator.status)) if generator else "-"
+    current_status_ua = GENERATOR_STATUS_UA.get(str(primary_gen.status).upper(), str(primary_gen.status)) if primary_gen else "-"
     meta_info = [
         ("Об'єкт (локація):", facility_name, "Період звіту:", f"{start_fmt} — {end_fmt}"),
         ("Генератор:", f"{generator_name} ({gen_model})", "Дата експорту:", export_now_str),
         ("Серійний номер:", gen_serial, "Поточний статус:", current_status_ua),
-        ("Поточні мотогодини:", f"{current_hours:.2f} год", "Запас палива в баку:", f"{generator.fuel_tank_level_l if generator else 0.0:.2f} л"),
+        ("Поточні мотогодини:", f"{current_hours:.2f} год", "Запас палива в баку:", f"{op_report.current_tank_level_l:.2f} л"),
     ]
     for row_idx, (k1, v1, k2, v2) in enumerate(meta_info, start=3):
         ws1.cell(row=row_idx, column=1, value=k1).font = BOLD_FONT

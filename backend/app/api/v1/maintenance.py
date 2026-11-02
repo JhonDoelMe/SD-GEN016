@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.database import get_db
 from backend.app.models.user import User
 from backend.app.models.generator import Generator
-from backend.app.models.maintenance import MaintenanceRecord
+from backend.app.models.maintenance import MaintenanceRecord, MaintenanceSchedule
 from backend.app.schemas.maintenance import (
     MaintenanceScheduleOut, MaintenanceRecordCreate, MaintenanceRecordOut
 )
@@ -16,6 +16,7 @@ from backend.app.api.deps import (
     require_permission,
     get_client_ip,
     is_user_admin_or_super,
+    verify_facility_access,
     verify_generator_facility_access,
 )
 from backend.app.services.maintenance_service import (
@@ -32,7 +33,44 @@ async def get_schedule(
     current_user: User = Depends(require_permission("maintenance:view"))
 ):
     await verify_generator_facility_access(db, current_user, generator_id)
-    return await get_maintenance_schedule_status(db, generator_id)
+    user_fac_id = verify_facility_access(current_user, None)
+    return await get_maintenance_schedule_status(db, generator_id, facility_id=user_fac_id)
+
+
+@router.get("/schedules", response_model=List[MaintenanceScheduleOut])
+async def list_schedules(
+    facility_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("maintenance:view"))
+):
+    target_fac_id = verify_facility_access(current_user, facility_id)
+    q = (
+        select(MaintenanceSchedule, Generator)
+        .join(Generator, MaintenanceSchedule.generator_id == Generator.id)
+        .where(Generator.is_active == True)  # noqa: E712
+        .order_by(Generator.id.asc())
+    )
+    if target_fac_id is not None:
+        q = q.where(Generator.facility_id == target_fac_id)
+    rows = (await db.execute(q)).all()
+    results = []
+    for sched, gen in rows:
+        hours_rem = round(sched.next_due_hours - gen.current_operating_hours, 1)
+        results.append(
+            MaintenanceScheduleOut(
+                id=sched.id,
+                generator_id=gen.id,
+                interval_hours=sched.interval_hours,
+                last_performed_hours=sched.last_performed_hours,
+                next_due_hours=sched.next_due_hours,
+                current_operating_hours=gen.current_operating_hours,
+                hours_remaining=hours_rem,
+                is_due=(hours_rem <= 20.0),
+                is_overdue=(hours_rem <= 0.0),
+                is_active=sched.is_active,
+            )
+        )
+    return results
 
 
 @router.post("/schedule/recalculate", response_model=MaintenanceScheduleOut)
@@ -44,8 +82,15 @@ async def api_recalculate_schedule(
 ):
     """Перерахувати графік планового ТО згідно з нормативом та фактичними мотогодинами"""
     await verify_generator_facility_access(db, current_user, generator_id)
+    user_fac_id = verify_facility_access(current_user, None)
     client_ip = get_client_ip(request) if request else None
-    return await recalculate_schedule(db, generator_id=generator_id, user_id=current_user.id, ip_address=client_ip)
+    return await recalculate_schedule(
+        db,
+        generator_id=generator_id,
+        user_id=current_user.id,
+        ip_address=client_ip,
+        facility_id=user_fac_id,
+    )
 
 
 @router.post("/record", response_model=MaintenanceRecordOut, status_code=status.HTTP_201_CREATED)
@@ -64,12 +109,14 @@ async def create_maintenance_record(
         await checker(current_user)
 
     await verify_generator_facility_access(db, current_user, data.generator_id)
+    user_fac_id = verify_facility_access(current_user, None)
 
     record = await record_maintenance(
         db=db,
         data=data,
         user_id=current_user.id,
-        ip_address=get_client_ip(request)
+        ip_address=get_client_ip(request),
+        facility_id=user_fac_id,
     )
 
     return MaintenanceRecordOut(
