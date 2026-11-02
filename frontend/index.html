@@ -38,7 +38,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/frontend/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.10">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.11">
 </head>
 <body>
 
@@ -945,9 +945,9 @@
                 <h4 class="settings-block-title" style="color: #4ade80; margin-bottom: 0;">
                   ⛽ 3. Табло цін АЗК
                 </h4>
-                <div style="display: inline-flex; background: rgba(0,0,0,0.25); padding: 3px; border-radius: 8px; border: 1px solid var(--border-color); gap: 4px;">
-                  <button type="button" id="tabFuelProviderWog" class="btn-action" style="padding: 0.25rem 0.65rem; font-size: 0.8rem; min-height: auto; border-color: #22c55e; color: #4ade80; background: rgba(34, 197, 94, 0.18);" onclick="switchSettingsFuelProvider('wog')">🟢 АЗК WOG</button>
-                  <button type="button" id="tabFuelProviderOkko" class="btn-action" style="padding: 0.25rem 0.65rem; font-size: 0.8rem; min-height: auto; border-color: rgba(255,255,255,0.15); color: var(--text-muted); background: transparent;" onclick="switchSettingsFuelProvider('okko')">🟡 АЗК OKKO</button>
+                <div class="fuel-provider-tabs">
+                  <button type="button" id="tabFuelProviderWog" class="fuel-tab-btn active-wog" onclick="switchSettingsFuelProvider('wog')">🟢 АЗК WOG</button>
+                  <button type="button" id="tabFuelProviderOkko" class="fuel-tab-btn" onclick="switchSettingsFuelProvider('okko')">🟡 АЗК OKKO</button>
                 </div>
               </div>
               <div style="display: flex; gap: 0.65rem; align-items: center; flex-wrap: wrap;">
@@ -3060,7 +3060,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.9.9"></script>
+  <script src="/frontend/app.js?v=4.9.11"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

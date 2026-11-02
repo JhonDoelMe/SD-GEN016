@@ -164,3 +164,65 @@ async def test_backup_system_full_flow(client, superadmin_auth, operator_auth):
     # 15. Path traversal security check
     res_bad = await client.get("/api/v1/backups/..%2F..%2Fpasswd/download", headers=superadmin_auth)
     assert res_bad.status_code in (400, 404)
+
+
+@pytest.mark.asyncio
+async def test_backup_scheduler_no_spurious_triggers_on_reboot():
+    """Verify that rebooting the container outside the scheduled window does NOT trigger a backup."""
+    from backend.app.services.settings_service import set_runtime_setting, get_runtime_setting
+    from backend.app.services.backup_service import run_backup_scheduler, list_backups
+    import asyncio
+    from unittest.mock import patch
+    import datetime
+
+    # Configure auto backup enabled for 03:00 daily
+    set_runtime_setting("backup_auto_enabled", True)
+    set_runtime_setting("backup_schedule_time", "03:00")
+    set_runtime_setting("backup_frequency", "daily")
+    set_runtime_setting("backup_last_auto_run_date", "")
+
+    # Simulate container boot at 18:41 (outside the 03:00-03:15 window)
+    mock_now = datetime.datetime(2026, 11, 2, 18, 41, 30)
+    with patch("backend.app.services.backup_service.now_facility", return_value=mock_now), \
+         patch("backend.app.services.backup_service.create_backup") as mock_create:
+        
+        # Run scheduler for one short iteration (mocking sleep so it doesn't wait 25s)
+        with patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError()]):
+            try:
+                await run_backup_scheduler()
+            except asyncio.CancelledError:
+                pass
+
+        # Must NOT trigger backup when current time is 18:41!
+        mock_create.assert_not_called()
+
+    # Now simulate container boot within the scheduled window (03:05)
+    mock_window = datetime.datetime(2026, 11, 2, 3, 5, 0)
+    with patch("backend.app.services.backup_service.now_facility", return_value=mock_window), \
+         patch("backend.app.services.backup_service.create_backup") as mock_create, \
+         patch("backend.app.services.backup_service.rotate_backups"):
+        
+        with patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError()]):
+            try:
+                await run_backup_scheduler()
+            except asyncio.CancelledError:
+                pass
+
+        # Must trigger backup inside 03:00-03:15 window if not yet run today
+        mock_create.assert_called_once()
+        assert get_runtime_setting("backup_last_auto_run_date") == "2026-11-02"
+
+    # Now simulate a reboot at 03:10 on the same day (inside window, but already executed today)
+    mock_reboot = datetime.datetime(2026, 11, 2, 3, 10, 0)
+    with patch("backend.app.services.backup_service.now_facility", return_value=mock_reboot), \
+         patch("backend.app.services.backup_service.create_backup") as mock_create:
+        
+        with patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError()]):
+            try:
+                await run_backup_scheduler()
+            except asyncio.CancelledError:
+                pass
+
+        # Must NOT trigger duplicate backup!
+        mock_create.assert_not_called()
+

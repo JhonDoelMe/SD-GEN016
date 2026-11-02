@@ -2113,6 +2113,51 @@ input[type="checkbox"], input[type="radio"] {
   }
 }
 
+.fuel-provider-tabs {
+  display: inline-flex;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  gap: 4px;
+}
+
+.fuel-tab-btn {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+  outline: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  user-select: none;
+}
+
+.fuel-tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.fuel-tab-btn.active-wog {
+  border-color: #22c55e !important;
+  color: #4ade80 !important;
+  background: rgba(34, 197, 94, 0.22) !important;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.25);
+}
+
+.fuel-tab-btn.active-okko {
+  border-color: #eab308 !important;
+  color: #facc15 !important;
+  background: rgba(234, 179, 8, 0.22) !important;
+  box-shadow: 0 0 10px rgba(234, 179, 8, 0.25);
+}
+
 .settings-toggle-list {
   display: grid;
   grid-template-columns: 1fr;

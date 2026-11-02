@@ -798,9 +798,28 @@ def rotate_backups(keep_count: int = 7) -> List[str]:
 async def run_backup_scheduler():
     """
     Background worker that runs scheduled automatic backups at configured facility time.
-    Monitored and guarded against missed tick windows (BAK-18).
+    Monitored and guarded against missed tick windows (BAK-18) while preventing unexpected triggers on system reboot.
     """
-    last_run_day = None
+    last_run_day: Optional[str] = None
+
+    # On startup: initialize last_run_day from persisted settings or existing backups on disk
+    try:
+        persisted_last_run = str(get_runtime_setting("backup_last_auto_run_date") or "").strip()
+        if persisted_last_run:
+            last_run_day = persisted_last_run
+        else:
+            cur_today = now_facility().strftime("%Y-%m-%d")
+            for b in list_backups():
+                c_at = str(b.get("created_at") or "")
+                b_creator = str(b.get("creator") or "")
+                b_notes = str(b.get("notes") or "")
+                if c_at.startswith(cur_today) and (
+                    b_creator == "SYSTEM_SCHEDULER" or "Автоматичний бекап" in b_notes
+                ):
+                    last_run_day = cur_today
+                    break
+    except Exception as init_err:
+        print(f"[BACKUP_SCHEDULER] Warning initializing scheduler state: {init_err}", flush=True)
 
     while True:
         try:
@@ -832,8 +851,16 @@ async def run_backup_scheduler():
             sched_minutes = sched_h * 60 + sched_m
             now_minutes = now.hour * 60 + now.minute
 
-            # Trigger if scheduled time has arrived or passed today, and has not yet run today (BAK-18)
-            if now_minutes >= sched_minutes and last_run_day != today_str:
+            # Check 15-minute scheduled execution window (BAK-18)
+            diff_minutes = (now_minutes - sched_minutes) % 1440
+            in_schedule_window = (0 <= diff_minutes <= 15)
+
+            # Check if already executed today
+            recorded_last_day = str(get_runtime_setting("backup_last_auto_run_date") or "").strip()
+            already_run = (last_run_day == today_str or recorded_last_day == today_str)
+
+            # Trigger only inside the schedule window and only once per schedule period
+            if in_schedule_window and not already_run:
                 last_run_day = today_str
                 print(f"[BACKUP_SCHEDULER] Triggering scheduled {b_type} backup at {now} (scheduled for {schedule_time})...", flush=True)
 
@@ -845,6 +872,13 @@ async def run_backup_scheduler():
                         creator_ip="127.0.0.1",
                         notes=f"Автоматичний бекап за розкладом ({schedule_time})"
                     )
+
+                    try:
+                        from backend.app.services.settings_service import update_system_settings
+                        await update_system_settings(session, {"backup_last_auto_run_date": today_str})
+                    except Exception as e:
+                        print(f"[BACKUP_SCHEDULER] Failed to persist backup_last_auto_run_date: {e}", flush=True)
+
                     removed = rotate_backups(retention_count)
                     if removed:
                         print(f"[BACKUP_SCHEDULER] Rotated {len(removed)} old backups: {removed}", flush=True)

@@ -117,6 +117,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "backup_frequency": "daily",
     "backup_retention_count": 7,
     "backup_default_type": "full",
+    "backup_last_auto_run_date": "",
     # Operational Safeguards ("Запобіжники")
     "max_continuous_run_hours": 12.0,
     "auto_stop_on_schedule_end": True,

@@ -4258,85 +4258,136 @@ async function refreshServerStatus() {
 let activeSettingsFuelProvider = 'wog';
 
 window.switchSettingsFuelProvider = function(prov) {
-  activeSettingsFuelProvider = (prov || 'wog').toLowerCase();
-  const tabWog = document.getElementById('tabFuelProviderWog');
-  const tabOkko = document.getElementById('tabFuelProviderOkko');
-  const boardWog = document.getElementById('wogPriceBoard');
-  const boardOkko = document.getElementById('okkoPriceBoard');
-  const metaEl = document.getElementById('sysInternetPricesMeta');
-  const urlEl = document.getElementById('sysFuelProviderUrl');
-  const btnRefresh = document.getElementById('btnRefreshFuelPrices');
-  const fp = cachedFuelPrices;
+  try {
+    activeSettingsFuelProvider = (prov || 'wog').toLowerCase();
+    const isOkko = activeSettingsFuelProvider === 'okko';
 
-  if (activeSettingsFuelProvider === 'okko') {
+    const tabWog = document.getElementById('tabFuelProviderWog');
+    const tabOkko = document.getElementById('tabFuelProviderOkko');
+    const boardWog = document.getElementById('wogPriceBoard');
+    const boardOkko = document.getElementById('okkoPriceBoard');
+    const metaEl = document.getElementById('sysInternetPricesMeta');
+    const urlEl = document.getElementById('sysFuelProviderUrl');
+    const btnRefresh = document.getElementById('btnRefreshFuelPrices');
+    const fp = cachedFuelPrices;
+
     if (tabWog) {
-      tabWog.style.borderColor = 'rgba(255,255,255,0.15)';
-      tabWog.style.color = 'var(--text-muted)';
-      tabWog.style.background = 'transparent';
+      if (isOkko) {
+        tabWog.classList.remove('active-wog');
+        tabWog.style.borderColor = 'transparent';
+        tabWog.style.color = 'var(--text-muted)';
+        tabWog.style.background = 'transparent';
+        tabWog.style.boxShadow = 'none';
+      } else {
+        tabWog.classList.add('active-wog');
+        tabWog.style.borderColor = '#22c55e';
+        tabWog.style.color = '#4ade80';
+        tabWog.style.background = 'rgba(34, 197, 94, 0.22)';
+        tabWog.style.boxShadow = '0 0 10px rgba(34, 197, 94, 0.25)';
+      }
     }
+
     if (tabOkko) {
-      tabOkko.style.borderColor = '#eab308';
-      tabOkko.style.color = '#facc15';
-      tabOkko.style.background = 'rgba(234, 179, 8, 0.18)';
+      if (isOkko) {
+        tabOkko.classList.add('active-okko');
+        tabOkko.style.borderColor = '#eab308';
+        tabOkko.style.color = '#facc15';
+        tabOkko.style.background = 'rgba(234, 179, 8, 0.22)';
+        tabOkko.style.boxShadow = '0 0 10px rgba(234, 179, 8, 0.25)';
+      } else {
+        tabOkko.classList.remove('active-okko');
+        tabOkko.style.borderColor = 'transparent';
+        tabOkko.style.color = 'var(--text-muted)';
+        tabOkko.style.background = 'transparent';
+        tabOkko.style.boxShadow = 'none';
+      }
     }
-    if (boardWog) boardWog.style.display = 'none';
-    if (boardOkko) boardOkko.style.display = 'grid';
+
+    if (boardWog) boardWog.style.display = isOkko ? 'none' : 'grid';
+    if (boardOkko) {
+      boardOkko.style.display = isOkko ? 'grid' : 'none';
+      if (isOkko && (!boardOkko.innerHTML || boardOkko.innerHTML.trim() === '')) {
+        renderAdminFuelPricesHints(cachedFuelPrices || {});
+      }
+    }
+
     if (urlEl) {
-      urlEl.href = 'https://www.okko.ua/fuels';
-      urlEl.textContent = 'okko.ua/fuels';
+      if (isOkko) {
+        urlEl.href = 'https://www.okko.ua/fuels';
+        urlEl.textContent = 'okko.ua/fuels';
+      } else {
+        urlEl.href = 'https://wog.ua/ua/fuels/';
+        urlEl.textContent = 'wog.ua/ua/fuels';
+      }
     }
-    if (metaEl && fp) {
-      const upd = fp.okko_prices_updated_at ? ` (оновлено: ${fp.okko_prices_updated_at})` : '';
-      metaEl.textContent = `Джерело: ${fp.okko_prices_source || 'АЗК OKKO (okko.ua/fuels)'}${upd}`;
+
+    if (metaEl) {
+      if (isOkko) {
+        const upd = fp?.okko_prices_updated_at ? ` (оновлено: ${fp.okko_prices_updated_at})` : '';
+        metaEl.textContent = `Джерело: ${fp?.okko_prices_source || 'АЗК OKKO (okko.ua/fuels)'}${upd}`;
+      } else {
+        const upd = fp?.internet_prices_updated_at ? ` (оновлено: ${fp.internet_prices_updated_at})` : '';
+        metaEl.textContent = `Джерело: ${fp?.internet_prices_source || 'АЗК WOG (wog.ua/ua/fuels/)'}${upd}`;
+      }
     }
+
     if (btnRefresh) {
-      btnRefresh.style.borderColor = '#eab308';
-      btnRefresh.style.color = '#facc15';
-      btnRefresh.textContent = '🟡 Оновити ціни OKKO';
+      if (isOkko) {
+        btnRefresh.style.borderColor = '#eab308';
+        btnRefresh.style.color = '#facc15';
+        btnRefresh.textContent = '🟡 Оновити ціни OKKO';
+      } else {
+        btnRefresh.style.borderColor = '#22c55e';
+        btnRefresh.style.color = '#4ade80';
+        btnRefresh.textContent = '🟢 Оновити ціни WOG';
+      }
     }
-  } else {
-    if (tabWog) {
-      tabWog.style.borderColor = '#22c55e';
-      tabWog.style.color = '#4ade80';
-      tabWog.style.background = 'rgba(34, 197, 94, 0.18)';
-    }
-    if (tabOkko) {
-      tabOkko.style.borderColor = 'rgba(255,255,255,0.15)';
-      tabOkko.style.color = 'var(--text-muted)';
-      tabOkko.style.background = 'transparent';
-    }
-    if (boardWog) boardWog.style.display = 'grid';
-    if (boardOkko) boardOkko.style.display = 'none';
-    if (urlEl) {
-      urlEl.href = 'https://wog.ua/ua/fuels/';
-      urlEl.textContent = 'wog.ua/ua/fuels';
-    }
-    if (metaEl && fp) {
-      const upd = fp.internet_prices_updated_at ? ` (оновлено: ${fp.internet_prices_updated_at})` : '';
-      metaEl.textContent = `Джерело: ${fp.internet_prices_source || 'АЗК WOG (wog.ua/ua/fuels/)'}${upd}`;
-    }
-    if (btnRefresh) {
-      btnRefresh.style.borderColor = '#22c55e';
-      btnRefresh.style.color = '#4ade80';
-      btnRefresh.textContent = '🟢 Оновити ціни WOG';
-    }
+
+    // Update hints under price inputs
+    updateAdminPriceHintsForActiveProvider(activeSettingsFuelProvider);
+  } catch (err) {
+    console.error('Error switching fuel provider:', err);
   }
 };
 
+function updateAdminPriceHintsForActiveProvider(prov) {
+  const fp = cachedFuelPrices;
+  if (!fp) return;
+  const isOkko = prov === 'okko';
+  const hintMap = [
+    { key: 'А-95', elId: 'sysNetHintA95', defWog: '92.90', defOkko: '92.90' },
+    { key: 'ДП', elId: 'sysNetHintDP', defWog: '103.50', defOkko: '106.90' },
+    { key: 'А-92', elId: 'sysNetHintA92', defWog: '92.90', defOkko: '92.90' }
+  ];
+  for (const { key, elId, defWog, defOkko } of hintMap) {
+    const el = document.getElementById(elId);
+    if (!el) continue;
+    const wogInfo = fp.fuels?.[key];
+    const okkoInfo = fp.okko_fuels?.[key];
+    const activeInfo = isOkko ? (okkoInfo || wogInfo) : wogInfo;
+    const wogP = wogInfo ? Number(wogInfo.internet_price).toFixed(2) : defWog;
+    const okkoP = okkoInfo ? Number(okkoInfo.internet_price).toFixed(2) : defOkko;
+    const activeLabel = isOkko ? 'OKKO' : 'WOG';
+    const activeColor = isOkko ? '#facc15' : '#4ade80';
+    const effP = activeInfo ? Number(activeInfo.effective_price).toFixed(2) : (isOkko ? okkoP : wogP);
+    el.innerHTML = `WOG: ${wogP} грн/л | OKKO: ${okkoP} грн/л | Діюча (${activeLabel}): <b style="color: ${activeColor};">${effP} грн/л</b>`;
+  }
+}
+
 function renderAdminFuelPricesHints(fp) {
-  if (!fp || !fp.fuels) return;
+  if (!fp || (!fp.fuels && !fp.okko_fuels && !fp.wog_lineup && !fp.okko_lineup)) return;
   cachedFuelPrices = fp;
 
   // Render WOG Price Board
   const boardWog = document.getElementById('wogPriceBoard');
   if (boardWog) {
     const lineup = Array.isArray(fp.wog_lineup) && fp.wog_lineup.length > 0 ? fp.wog_lineup : [
-      { type: 'ДП', brand: 'Євро5', price: fp.fuels['ДП']?.internet_price ?? 103.50 },
-      { type: 'ДП', brand: 'Mustang+', price: fp.fuels['ДП Mustang+']?.internet_price ?? 106.50 },
-      { type: '95', brand: 'Євро5-Е10', price: fp.fuels['А-95']?.internet_price ?? 92.90 },
-      { type: '95', brand: 'Mustang Євро5-Е10', price: fp.fuels['А-95 Mustang']?.internet_price ?? 95.90 },
+      { type: 'ДП', brand: 'Євро5', price: fp.fuels?.['ДП']?.internet_price ?? 103.50 },
+      { type: 'ДП', brand: 'Mustang+', price: fp.fuels?.['ДП Mustang+']?.internet_price ?? 106.50 },
+      { type: '95', brand: 'Євро5-Е10', price: fp.fuels?.['А-95']?.internet_price ?? 92.90 },
+      { type: '95', brand: 'Mustang Євро5-Е10', price: fp.fuels?.['А-95 Mustang']?.internet_price ?? 95.90 },
       { type: '100', brand: 'Mustang Євро5-Е0', price: 102.90 },
-      { type: 'ГАЗ', brand: '', price: fp.fuels['ГАЗ']?.internet_price ?? 52.50 },
+      { type: 'ГАЗ', brand: '', price: fp.fuels?.['ГАЗ']?.internet_price ?? 52.50 },
       { type: 'AdBlue', brand: '', price: 61.90 }
     ];
     boardWog.innerHTML = lineup.map((item) => {
@@ -4379,24 +4430,6 @@ function renderAdminFuelPricesHints(fp) {
 
   // Sync active view
   switchSettingsFuelProvider(activeSettingsFuelProvider);
-
-  // Render hints showing both WOG and OKKO prices
-  const hintMap = [
-    { key: 'А-95', elId: 'sysNetHintA95' },
-    { key: 'ДП', elId: 'sysNetHintDP' },
-    { key: 'А-92', elId: 'sysNetHintA92' }
-  ];
-  for (const { key, elId } of hintMap) {
-    const el = document.getElementById(elId);
-    const wogInfo = fp.fuels?.[key];
-    const okkoInfo = fp.okko_fuels?.[key];
-    if (el && wogInfo) {
-      const wogP = Number(wogInfo.internet_price).toFixed(2);
-      const okkoP = okkoInfo ? Number(okkoInfo.internet_price).toFixed(2) : wogP;
-      const effP = Number(wogInfo.effective_price).toFixed(2);
-      el.textContent = `WOG: ${wogP} грн/л | OKKO: ${okkoP} грн/л | Діюча: ${effP} грн/л`;
-    }
-  }
 }
 
 async function loadAdminSystemSettings() {
@@ -5537,6 +5570,16 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('linkForgotPassword')?.addEventListener('click', (e) => {
     e.preventDefault();
     openForgotPasswordModal();
+  });
+
+  // Settings Fuel Provider tab switchers
+  document.getElementById('tabFuelProviderWog')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.switchSettingsFuelProvider('wog');
+  });
+  document.getElementById('tabFuelProviderOkko')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.switchSettingsFuelProvider('okko');
   });
 
   // Check for reset_token in URL query parameters
