@@ -44,13 +44,15 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     try:
-        connection.execute(
-            sa.text(
-                "UPDATE alembic_version SET version_num = '003_multisite' "
-                "WHERE version_num = '003_add_facilities_and_multi_site'"
-            )
-        )
-        connection.commit()
+        insp = sa.inspect(connection)
+        if insp.has_table("alembic_version"):
+            with connection.begin_nested():
+                connection.execute(
+                    sa.text(
+                        "UPDATE alembic_version SET version_num = '003_multisite' "
+                        "WHERE version_num = '003_add_facilities_and_multi_site'"
+                    )
+                )
     except Exception:
         pass
 
