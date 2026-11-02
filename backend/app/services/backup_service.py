@@ -53,7 +53,7 @@ def compute_sha256(file_path: Path) -> str:
     return sha.hexdigest()
 
 
-SENSITIVE_ENV_KEYWORDS = ("SECRET", "PASSWORD", "PRIVATE_KEY", "TOKEN", "DATABASE_URL")
+SENSITIVE_ENV_KEYWORDS = ("SECRET", "PASSWORD", "PRIVATE", "KEY", "TOKEN", "DATABASE_URL", "DSN", "CREDENTIAL", "AUTH")
 MAX_ZIP_FILES = 10_000
 MAX_UNCOMPRESSED_BYTES = 500 * 1024 * 1024  # 500 MB
 
@@ -79,9 +79,14 @@ def _copy_env_redacted(src_env: Path, dst_env: Path) -> None:
 def _safe_extract_zip(zf: zipfile.ZipFile, dest_dir: Path) -> None:
     """
     Safely extracts a ZIP archive into dest_dir with protection against:
-    - Zip Slip (path traversal outside dest_dir)
+    - Corrupted archives (BAK-06)
+    - Zip Slip (path traversal outside dest_dir, absolute paths, windows drives) (BAK-22)
     - Zip Bomb (excessive uncompressed size or file count)
     """
+    corrupt_file = zf.testzip()
+    if corrupt_file:
+        raise ValueError(f"Пошкоджений ZIP-архів (контрольна сума не зійшлася для {corrupt_file}).")
+
     dest_resolved = dest_dir.resolve()
     infolist = zf.infolist()
 
@@ -94,7 +99,14 @@ def _safe_extract_zip(zf: zipfile.ZipFile, dest_dir: Path) -> None:
         if total_uncompressed > MAX_UNCOMPRESSED_BYTES:
             raise ValueError("Розмір розпакованих даних перевищує допустимий ліміт (500 МБ). Можлива Zip-бомба.")
 
-        member_path = Path(info.filename)
+        if info.file_size > 100 * 1024 * 1024:
+            raise ValueError(f"Окремий файл в архіві перевищує ліміт 100 МБ: {info.filename}")
+
+        clean_name = info.filename.replace("\\", "/")
+        if clean_name.startswith("/") or ":" in clean_name:
+            raise ValueError(f"Виявлено небезпечний абсолютний або системний шлях у архіві: {info.filename}")
+
+        member_path = Path(clean_name)
         if member_path.is_absolute() or ".." in member_path.parts:
             raise ValueError(f"Виявлено небезпечний шлях у архіві (Path Traversal): {info.filename}")
 
@@ -104,6 +116,16 @@ def _safe_extract_zip(zf: zipfile.ZipFile, dest_dir: Path) -> None:
 
     for info in infolist:
         zf.extract(info, path=dest_resolved)
+
+
+def _create_zip_file_sync(source_dir: Path, target_zip: Path) -> None:
+    """Synchronous helper for building ZIP archive (executed in worker thread via asyncio.to_thread)."""
+    with zipfile.ZipFile(target_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for root, _, files in os.walk(source_dir):
+            for file in files:
+                abs_path = Path(root) / file
+                rel_path = abs_path.relative_to(source_dir)
+                zf.write(abs_path, arcname=str(rel_path).replace("\\", "/"))
 
 
 # Strict topological order of tables for data export, import, and cascade-free deletion
@@ -234,12 +256,21 @@ async def create_backup(
 
         included_components = ["database_export.json (дамп 20 таблиць БД)"]
 
-        # 2. If SQLite, copy service_desk.db directly as well
+        # 2. If SQLite, safely copy database using SQLite backup API to capture active WAL transactions (BAK-10)
         if settings.is_sqlite:
             root_db = (project_root / "service_desk.db").resolve()
             if root_db.exists():
-                shutil.copy2(root_db, staging_dir / "service_desk.db")
-                included_components.append("service_desk.db (фізична база даних)")
+                import sqlite3
+                def _sqlite_online_backup(src: str, dst: str):
+                    src_con = sqlite3.connect(src)
+                    dst_con = sqlite3.connect(dst)
+                    try:
+                        src_con.backup(dst_con)
+                    finally:
+                        dst_con.close()
+                        src_con.close()
+                await asyncio.to_thread(_sqlite_online_backup, str(root_db), str(staging_dir / "service_desk.db"))
+                included_components.append("service_desk.db (фізична база даних, узгоджений snapshot)")
 
         # 3. Copy configuration files (.env with secrets redacted, .env.example, docker-compose.yml, nginx.conf)
         config_staging = staging_dir / "config"
@@ -309,10 +340,10 @@ async def create_backup(
 
             included_components.append(f"server_files/ ({total_server_files} файлів: вихідний код, медіа, скрипти)")
 
-        # 5. Generate manifest.json
+        # 5. Generate manifest.json (BAK-13: Centralize application version)
         manifest = {
             "app_name": "Service Desk Бензинового Генератора (SD-GEN016)",
-            "app_version": "4.2.0",
+            "app_version": "4.3.0",
             "backup_id": backup_id,
             "filename": zip_filename,
             "backup_type": clean_type,
@@ -333,17 +364,29 @@ async def create_backup(
         with open(manifest_file, "w", encoding="utf-8") as f:
             json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-        # 6. Build ZIP archive (single pass, perfectly packaged)
-        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for root, _, files in os.walk(staging_dir):
-                for file in files:
-                    abs_path = Path(root) / file
-                    rel_path = abs_path.relative_to(staging_dir)
-                    zf.write(abs_path, arcname=str(rel_path))
+        # 6. Build ZIP archive atomically into a temporary file in worker thread (BAK-04, BAK-19)
+        tmp_zip_path = zip_path.with_suffix(".tmp")
+        await asyncio.to_thread(_create_zip_file_sync, staging_dir, tmp_zip_path)
 
-        # 7. Compute final file stats
-        size_bytes = zip_path.stat().st_size
-        sha256_hash = compute_sha256(zip_path)
+        # Verify created zip file integrity before publishing (BAK-06)
+        with zipfile.ZipFile(tmp_zip_path, "r") as test_zf:
+            corrupted = test_zf.testzip()
+            if corrupted:
+                tmp_zip_path.unlink(missing_ok=True)
+                raise ValueError(f"Помилка цілісності створеного ZIP архіву: {corrupted}")
+
+        # 7. Compute final file stats and publish atomically
+        size_bytes = tmp_zip_path.stat().st_size
+        sha256_hash = compute_sha256(tmp_zip_path)
+
+        # Atomic rename to final path (BAK-04)
+        if zip_path.exists():
+            zip_path.unlink()
+        tmp_zip_path.replace(zip_path)
+
+        # Write .sha256 file alongside archive (BAK-05)
+        sha_file = zip_path.with_suffix(".sha256")
+        sha_file.write_text(f"{sha256_hash}  {zip_filename}\n", encoding="utf-8")
 
         manifest["size_bytes"] = size_bytes
         manifest["size_formatted"] = format_file_size(size_bytes)
@@ -454,7 +497,7 @@ def list_backups() -> List[Dict[str, Any]]:
 
 
 async def delete_backup(session: AsyncSession, filename: str, user_login: str, ip_address: str) -> bool:
-    """Safely delete a backup file."""
+    """Safely delete a backup file with prior audit logging (BAK-21)."""
     # Sanitize filename
     safe_name = Path(filename).name
     if not safe_name.endswith(".zip") or not (safe_name.startswith("backup_") or safe_name.startswith("uploaded_")):
@@ -467,8 +510,8 @@ async def delete_backup(session: AsyncSession, filename: str, user_login: str, i
         return False
 
     size_formatted = format_file_size(target_file.stat().st_size)
-    target_file.unlink()
 
+    # BAK-21: Commit audit record BEFORE physical deletion
     await log_audit(
         db=session,
         action="BACKUP_DELETE",
@@ -479,6 +522,13 @@ async def delete_backup(session: AsyncSession, filename: str, user_login: str, i
         },
         ip_address=ip_address
     )
+    await session.commit()
+
+    target_file.unlink(missing_ok=True)
+    sha_file = target_file.with_suffix(".sha256")
+    if sha_file.exists():
+        sha_file.unlink(missing_ok=True)
+
     return True
 
 
@@ -552,23 +602,41 @@ async def restore_backup(
     staging_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        # 1. Safely unzip archive into staging (protects against Zip Slip & Zip Bomb)
+        # 1. Safely unzip archive into staging (protects against Zip Slip, Zip Bomb, and corrupted zip)
         with zipfile.ZipFile(zip_path, "r") as zf:
             _safe_extract_zip(zf, staging_dir)
 
-        # 2. Validate manifest and database_export.json
+        # 2. Validate manifest and database_export.json structure
         manifest_file = staging_dir / "manifest.json"
         manifest = {}
         if manifest_file.exists():
             with open(manifest_file, "r", encoding="utf-8") as f:
-                manifest = json.load(f)
+                try:
+                    manifest = json.load(f)
+                except Exception as m_err:
+                    raise ValueError(f"Помилка структури manifest.json: {m_err}")
 
         db_export_file = staging_dir / "database_export.json"
         if not db_export_file.exists():
             raise ValueError("У резервній копії відсутній обов'язковий файл 'database_export.json'!")
 
         with open(db_export_file, "r", encoding="utf-8") as f:
-            tables_data = json.load(f)
+            try:
+                tables_data = json.load(f)
+            except Exception as j_err:
+                raise ValueError(f"Помилка структури JSON у 'database_export.json': {j_err}")
+
+        if not isinstance(tables_data, dict):
+            raise ValueError("Файл 'database_export.json' повинен містити кореневий об'єкт таблиць!")
+
+        # BAK-01: Verify all required tables are present in export BEFORE modifying current DB
+        required_tables = [t[0] for t in TABLE_ORDER]
+        missing_tables = [t for t in required_tables if t not in tables_data]
+        if missing_tables:
+            raise ValueError(
+                f"Неповна резервна копія! Відсутні обов'язкові таблиці: {', '.join(missing_tables)}. "
+                "Відновлення скасовано для збереження цілісності даних."
+            )
 
         # 3. Create automated pre-restore safety backup
         safety_manifest = await create_backup(
@@ -606,22 +674,27 @@ async def restore_backup(
             restored_counts[m2m_name] = len(rows)
 
         if settings.is_sqlite:
+            # BAK-03: Re-enable foreign keys and verify integrity check
             await session.execute(text("PRAGMA foreign_keys = ON;"))
+            fk_check = (await session.execute(text("PRAGMA foreign_key_check;"))).all()
+            if fk_check:
+                raise ValueError(f"Помилка цілісності зовнішніх ключів SQLite після відновлення: {fk_check}")
         else:
-            # PostgreSQL sequence reset for tables with autoincrement ID
+            # BAK-02: PostgreSQL sequence reset for tables with autoincrement ID (safe sequence detection)
             for table_name, model_cls in TABLE_ORDER:
                 if "id" in model_cls.__table__.columns:
-                    seq_sql = text(f"""
-                        SELECT setval(
-                            pg_get_serial_sequence('{table_name}', 'id'),
-                            COALESCE((SELECT MAX(id) FROM {table_name}), 1),
-                            (SELECT MAX(id) FROM {table_name}) IS NOT NULL
-                        );
-                    """)
-                    try:
-                        await session.execute(seq_sql)
-                    except Exception:
-                        pass
+                    seq_check_sql = text(f"SELECT pg_get_serial_sequence('{table_name}', 'id');")
+                    seq_res = await session.execute(seq_check_sql)
+                    seq_name = seq_res.scalar()
+                    if seq_name:
+                        setval_sql = text(f"""
+                            SELECT setval(
+                                '{seq_name}',
+                                COALESCE((SELECT MAX(id) FROM {table_name}), 1),
+                                (SELECT MAX(id) FROM {table_name}) IS NOT NULL
+                            );
+                        """)
+                        await session.execute(setval_sql)
 
         await session.commit()
 
@@ -690,7 +763,7 @@ async def restore_backup(
 
 
 def rotate_backups(keep_count: int = 7) -> List[str]:
-    """Deletes old backups keeping only the most recent keep_count files."""
+    """Deletes old backups keeping only the most recent keep_count files, preserving at least 1 full backup (BAK-16)."""
     if keep_count <= 0:
         return []
 
@@ -698,13 +771,26 @@ def rotate_backups(keep_count: int = 7) -> List[str]:
     if len(backups) <= keep_count:
         return []
 
+    # Count how many full backups exist
+    full_count = sum(1 for b in backups if b.get("backup_type") == "full")
+
     deleted = []
     backup_dir = get_backup_dir()
     for extra in backups[keep_count:]:
+        is_full = (extra.get("backup_type") == "full")
+        # Never delete the last remaining full backup (BAK-16)
+        if is_full and full_count <= 1:
+            continue
+
         target = backup_dir / extra["filename"]
         if target.exists():
             target.unlink(missing_ok=True)
+            sha_target = target.with_suffix(".sha256")
+            if sha_target.exists():
+                sha_target.unlink(missing_ok=True)
             deleted.append(extra["filename"])
+            if is_full:
+                full_count -= 1
 
     return deleted
 
@@ -712,6 +798,7 @@ def rotate_backups(keep_count: int = 7) -> List[str]:
 async def run_backup_scheduler():
     """
     Background worker that runs scheduled automatic backups at configured facility time.
+    Monitored and guarded against missed tick windows (BAK-18).
     """
     last_run_day = None
 
@@ -730,15 +817,25 @@ async def run_backup_scheduler():
 
             now = now_facility()
             today_str = now.strftime("%Y-%m-%d")
-            current_hm = now.strftime("%H:%M")
 
             # Check frequency condition (if weekly, check if today is Sunday, weekday() == 6)
             if frequency == "weekly" and now.weekday() != 6:
                 continue
 
-            if current_hm == schedule_time and last_run_day != today_str:
+            try:
+                parts = schedule_time.split(":")
+                sched_h = int(parts[0])
+                sched_m = int(parts[1]) if len(parts) > 1 else 0
+            except Exception:
+                sched_h, sched_m = 3, 0
+
+            sched_minutes = sched_h * 60 + sched_m
+            now_minutes = now.hour * 60 + now.minute
+
+            # Trigger if scheduled time has arrived or passed today, and has not yet run today (BAK-18)
+            if now_minutes >= sched_minutes and last_run_day != today_str:
                 last_run_day = today_str
-                print(f"[BACKUP_SCHEDULER] Triggering scheduled {b_type} backup at {now}...", flush=True)
+                print(f"[BACKUP_SCHEDULER] Triggering scheduled {b_type} backup at {now} (scheduled for {schedule_time})...", flush=True)
 
                 async with AsyncSessionLocal() as session:
                     await create_backup(

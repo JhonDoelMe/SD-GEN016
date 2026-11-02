@@ -1,0 +1,45 @@
+# VCS
+.git
+.gitignore
+.geminiignore
+
+# Secrets and environment configs
+.env
+.env.*
+!.env.example
+
+# Local databases and backups
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+backups/
+uploads/
+
+# Python cache and bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.venv/
+venv/
+ENV/
+
+# IDE and editors
+.idea/
+.vscode/
+
+# Local SSL and sensitive credentials
+docker/ssl/
+docker/ssl-fallback/
+*.pem
+*.key
+*.crt
+*.log

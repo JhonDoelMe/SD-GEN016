@@ -21,16 +21,14 @@ from sqlalchemy import inspect, text
 
 
 def ensure_schema_updates(sync_conn):
+    """
+    MAIN-01, MAIN-02: Controlled schema updates are handled via Alembic migrations.
+    This startup check only guarantees default facility record and PostgreSQL sequence synchronization.
+    """
     inspector = inspect(sync_conn)
     tables = inspector.get_table_names()
 
-    # 1. generator_runs duration_seconds
-    if "generator_runs" in tables:
-        columns = [c["name"] for c in inspector.get_columns("generator_runs")]
-        if "duration_seconds" not in columns:
-            sync_conn.execute(text("ALTER TABLE generator_runs ADD COLUMN duration_seconds INTEGER"))
-
-    # 2. facilities default record
+    # 1. Facilities default record
     if "facilities" in tables:
         res = sync_conn.execute(text("SELECT COUNT(*) FROM facilities")).scalar()
         if res == 0:
@@ -39,30 +37,7 @@ def ensure_schema_updates(sync_conn):
                 "VALUES (1, 'Основний об''єкт', 'Головна локація', 'Базовий об''єкт генератора', 'Europe/Kyiv', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
             ))
 
-    # 3. Add facility_id to related tables (strictly whitelisted identifiers)
-    allowed_facility_tables = ("generators", "fuel_stocks", "fuel_receipts", "fuel_transfers", "users", "system_adjustments")
-    for table_name in allowed_facility_tables:
-        if table_name in tables:
-            cols = [c["name"] for c in inspector.get_columns(table_name)]
-            if "facility_id" not in cols:
-                sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"))
-            # Set default facility_id to 1 if null
-            sync_conn.execute(text(f"UPDATE {table_name} SET facility_id = 1 WHERE facility_id IS NULL"))
-
-    if "system_adjustments" in tables:
-        cols = [c["name"] for c in inspector.get_columns("system_adjustments")]
-        if "target_name" not in cols:
-            sync_conn.execute(text("ALTER TABLE system_adjustments ADD COLUMN target_name VARCHAR(200)"))
-
-    # 4. Fix maintenance schedule anomaly: interval=300, next_due=535 -> next_due=300, last_performed=0
-    if "maintenance_schedules" in tables:
-        sync_conn.execute(text(
-            "UPDATE maintenance_schedules SET last_performed_hours = 0.0, next_due_hours = interval_hours "
-            "WHERE (last_performed_hours = 235.0 AND next_due_hours = 535.0) "
-            "OR (last_performed_hours = 235.0 AND next_due_hours > 300.0)"
-        ))
-
-    # 5. Synchronize sequences for PostgreSQL to avoid duplicate key errors on auto-incrementing IDs
+    # 2. Synchronize sequences for PostgreSQL to avoid duplicate key errors on auto-incrementing IDs (MAIN-04)
     if sync_conn.dialect.name == "postgresql":
         serial_tables = (
             "facilities", "generators", "fuel_stocks", "fuel_receipts",
@@ -115,9 +90,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
+    # Shutdown: Graceful cancellation and await background tasks before disposing engine (MAIN-05)
     backup_scheduler_task.cancel()
     guard_worker_task.cancel()
+    await asyncio.gather(backup_scheduler_task, guard_worker_task, return_exceptions=True)
     await engine.dispose()
 
 
@@ -149,7 +125,7 @@ async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
+    # MAIN-09: Removed obsolete X-XSS-Protection header in favor of CSP
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     response.headers["Content-Security-Policy"] = (
@@ -170,15 +146,34 @@ async def add_security_headers(request: Request, call_next):
 app.include_router(api_v1_router)
 
 
-# Healthcheck (minimal info to avoid configuration disclosure)
+# Liveness check: confirms web process is alive
+@app.get("/api/health/liveness", tags=["Health"])
+async def liveness_check():
+    return {"status": "alive"}
+
+
+# MAIN-07: Readiness & Healthcheck with verified database connectivity test
+@app.get("/api/health/readiness", tags=["Health"])
 @app.get("/api/health", tags=["Health"])
 async def health_check():
-    return {
-        "status": "healthy",
+    db_status = "connected"
+    is_healthy = True
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception:
+        db_status = "disconnected"
+        is_healthy = False
+
+    payload = {
+        "status": "healthy" if is_healthy else "unhealthy",
         "facility_timezone": settings.FACILITY_TIMEZONE,
         "primary_domain": settings.PRIMARY_DOMAIN,
-        "database": "connected"
+        "database": db_status
     }
+    if not is_healthy:
+        return JSONResponse(status_code=503, content=payload)
+    return payload
 
 
 # Frontend and PWA static assets handling
@@ -212,6 +207,37 @@ if FRONTEND_DIR.exists():
         if fav_path.exists():
             return FileResponse(fav_path, media_type="image/x-icon")
         return JSONResponse({"error": "Favicon not found"}, status_code=404)
+
+    # INF-07: Secure authorized uploads endpoint
+    @app.get("/uploads/{file_path:path}")
+    async def get_uploaded_media(file_path: str, request: Request):
+        token = request.cookies.get("access_token")
+        if not token:
+            auth_header = request.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.split(" ", 1)[1]
+
+        if not token:
+            return JSONResponse({"error": "Неавторизований доступ до файлів"}, status_code=401)
+
+        from backend.app.core.security import decode_access_token
+        payload = decode_access_token(token)
+        if not payload:
+            return JSONResponse({"error": "Недійсний або прострочений токен"}, status_code=401)
+
+        uploads_base = Path(settings.UPLOAD_DIR).resolve()
+        target_file = (uploads_base / file_path).resolve()
+        if not target_file.is_relative_to(uploads_base) or not target_file.is_file():
+            return JSONResponse({"error": "Файл не знайдено"}, status_code=404)
+
+        return FileResponse(
+            target_file,
+            headers={
+                "X-Content-Type-Options": "nosniff",
+                "Content-Disposition": "inline",
+                "Cache-Control": "private, max-age=3600"
+            }
+        )
 
     @app.api_route("/", methods=["GET", "HEAD"])
     async def serve_index():

@@ -308,31 +308,52 @@ async def start_generator(
 async def stop_generator(
     db: AsyncSession,
     generator_id: int,
-    user_id: int,
-    stop_data: GeneratorStopRequest,
-    ip_address: Optional[str] = None
-) -> GeneratorRun:
-    res = await db.execute(
-        select(Generator).where(Generator.id == generator_id)
-    )
+    user_id: Optional[int] = None,
+    stop_data: Optional[GeneratorStopRequest] = None,
+    ip_address: Optional[str] = None,
+    reason: str = "MANUAL",
+    system_note: Optional[str] = None,
+    actor_type: str = "USER"
+) -> Optional[GeneratorRun]:
+    is_postgres = False
+    try:
+        bind = db.get_bind()
+        if bind and bind.dialect.name == "postgresql":
+            is_postgres = True
+    except Exception:
+        pass
+
+    query = select(Generator).where(Generator.id == generator_id)
+    if is_postgres:
+        query = query.with_for_update()
+    res = await db.execute(query)
     generator = res.scalars().first()
     if not generator:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+        if actor_type == "USER":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+        return None
 
     if generator.status != "RUNNING":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Неможливо зупинити генератор: генератор не перебуває у стані 'Працює'"
-        )
+        if actor_type == "USER":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Неможливо зупинити генератор: генератор не перебуває у стані 'Працює'"
+            )
+        return None
 
-    # Find the active run
-    run_res = await db.execute(
+    # Find the active run with lock for update on PostgreSQL
+    run_q = (
         select(GeneratorRun)
         .where(GeneratorRun.generator_id == generator.id, GeneratorRun.status == "RUNNING")
         .order_by(GeneratorRun.id.desc())
     )
+    if is_postgres:
+        run_q = run_q.with_for_update()
+    run_res = await db.execute(run_q)
     run = run_res.scalars().first()
     if not run:
+        if actor_type != "USER":
+            return None
         run = GeneratorRun(
             generator_id=generator.id,
             user_id=user_id,
@@ -346,7 +367,7 @@ async def stop_generator(
     end_time = utc_now()
     elapsed_seconds = max(1, int((end_time - run.start_time).total_seconds()))
 
-    if stop_data.end_hours is not None:
+    if stop_data and stop_data.end_hours is not None:
         if stop_data.end_hours < run.start_hours:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -390,17 +411,21 @@ async def stop_generator(
     run.duration_hours = duration_hours
     run.calculated_consumption_l = calculated_consumption
     run.status = "COMPLETED"
-    run.note = stop_data.note
+    run.note = (stop_data.note if (stop_data and stop_data.note) else system_note)
 
     # Update generator metrics
     generator.current_operating_hours = end_hours
     generator.updated_at = end_time
 
-    if stop_data.end_fuel_level_l is not None:
+    fuel_shortage_l = 0.0
+    if stop_data and stop_data.end_fuel_level_l is not None:
         generator.fuel_tank_level_l = min(stop_data.end_fuel_level_l, generator.tank_capacity_l)
         run.end_fuel_level_l = generator.fuel_tank_level_l
     else:
-        # Deduct calculated consumption from tank level (allows negative balance to show real fuel deficit)
+        # Deduct calculated consumption from tank level
+        # OPG-02: Record fuel shortage discrepancy if consumption exceeds tank level
+        if calculated_consumption > generator.fuel_tank_level_l:
+            fuel_shortage_l = round(calculated_consumption - generator.fuel_tank_level_l, 3)
         new_level = generator.fuel_tank_level_l - calculated_consumption
         generator.fuel_tank_level_l = round(new_level, 3)
         run.end_fuel_level_l = generator.fuel_tank_level_l
@@ -422,40 +447,100 @@ async def stop_generator(
     s = duration_seconds % 60
     duration_formatted = f"{h:02d}:{m:02d}:{s:02d}"
 
+    # OPG-07: Use appropriate audit action and system actor ID for automated operations
+    if reason == "MANUAL":
+        audit_action = "GENERATOR_STOP"
+        actor_id = user_id
+    elif reason == "MAX_CONTINUOUS_RUN_EXCEEDED":
+        audit_action = "GENERATOR_SAFETY_STOP"
+        actor_id = None
+    elif reason == "WORK_SCHEDULE_ENDED":
+        audit_action = "GENERATOR_AUTO_STOP"
+        actor_id = None
+    else:
+        audit_action = "GENERATOR_STOP"
+        actor_id = user_id
+
+    audit_details = {
+        "actor_type": actor_type,
+        "reason": reason,
+        "end_hours": run.end_hours,
+        "duration_seconds": duration_seconds,
+        "duration_formatted": duration_formatted,
+        "duration_hours": duration_hours,
+        "calculated_consumption_l": calculated_consumption,
+        "end_fuel_level_l": generator.fuel_tank_level_l,
+        "fuel_shortage_l": fuel_shortage_l,
+        "fuel_discrepancy": (fuel_shortage_l > 0),
+        "run_id": run.id,
+        "status_after": generator.status
+    }
+    if system_note:
+        audit_details["system_note"] = system_note
+
     await log_audit(
         db=db,
-        action="GENERATOR_STOP",
+        action=audit_action,
         entity_type="Generator",
         entity_id=str(generator.id),
-        user_id=user_id,
-        details={
-            "end_hours": run.end_hours,
-            "duration_seconds": duration_seconds,
-            "duration_formatted": duration_formatted,
-            "duration_hours": duration_hours,
-            "calculated_consumption_l": calculated_consumption,
-            "end_fuel_level_l": generator.fuel_tank_level_l,
-            "run_id": run.id,
-            "status_after": generator.status
-        },
+        user_id=actor_id,
+        details=audit_details,
         ip_address=ip_address
     )
     await db.commit()
 
-    # Dispatch push notification in background
+    # OPG-08: Dispatch push notification AFTER successful commit
     try:
-        from backend.app.services.notification_service import notify_generator_stop
-        from backend.app.models.user import User
-        u_res = await db.execute(select(User.full_name).where(User.id == user_id))
-        u_name = u_res.scalar() or "Оператор"
-        await notify_generator_stop(
-            db=db,
-            generator=generator,
-            user_name=u_name,
-            duration_str=duration_formatted,
-            consumption_l=calculated_consumption,
-            end_fuel=generator.fuel_tank_level_l
-        )
+        if reason == "MANUAL":
+            from backend.app.services.notification_service import notify_generator_stop
+            from backend.app.models.user import User
+            u_name = "Оператор"
+            if user_id:
+                u_res = await db.execute(select(User.full_name).where(User.id == user_id))
+                u_name = u_res.scalar() or "Оператор"
+            await notify_generator_stop(
+                db=db,
+                generator=generator,
+                user_name=u_name,
+                duration_str=duration_formatted,
+                consumption_l=calculated_consumption,
+                end_fuel=generator.fuel_tank_level_l
+            )
+        elif reason == "MAX_CONTINUOUS_RUN_EXCEEDED":
+            from backend.app.services.notification_service import send_push_notification
+            await send_push_notification(
+                db=db,
+                title=f"🚨 Аварійна зупинка — {generator.name}",
+                body=f"Генератор автоматично зупинено після {duration_hours:.1f} год безперервної роботи (перевищено ліміт). Обліковий сеанс закрито.",
+                event_type="GENERATOR_SAFETY_STOP",
+                generator_id=generator.id,
+                facility_id=generator.facility_id,
+                url="/?tab=tab-dashboard"
+            )
+        elif reason == "WORK_SCHEDULE_ENDED":
+            from backend.app.services.notification_service import send_push_notification
+            sched_str = system_note or "закінчення робочого дня"
+            await send_push_notification(
+                db=db,
+                title=f"⏱️ Автозупинка за графіком — {generator.name}",
+                body=f"Робочий день завершено ({sched_str}). Генератор автоматично зупинено. Напрацювання за сеанс: {duration_hours:.2f} год.",
+                event_type="GENERATOR_AUTO_STOP",
+                generator_id=generator.id,
+                facility_id=generator.facility_id,
+                url="/?tab=tab-dashboard"
+            )
+
+        if fuel_shortage_l > 0:
+            from backend.app.services.notification_service import send_push_notification
+            await send_push_notification(
+                db=db,
+                title=f"⚠️ Розбіжність паливного балансу — {generator.name}",
+                body=f"Розрахункова витрата палива перевищила наявний залишок у баку на {fuel_shortage_l:.1f} л. Перевірте надходження палива.",
+                event_type="FUEL_DISCREPANCY",
+                generator_id=generator.id,
+                facility_id=generator.facility_id,
+                url="/?tab=tab-fuel"
+            )
     except Exception as ex:
         print(f"[NOTIF] Failed to send stop notification: {ex}", flush=True)
 

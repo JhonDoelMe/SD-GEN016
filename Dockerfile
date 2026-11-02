@@ -24,10 +24,17 @@ COPY frontend /app/frontend
 COPY alembic.ini /app/alembic.ini
 COPY .env.example /app/.env.example
 
-# Create directory for persistent uploads
-RUN mkdir -p /app/uploads
+# Create non-privileged system user (INF-01)
+RUN groupadd -r -g 10001 appuser && \
+    useradd -r -u 10001 -g appuser -d /app -s /sbin/nologin appuser
+
+# Create directories for persistent uploads and backups with appuser ownership
+RUN mkdir -p /app/uploads /app/backups && \
+    chown -R appuser:appuser /app
+
+USER appuser
 
 EXPOSE 8000
 
-# Startup script: apply migrations and start uvicorn (restricted proxy headers to internal Docker/private ranges)
-CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'"]
+# Startup script: apply migrations and start uvicorn (INF-08)
+CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='${FORWARDED_ALLOW_IPS:-127.0.0.1,172.16.0.0/12,192.168.0.0/16}'"]

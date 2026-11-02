@@ -13,6 +13,15 @@ from backend.app.core.timezone import now_utc, is_within_work_schedule
 from backend.app.services.settings_service import get_runtime_setting
 from backend.app.services.audit_service import log_audit
 from backend.app.services.notification_service import send_push_notification, check_and_notify_low_fuel, check_and_notify_maintenance_due
+from backend.app.services.generator_service import stop_generator
+
+# Guard health monitoring registry (OPG-18)
+guard_health_status = {
+    "is_running": False,
+    "last_successful_check": None,
+    "consecutive_failures": 0,
+    "last_error": None
+}
 
 
 async def check_operational_guardrails(db: AsyncSession) -> Dict[str, Any]:
@@ -43,184 +52,141 @@ async def check_operational_guardrails(db: AsyncSession) -> Dict[str, Any]:
     active_runs = res.scalars().all()
     results["active_runs_checked"] = len(active_runs)
 
-    max_continuous_hours = float(get_runtime_setting("max_continuous_run_hours", 12.0))
+    # Validate runtime settings with safe fallback bounds (OPG-04, OPG-12)
+    try:
+        max_continuous_hours = float(get_runtime_setting("max_continuous_run_hours", 12.0))
+        if max_continuous_hours <= 0:
+            max_continuous_hours = 12.0
+    except Exception:
+        max_continuous_hours = 12.0
+
     auto_stop_on_sched = bool(get_runtime_setting("auto_stop_on_schedule_end", True))
     enforce_schedule = bool(get_runtime_setting("enforce_work_schedule", True))
     notify_heartbeat = bool(get_runtime_setting("notify_running_heartbeat", True))
-    heartbeat_interval_hours = float(get_runtime_setting("heartbeat_interval_hours", 4.0))
+
+    try:
+        heartbeat_interval_hours = float(get_runtime_setting("heartbeat_interval_hours", 4.0))
+        if heartbeat_interval_hours < 0.5:
+            heartbeat_interval_hours = 4.0
+    except Exception:
+        heartbeat_interval_hours = 4.0
 
     for run in active_runs:
-        gen = run.generator
-        if not gen:
-            continue
-
-        elapsed_seconds = max(1, int((current_time - run.start_time).total_seconds()))
-        elapsed_hours = elapsed_seconds / 3600.0
-
-        # Find active maintenance schedule
-        m_sched = next((m for m in gen.maintenance_schedules if m.is_active), None)
-
-        # -------------------------------------------------------------
-        # 1. Guardrail: Empty Tank Protection / Max Continuous Run (> 12h)
-        # -------------------------------------------------------------
-        if elapsed_hours >= max_continuous_hours:
-            run.end_time = current_time
-            run.duration_seconds = elapsed_seconds
-            run.duration_hours = round(elapsed_hours, 2)
-            consumed_l = round(run.duration_hours * gen.nominal_consumption_l_per_h, 2)
-            run.calculated_consumption_l = consumed_l
-            run.end_hours = round(run.start_hours + run.duration_hours, 2)
-            gen.current_operating_hours = run.end_hours
-            gen.fuel_tank_level_l = round(max(0.0, gen.fuel_tank_level_l - consumed_l), 2)
-            run.end_fuel_level_l = gen.fuel_tank_level_l
-
-            if m_sched and gen.current_operating_hours >= m_sched.next_due_hours:
-                gen.status = "MAINTENANCE_REQUIRED"
-            else:
-                gen.status = "STOPPED"
-
-            run.status = "COMPLETED"
-            run.note = f"Аварійна автоматична зупинка: спрацював захист від порожнього бака (перевищено ліміт {max_continuous_hours:.0f} год безперервної роботи)"
-
-            await log_audit(
-                db=db,
-                action="GENERATOR_SAFETY_STOP",
-                entity_type="Generator",
-                entity_id=str(gen.id),
-                user_id=run.user_id,
-                details={
-                    "reason": "MAX_CONTINUOUS_RUN_EXCEEDED",
-                    "max_hours": max_continuous_hours,
-                    "elapsed_hours": run.duration_hours,
-                    "run_id": run.id,
-                    "end_hours": run.end_hours,
-                    "fuel_level": gen.fuel_tank_level_l
-                }
-            )
-
-            await send_push_notification(
-                db=db,
-                title=f"🚨 Аварійна зупинка — {gen.name}",
-                body=f"Генератор автоматично зупинено після {run.duration_hours:.1f} год безперервної роботи (захист від порожнього бака та перегріву).",
-                event_type="GENERATOR_SAFETY_STOP",
-                generator_id=gen.id,
-                facility_id=gen.facility_id,
-                url="/?tab=tab-dashboard"
-            )
-
-            await db.commit()
-            results["safety_stopped_max_run"] += 1
-            continue
-
-        # -------------------------------------------------------------
-        # 2. Guardrail: Work Schedule End Auto-Stop (Strictly Day Shift)
-        # -------------------------------------------------------------
-        if auto_stop_on_sched and enforce_schedule:
-            schedules_data = [
-                {"weekday": s.weekday, "start_time": s.start_time, "end_time": s.end_time, "is_active": s.is_active}
-                for s in (gen.schedules or [])
-            ]
-            is_allowed, sched_msg = is_within_work_schedule(schedules_data, dt=current_time)
-            if not is_allowed:
-                run.end_time = current_time
-                run.duration_seconds = elapsed_seconds
-                run.duration_hours = round(elapsed_hours, 2)
-                consumed_l = round(run.duration_hours * gen.nominal_consumption_l_per_h, 2)
-                run.calculated_consumption_l = consumed_l
-                run.end_hours = round(run.start_hours + run.duration_hours, 2)
-                gen.current_operating_hours = run.end_hours
-                gen.fuel_tank_level_l = round(max(0.0, gen.fuel_tank_level_l - consumed_l), 2)
-                run.end_fuel_level_l = gen.fuel_tank_level_l
-
-                if m_sched and gen.current_operating_hours >= m_sched.next_due_hours:
-                    gen.status = "MAINTENANCE_REQUIRED"
-                else:
-                    gen.status = "STOPPED"
-
-                run.status = "COMPLETED"
-                run.note = f"Автоматична зупинка за розкладом закінчення робочого дня: {sched_msg}"
-
-                await log_audit(
-                    db=db,
-                    action="GENERATOR_AUTO_STOP",
-                    entity_type="Generator",
-                    entity_id=str(gen.id),
-                    user_id=run.user_id,
-                    details={
-                        "reason": "WORK_SCHEDULE_ENDED",
-                        "schedule_reason": sched_msg,
-                        "elapsed_hours": run.duration_hours,
-                        "run_id": run.id,
-                        "end_hours": run.end_hours,
-                        "fuel_level": gen.fuel_tank_level_l
-                    }
-                )
-
-                await send_push_notification(
-                    db=db,
-                    title=f"⏱️ Автозупинка за графіком — {gen.name}",
-                    body=f"Робочий день завершено ({sched_msg}). Генератор автоматично зупинено. Напрацювання за сеанс: {run.duration_hours:.2f} год.",
-                    event_type="GENERATOR_AUTO_STOP",
-                    generator_id=gen.id,
-                    facility_id=gen.facility_id,
-                    url="/?tab=tab-dashboard"
-                )
-
-                await db.commit()
-                results["auto_stopped_schedule"] += 1
+        # OPG-09: Isolate errors per generator run so one failure does not halt check of others
+        try:
+            gen = run.generator
+            if not gen:
                 continue
 
-        # -------------------------------------------------------------
-        # 3. Guardrail: 4-Hour Heartbeat Reminder ('Генератор досі працює?')
-        # -------------------------------------------------------------
-        if notify_heartbeat and elapsed_hours >= heartbeat_interval_hours:
-            # Check if heartbeat was already sent recently for this generator during this run
-            last_hb_q = (
-                select(NotificationLog.created_at)
-                .where(
-                    and_(
-                        NotificationLog.event_type == "GENERATOR_HEARTBEAT",
-                        NotificationLog.generator_id == gen.id,
-                        NotificationLog.created_at >= run.start_time
-                    )
-                )
-                .order_by(NotificationLog.created_at.desc())
-                .limit(1)
-            )
-            last_hb_res = await db.execute(last_hb_q)
-            last_hb_time = last_hb_res.scalar()
+            # Ensure run is still active
+            if run.status != "RUNNING" or gen.status != "RUNNING":
+                continue
 
-            # Require at least (heartbeat_interval_hours - 0.1) hours since the last heartbeat
-            cooldown_seconds = int((heartbeat_interval_hours - 0.1) * 3600)
-            should_send = (last_hb_time is None) or ((current_time - last_hb_time).total_seconds() >= cooldown_seconds)
+            elapsed_seconds = max(1, int((current_time - run.start_time).total_seconds()))
+            elapsed_hours = elapsed_seconds / 3600.0
 
-            if should_send:
-                hours_int = int(elapsed_hours)
-                title = f"⚠️ Генератор {gen.name} досі працює ({hours_int} год)"
-                body = (
-                    f"Генератор безперервно працює вже {elapsed_hours:.1f} год (з {run.start_time.strftime('%H:%M')}). "
-                    f"Перевірте рівень палива (залишок: ~{gen.fuel_tank_level_l:.1f} л) та чи не забули його зупинити."
-                )
-
-                await send_push_notification(
+            # -------------------------------------------------------------
+            # 1. Guardrail: Empty Tank Protection / Max Continuous Run (> 12h)
+            # OPG-01, OPG-03, OPG-07, OPG-08, OPG-19: Use unified stop_generator
+            # -------------------------------------------------------------
+            if elapsed_hours >= max_continuous_hours:
+                note_text = f"Аварійна автоматична зупинка: спрацював захист від порожнього бака (перевищено ліміт {max_continuous_hours:.0f} год безперервної роботи)"
+                stopped_run = await stop_generator(
                     db=db,
-                    title=title,
-                    body=body,
-                    event_type="GENERATOR_HEARTBEAT",
                     generator_id=gen.id,
-                    facility_id=gen.facility_id,
-                    url="/?tab=tab-dashboard"
+                    user_id=None,
+                    reason="MAX_CONTINUOUS_RUN_EXCEEDED",
+                    system_note=note_text,
+                    actor_type="SYSTEM_GUARD"
                 )
-                results["heartbeats_sent"] += 1
+                if stopped_run:
+                    results["safety_stopped_max_run"] += 1
+                continue
 
+            # -------------------------------------------------------------
+            # 2. Guardrail: Work Schedule End Auto-Stop (Strictly Day Shift)
+            # OPG-01, OPG-07, OPG-08, OPG-19: Use unified stop_generator
+            # -------------------------------------------------------------
+            if auto_stop_on_sched and enforce_schedule:
+                schedules_data = [
+                    {"weekday": s.weekday, "start_time": s.start_time, "end_time": s.end_time, "is_active": s.is_active}
+                    for s in (gen.schedules or [])
+                ]
+                is_allowed, sched_msg = is_within_work_schedule(schedules_data, dt=current_time)
+                if not is_allowed:
+                    note_text = f"Автоматична зупинка за розкладом закінчення робочого дня: {sched_msg}"
+                    stopped_run = await stop_generator(
+                        db=db,
+                        generator_id=gen.id,
+                        user_id=None,
+                        reason="WORK_SCHEDULE_ENDED",
+                        system_note=note_text,
+                        actor_type="SYSTEM_GUARD"
+                    )
+                    if stopped_run:
+                        results["auto_stopped_schedule"] += 1
+                    continue
+
+            # -------------------------------------------------------------
+            # 3. Guardrail: Heartbeat Reminder ('Генератор досі працює?')
+            # OPG-10, OPG-11: Ensure notification log commit
+            # -------------------------------------------------------------
+            if notify_heartbeat and elapsed_hours >= heartbeat_interval_hours:
+                last_hb_q = (
+                    select(NotificationLog.created_at)
+                    .where(
+                        and_(
+                            NotificationLog.event_type == "GENERATOR_HEARTBEAT",
+                            NotificationLog.generator_id == gen.id,
+                            NotificationLog.created_at >= run.start_time
+                        )
+                    )
+                    .order_by(NotificationLog.created_at.desc())
+                    .limit(1)
+                )
+                last_hb_res = await db.execute(last_hb_q)
+                last_hb_time = last_hb_res.scalar()
+
+                cooldown_seconds = max(3600, int((heartbeat_interval_hours - 0.1) * 3600))
+                should_send = (last_hb_time is None) or ((current_time - last_hb_time).total_seconds() >= cooldown_seconds)
+
+                if should_send:
+                    hours_int = int(elapsed_hours)
+                    title = f"⚠️ Генератор {gen.name} досі працює ({hours_int} год)"
+                    body = (
+                        f"Генератор безперервно працює вже {elapsed_hours:.1f} год (з {run.start_time.strftime('%H:%M')}). "
+                        f"Перевірте рівень палива (залишок: ~{gen.fuel_tank_level_l:.1f} л) та чи не забули його зупинити."
+                    )
+
+                    await send_push_notification(
+                        db=db,
+                        title=title,
+                        body=body,
+                        event_type="GENERATOR_HEARTBEAT",
+                        generator_id=gen.id,
+                        facility_id=gen.facility_id,
+                        url="/?tab=tab-dashboard"
+                    )
+                    await db.commit()
+                    results["heartbeats_sent"] += 1
+        except Exception as run_err:
+            print(f"[GUARD] Error processing generator run {getattr(run, 'id', None)}: {run_err}", flush=True)
+            continue
+
+    # Update health monitoring registry on successful check (OPG-18)
+    guard_health_status["last_successful_check"] = now_utc().isoformat()
+    guard_health_status["consecutive_failures"] = 0
+    guard_health_status["last_error"] = None
     return results
 
 
 async def run_operational_guard_loop(interval_seconds: int = 30):
     """
     Background worker that runs every `interval_seconds` to enforce operational safeguards.
+    Monitored via guard_health_status (OPG-18).
     """
     print(f"[GUARD] Operational guard loop started (interval: {interval_seconds}s).", flush=True)
+    guard_health_status["is_running"] = True
     while True:
         try:
             await asyncio.sleep(interval_seconds)
@@ -228,6 +194,9 @@ async def run_operational_guard_loop(interval_seconds: int = 30):
                 await check_operational_guardrails(session)
         except asyncio.CancelledError:
             print("[GUARD] Operational guard loop cancelled (shutdown).", flush=True)
+            guard_health_status["is_running"] = False
             break
         except Exception as e:
+            guard_health_status["consecutive_failures"] += 1
+            guard_health_status["last_error"] = str(e)
             print(f"[GUARD] Error during guard loop check: {e}", flush=True)
