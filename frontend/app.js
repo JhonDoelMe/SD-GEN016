@@ -1015,6 +1015,7 @@ document.querySelectorAll('.nav-item').forEach((tab) => {
 async function loadFacilitiesList() {
   try {
     const facilities = await api('/facilities');
+    cachedReceiptFacilities = facilities || [];
     const sel = document.getElementById('facilitySelect');
     const modalSel = document.getElementById('newGenFacilityId');
     const userFacSel = document.getElementById('newUserFacility');
@@ -3879,11 +3880,16 @@ document.getElementById('facilityCreateForm')?.addEventListener('submit', async 
   const yasno_enabled = document.getElementById('newFacilityYasnoEnabled')?.checked ?? false;
   const yasno_dso_id = parseInt(document.getElementById('newFacilityYasnoDso')?.value || '301');
   const yasno_group = document.getElementById('newFacilityYasnoGroup')?.value || null;
+  const default_fuel_provider = (document.getElementById('newFacilityFuelProvider')?.value || 'wog').toLowerCase();
 
   try {
     const created = await api('/facilities', {
       method: 'POST',
-      body: JSON.stringify({ name, address, description, timezone: 'Europe/Kyiv', yasno_enabled, yasno_dso_id, yasno_group, yasno_region_id: 3 })
+      body: JSON.stringify({
+        name, address, description, timezone: 'Europe/Kyiv',
+        yasno_enabled, yasno_dso_id, yasno_group, yasno_region_id: 3,
+        default_fuel_provider
+      })
     });
     closeModal('modalCreateFacility');
     showToast(`Об'єкт "${created.name}" успішно створено!`, 'success');
@@ -4048,11 +4054,16 @@ document.getElementById('quickEditFacilityForm')?.addEventListener('submit', asy
   const yasno_enabled = document.getElementById('quickEditFacilityYasnoEnabled')?.checked ?? false;
   const yasno_dso_id = parseInt(document.getElementById('quickEditFacilityYasnoDso')?.value || '301');
   const yasno_group = document.getElementById('quickEditFacilityYasnoGroup')?.value || null;
+  const default_fuel_provider = (document.getElementById('quickEditFacilityFuelProvider')?.value || 'wog').toLowerCase();
 
   try {
     const updated = await api(`/facilities/${facId}`, {
       method: 'PUT',
-      body: JSON.stringify({ name, address, description, yasno_enabled, yasno_dso_id, yasno_group, yasno_region_id: 3 })
+      body: JSON.stringify({
+        name, address, description,
+        yasno_enabled, yasno_dso_id, yasno_group, yasno_region_id: 3,
+        default_fuel_provider
+      })
     });
     closeModal('modalQuickEditFacility');
     showToast(`Об'єкт "${updated.name}" успішно оновлено!`, 'success');
