@@ -1,6 +1,6 @@
 # Бізнес-правила та інваріанти системи SD-GEN016
 
-**Версія документа:** 4.6.0 (Dual Fuel Networks WOG/OKKO, Backup Anti-Spurious & Security Hardening)  
+**Версія документа:** 4.7.0 (Dual Fuel Networks WOG/OKKO, Backup Anti-Spurious & Security Hardening)  
 **Дата набрання чинності:** 2 листопада 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 

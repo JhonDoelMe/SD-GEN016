@@ -4,11 +4,11 @@
 
 # SERVICE DESK ДЛЯ ЕКСПЛУАТАЦІЇ БЕНЗИНОВИХ ТА ДИЗЕЛЬНИХ ГЕНЕРАТОРІВ (SD-GEN016)
 
-[![Release](https://img.shields.io/badge/Release-v4.6.0-blue.svg)](https://github.com/JhonDoelMe/SD-GEN016/releases)
+[![Release](https://img.shields.io/badge/Release-v4.7.0-blue.svg)](https://github.com/JhonDoelMe/SD-GEN016/releases)
 [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg)](https://www.sqlalchemy.org/)
-[![Tests](https://img.shields.io/badge/Tests-109%2F109%20Passed%20(100%25)-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-159%2F159%20Passed%20(100%25)-brightgreen.svg)]()
 [![Email](https://img.shields.io/badge/Email-SMTP%20Failover%20(TLS%20Fail--Closed)-blue.svg)]()
 [![PWA](https://img.shields.io/badge/PWA-v4.9.9%20(Android%20%26%20iOS)-purple.svg)]()
 [![Web Push](https://img.shields.io/badge/Web%20Push-VAPID%20%26%20SSRF%20Safe-blue.svg)]()
@@ -155,7 +155,7 @@
 
 ---
 
-## 🛡️ Безпека та захист даних (Security Hardening v4.6.0)
+## 🛡️ Безпека та захист даних (Security Hardening v4.7.0)
 
 - **Аудит та зміцнення Docker-інфраструктури (INF-12 – INF-18, v4.6.0)**:
   - **Непривілейований користувач (`appuser`, UID:GID 10001:10001)**: контейнер виконується з мінімальними правами без доступу до root; файлова система вихідного коду захищена від модифікації; права на запис надані виключно робочим каталогам (`/app/data`, `/app/uploads`, `/app/backups`, `/app/alembic/versions`);
@@ -241,7 +241,7 @@ uvicorn backend.app.main:app --reload --port 8000
 
 ## 🧪 Тестування
 
-Для запуску повного набору тестів (109 тестів, 100% успішне проходження):
+Для запуску повного набору тестів (159 тестів, 100% успішне проходження):
 
 ```bash
 python -m pytest backend/tests -v
@@ -252,6 +252,7 @@ python -m pytest backend/tests -v
 ## 📄 Документація проєкту
 
 Повний комплект документації доступний у директорії [`docs/`](docs/) та релізних нотатках:
+- [`RELEASE_NOTES_v4.7.0.md`](RELEASE_NOTES_v4.7.0.md) — **Транзакційне зміцнення обліку пального та генераторів, крос-модульний аудит, мультигенераторні звіти та 159 тестів (v4.7.0)**;
 - [`RELEASE_NOTES_v4.6.0.md`](RELEASE_NOTES_v4.6.0.md) — **Комплексний аудит безпеки Docker, мережі АЗС WOG/OKKO, RPO/RTO регламент та надійність бекапів (v4.6.0)**;
 - [`RELEASE_NOTES_v4.5.3.md`](RELEASE_NOTES_v4.5.3.md) — Графіки відключень YASNO, окремий експорт аудиту (v4.5.3);
 - [`RELEASE_NOTES_v4.5.1.md`](RELEASE_NOTES_v4.5.1.md) — **Спеціальний реліз безпеки та цілісності даних (v4.5.1)**;

@@ -1,6 +1,6 @@
 # Архітектура системи: Service Desk Генератора (SD-GEN016)
 
-**Версія архітектури:** 4.6.0 (Security Audit Hardened, Dual Retail Fuel Architecture & Infrastructure Security)  
+**Версія архітектури:** 4.7.0 (Security Audit Hardened, Dual Retail Fuel Architecture & Infrastructure Security)  
 **Дата оновлення:** 2 листопада 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 

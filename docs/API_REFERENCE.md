@@ -1,6 +1,6 @@
 # Документація REST API (/api/v1)
 
-**Версія API:** 4.6.0 (Security Audit Hardened, OKKO/WOG Dual Retail, Health & Multi-site Scoped)  
+**Версія API:** 4.7.0 (Security Audit Hardened, OKKO/WOG Dual Retail, Health & Multi-site Scoped)  
 **Дата набрання чинності:** 2 листопада 2026 року  
 
 Усі маршрути API згруповані за доменними модулями та захищені за допомогою JWT Bearer токенів або HTTP-only Cookie.
