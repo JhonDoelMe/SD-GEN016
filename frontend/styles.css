@@ -2836,6 +2836,47 @@ button[disabled] {
   transition: all 0.2s ease;
 }
 
+.yasno-day-switch {
+  display: inline-flex;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+[data-theme="light"] .yasno-day-switch {
+  background: #f1f5f9;
+}
+
+.yasno-day-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.yasno-day-btn:hover {
+  color: var(--text-main);
+}
+
+.yasno-day-btn.active {
+  background: rgba(56, 189, 248, 0.2);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+[data-theme="light"] .yasno-day-btn.active {
+  background: #e0f2fe;
+  color: #0284c7;
+  border-color: #7dd3fc;
+}
+
 .yasno-timeline-bar {
   display: grid;
   grid-template-columns: repeat(24, 1fr);

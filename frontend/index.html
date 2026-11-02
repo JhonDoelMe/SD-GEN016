@@ -38,7 +38,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/frontend/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.12">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.13">
 </head>
 <body>
 
@@ -277,7 +277,7 @@
         <!-- 24-hour visual timeline -->
         <div class="yasno-timeline-container">
           <div class="yasno-timeline-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; font-size: 0.82rem; color: var(--text-muted);">
-            <span>24-годинна шкала на сьогодні:</span>
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;"><span id="yasnoTimelineLabel">24-годинна шкала на сьогодні:</span><div id="yasnoDaySwitch" class="yasno-day-switch" style="display: none;"><button type="button" id="btnYasnoDayToday" class="yasno-day-btn active" onclick="switchYasnoTimelineDay('today')">Сьогодні</button><button type="button" id="btnYasnoDayTomorrow" class="yasno-day-btn" onclick="switchYasnoTimelineDay('tomorrow')">Завтра</button></div></div>
             <span id="yasnoCurrentHourIndicator" style="color: var(--accent-cyan); font-weight: 600;"></span>
           </div>
           <div id="yasnoTimelineBar" class="yasno-timeline-bar">
@@ -3060,7 +3060,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.9.12"></script>
+  <script src="/frontend/app.js?v=4.9.13"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

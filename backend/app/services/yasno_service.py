@@ -1,5 +1,6 @@
 import time
 import datetime
+from datetime import timedelta
 import asyncio
 import logging
 from zoneinfo import ZoneInfo
@@ -54,6 +55,82 @@ def _format_time_left(total_minutes: int) -> str:
     return " ".join(parts)
 
 
+def _extract_date_iso(day_obj: Any) -> Optional[str]:
+    """Extract YYYY-MM-DD from YASNO day object's 'date' field if present."""
+    if not isinstance(day_obj, dict):
+        return None
+    raw_date = day_obj.get("date")
+    if isinstance(raw_date, str) and len(raw_date) >= 10:
+        return raw_date[:10]
+    return None
+
+
+def _is_cached_schedule_current_day(cached_data: Dict[str, Any], today_iso: str) -> bool:
+    """
+    Verify that cached YASNO schedule's 'today' date matches current local date.
+    Returns False if the cache contains a pre-midnight schedule from a previous day.
+    """
+    if not isinstance(cached_data, dict):
+        return False
+    for group_val in cached_data.values():
+        if isinstance(group_val, dict) and "today" in group_val:
+            today_date = _extract_date_iso(group_val.get("today"))
+            if today_date and today_date != today_iso:
+                return False
+            if today_date == today_iso:
+                return True
+    return True
+
+
+def _normalize_slot_type(raw_type: Any) -> str:
+    """Normalize slot type string to 'Definite', 'Probable', or 'NotPlanned'."""
+    val = str(raw_type or "NotPlanned").strip().lower()
+    if val == "definite":
+        return "Definite"
+    if val == "probable":
+        return "Probable"
+    return "NotPlanned"
+
+
+def _build_24h_timeline(
+    slots: List[Dict[str, Any]],
+    current_hour: Optional[int] = None
+) -> List[Dict[str, Any]]:
+    """Construct a 24-hour visual timeline array from YASNO slots."""
+    timeline = []
+    for h in range(24):
+        h_start = h * 60
+        h_end = (h + 1) * 60
+
+        overlapping_types = []
+        for s in (slots or []):
+            if not isinstance(s, dict):
+                continue
+            try:
+                s_start = int(float(s.get("start", 0)))
+                s_end = int(float(s.get("end", 1440)))
+            except (ValueError, TypeError):
+                continue
+            if max(s_start, h_start) < min(s_end, h_end):
+                overlapping_types.append(_normalize_slot_type(s.get("type")))
+
+        if "Definite" in overlapping_types:
+            h_status = "DEFINITE"
+        elif "Probable" in overlapping_types:
+            h_status = "PROBABLE"
+        else:
+            h_status = "NOT_PLANNED"
+
+        timeline.append({
+            "hour": h,
+            "label": f"{h:02d}",
+            "time_range": f"{h:02d}:00 – {h+1:02d}:00",
+            "status": h_status,
+            "is_current": (current_hour == h)
+        })
+    return timeline
+
+
 async def fetch_raw_yasno_schedule(
     region_id: int = 3,
     dso_id: int = 301,
@@ -62,13 +139,15 @@ async def fetch_raw_yasno_schedule(
 ) -> Optional[Dict[str, Any]]:
     """
     Fetch planned outages from YASNO public microservice with in-memory caching.
+    Automatically invalidates pre-midnight cache when the local calendar day changes.
     """
     cache_key = (region_id, dso_id)
     now_ts = time.time()
+    today_kyiv_iso = datetime.datetime.now(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d")
 
     if not force_refresh and cache_key in _YASNO_SCHEDULE_CACHE:
         cached_ts, cached_data = _YASNO_SCHEDULE_CACHE[cache_key]
-        if (now_ts - cached_ts) < CACHE_TTL_SECONDS:
+        if (now_ts - cached_ts) < CACHE_TTL_SECONDS and _is_cached_schedule_current_day(cached_data, today_kyiv_iso):
             return cached_data
 
     url = f"https://app.yasno.ua/api/blackout-service/public/shutdowns/regions/{region_id}/dsos/{dso_id}/planned-outages"
@@ -130,6 +209,8 @@ def get_facility_outage_schedule(
         "message": "Моніторинг графіків вимкнено для цього об'єкта" if not facility.yasno_enabled else "Групу відключень не налаштовано",
         "next_outage": None,
         "timeline_today": [],
+        "timeline_tomorrow": [],
+        "timeline_day": "today",
         "slots_today": [],
         "slots_tomorrow": [],
         "updated_at": None,
@@ -168,10 +249,21 @@ def get_facility_outage_schedule(
         base_response["message"] = f"Групу «{group_str}» не знайдено в поточному розкладі YASNO"
         return base_response
 
-    today_data = group_data.get("today", {})
-    tomorrow_data = group_data.get("tomorrow", {})
-    slots_today = today_data.get("slots", [])
-    slots_tomorrow = tomorrow_data.get("slots", [])
+    today_iso = now_local.strftime("%Y-%m-%d")
+    raw_today = group_data.get("today") if isinstance(group_data.get("today"), dict) else {}
+    raw_tomorrow = group_data.get("tomorrow") if isinstance(group_data.get("tomorrow"), dict) else {}
+
+    raw_tomorrow_date = _extract_date_iso(raw_tomorrow)
+    if raw_tomorrow_date == today_iso:
+        # Midnight rollover: 'tomorrow' in the payload is actually today in local time
+        today_data = raw_tomorrow
+        tomorrow_data = {}
+    else:
+        today_data = raw_today
+        tomorrow_data = raw_tomorrow
+
+    slots_today = today_data.get("slots", []) if isinstance(today_data.get("slots"), list) else []
+    slots_tomorrow = tomorrow_data.get("slots", []) if isinstance(tomorrow_data.get("slots"), list) else []
     updated_on = group_data.get("updatedOn")
 
     base_response["slots_today"] = slots_today
@@ -183,26 +275,30 @@ def get_facility_outage_schedule(
     # 1. Determine current slot and status right now
     current_slot = None
     for s in slots_today:
-        start_m = s.get("start", 0)
-        end_m = s.get("end", 1440)
+        if not isinstance(s, dict):
+            continue
+        start_m = int(float(s.get("start", 0)))
+        end_m = int(float(s.get("end", 1440)))
         if start_m <= cur_minute < end_m:
             current_slot = s
             break
 
-    slot_type = current_slot.get("type", "NotPlanned") if current_slot else "NotPlanned"
+    slot_type = _normalize_slot_type(current_slot.get("type", "NotPlanned")) if current_slot else "NotPlanned"
 
     if slot_type == "Definite":
         base_response["status"] = "DEFINITE"
         base_response["status_label"] = "Відключення 🔴"
         base_response["status_color"] = "danger"
-        remaining = current_slot["end"] - cur_minute
-        base_response["message"] = f"Планове відключення до {_format_minutes(current_slot['end'])} (залишилось {_format_time_left(remaining)})"
+        end_val = int(float(current_slot.get("end", 1440)))
+        remaining = end_val - cur_minute
+        base_response["message"] = f"Планове відключення до {_format_minutes(end_val)} (залишилось {_format_time_left(remaining)})"
     elif slot_type == "Probable":
         base_response["status"] = "PROBABLE"
         base_response["status_label"] = "Можливе відключення 🟡"
         base_response["status_color"] = "warning"
-        remaining = current_slot["end"] - cur_minute
-        base_response["message"] = f"Сіра зона: можливе знеструмлення до {_format_minutes(current_slot['end'])} (залишилось {_format_time_left(remaining)})"
+        end_val = int(float(current_slot.get("end", 1440)))
+        remaining = end_val - cur_minute
+        base_response["message"] = f"Сіра зона: можливе знеструмлення до {_format_minutes(end_val)} (залишилось {_format_time_left(remaining)})"
     else:
         base_response["status"] = "NOT_PLANNED"
         base_response["status_label"] = "Світло є 🟢"
@@ -213,14 +309,17 @@ def get_facility_outage_schedule(
     next_outage = None
     # Check remaining slots today
     for s in slots_today:
-        st_type = s.get("type", "NotPlanned")
-        st_start = s.get("start", 0)
+        if not isinstance(s, dict):
+            continue
+        st_type = _normalize_slot_type(s.get("type", "NotPlanned"))
+        st_start = int(float(s.get("start", 0)))
+        st_end = int(float(s.get("end", 1440)))
         if st_type in ("Definite", "Probable") and st_start > cur_minute:
             mins_until = st_start - cur_minute
             next_outage = {
                 "day": "today",
                 "start": _format_minutes(st_start),
-                "end": _format_minutes(s.get("end", 1440)),
+                "end": _format_minutes(st_end),
                 "type": st_type,
                 "type_label": "Гарантоване" if st_type == "Definite" else "Можливе",
                 "minutes_until": mins_until,
@@ -231,14 +330,17 @@ def get_facility_outage_schedule(
     # If no upcoming outages today, look into tomorrow
     if not next_outage and slots_tomorrow:
         for s in slots_tomorrow:
-            st_type = s.get("type", "NotPlanned")
+            if not isinstance(s, dict):
+                continue
+            st_type = _normalize_slot_type(s.get("type", "NotPlanned"))
             if st_type in ("Definite", "Probable"):
-                st_start = s.get("start", 0)
+                st_start = int(float(s.get("start", 0)))
+                st_end = int(float(s.get("end", 1440)))
                 mins_until = (1440 - cur_minute) + st_start
                 next_outage = {
                     "day": "tomorrow",
                     "start": _format_minutes(st_start),
-                    "end": _format_minutes(s.get("end", 1440)),
+                    "end": _format_minutes(st_end),
                     "type": st_type,
                     "type_label": "Гарантоване" if st_type == "Definite" else "Можливе",
                     "minutes_until": mins_until,
@@ -251,35 +353,16 @@ def get_facility_outage_schedule(
         day_word = "сьогодні" if next_outage["day"] == "today" else "завтра"
         base_response["message"] = f"Світло є. Наступне знеструмлення {day_word} о {next_outage['start']} (через {next_outage['human_until']})"
 
-    # 3. Construct 24-hour visual timeline for today
-    timeline = []
-    for h in range(24):
-        h_start = h * 60
-        h_end = (h + 1) * 60
+    # 3. Construct 24-hour visual timelines for today and tomorrow
+    timeline_today = _build_24h_timeline(slots_today, current_hour=now_local.hour)
+    timeline_tomorrow = _build_24h_timeline(slots_tomorrow, current_hour=None) if slots_tomorrow else []
+    has_tomorrow_outages = any(h["status"] in ("DEFINITE", "PROBABLE") for h in timeline_tomorrow)
 
-        # Overlapping slots for this hour
-        overlapping_types = [
-            s.get("type", "NotPlanned")
-            for s in slots_today
-            if max(s.get("start", 0), h_start) < min(s.get("end", 1440), h_end)
-        ]
+    timeline_day = "tomorrow" if (next_outage and next_outage.get("day") == "tomorrow" and has_tomorrow_outages) else "today"
 
-        if "Definite" in overlapping_types:
-            h_status = "DEFINITE"
-        elif "Probable" in overlapping_types:
-            h_status = "PROBABLE"
-        else:
-            h_status = "NOT_PLANNED"
-
-        timeline.append({
-            "hour": h,
-            "label": f"{h:02d}",
-            "time_range": f"{h:02d}:00 – {h+1:02d}:00",
-            "status": h_status,
-            "is_current": (now_local.hour == h)
-        })
-
-    base_response["timeline_today"] = timeline
+    base_response["timeline_today"] = timeline_today
+    base_response["timeline_tomorrow"] = timeline_tomorrow
+    base_response["timeline_day"] = timeline_day
     return base_response
 
 

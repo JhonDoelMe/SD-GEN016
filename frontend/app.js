@@ -6128,7 +6128,11 @@ window.loadFacilityOutageSchedule = async function(facilityId = null, forceRefre
     }
 
     // 24h Timeline bar
-    const barEl = document.getElementById('yasnoTimelineBar');
+    window._yasnoLastData = data;
+    const hasTomorrowOutages = Array.isArray(data.timeline_tomorrow) && data.timeline_tomorrow.some(h => h.status === 'DEFINITE' || h.status === 'PROBABLE');
+    const defaultDay = data.timeline_day || ((data.next_outage && data.next_outage.day === 'tomorrow' && hasTomorrowOutages) ? 'tomorrow' : 'today');
+    window.renderYasnoTimeline(defaultDay);
+    const barEl = null;
     if (barEl && Array.isArray(data.timeline_today)) {
       barEl.innerHTML = data.timeline_today.map(h => {
         let cls = 'cell-not-planned';
@@ -6201,4 +6205,79 @@ window.refreshYasnoSchedule = async function(force = false) {
   } finally {
     if (btn) btn.classList.remove('spinning');
   }
+};
+
+
+window._parseHhMmToMinutes = function(str) {
+  if (!str || typeof str !== 'string' || !str.includes(':')) return null;
+  const parts = str.split(':').map(Number);
+  if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return null;
+  return parts[0] * 60 + parts[1];
+};
+
+window.switchYasnoTimelineDay = function(day) {
+  window.renderYasnoTimeline(day);
+};
+
+window.renderYasnoTimeline = function(day = 'today') {
+  const data = window._yasnoLastData;
+  if (!data) return;
+
+  const hasTomorrow = Array.isArray(data.timeline_tomorrow) && data.timeline_tomorrow.length === 24;
+  const activeDay = (day === 'tomorrow' && hasTomorrow) ? 'tomorrow' : 'today';
+
+  const labelEl = document.getElementById('yasnoTimelineLabel');
+  if (labelEl) {
+    labelEl.innerText = activeDay === 'tomorrow' ? '24-годинна шкала на завтра:' : '24-годинна шкала на сьогодні:';
+  }
+
+  const switchEl = document.getElementById('yasnoDaySwitch');
+  if (switchEl) {
+    switchEl.style.display = hasTomorrow ? 'inline-flex' : 'none';
+  }
+  const btnToday = document.getElementById('btnYasnoDayToday');
+  const btnTomorrow = document.getElementById('btnYasnoDayTomorrow');
+  if (btnToday) btnToday.classList.toggle('active', activeDay === 'today');
+  if (btnTomorrow) btnTomorrow.classList.toggle('active', activeDay === 'tomorrow');
+
+  const barEl = document.getElementById('yasnoTimelineBar');
+  const sourceTimeline = activeDay === 'tomorrow' ? data.timeline_tomorrow : data.timeline_today;
+  if (!barEl || !Array.isArray(sourceTimeline)) return;
+
+  const hasMarkedHours = sourceTimeline.some(h => h.status === 'DEFINITE' || h.status === 'PROBABLE');
+  let fallbackStartMin = null;
+  let fallbackEndMin = null;
+  let fallbackStatus = null;
+  if (!hasMarkedHours && data.next_outage && data.next_outage.day === activeDay) {
+    fallbackStartMin = window._parseHhMmToMinutes(data.next_outage.start);
+    fallbackEndMin = window._parseHhMmToMinutes(data.next_outage.end);
+    fallbackStatus = (String(data.next_outage.type || '').toLowerCase() === 'probable') ? 'PROBABLE' : 'DEFINITE';
+  }
+
+  barEl.innerHTML = sourceTimeline.map(h => {
+    let status = h.status;
+    if (status === 'NOT_PLANNED' && fallbackStartMin !== null && fallbackEndMin !== null) {
+      const hStart = h.hour * 60;
+      const hEnd = (h.hour + 1) * 60;
+      if (Math.max(fallbackStartMin, hStart) < Math.min(fallbackEndMin, hEnd)) {
+        status = fallbackStatus;
+      }
+    }
+
+    let cls = 'cell-not-planned';
+    let tooltip = `${h.time_range}: Світло є 🟢`;
+    if (status === 'DEFINITE') {
+      cls = 'cell-definite';
+      tooltip = `${h.time_range}: Планове відключення 🔴`;
+    } else if (status === 'PROBABLE') {
+      cls = 'cell-probable';
+      tooltip = `${h.time_range}: Можливе відключення 🟡`;
+    }
+    if (h.is_current) cls += ' cell-current';
+
+    return `<div class="yasno-hour-cell ${cls}" title="${tooltip}">
+      <span class="hour-label">${h.label}</span>
+      ${h.is_current ? '<span class="current-dot"></span>' : ''}
+    </div>`;
+  }).join('');
 };
