@@ -1,8 +1,8 @@
 # Система ролей та дозволів (RBAC)
 **SD-GEN016: Role-Based Access Control Specification**
 
-**Версія документа:** 4.5.3 (Special Security, Multi-site Scoped & Facility Isolation Hardening)  
-**Дата набрання чинності:** 25 жовтня 2026 року  
+**Версія документа:** 4.6.0 (Special Security, Multi-site Scoped & Dual Fuel RBAC Hardening)  
+**Дата набрання чинності:** 2 листопада 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 
 У системі SD-GEN016 реалізовано сувору, багаторівневу модель керування доступом на основі ролей та дозволів (Role-Based Access Control). Усі операції перевіряються на рівні серверних залежностей FastAPI (`require_permission`, `verify_facility_access`, `verify_generator_facility_access`), унеможливлюючи несанкціонований доступ навіть за умови прямої маніпуляції API-запитами.

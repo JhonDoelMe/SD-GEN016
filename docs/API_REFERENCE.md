@@ -1,7 +1,7 @@
 # Документація REST API (/api/v1)
 
-**Версія API:** 4.5.3 (Security Hardened, Universal Email, YASNO Outages & Multi-site Scoped)  
-**Дата набрання чинності:** 26 жовтня 2026 року  
+**Версія API:** 4.6.0 (Security Audit Hardened, OKKO/WOG Dual Retail, Health & Multi-site Scoped)  
+**Дата набрання чинності:** 2 листопада 2026 року  
 
 Усі маршрути API згруповані за доменними модулями та захищені за допомогою JWT Bearer токенів або HTTP-only Cookie.
 Інтерактивна документація OpenAPI/Swagger доступна за адресою: `http://localhost:8000/docs` (або `http://localhost:8000/redoc`).
@@ -125,16 +125,18 @@
   "address": "вул. Хрещатик, 1",
   "description": "Головна виробнича база",
   "timezone": "Europe/Kyiv",
+  "default_fuel_provider": "wog",
   "is_active": true
 }
 ```
+- **Параметр `default_fuel_provider`**: основна мережа АЗС за замовчуванням для об'єкта (`"wog"` або `"okko"`, за замовчуванням `"wog"`).
 
 ### `GET /api/v1/facilities/{facility_id}`
 - **Опис**: Детальна інформація про локацію разом із генераторами та складами ГСМ.
 - **Потрібен дозвіл**: `facilities:view`. Для `operator`/`viewer` дозволено лише якщо `facility_id == user.facility_id` (інакше `403 Forbidden`).
 
 ### `PUT /api/v1/facilities/{facility_id}`
-- **Опис**: Оновлення реквізитів або статусу локації, включаючи налаштування моніторингу графіків відключень YASNO (`yasno_enabled`, `yasno_region_id`, `yasno_dso_id`, `yasno_group`).
+- **Опис**: Оновлення реквізитів або статусу локації, включаючи основну мережу АЗС (`default_fuel_provider`: `"wog"` або `"okko"`) та налаштування моніторингу графіків відключень YASNO (`yasno_enabled`, `yasno_region_id`, `yasno_dso_id`, `yasno_group`).
 - **Потрібен дозвіл**: `facilities:manage`.
 
 ### `GET /api/v1/facilities/{facility_id}/outage-schedule`
@@ -264,9 +266,24 @@
 - **Потрібен дозвіл**: `fuel:configure`.
 
 ### `POST /api/v1/fuel/receipt`
-- **Опис**: Оприбуткування палива на склад ГСМ за чеком або накладною.
+- **Опис**: Оприбуткування палива на склад ГСМ за чеком або накладною із фіксацією постачальника/мережі АЗС.
 - **Запобіжник партії та ціни (Scale & Price Sanity Check)**: Об'єм понад 1000 л або розрахункова ціна поза межами 15–250 грн/л блокуються з кодом `400 Bad Request`, якщо не встановлено `force_confirm: true`.
 - **Потрібен дозвіл**: `fuel:receipt` (тільки для складів власного об'єкта).
+- **Тіло запиту**:
+```json
+{
+  "stock_id": 1,
+  "liters": 100.0,
+  "cost_total": 9290.0,
+  "supplier": "АЗК WOG №12",
+  "invoice_number": "ЧЕК-7812",
+  "driver_name": "Іваненко І.І.",
+  "fuel_provider": "wog",
+  "comment": "Планове оприбуткування",
+  "force_confirm": false
+}
+```
+- **Параметр `fuel_provider`**: `"wog"` або `"okko"` (якщо не вказано, автоматично успадковується `default_fuel_provider` закріпленого об'єкта). Якщо `cost_total` не передано (або 0), вартість розраховується автоматично за актуальною ціною обраної мережі АЗС.
 
 ### `POST /api/v1/fuel/transfer`
 - **Опис**: Внутрішнє переміщення (заправка бака генератора зі складу ГСМ того ж об'єкта).
@@ -413,12 +430,30 @@
 - **Anti-Fingerprinting**: Публічна відповідь надає мінімальну інформацію про платформу без розкриття чутливих патч-версій ядра чи Python.
 
 ### `GET /api/v1/system/fuel-prices`
-- **Опис**: Актуальні роздрібні ціни на пальне (ручні та з парсера АЗК WOG).
+- **Опис**: Актуальні роздрібні ціни на пальне з інтегрованих парсерів мереж АЗК WOG та OKKO.
 - **Потрібен дозвіл**: `fuel:view`.
+- **Відповідь (200 OK)**:
+```json
+{
+  "wog": {
+    "A95": 92.90,
+    "DP": 103.50,
+    "last_updated": "2026-11-02T16:27:11+02:00"
+  },
+  "okko": {
+    "PULLS95": 94.99,
+    "A95": 91.99,
+    "PULLSDIESEL": 105.99,
+    "DIESEL": 102.99,
+    "last_updated": "2026-11-02T16:27:11+02:00"
+  }
+}
+```
 
 ### `POST /api/v1/system/fuel-prices/refresh`
-- **Опис**: Примусова актуалізація середніх цін через парсер WOG.
+- **Опис**: Примусова актуалізація роздрібних цін мереж АЗК WOG та OKKO.
 - **Потрібен дозвіл**: `admin` або `superadmin`.
+- **Query-параметр `provider`** *(опціонально)*: `"wog"` або `"okko"`. Якщо не вказано, оновлюються обидві мережі.
 
 ### `POST /api/v1/system/email/test`
 - **Опис**: Тестова відправка листа для верифікації працездатності поштового шлюзу (Primary, Fallback або Failover).
@@ -473,4 +508,40 @@
 
 ### `POST /api/v1/adjustments`
 - **Опис**: Внесення коригувань лічильників мотогодин чи паливних залишків на підставі актів інвентаризації.
-- **Потрібен дозвіл**: **Виключно SuperAdmin** (`is_superadmin = True`). Валідація обов'язкової причини ($\ge 5$ символів).
+- **Потрібен дозвіл**: **Виключно SuperAdmin** (`is_superadmin = True`). Валідація обов'язкової причини (≥ 5 символів).
+
+---
+
+## 12. Моніторинг працездатності та інфраструктури (/api/health)
+
+### `GET /api/health/liveness`
+- **Опис**: Легковагова перевірка працездатності процесу веб-сервера (Liveness probe). Не виконує запитів до бази даних, відповідає миттєво.
+- **Потрібен дозвіл**: Публічний (без авторизації).
+- **Відповідь (200 OK)**:
+```json
+{
+  "status": "alive"
+}
+```
+
+### `GET /api/health/readiness` (та аліас `GET /api/health`)
+- **Опис**: Глибока перевірка готовності бекенду та пулу з'єднань з PostgreSQL (Readiness probe). Виконує тестовий запит `SELECT 1` до бази даних.
+- **Потрібен дозвіл**: Публічний (без авторизації).
+- **Відповідь (200 OK — система здорова)**:
+```json
+{
+  "status": "healthy",
+  "facility_timezone": "Europe/Kyiv",
+  "primary_domain": "https://sdgen.pp.ua",
+  "database": "connected"
+}
+```
+- **Відповідь (503 Service Unavailable — помилка з'єднання з БД)**:
+```json
+{
+  "status": "unhealthy",
+  "facility_timezone": "Europe/Kyiv",
+  "primary_domain": "https://sdgen.pp.ua",
+  "database": "disconnected"
+}
+```

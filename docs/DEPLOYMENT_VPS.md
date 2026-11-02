@@ -1,7 +1,7 @@
 # Розгортання на VPS та налаштування PWA
 
-**Версія документа:** 4.2.0 (Production Hardened)  
-**Дата набрання чинності:** 24 жовтня 2026 року  
+**Версія документа:** 4.6.0 (Docker Infrastructure Hardened)  
+**Дата набрання чинності:** 2 листопада 2026 року  
 
 Цей документ описує покроковий процес розгортання **SD-GEN016** на окремому віртуальному сервері (VPS) під керуванням Ubuntu/Debian із власним доменом та сертифікатом HTTPS.
 
@@ -40,7 +40,7 @@ nano .env
 ```
 
 Обов'язково заповніть у `.env`:
-- `PRIMARY_DOMAIN`: ваш реальний робочий домен (наприклад `generator-016.pp.ua`).
+- `PRIMARY_DOMAIN`: ваш реальний робочий домен (наприклад `sdgen.pp.ua`).
 - `APP_SECRET_KEY`: згенеруйте надійний 64-символьний ключ (`python -c "import secrets; print(secrets.token_urlsafe(64))"`).
 - `INITIAL_ADMIN_PASSWORD`: надійний пароль первинного адміністратора (буде збережено у БД при першому старті).
 - `POSTGRES_PASSWORD`: надійний пароль для бази даних.
@@ -53,15 +53,15 @@ nano .env
 Для вашого зареєстрованого домену:
 ```bash
 sudo apt install -y certbot
-sudo certbot certonly --standalone -d generator-016.pp.ua
+sudo certbot certonly --standalone -d sdgen.pp.ua
 ```
-Сертифікати будуть збережені в `/etc/letsencrypt/live/generator-016.pp.ua/`.
+Сертифікати будуть збережені в `/etc/letsencrypt/live/sdgen.pp.ua/`.
 
 Скопіюйте сертифікати до `docker/ssl/`:
 ```bash
 mkdir -p docker/ssl
-sudo cp /etc/letsencrypt/live/generator-016.pp.ua/fullchain.pem docker/ssl/fullchain.pem
-sudo cp /etc/letsencrypt/live/generator-016.pp.ua/privkey.pem docker/ssl/privkey.pem
+sudo cp /etc/letsencrypt/live/sdgen.pp.ua/fullchain.pem docker/ssl/fullchain.pem
+sudo cp /etc/letsencrypt/live/sdgen.pp.ua/privkey.pem docker/ssl/privkey.pem
 chmod 600 docker/ssl/privkey.pem
 ```
 
@@ -69,6 +69,14 @@ chmod 600 docker/ssl/privkey.pem
 Якщо ви запускаєте систему на внутрішньому IP або сертифікати Let's Encrypt ще не готові, скрипт контейнера Nginx автоматично згенерує локальний тимчасовий SSL-сертифікат на льоту під час запуску. Система запрацює за протоколом HTTPS без помилок конфігурації Nginx.
 
 ---
+
+
+> [!IMPORTANT]
+> **Права на томи даних (Docker Hardening INF-14 v4.6.0):**
+> Бекенд виконується від імені непривілейованого користувача `appuser` (UID: 10001, GID: 10001). Якщо ви монтуєте хостові каталоги для збереження даних (`./data`, `./uploads`, `./backups`), переконайтеся, що вони доступні для запису користувачу з UID 10001:
+> ```bash
+> sudo chown -R 10001:10001 data uploads backups
+> ```
 
 ## 4. Запуск через Docker Compose
 
