@@ -1,7 +1,7 @@
 import datetime
 from typing import List, Optional
 from fastapi import HTTPException, status
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +20,8 @@ async def get_all_facilities(db: AsyncSession) -> List[FacilityOut]:
     result = await db.execute(
         select(Facility).options(
             selectinload(Facility.generators),
-            selectinload(Facility.fuel_stocks)
+            selectinload(Facility.fuel_stocks),
+            selectinload(Facility.users)
         ).order_by(Facility.id.asc())
     )
     facilities = result.scalars().all()
@@ -34,6 +35,10 @@ async def get_all_facilities(db: AsyncSession) -> List[FacilityOut]:
                 address=f.address,
                 description=f.description,
                 timezone=f.timezone,
+                yasno_enabled=bool(f.yasno_enabled),
+                yasno_region_id=f.yasno_region_id,
+                yasno_dso_id=f.yasno_dso_id,
+                yasno_group=f.yasno_group,
                 created_at=f.created_at,
                 updated_at=f.updated_at,
                 generator_count=len(f.generators),
@@ -47,7 +52,8 @@ async def get_facility_by_id(db: AsyncSession, facility_id: int) -> FacilityOut:
     result = await db.execute(
         select(Facility).options(
             selectinload(Facility.generators),
-            selectinload(Facility.fuel_stocks)
+            selectinload(Facility.fuel_stocks),
+            selectinload(Facility.users)
         ).where(Facility.id == facility_id)
     )
     f = result.scalars().first()
@@ -62,6 +68,10 @@ async def get_facility_by_id(db: AsyncSession, facility_id: int) -> FacilityOut:
         address=f.address,
         description=f.description,
         timezone=f.timezone,
+        yasno_enabled=bool(f.yasno_enabled),
+        yasno_region_id=f.yasno_region_id,
+        yasno_dso_id=f.yasno_dso_id,
+        yasno_group=f.yasno_group,
         created_at=f.created_at,
         updated_at=f.updated_at,
         generator_count=len(f.generators),
@@ -89,6 +99,10 @@ async def create_facility(
         address=data.address.strip() if data.address else None,
         description=data.description.strip() if data.description else None,
         timezone=data.timezone.strip() if data.timezone else "Europe/Kyiv",
+        yasno_enabled=bool(data.yasno_enabled),
+        yasno_region_id=data.yasno_region_id if data.yasno_region_id is not None else 3,
+        yasno_dso_id=data.yasno_dso_id if data.yasno_dso_id is not None else 301,
+        yasno_group=data.yasno_group.strip() if data.yasno_group else None,
         created_at=now,
         updated_at=now,
     )
@@ -151,6 +165,14 @@ async def update_facility(
         facility.description = data.description.strip() if data.description else None
     if data.timezone is not None:
         facility.timezone = data.timezone.strip()
+    if data.yasno_enabled is not None:
+        facility.yasno_enabled = bool(data.yasno_enabled)
+    if data.yasno_region_id is not None:
+        facility.yasno_region_id = data.yasno_region_id
+    if data.yasno_dso_id is not None:
+        facility.yasno_dso_id = data.yasno_dso_id
+    if data.yasno_group is not None:
+        facility.yasno_group = data.yasno_group.strip() if data.yasno_group else None
 
     facility.updated_at = utc_now()
     await db.flush()
@@ -173,6 +195,7 @@ async def delete_facility(
     db: AsyncSession,
     facility_id: int,
     user_id: int,
+    cascade: bool = False,
     ip_address: Optional[str] = None
 ) -> dict:
     count_res = await db.execute(select(func.count(Facility.id)))
@@ -186,7 +209,8 @@ async def delete_facility(
     result = await db.execute(
         select(Facility).options(
             selectinload(Facility.generators),
-            selectinload(Facility.fuel_stocks)
+            selectinload(Facility.fuel_stocks),
+            selectinload(Facility.users)
         ).where(Facility.id == facility_id)
     )
     facility = result.scalars().first()
@@ -203,19 +227,60 @@ async def delete_facility(
                 detail=f"Неможливо видалити об'єкт: генератор '{gen.name}' наразі працює!"
             )
 
-    if facility.generators:
+    if facility.generators and not cascade:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Неможливо видалити об'єкт, на якому зареєстровано {len(facility.generators)} генератор(ів). Спочатку видаліть або перемістіть генератори."
+            detail=f"Неможливо видалити об'єкт, на якому зареєстровано {len(facility.generators)} генератор(ів). "
+                   f"Увімкніть опцію каскадного видалення або спочатку видаліть генератори."
         )
 
     facility_name = facility.name
-    # Delete associated fuel stocks if any
-    for stock in facility.fuel_stocks:
+
+    from backend.app.models.audit import SystemAdjustment
+    from backend.app.models.fuel import FuelReceipt, FuelTransfer
+    from backend.app.models.notification import PushSubscription, NotificationLog
+    from backend.app.models.user import User
+
+    # 1. Unbind users assigned to this facility
+    await db.execute(update(User).where(User.facility_id == facility_id).values(facility_id=None))
+    for u in facility.users:
+        u.facility_id = None
+
+    # 2. Unbind system adjustments and logs assigned to this facility
+    await db.execute(update(SystemAdjustment).where(SystemAdjustment.facility_id == facility_id).values(facility_id=None))
+    await db.execute(update(PushSubscription).where(PushSubscription.facility_id == facility_id).values(facility_id=None))
+    await db.execute(update(NotificationLog).where(NotificationLog.facility_id == facility_id).values(facility_id=None))
+
+    # 3. Cascade delete associated generators if requested
+    if cascade:
+        for gen in list(facility.generators):
+            await db.delete(gen)
+
+    # 4. Delete associated fuel stocks
+    for stock in list(facility.fuel_stocks):
         await db.delete(stock)
+
+    # 5. Unbind any remaining fuel receipts and transfers assigned directly to this facility
+    await db.execute(update(FuelReceipt).where(FuelReceipt.facility_id == facility_id).values(facility_id=None))
+    await db.execute(update(FuelTransfer).where(FuelTransfer.facility_id == facility_id).values(facility_id=None))
 
     await db.delete(facility)
     await db.flush()
+
+    # Clear runtime settings if pointing to deleted facility
+    from backend.app.services.settings_service import get_runtime_setting, set_runtime_setting
+    if get_runtime_setting("default_facility_id") == facility_id:
+        set_runtime_setting("default_facility_id", None)
+        set_runtime_setting("default_generator_id", None)
+        set_runtime_setting("default_fuel_stock_id", None)
+    if get_runtime_setting("email_weekly_facility_id") == facility_id:
+        set_runtime_setting("email_weekly_facility_id", None)
+        set_runtime_setting("email_weekly_generator_id", None)
+    await db.flush()
+
+    deleted_gen_names = [g.name for g in facility.generators] if cascade else []
+    deleted_stock_names = [s.name for s in facility.fuel_stocks]
+    unbound_users_count = len(facility.users)
 
     await log_audit(
         db=db,
@@ -223,7 +288,13 @@ async def delete_facility(
         entity_type="Facility",
         entity_id=str(facility_id),
         user_id=user_id,
-        details={"name": facility_name},
+        details={
+            "name": facility_name,
+            "cascade": cascade,
+            "generators_deleted": deleted_gen_names,
+            "fuel_stocks_deleted": deleted_stock_names,
+            "users_unbound_count": unbound_users_count
+        },
         ip_address=ip_address
     )
     await db.commit()

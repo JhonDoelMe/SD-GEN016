@@ -177,6 +177,7 @@ async def get_notification_settings_data(db: AsyncSession) -> Dict[str, Any]:
         "notify_maintenance": bool(get_runtime_setting("notify_maintenance", True)),
         "max_maintenance_notifications_per_day": int(get_runtime_setting("max_maintenance_notifications_per_day", 2)),
         "notify_critical_faults": bool(get_runtime_setting("notify_critical_faults", True)),
+        "notify_yasno_outages": bool(get_runtime_setting("notify_yasno_outages", True)),
         "vapid_public_key": pub_key,
         "active_subscriptions_count": active_count
     }
@@ -236,6 +237,7 @@ async def send_push_notification(
         "LOW_FUEL": "notify_low_fuel",
         "MAINTENANCE_DUE": "notify_maintenance",
         "CRITICAL_FAULT": "notify_critical_faults",
+        "YASNO_OUTAGE_ALERT": "notify_yasno_outages",
     }
     toggle_key = event_toggle_map.get(event_type)
     if toggle_key and not get_runtime_setting(toggle_key, True):

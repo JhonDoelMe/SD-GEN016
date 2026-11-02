@@ -69,3 +69,17 @@ class User(Base):
     fuel_transfers = relationship("FuelTransfer", back_populates="user")
     audit_logs = relationship("AuditLog", back_populates="user")
     adjustments = relationship("SystemAdjustment", back_populates="user")
+    password_resets = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_resets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+    user = relationship("User", back_populates="password_resets")

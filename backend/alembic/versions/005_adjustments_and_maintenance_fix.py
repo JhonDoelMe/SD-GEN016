@@ -1,15 +1,15 @@
 """Add adjustments facility columns and fix maintenance schedule anomaly
 
-Revision ID: 004_adjustments_and_maintenance_fix
-Revises: 003_multisite
+Revision ID: 005_adjustments_and_maintenance_fix
+Revises: 004_add_yasno_fields
 Create Date: 2026-11-02 14:30:00.000000
 
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = '004_adjustments_and_maintenance_fix'
-down_revision = '003_multisite'
+revision = '005_adjustments_and_maintenance_fix'
+down_revision = '004_add_yasno_fields'
 branch_labels = None
 depends_on = None
 
@@ -23,9 +23,10 @@ def upgrade() -> None:
     if 'facilities' in tables:
         res = conn.execute(sa.text("SELECT COUNT(*) FROM facilities")).scalar()
         if res == 0:
+            bool_val = "FALSE" if conn.dialect.name == "postgresql" else "0"
             conn.execute(sa.text(
-                "INSERT INTO facilities (id, name, address, description, timezone, created_at, updated_at) "
-                "VALUES (1, 'Основний об''єкт', 'Головна локація', 'Базовий об''єкт генератора', 'Europe/Kyiv', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                f"INSERT INTO facilities (name, address, description, timezone, yasno_enabled, yasno_region_id, yasno_dso_id, created_at, updated_at) "
+                f"VALUES ('Основний об''єкт', 'Головна локація', 'Базовий об''єкт генератора', 'Europe/Kyiv', {bool_val}, 3, 301, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
             ))
 
     # 2. Add facility_id and target_name to system_adjustments

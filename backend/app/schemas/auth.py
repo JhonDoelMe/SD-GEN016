@@ -198,4 +198,35 @@ class RoleOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+
+class ForgotPasswordRequest(BaseModel):
+    login_or_email: str = Field(..., min_length=1, max_length=150)
+
+    @field_validator("login_or_email")
+    @classmethod
+    def sanitize_input(cls, v: str) -> str:
+        v = v.strip()
+        if not v or "\x00" in v or any(ord(c) < 32 for c in v):
+            raise ValueError("Некоректний формат логіна або email")
+        return v
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=10, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("token")
+    @classmethod
+    def sanitize_token(cls, v: str) -> str:
+        v = v.strip()
+        if not v or "\x00" in v or " " in v:
+            raise ValueError("Некоректний токен відновлення пароля")
+        return v
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_pwd(cls, v: str) -> str:
+        return validate_password_complexity(v)
+
+
 TokenResponse.model_rebuild()

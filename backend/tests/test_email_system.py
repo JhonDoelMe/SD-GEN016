@@ -1,0 +1,393 @@
+import datetime
+import hashlib
+import smtplib
+from unittest.mock import patch, MagicMock
+import pytest
+from sqlalchemy import select
+
+from backend.app.config import settings
+from backend.app.core.timezone import now_utc
+from backend.app.core.security import create_access_token, clear_all_login_attempts
+from backend.app.models.user import User, PasswordResetToken
+from backend.app.models.notification import NotificationLog
+from backend.app.services.settings_service import update_system_settings, set_runtime_setting
+from backend.app.services.email_service import (
+    send_email_with_failover,
+    send_password_reset_email,
+    send_password_changed_email,
+    send_weekly_digest_email,
+)
+
+
+@pytest.mark.asyncio
+async def test_send_smtp_primary_success(db_session):
+    set_runtime_setting("smtp_enabled", True)
+    set_runtime_setting("smtp_primary_host", "smtp.gmail.com")
+    set_runtime_setting("smtp_primary_user", "test@gmail.com")
+    set_runtime_setting("smtp_primary_password", "app_pass_123")
+
+    with patch("backend.app.services.email_service.send_smtp_message_sync") as mock_send:
+        mock_send.return_value = None
+
+        res = await send_email_with_failover(
+            to_addr="recipient@test.com",
+            subject="Test Subject",
+            html_body="<p>Test Body</p>",
+            db=db_session
+        )
+
+        assert res["status"] == "ok"
+        assert res["provider"] == "primary"
+        assert res["host"] == "smtp.gmail.com"
+        mock_send.assert_called_once()
+
+    # Check notification log
+    logs = (await db_session.execute(select(NotificationLog).where(NotificationLog.event_type == "EMAIL_SENT"))).scalars().all()
+    assert len(logs) >= 1
+    assert "recipient@test.com" in logs[-1].body
+
+
+@pytest.mark.asyncio
+async def test_send_smtp_failover_to_secondary(db_session):
+    set_runtime_setting("smtp_enabled", True)
+    set_runtime_setting("smtp_primary_host", "smtp.gmail.com")
+    set_runtime_setting("smtp_primary_user", "test@gmail.com")
+    set_runtime_setting("smtp_primary_password", "pass1")
+    set_runtime_setting("smtp_fallback_enabled", True)
+    set_runtime_setting("smtp_fallback_host", "smtp.ukr.net")
+    set_runtime_setting("smtp_fallback_user", "test@ukr.net")
+    set_runtime_setting("smtp_fallback_password", "pass2")
+
+    def side_effect(host, *args, **kwargs):
+        if "gmail" in host:
+            raise smtplib.SMTPConnectError(421, b"Connection refused")
+        return None
+
+    with patch("backend.app.services.email_service.send_smtp_message_sync", side_effect=side_effect) as mock_send:
+        res = await send_email_with_failover(
+            to_addr="recipient@test.com",
+            subject="Failover Test",
+            html_body="<p>Failover Body</p>",
+            db=db_session
+        )
+
+        assert res["status"] == "ok"
+        assert res["provider"] == "fallback"
+        assert res["host"] == "smtp.ukr.net"
+        assert "warning" in res
+        assert mock_send.call_count == 2
+
+    # Check failover notification log
+    logs = (await db_session.execute(select(NotificationLog).where(NotificationLog.event_type == "EMAIL_FAILOVER"))).scalars().all()
+    assert len(logs) >= 1
+
+
+@pytest.mark.asyncio
+async def test_send_smtp_both_failed(db_session):
+    set_runtime_setting("smtp_enabled", True)
+    set_runtime_setting("smtp_primary_host", "smtp.gmail.com")
+    set_runtime_setting("smtp_fallback_enabled", True)
+    set_runtime_setting("smtp_fallback_host", "smtp.ukr.net")
+    set_runtime_setting("smtp_fallback_user", "user@ukr.net")
+
+    with patch("backend.app.services.email_service.send_smtp_message_sync", side_effect=smtplib.SMTPException("Network down")):
+        res = await send_email_with_failover(
+            to_addr="fail@test.com",
+            subject="Both Fail",
+            html_body="<p>Fail</p>",
+            db=db_session
+        )
+
+        assert res["status"] == "error"
+        assert "Основний" in res["error"]
+        assert "Резервний" in res["error"]
+
+
+@pytest.mark.asyncio
+async def test_forgot_password_and_token_creation(client, db_session):
+    clear_all_login_attempts()
+    # Update superadmin email
+    user = (await db_session.execute(select(User).where(User.login == settings.INITIAL_ADMIN_LOGIN.strip()))).scalars().first()
+    user.email = "superadmin@maxi-ua.com"
+    await db_session.commit()
+
+    captured_tokens = []
+
+    async def mock_send_reset(to_addr, user_name, reset_token, base_url, db=None):
+        captured_tokens.append(reset_token)
+        return {"status": "ok", "provider": "primary"}
+
+    with patch("backend.app.api.v1.auth.send_password_reset_email", side_effect=mock_send_reset):
+        # 1. Request password reset via email
+        res = await client.post("/api/v1/auth/forgot-password", json={"login_or_email": "superadmin@maxi-ua.com"})
+        assert res.status_code == 200
+        assert "інструкції для відновлення" in res.json()["message"]
+        assert len(captured_tokens) == 1
+
+        raw_token = captured_tokens[0]
+        token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+        # Check DB token
+        t_row = (await db_session.execute(select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash))).scalars().first()
+        assert t_row is not None
+        assert t_row.user_id == user.id
+        assert t_row.used is False
+        assert t_row.expires_at > now_utc()
+
+        # 2. Test rate limiting: max 3 attempts per window
+        await client.post("/api/v1/auth/forgot-password", json={"login_or_email": "superadmin@maxi-ua.com"})
+        await client.post("/api/v1/auth/forgot-password", json={"login_or_email": "superadmin@maxi-ua.com"})
+        res_limit = await client.post("/api/v1/auth/forgot-password", json={"login_or_email": "superadmin@maxi-ua.com"})
+        assert res_limit.status_code == 429
+        assert "Retry-After" in res_limit.headers
+
+
+@pytest.mark.asyncio
+async def test_reset_password_flow_and_session_invalidation(client, db_session):
+    clear_all_login_attempts()
+    user = (await db_session.execute(select(User).where(User.login == settings.INITIAL_ADMIN_LOGIN.strip()))).scalars().first()
+    user.email = "admin2@maxi-ua.com"
+    await db_session.commit()
+
+    # Create old token and verify it works
+    old_access_token = create_access_token(
+        {"sub": str(user.id), "login": user.login},
+        password_hash=user.password_hash
+    )
+    res_me = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {old_access_token}"})
+    assert res_me.status_code == 200
+
+    captured_tokens = []
+
+    async def mock_send_reset(to_addr, user_name, reset_token, base_url, db=None):
+        captured_tokens.append(reset_token)
+        return {"status": "ok"}
+
+    with patch("backend.app.api.v1.auth.send_password_reset_email", side_effect=mock_send_reset):
+        await client.post("/api/v1/auth/forgot-password", json={"login_or_email": "admin2@maxi-ua.com"})
+        assert len(captured_tokens) == 1
+        raw_token = captured_tokens[0]
+
+    # Reset password with valid token
+    new_pass = "BrandNewSecurePass2026!"
+    with patch("backend.app.api.v1.auth.send_password_changed_email") as mock_changed:
+        mock_changed.return_value = {"status": "ok"}
+        res_reset = await client.post("/api/v1/auth/reset-password", json={
+            "token": raw_token,
+            "new_password": new_pass
+        })
+        assert res_reset.status_code == 200
+        assert "успішно змінено" in res_reset.json()["message"]
+        mock_changed.assert_called_once()
+
+    # Verify old session token is now INVALID (session invalidation invariant)
+    res_me_after = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {old_access_token}"})
+    assert res_me_after.status_code == 401
+
+    # Verify token cannot be reused
+    res_reuse = await client.post("/api/v1/auth/reset-password", json={
+        "token": raw_token,
+        "new_password": "AnotherPass2026!"
+    })
+    assert res_reuse.status_code == 400
+
+    # Verify login with new password succeeds
+    res_login = await client.post("/api/v1/auth/login", json={
+        "login": user.login,
+        "password": new_pass
+    })
+    assert res_login.status_code == 200
+    assert "access_token" in res_login.json()
+
+
+@pytest.mark.asyncio
+async def test_change_password_triggers_email(client, db_session, superadmin_auth):
+    clear_all_login_attempts()
+    user = (await db_session.execute(select(User).where(User.login == settings.INITIAL_ADMIN_LOGIN.strip()))).scalars().first()
+    user.email = "security_notice@maxi-ua.com"
+    await db_session.commit()
+
+    with patch("backend.app.api.v1.auth.send_password_changed_email") as mock_email:
+        mock_email.return_value = {"status": "ok"}
+        res = await client.post(
+            "/api/v1/auth/change-password",
+            headers=superadmin_auth,
+            json={
+                "current_password": settings.INITIAL_ADMIN_PASSWORD,
+                "new_password": "NewChangedPassword2026!"
+            }
+        )
+        assert res.status_code == 200
+        mock_email.assert_called_once()
+        assert mock_email.call_args[1]["to_addr"] == "security_notice@maxi-ua.com"
+
+
+@pytest.mark.asyncio
+async def test_admin_smtp_settings_masking_and_updating(client, superadmin_auth, db_session):
+    # Set a real password in DB
+    await update_system_settings(db_session, {
+        "smtp_primary_password": "super_secret_gmail_pass",
+        "smtp_fallback_password": "super_secret_ukrnet_pass"
+    })
+
+    # GET /settings must mask passwords with ********
+    res_get = await client.get("/api/v1/system/settings", headers=superadmin_auth)
+    assert res_get.status_code == 200
+    data = res_get.json()
+    assert data["settings"]["smtp_primary_password"] == "********"
+    assert data["settings"]["smtp_fallback_password"] == "********"
+
+    # PUT /settings with ******** must preserve the actual underlying passwords
+    res_put = await client.put(
+        "/api/v1/system/settings",
+        headers=superadmin_auth,
+        json={
+            "smtp_primary_host": "smtp.gmail.com",
+            "smtp_primary_password": "********",
+            "smtp_fallback_password": "********"
+        }
+    )
+    assert res_put.status_code == 200
+    put_data = res_put.json()
+    assert put_data["settings"]["smtp_primary_password"] == "********"
+
+    # Verify actual password in DB was NOT changed to ********
+    from backend.app.services.settings_service import get_runtime_setting
+    assert get_runtime_setting("smtp_primary_password") == "super_secret_gmail_pass"
+    assert get_runtime_setting("smtp_fallback_password") == "super_secret_ukrnet_pass"
+
+
+@pytest.mark.asyncio
+async def test_admin_email_test_endpoint(client, superadmin_auth):
+    with patch("backend.app.services.email_service.send_email_with_failover") as mock_failover:
+        mock_failover.return_value = {"status": "ok", "provider": "primary", "host": "smtp.gmail.com"}
+
+        res = await client.post(
+            "/api/v1/system/email/test",
+            headers=superadmin_auth,
+            json={"recipient": "test_admin@maxi-ua.com", "provider": "primary"}
+        )
+        assert res.status_code == 200
+        assert res.json()["status"] == "ok"
+        mock_failover.assert_called_once()
+        assert mock_failover.call_args[1]["force_provider"] == "primary"
+
+
+@pytest.mark.asyncio
+async def test_admin_weekly_digest_manual_send(client, superadmin_auth):
+    with patch("backend.app.services.email_service.send_weekly_digest_email") as mock_digest:
+        mock_digest.return_value = {"status": "ok", "provider": "primary"}
+
+        res = await client.post(
+            "/api/v1/system/email/weekly-digest/send?recipient=boss@maxi-ua.com",
+            headers=superadmin_auth
+        )
+        assert res.status_code == 200
+        assert "успішно надіслано" in res.json()["message"]
+        mock_digest.assert_called_once()
+        assert mock_digest.call_args[1]["recipients"] == ["boss@maxi-ua.com"]
+        assert isinstance(mock_digest.call_args[1]["excel_bytes"], bytes)
+
+
+@pytest.mark.asyncio
+async def test_admin_email_test_endpoint_with_custom_config_and_hints(client, superadmin_auth):
+    # Test that on-the-fly config parameters are passed to send_email_with_failover
+    with patch("backend.app.services.email_service.send_email_with_failover") as mock_failover:
+        mock_failover.return_value = {
+            "status": "ok",
+            "provider": "primary",
+            "host": "custom.smtp.gmail.com",
+            "port": 587,
+            "message": "Лист успішно надіслано!"
+        }
+
+        res = await client.post(
+            "/api/v1/system/email/test",
+            headers=superadmin_auth,
+            json={
+                "recipient": "test_admin@maxi-ua.com",
+                "provider": "primary",
+                "smtp_primary_host": "custom.smtp.gmail.com",
+                "smtp_primary_user": "custom@gmail.com",
+                "smtp_primary_password": "custompassword123"
+            }
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "ok"
+        assert "duration_ms" in data
+        assert "tested_at" in data
+        mock_failover.assert_called_once()
+        cfg = mock_failover.call_args[1]["config_override"]
+        assert cfg["smtp_primary_host"] == "custom.smtp.gmail.com"
+        assert cfg["smtp_primary_user"] == "custom@gmail.com"
+        assert cfg["smtp_primary_password"] == "custompassword123"
+
+
+@pytest.mark.asyncio
+async def test_settings_update_does_not_wipe_password_with_empty_string(client, superadmin_auth, db_session):
+    # 1. Store initial password
+    await update_system_settings(db_session, {
+        "smtp_primary_password": "preserved_gmail_pass",
+        "smtp_fallback_password": "preserved_ukr_pass"
+    })
+
+    # 2. Update settings passing empty string for passwords
+    res = await client.put(
+        "/api/v1/system/settings",
+        headers=superadmin_auth,
+        json={
+            "organization_name": "MAXI-UA UPDATED",
+            "smtp_primary_password": "",
+            "smtp_fallback_password": ""
+        }
+    )
+    assert res.status_code == 200
+
+    # 3. Verify original passwords remain intact
+    from backend.app.services.settings_service import get_runtime_setting
+    assert get_runtime_setting("smtp_primary_password") == "preserved_gmail_pass"
+    assert get_runtime_setting("smtp_fallback_password") == "preserved_ukr_pass"
+
+
+@pytest.mark.asyncio
+async def test_weekly_digest_persistent_deduplication_across_container_restarts(db_session):
+    import datetime
+    from zoneinfo import ZoneInfo
+    from unittest.mock import AsyncMock
+    import backend.app.services.operational_guard_service as guard_svc
+    from backend.app.services.settings_service import update_system_settings, set_runtime_setting, get_runtime_setting
+
+    # Suppose today is Monday 2026-10-26 10:30 Kyiv (weekday=0), scheduled at 08:00
+    fake_now = datetime.datetime(2026, 10, 26, 10, 30, tzinfo=ZoneInfo("Europe/Kyiv"))
+
+    await update_system_settings(db_session, {
+        "smtp_enabled": True,
+        "email_weekly_report_enabled": True,
+        "email_weekly_recipients": "director@maxi-ua.com, engineer@maxi-ua.com",
+        "email_weekly_send_day": 0,
+        "email_weekly_send_time": "08:00",
+        "last_weekly_digest_date": ""
+    })
+    guard_svc._LAST_WEEKLY_DIGEST_DATE = None
+
+    with patch("backend.app.services.operational_guard_service.now_facility", return_value=fake_now):
+        with patch("backend.app.services.report_service.generate_excel_report", new=AsyncMock(return_value=b"FAKE_XLSX")):
+            with patch(
+                "backend.app.services.email_service.send_weekly_digest_email",
+                new=AsyncMock(return_value={"status": "ok", "provider": "primary"})
+            ) as mock_send:
+                # 1. First execution at 10:30 -> sends the weekly digest and persists state in DB
+                sent1 = await guard_svc.check_and_send_weekly_digest(db_session)
+                assert sent1 is True
+                assert mock_send.call_count == 1
+                assert get_runtime_setting("last_weekly_digest_date") == "2026-10-26"
+
+                # 2. Simulate Docker container restart (wipe in-memory variable AND in-memory runtime cache)
+                guard_svc._LAST_WEEKLY_DIGEST_DATE = None
+                set_runtime_setting("last_weekly_digest_date", "")
+
+                # 3. Guard runs again after container restart at 14:00 on the same Monday -> MUST NOT re-send!
+                sent2 = await guard_svc.check_and_send_weekly_digest(db_session)
+                assert sent2 is False
+                assert mock_send.call_count == 1

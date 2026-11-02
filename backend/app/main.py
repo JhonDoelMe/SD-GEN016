@@ -12,8 +12,10 @@ from backend.app.config import settings
 from backend.app.database import engine, Base, AsyncSessionLocal
 from backend.app.models import *  # noqa: F401, F403 Ensure all models loaded
 from backend.app.services.init_service import seed_initial_data
+from backend.app.services.audit_service import sanitize_historical_audit_logs
 from backend.app.services.backup_service import run_backup_scheduler
 from backend.app.services.operational_guard_service import run_operational_guard_loop
+from backend.app.services.yasno_service import run_yasno_checker_loop
 from backend.app.api.v1 import api_v1_router
 
 
@@ -29,33 +31,110 @@ def ensure_schema_updates(sync_conn):
     tables = inspector.get_table_names()
 
     # 1. Facilities default record
+    default_facility_id = None
     if "facilities" in tables:
+        fac_cols = [c["name"] for c in inspector.get_columns("facilities")]
+        bool_def = "FALSE" if sync_conn.dialect.name == "postgresql" else "0"
+        if "yasno_enabled" not in fac_cols:
+            sync_conn.execute(text(f"ALTER TABLE facilities ADD COLUMN yasno_enabled BOOLEAN DEFAULT {bool_def}"))
+        if "yasno_region_id" not in fac_cols:
+            sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN yasno_region_id INTEGER DEFAULT 3"))
+        if "yasno_dso_id" not in fac_cols:
+            sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN yasno_dso_id INTEGER DEFAULT 301"))
+        if "yasno_group" not in fac_cols:
+            sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN yasno_group VARCHAR(10)"))
+
         res = sync_conn.execute(text("SELECT COUNT(*) FROM facilities")).scalar()
         if res == 0:
-            sync_conn.execute(text(
-                "INSERT INTO facilities (id, name, address, description, timezone, created_at, updated_at) "
-                "VALUES (1, 'Основний об''єкт', 'Головна локація', 'Базовий об''єкт генератора', 'Europe/Kyiv', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-            ))
+            sync_conn.execute(
+                text(
+                    "INSERT INTO facilities (name, address, description, timezone, yasno_enabled, yasno_region_id, yasno_dso_id, yasno_group, created_at, updated_at) "
+                    "VALUES (:name, :address, :desc, :tz, :yasno_enabled, :region_id, :dso_id, :group, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ),
+                {
+                    "name": "Основний об'єкт",
+                    "address": "Головна локація",
+                    "desc": "Базовий об'єкт генератора",
+                    "tz": "Europe/Kyiv",
+                    "yasno_enabled": False,
+                    "region_id": 3,
+                    "dso_id": 301,
+                    "group": None,
+                }
+            )
+        default_facility_id = sync_conn.execute(text("SELECT id FROM facilities ORDER BY id ASC LIMIT 1")).scalar()
 
-    # 2. Synchronize sequences for PostgreSQL to avoid duplicate key errors on auto-incrementing IDs (MAIN-04)
+    # 3. Add facility_id to related tables (strictly whitelisted identifiers)
+    allowed_facility_tables = ("generators", "fuel_stocks", "fuel_receipts", "fuel_transfers", "users", "system_adjustments")
+    for table_name in allowed_facility_tables:
+        if table_name in tables:
+            cols = [c["name"] for c in inspector.get_columns(table_name)]
+            if "facility_id" not in cols:
+                sync_conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN facility_id INTEGER REFERENCES facilities(id) ON DELETE SET NULL"))
+            # Only associate generators & fuel_stocks if facility_id is null and an existing facility exists
+            if default_facility_id is not None and table_name in ("generators", "fuel_stocks"):
+                sync_conn.execute(
+                    text(f"UPDATE {table_name} SET facility_id = :fid WHERE facility_id IS NULL"),
+                    {"fid": default_facility_id}
+                )
+
+    # Ensure PostgreSQL constraints have ON DELETE SET NULL for foreign keys referencing facilities(id)
+    if sync_conn.dialect.name == "postgresql":
+        fk_set_null_tables = ("system_adjustments", "fuel_receipts", "fuel_transfers", "users", "push_subscriptions", "notification_logs")
+        for tbl in fk_set_null_tables:
+            if tbl in tables:
+                try:
+                    with sync_conn.begin_nested():
+                        sync_conn.execute(text(f"""
+                            DO $$
+                            BEGIN
+                                IF EXISTS (
+                                    SELECT 1 FROM information_schema.table_constraints 
+                                    WHERE constraint_name = '{tbl}_facility_id_fkey' 
+                                    AND table_name = '{tbl}'
+                                ) THEN
+                                    ALTER TABLE {tbl} DROP CONSTRAINT {tbl}_facility_id_fkey;
+                                    ALTER TABLE {tbl} ADD CONSTRAINT {tbl}_facility_id_fkey 
+                                        FOREIGN KEY (facility_id) REFERENCES facilities(id) ON DELETE SET NULL;
+                                END IF;
+                            END $$;
+                        """))
+                except Exception as ex:
+                    print(f"[DB] FK upgrade notice for {tbl}: {ex}", flush=True)
+
+    if "system_adjustments" in tables:
+        cols = [c["name"] for c in inspector.get_columns("system_adjustments")]
+        if "target_name" not in cols:
+            sync_conn.execute(text("ALTER TABLE system_adjustments ADD COLUMN target_name VARCHAR(200)"))
+
+    # 4. Fix maintenance schedule anomaly: interval=300, next_due=535 -> next_due=300, last_performed=0
+    if "maintenance_schedules" in tables:
+        sync_conn.execute(text(
+            "UPDATE maintenance_schedules SET last_performed_hours = 0.0, next_due_hours = interval_hours "
+            "WHERE (last_performed_hours = 235.0 AND next_due_hours = 535.0) "
+            "OR (last_performed_hours = 235.0 AND next_due_hours > 300.0)"
+        ))
+
+    # 5. Synchronize sequences for PostgreSQL to avoid duplicate key errors on auto-incrementing IDs
     if sync_conn.dialect.name == "postgresql":
         serial_tables = (
             "facilities", "generators", "fuel_stocks", "fuel_receipts",
             "fuel_transfers", "users", "roles", "permissions",
             "maintenance_schedules", "maintenance_records",
             "generator_runs", "faults", "audit_logs", "system_adjustments",
-            "push_subscriptions", "notification_logs"
+            "push_subscriptions", "notification_logs", "password_resets"
         )
         for tbl in serial_tables:
             if tbl in tables:
                 try:
-                    sync_conn.execute(text(f"""
-                        SELECT setval(
-                            pg_get_serial_sequence('{tbl}', 'id'),
-                            COALESCE((SELECT MAX(id) FROM {tbl}), 1),
-                            (SELECT MAX(id) IS NOT NULL FROM {tbl})
-                        ) WHERE pg_get_serial_sequence('{tbl}', 'id') IS NOT NULL;
-                    """))
+                    with sync_conn.begin_nested():
+                        sync_conn.execute(text(f"""
+                            SELECT setval(
+                                pg_get_serial_sequence('{tbl}', 'id'),
+                                COALESCE((SELECT MAX(id) FROM {tbl}), 1),
+                                (SELECT MAX(id) IS NOT NULL FROM {tbl})
+                            ) WHERE pg_get_serial_sequence('{tbl}', 'id') IS NOT NULL;
+                        """))
                 except Exception as ex:
                     print(f"[DB] Sequence sync notice for {tbl}: {ex}", flush=True)
 
@@ -77,8 +156,25 @@ async def lifespan(app: FastAPI):
         print(f"[AUTH] SuperAdmin user '{settings.INITIAL_ADMIN_LOGIN}' successfully ensured. Ready for login.", flush=True)
     except Exception as e:
         import traceback
-        print(f"[ERROR] Failed to seed initial data: {e}")
+        print(f"[ERROR] Failed to seed initial data: {e}", flush=True)
         traceback.print_exc()
+        if str(getattr(settings, "APP_ENV", "")).strip().lower() in ("production", "prod"):
+            raise RuntimeError(f"CRITICAL: Initial data seeding failed in production: {e}") from e
+
+    # 2.1. Mandatory historical audit log sanitization (fail-closed)
+    try:
+        async with AsyncSessionLocal() as session:
+            sanitized_count = await sanitize_historical_audit_logs(session)
+            if sanitized_count > 0:
+                print(f"[AUDIT] Sanitized {sanitized_count} historical audit records containing plaintext secrets.", flush=True)
+    except Exception as e:
+        import traceback
+        print(f"[CRITICAL] Historical audit log sanitization failed: {e}", flush=True)
+        traceback.print_exc()
+        raise RuntimeError(
+            f"CRITICAL SECURITY FAILURE: Historical audit log sanitization failed ({e}). "
+            "Application startup aborted to prevent unredacted secret exposure."
+        ) from e
 
     # 3. Ensure uploads and backups directories exist
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
@@ -87,20 +183,22 @@ async def lifespan(app: FastAPI):
     # 4. Start background backup scheduler
     backup_scheduler_task = asyncio.create_task(run_backup_scheduler())
     guard_worker_task = asyncio.create_task(run_operational_guard_loop())
+    yasno_worker_task = asyncio.create_task(run_yasno_checker_loop())
 
     yield
 
     # Shutdown: Graceful cancellation and await background tasks before disposing engine (MAIN-05)
     backup_scheduler_task.cancel()
     guard_worker_task.cancel()
-    await asyncio.gather(backup_scheduler_task, guard_worker_task, return_exceptions=True)
+    yasno_worker_task.cancel()
+    await asyncio.gather(backup_scheduler_task, guard_worker_task, yasno_worker_task, return_exceptions=True)
     await engine.dispose()
 
 
 app = FastAPI(
-    title="Service Desk Бензинового Генератора (SD-GEN016)",
+    title="Service Desk Генератора (SD-GEN016)",
     description="Система оперативного обліку фактичної експлуатації бензинового генератора",
-    version="4.3.0",
+    version="4.5.3",
     lifespan=lifespan
 )
 
@@ -194,7 +292,7 @@ if FRONTEND_DIR.exists():
     async def get_service_worker():
         sw_path = FRONTEND_DIR / "sw.js"
         if sw_path.exists():
-            return FileResponse(sw_path, media_type="application/javascript")
+            return FileResponse(sw_path, media_type="application/javascript", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
         return JSONResponse({"error": "Service worker not found"}, status_code=404)
 
     @app.get("/robots.txt", include_in_schema=False)

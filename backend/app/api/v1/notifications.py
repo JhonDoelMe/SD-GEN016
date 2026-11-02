@@ -1,7 +1,7 @@
 import json
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
@@ -12,6 +12,7 @@ from backend.app.api.deps import (
     is_user_admin_or_super,
     verify_facility_access,
     verify_generator_facility_access,
+    get_client_ip,
 )
 from backend.app.models.user import User
 from backend.app.models.notification import NotificationLog, PushSubscription
@@ -165,6 +166,43 @@ async def get_notification_logs(
     res = await db.execute(q)
     logs = res.scalars().all()
     return logs
+
+
+@router.delete("/logs")
+async def clear_notification_logs(
+    facility_id: Optional[int] = None,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("notifications:configure"))
+):
+    """Очищення історії надісланих сповіщень (для адміністратора)."""
+    if not is_user_admin_or_super(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Очищення журналу сповіщень дозволено лише Адміністратору"
+        )
+
+    stmt = delete(NotificationLog)
+    if not current_user.is_superadmin and current_user.facility_id:
+        stmt = stmt.where(NotificationLog.facility_id == current_user.facility_id)
+    elif facility_id is not None:
+        stmt = stmt.where(NotificationLog.facility_id == facility_id)
+
+    res = await db.execute(stmt)
+    await db.commit()
+
+    client_ip = get_client_ip(request) if request else None
+    await log_audit(
+        db=db,
+        action="NOTIFICATION_LOGS_CLEARED",
+        entity_type="NotificationLog",
+        entity_id=None,
+        details=f"Користувач {current_user.login} очистив журнал сповіщень. Видалено записів: {res.rowcount}",
+        user_id=current_user.id,
+        ip_address=client_ip
+    )
+
+    return {"success": True, "status": "success", "deleted_count": res.rowcount}
 
 
 @router.post("/check-maintenance/{generator_id}")

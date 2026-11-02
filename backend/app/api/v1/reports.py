@@ -12,24 +12,10 @@ from backend.app.api.deps import (
     verify_generator_facility_access,
 )
 from backend.app.services.report_service import (
-    generate_operational_report, export_report_to_csv, generate_excel_report
+    generate_operational_report, export_report_to_csv, generate_excel_report, parse_report_dt
 )
 
 router = APIRouter(prefix="/reports", tags=["Звітність"])
-
-
-def parse_report_dt(dt_str: Optional[str], is_end: bool = False) -> Optional[datetime.datetime]:
-    if not dt_str:
-        return None
-    try:
-        dt = datetime.datetime.fromisoformat(dt_str)
-    except ValueError:
-        return None
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
-    if is_end and len(dt_str) <= 10:
-        dt = dt.replace(hour=23, minute=59, second=59, microsecond=999999)
-    return dt
 
 
 @router.get("/summary", response_model=OperationalReportOut)

@@ -250,3 +250,43 @@ async def test_push_notifications_routing_and_vapid_error_handling(client, super
     # Verify subscription is now marked inactive
     await db_session.refresh(sub)
     assert sub.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_clear_notification_logs(
+    client: AsyncClient,
+    superadmin_auth: dict,
+    operator_auth: dict,
+    viewer_auth: dict,
+    db_session: AsyncSession
+):
+    # Seed a notification log
+    log = NotificationLog(
+        facility_id=1,
+        title='Test notification',
+        body='Test body',
+        event_type='SYSTEM_ALERT',
+        recipients_count=2,
+        success_count=2
+    )
+    db_session.add(log)
+    await db_session.commit()
+
+    # 1. Non-admin forbidden
+    op_res = await client.delete('/api/v1/notifications/logs', headers=operator_auth)
+    assert op_res.status_code == 403
+
+    view_res = await client.delete('/api/v1/notifications/logs', headers=viewer_auth)
+    assert view_res.status_code == 403
+
+    # 2. Admin/Superadmin can clear
+    del_res = await client.delete('/api/v1/notifications/logs', headers=superadmin_auth)
+    assert del_res.status_code == 200
+    del_data = del_res.json()
+    assert del_data['success'] is True
+    assert del_data['deleted_count'] >= 1
+
+    # 3. Logs should now be empty for facility 1
+    logs_res = await client.get('/api/v1/notifications/logs?facility_id=1', headers=superadmin_auth)
+    assert logs_res.status_code == 200
+    assert len(logs_res.json()) == 0
