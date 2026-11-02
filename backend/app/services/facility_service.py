@@ -258,7 +258,17 @@ async def delete_facility(
 
     # 3. Cascade delete associated generators if requested
     if cascade:
+        from sqlalchemy import delete as sql_delete
+        from backend.app.models.generator import GeneratorRun, GeneratorSchedule
+        from backend.app.models.maintenance import MaintenanceRecord, MaintenanceSchedule
+        from backend.app.models.fault import Fault
         for gen in list(facility.generators):
+            await db.execute(sql_delete(GeneratorRun).where(GeneratorRun.generator_id == gen.id))
+            await db.execute(sql_delete(GeneratorSchedule).where(GeneratorSchedule.generator_id == gen.id))
+            await db.execute(sql_delete(MaintenanceRecord).where(MaintenanceRecord.generator_id == gen.id))
+            await db.execute(sql_delete(MaintenanceSchedule).where(MaintenanceSchedule.generator_id == gen.id))
+            await db.execute(sql_delete(Fault).where(Fault.generator_id == gen.id))
+            await db.execute(sql_delete(FuelTransfer).where(FuelTransfer.generator_id == gen.id))
             await db.delete(gen)
 
     # 4. Delete associated fuel stocks

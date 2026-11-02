@@ -34,9 +34,13 @@ async def test_maintenance_scheduled_vs_intermediate(client, superadmin_auth, op
     assert s_data["hours_remaining"] == 300.0
 
     # 1. Perform Intermediate maintenance at 1370 hours (e.g. spark plug replacement)
-    # First, simulate generator running until 1370
+    # First, simulate generator running until 1370 (with explicit end_fuel_level_l since 170h exceeds single tank)
     await client.post("/api/v1/generator/start", headers=operator_auth, json={})
-    await client.post("/api/v1/generator/stop", headers=operator_auth, json={"end_hours": 1370.0, "force_confirm": True})
+    await client.post(
+        "/api/v1/generator/stop",
+        headers=operator_auth,
+        json={"end_hours": 1370.0, "end_fuel_level_l": 10.0, "force_confirm": True}
+    )
 
     inter_res = await client.post(
         "/api/v1/maintenance/record",
@@ -65,7 +69,7 @@ async def test_maintenance_scheduled_vs_intermediate(client, superadmin_auth, op
     stop_overdue = await client.post(
         "/api/v1/generator/stop",
         headers=operator_auth,
-        json={"end_hours": 1505.0, "force_confirm": True}
+        json={"end_hours": 1505.0, "end_fuel_level_l": 5.0, "force_confirm": True}
     )
     assert stop_overdue.status_code == 200
 

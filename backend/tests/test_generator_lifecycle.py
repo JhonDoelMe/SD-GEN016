@@ -192,7 +192,7 @@ async def test_generator_manual_run_entry(client, superadmin_auth, operator_auth
 
 @pytest.mark.asyncio
 async def test_generator_fuel_deficit_goes_negative(client, superadmin_auth, operator_auth):
-    """Перевірка того, що при перевитраті палива бак іде в мінус, а не обрізається до 0.0"""
+    """GEN-04 (T-10): Перевірка того, що при перевитраті палива вхід у від'ємний залишок бака заборонено, а стан генератора не пошкоджується"""
     # 1. Fetch generator
     gen_res = await client.get("/api/v1/generator", headers=superadmin_auth)
     assert gen_res.status_code == 200
@@ -211,7 +211,7 @@ async def test_generator_fuel_deficit_goes_negative(client, superadmin_auth, ope
         }
     )
 
-    # 2. Add manual run consuming 10.0 L (deficit: 5.0 - 10.0 = -5.0 L)
+    # 2. Attempt manual run consuming 10.0 L (deficit: 5.0 - 10.0 = -5.0 L -> must be rejected per GEN-04)
     import datetime
     now = datetime.datetime.now(datetime.timezone.utc)
     start_time = (now - datetime.timedelta(hours=6)).isoformat()
@@ -230,11 +230,10 @@ async def test_generator_fuel_deficit_goes_negative(client, superadmin_auth, ope
             "note": "Робота довше за залишок у баку"
         }
     )
-    assert manual_res.status_code == 201
-    run_data = manual_res.json()
-    assert run_data["end_fuel_level_l"] == -5.0
+    assert manual_res.status_code == 400
+    assert "Недостатньо пального" in manual_res.json()["detail"]
 
-    # 3. Check generator state
+    # 3. Check generator state remains unchanged at 5.0 L (no negative balance)
     gen_after = await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=operator_auth)
     assert gen_after.status_code == 200
-    assert gen_after.json()["fuel_tank_level_l"] == -5.0
+    assert gen_after.json()["fuel_tank_level_l"] == 5.0

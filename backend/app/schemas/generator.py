@@ -22,6 +22,7 @@ class GeneratorScheduleOut(BaseModel):
 
 
 class GeneratorWizardSetup(BaseModel):
+    generator_id: Optional[int] = None
     facility_id: Optional[int] = None
     name: str = Field(..., min_length=1)
     model: str = Field(..., min_length=1)
@@ -57,6 +58,11 @@ class GeneratorUpdate(BaseModel):
     timezone: Optional[str] = None
 
 
+class GeneratorFacilityTransferRequest(BaseModel):
+    target_facility_id: int = Field(..., description="ID цільового об'єкта")
+    reason: str = Field(..., min_length=3, max_length=500, description="Причина перенесення генератора")
+
+
 class GeneratorOut(BaseModel):
     id: int
     facility_id: Optional[int] = None
@@ -72,6 +78,8 @@ class GeneratorOut(BaseModel):
     fuel_tank_level_l: float
     status: str
     is_configured: bool
+    is_active: bool = True
+    archived_at: Optional[datetime.datetime] = None
     timezone: str
     created_at: datetime.datetime
     updated_at: datetime.datetime
@@ -84,6 +92,8 @@ class GeneratorStartRequest(BaseModel):
     generator_id: Optional[int] = None
     fuel_level_l: Optional[float] = None
     force_start_with_maintenance: bool = Field(False, description="Дозвіл запуску генератора при простроченому ТО")
+    force_start_reason: Optional[str] = Field(None, max_length=500, description="Обов'язкова причина примусового запуску при простроченому ТО")
+    idempotency_key: Optional[str] = Field(None, max_length=64, description="Ключ ідемпотентності для захисту від дублювання")
 
 
 class GeneratorStopRequest(BaseModel):
@@ -91,7 +101,9 @@ class GeneratorStopRequest(BaseModel):
     end_hours: Optional[float] = Field(None, description="Показання лічильника мотогодин при зупинці (якщо не вказано, розраховується автоматично)")
     end_fuel_level_l: Optional[float] = None
     note: Optional[str] = None
+    fuel_discrepancy_reason: Optional[str] = Field(None, max_length=500, description="Пояснення причини розбіжності палива у баку")
     force_confirm: bool = Field(False, description="Підтвердження операції при підозрілій різниці мотогодин")
+    idempotency_key: Optional[str] = Field(None, max_length=64, description="Ключ ідемпотентності")
 
 
 class GeneratorManualRunCreate(BaseModel):
@@ -103,6 +115,7 @@ class GeneratorManualRunCreate(BaseModel):
     fuel_consumed_l: Optional[float] = Field(None, ge=0, description="Фактично витрачене паливо (якщо відомо)")
     note: Optional[str] = Field(None, max_length=500, description="Примітки (напр. Внесено з паперового журналу)")
     force_confirm: bool = Field(False, description="Підтвердження при розходженні мотогодин із часом")
+    idempotency_key: Optional[str] = Field(None, max_length=64, description="Ключ ідемпотентності для захисту від дублювання")
 
 
 class GeneratorRunOut(BaseModel):

@@ -48,11 +48,11 @@ async def test_typo_guard_on_generator_stop(client, superadmin_auth, operator_au
     assert stop_typo.status_code == 400
     assert "Запобіжник опечатки" in stop_typo.json()["detail"]
 
-    # 4. Same end_hours with force_confirm=True should succeed
+    # 4. Same end_hours with force_confirm=True and actual end_fuel_level_l should succeed
     stop_ok = await client.post(
         "/api/v1/generator/stop",
         headers=operator_auth,
-        json={"end_hours": 120.0, "force_confirm": True, "note": "Підтверджений тривалий сеанс"}
+        json={"end_hours": 120.0, "end_fuel_level_l": 0.0, "force_confirm": True, "note": "Підтверджений тривалий сеанс"}
     )
     assert stop_ok.status_code == 200
     assert stop_ok.json()["status"] == "COMPLETED"

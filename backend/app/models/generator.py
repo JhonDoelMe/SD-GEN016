@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Index, text
 from sqlalchemy.orm import relationship
 from backend.app.database import Base
 
@@ -25,9 +25,11 @@ class Generator(Base):
     current_operating_hours = Column(Float, nullable=False, default=0.0)
     fuel_tank_level_l = Column(Float, nullable=False, default=0.0)
 
-    # Status: STOPPED, RUNNING, MAINTENANCE_REQUIRED, FAULTY, BLOCKED
+    # Status: STOPPED, RUNNING, MAINTENANCE_REQUIRED, FAULTY, BLOCKED, ARCHIVED
     status = Column(String(50), nullable=False, default="STOPPED")
     is_configured = Column(Boolean, nullable=False, default=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="1")
+    archived_at = Column(DateTime, nullable=True)
 
     timezone = Column(String(50), nullable=False, default="Europe/Kyiv")
     extra_params_json = Column(Text, nullable=True)
@@ -39,11 +41,11 @@ class Generator(Base):
 
     facility = relationship("Facility", back_populates="generators")
     schedules = relationship("GeneratorSchedule", back_populates="generator", cascade="all, delete-orphan", lazy="selectin")
-    runs = relationship("GeneratorRun", back_populates="generator", cascade="all, delete-orphan")
+    runs = relationship("GeneratorRun", back_populates="generator", cascade="save-update, merge")
     maintenance_schedules = relationship("MaintenanceSchedule", back_populates="generator", cascade="all, delete-orphan", lazy="selectin")
-    maintenance_records = relationship("MaintenanceRecord", back_populates="generator", cascade="all, delete-orphan")
-    faults = relationship("Fault", back_populates="generator", cascade="all, delete-orphan")
-    transfers = relationship("FuelTransfer", back_populates="generator", cascade="all, delete-orphan")
+    maintenance_records = relationship("MaintenanceRecord", back_populates="generator", cascade="save-update, merge")
+    faults = relationship("Fault", back_populates="generator", cascade="save-update, merge")
+    transfers = relationship("FuelTransfer", back_populates="generator", cascade="save-update, merge")
 
 
 class GeneratorSchedule(Base):
@@ -62,6 +64,15 @@ class GeneratorSchedule(Base):
 
 class GeneratorRun(Base):
     __tablename__ = "generator_runs"
+    __table_args__ = (
+        Index(
+            "ix_generator_runs_one_active",
+            "generator_id",
+            unique=True,
+            sqlite_where=text("status = 'RUNNING'"),
+            postgresql_where=text("status = 'RUNNING'"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     generator_id = Column(Integer, ForeignKey("generators.id", ondelete="CASCADE"), nullable=False)
@@ -81,6 +92,7 @@ class GeneratorRun(Base):
     calculated_consumption_l = Column(Float, nullable=True)
     status = Column(String(50), nullable=False, default="RUNNING")
     note = Column(Text, nullable=True)
+    idempotency_key = Column(String(64), nullable=True, unique=True, index=True)
 
     generator = relationship("Generator", back_populates="runs")
     user = relationship("User", back_populates="runs", lazy="selectin")

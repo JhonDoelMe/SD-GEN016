@@ -116,6 +116,17 @@ def ensure_schema_updates(sync_conn):
         sync_conn.execute(text("ALTER TABLE fuel_transfers ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)"))
         sync_conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_fuel_receipts_idempotency_key ON fuel_receipts(idempotency_key)"))
         sync_conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_fuel_transfers_idempotency_key ON fuel_transfers(idempotency_key)"))
+        sync_conn.execute(text("ALTER TABLE generators ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"))
+        sync_conn.execute(text("ALTER TABLE generators ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP"))
+        sync_conn.execute(text("ALTER TABLE generator_runs ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)"))
+        sync_conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_generator_runs_idempotency_key ON generator_runs(idempotency_key)"))
+        sync_conn.execute(text(
+            "UPDATE generator_runs SET status = 'COMPLETED', end_time = COALESCE(end_time, start_time), "
+            "end_hours = COALESCE(end_hours, start_hours), duration_seconds = COALESCE(duration_seconds, 0), "
+            "duration_hours = COALESCE(duration_hours, 0.0), calculated_consumption_l = COALESCE(calculated_consumption_l, 0.0) "
+            "WHERE status = 'RUNNING' AND id NOT IN (SELECT MAX(id) FROM generator_runs WHERE status = 'RUNNING' GROUP BY generator_id)"
+        ))
+        sync_conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_generator_runs_one_active ON generator_runs(generator_id) WHERE status = 'RUNNING'"))
     else:
         if "fuel_stocks" in tables:
             cols = [c["name"] for c in inspector.get_columns("fuel_stocks")]
@@ -141,6 +152,30 @@ def ensure_schema_updates(sync_conn):
                     sync_conn.execute(text("CREATE UNIQUE INDEX ix_fuel_transfers_idempotency_key ON fuel_transfers(idempotency_key)"))
                 except Exception:
                     pass
+
+        if "generators" in tables:
+            cols = [c["name"] for c in inspector.get_columns("generators")]
+            if "is_active" not in cols:
+                sync_conn.execute(text("ALTER TABLE generators ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1"))
+            if "archived_at" not in cols:
+                sync_conn.execute(text("ALTER TABLE generators ADD COLUMN archived_at TIMESTAMP"))
+
+        if "generator_runs" in tables:
+            cols = [c["name"] for c in inspector.get_columns("generator_runs")]
+            if "idempotency_key" not in cols:
+                sync_conn.execute(text("ALTER TABLE generator_runs ADD COLUMN idempotency_key VARCHAR(64)"))
+                try:
+                    sync_conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_generator_runs_idempotency_key ON generator_runs(idempotency_key)"))
+                except Exception:
+                    pass
+            try:
+                sync_conn.execute(text(
+                    "UPDATE generator_runs SET status = 'COMPLETED', end_time = COALESCE(end_time, start_time) "
+                    "WHERE status = 'RUNNING' AND id NOT IN (SELECT MAX(id) FROM generator_runs WHERE status = 'RUNNING' GROUP BY generator_id)"
+                ))
+                sync_conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_generator_runs_one_active ON generator_runs(generator_id) WHERE status = 'RUNNING'"))
+            except Exception:
+                pass
 
     # 4. Fix maintenance schedule anomaly: interval=300, next_due=535 -> next_due=300, last_performed=0
     if "maintenance_schedules" in tables:

@@ -856,3 +856,157 @@ async def get_fuel_balances_summary(
         total_transferred_l=to_float(total_transferred_l, 3),
         total_calculated_consumed_l=to_float(total_consumed_l, 3)
     )
+
+
+async def validate_and_reconcile_generator_tank_level(
+    db: AsyncSession,
+    generator: Generator,
+    actual_fuel_l: float,
+    user_id: Optional[int],
+    ip_address: Optional[str] = None,
+    context: str = "START",
+    reason: Optional[str] = None,
+    expected_before_l: Optional[float] = None
+) -> float:
+    """
+    GEN-04, GEN-14: Валідація та звірка фактичного рівня пального в баку генератора
+    в межах активної транзакції (без власного commit).
+    Забороняє від'ємний залишок (< 0) та перевищення місткості бака (> tank_capacity_l).
+    Якщо введений рівень відрізняється від розрахункового/попереднього, створює запис аудиту звірки.
+    """
+    actual_dec = to_liters(actual_fuel_l)
+    cap_dec = to_liters(generator.tank_capacity_l)
+    if actual_dec < Decimal("0.000"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Рівень пального в баку не може бути від'ємним ({to_float(actual_dec, 3)} л)."
+        )
+    if actual_dec > cap_dec:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Вказаний рівень пального ({to_float(actual_dec, 3)} л) перевищує місткість бака генератора ({to_float(cap_dec, 3)} л)."
+        )
+
+    prev_dec = to_liters(expected_before_l if expected_before_l is not None else generator.fuel_tank_level_l)
+    diff_dec = actual_dec - prev_dec
+    new_val_float = to_float(actual_dec, 3)
+    generator.fuel_tank_level_l = new_val_float
+
+    if abs(diff_dec) >= Decimal("0.001"):
+        await log_audit(
+            db=db,
+            action="GENERATOR_FUEL_RECONCILED",
+            entity_type="Generator",
+            entity_id=str(generator.id),
+            user_id=user_id,
+            details={
+                "context": context,
+                "facility_id": generator.facility_id,
+                "fuel_type": generator.fuel_type,
+                "expected_balance_l": str(prev_dec),
+                "actual_balance_l": str(actual_dec),
+                "difference_l": str(diff_dec),
+                "reason": (reason or f"Звірка фактичного рівня пального під час операції {context}")
+            },
+            ip_address=ip_address
+        )
+    return new_val_float
+
+
+async def consume_generator_fuel(
+    db: AsyncSession,
+    generator: Generator,
+    consumed_l: float,
+    user_id: Optional[int],
+    ip_address: Optional[str] = None,
+    run_id: Optional[int] = None,
+    actual_end_fuel_l: Optional[float] = None,
+    discrepancy_reason: Optional[str] = None,
+    allow_system_clamp: bool = False
+) -> dict:
+    """
+    GEN-04, GEN-14: Єдиний сервісний механізм списання пального з бака генератора
+    в межах спільної транзакції (без внутрішнього commit).
+    - Забороняє від'ємне споживання (< 0).
+    - Забороняє перехід залишку бака в мінус (< 0) для користувацьких операцій.
+    - Забороняє встановлення залишку більше за місткість бака (> tank_capacity_l).
+    - Фіксує розбіжність (discrepancy) між розрахунковим та фактичним залишком.
+    """
+    cons_dec = to_liters(consumed_l)
+    if cons_dec < Decimal("0.000"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Обсяг спожитого пального не може бути від'ємним."
+        )
+
+    start_dec = to_liters(generator.fuel_tank_level_l)
+    cap_dec = to_liters(generator.tank_capacity_l)
+    expected_after_dec = start_dec - cons_dec
+    fuel_shortage_dec = Decimal("0.000")
+
+    if actual_end_fuel_l is not None:
+        actual_dec = to_liters(actual_end_fuel_l)
+        if actual_dec < Decimal("0.000"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Кінцевий залишок пального в баку не може бути від'ємним ({to_float(actual_dec, 3)} л)."
+            )
+        if actual_dec > cap_dec:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Кінцевий залишок пального ({to_float(actual_dec, 3)} л) перевищує місткість бака ({to_float(cap_dec, 3)} л)."
+            )
+        if expected_after_dec < Decimal("0.000"):
+            fuel_shortage_dec = abs(expected_after_dec)
+        final_dec = actual_dec
+        generator.fuel_tank_level_l = to_float(final_dec, 3)
+
+        diff_dec = actual_dec - expected_after_dec
+        if abs(diff_dec) >= Decimal("0.001"):
+            await log_audit(
+                db=db,
+                action="GENERATOR_FUEL_RECONCILED",
+                entity_type="Generator",
+                entity_id=str(generator.id),
+                user_id=user_id,
+                details={
+                    "context": "STOP",
+                    "run_id": run_id,
+                    "facility_id": generator.facility_id,
+                    "fuel_type": generator.fuel_type,
+                    "start_balance_l": str(start_dec),
+                    "calculated_consumption_l": str(cons_dec),
+                    "expected_balance_l": str(expected_after_dec),
+                    "actual_balance_l": str(actual_dec),
+                    "difference_l": str(diff_dec),
+                    "reason": discrepancy_reason or "Фактичний залишок пального при зупинці генератора"
+                },
+                ip_address=ip_address
+            )
+    else:
+        if expected_after_dec < Decimal("0.000"):
+            if allow_system_clamp:
+                fuel_shortage_dec = abs(expected_after_dec)
+                final_dec = Decimal("0.000")
+                generator.fuel_tank_level_l = 0.0
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Недостатньо пального в баку генератора: наявно {to_float(start_dec, 3)} л, "
+                        f"розрахункова витрата становить {to_float(cons_dec, 3)} л. "
+                        f"Від'ємний залишок бака заборонено. Вкажіть фактичний кінцевий залишок або виконайте заправку."
+                    )
+                )
+        else:
+            final_dec = expected_after_dec
+            generator.fuel_tank_level_l = to_float(final_dec, 3)
+
+    return {
+        "start_fuel_l": to_float(start_dec, 3),
+        "end_fuel_l": to_float(final_dec, 3),
+        "consumed_l": to_float(cons_dec, 3),
+        "expected_end_fuel_l": to_float(expected_after_dec, 3),
+        "fuel_shortage_l": to_float(fuel_shortage_dec, 3),
+    }
+
