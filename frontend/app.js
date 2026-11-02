@@ -1821,7 +1821,7 @@ async function setupTransferModal() {
       if (!stocks || stocks.length === 0) {
         stockSel.innerHTML = '<option value="">(Немає доступних складів)</option>';
       } else {
-        stockSel.innerHTML = stocks.map(s => `<option value="${Number(s.id)}">${escapeHtml(s.name)} (${s.current_balance_l.toFixed(1)} л)</option>`).join('');
+        stockSel.innerHTML = stocks.map(s => `<option value="${Number(s.id)}">${escapeHtml(s.name)} (${s.current_balance_l.toFixed(1)} л, ${escapeHtml(s.fuel_type || 'А-95')})</option>`).join('');
       }
     }
 
@@ -1830,9 +1830,13 @@ async function setupTransferModal() {
       if (!gens || gens.length === 0) {
         genSel.innerHTML = '<option value="">(Немає генераторів)</option>';
       } else {
-        genSel.innerHTML = gens.map(g => `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)}, в баку: ${g.fuel_tank_level_l.toFixed(1)} л)</option>`).join('');
+        genSel.innerHTML = gens.map(g => { const cap = Number(g.tank_capacity_l || 25.0); const cur = Number(g.fuel_tank_level_l || 0); const free = Math.max(0, cap - cur); return `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)}, в баку: ${cur.toFixed(1)} / ${cap.toFixed(1)} л • вільно: ${free.toFixed(1)} л)</option>`; }).join('');
         if (currentGeneratorId && gens.some(g => g.id === currentGeneratorId)) {
           genSel.value = currentGeneratorId;
+        }
+      }
+    }
+    window._transferModalStocks = stocks || []; window._transferModalGens = gens || []; if (typeof window.updateTransferCapacityHint === 'function') window.updateTransferCapacityHint();
         }
       }
     }
@@ -2108,7 +2112,7 @@ document.getElementById('transferForm').addEventListener('submit', async (e) => 
   };
 
   try {
-    await api('/fuel/transfer', { method: 'POST', body: JSON.stringify(body) });
+    if (typeof window.checkTransferClientBounds === 'function' && !window.checkTransferClientBounds()) return; await api('/fuel/transfer', { method: 'POST', body: JSON.stringify(body) });
     closeModal('modalTransfer');
     showToast('Бак генератора успішно заправлено!', 'success');
     loadAllData();
@@ -6280,4 +6284,140 @@ window.renderYasnoTimeline = function(day = 'today') {
       ${h.is_current ? '<span class="current-dot"></span>' : ''}
     </div>`;
   }).join('');
+};
+
+
+window._getSelectedTransferEntities = function() {
+  const stockSel = document.getElementById('transStock');
+  const genSel = document.getElementById('transGenerator');
+  const stockId = stockSel ? parseInt(stockSel.value, 10) : NaN;
+  const genId = genSel ? parseInt(genSel.value, 10) : NaN;
+  const stocks = Array.isArray(window._transferModalStocks) ? window._transferModalStocks : [];
+  const gens = Array.isArray(window._transferModalGens) ? window._transferModalGens : [];
+  const stock = stocks.find(s => Number(s.id) === stockId) || null;
+  const gen = gens.find(g => Number(g.id) === genId) || null;
+  return { stock, gen };
+};
+
+window.updateTransferCapacityHint = function() {
+  const { stock, gen } = window._getSelectedTransferEntities();
+  const inputEl = document.getElementById('transLiters');
+  const hintEl = document.getElementById('transCapacityHint');
+  const fillBtn = document.getElementById('btnTransFillTank');
+  const submitBtn = document.querySelector('#transferForm button[type="submit"]');
+  if (!inputEl || !hintEl) return;
+
+  if (!gen) {
+    hintEl.innerHTML = '';
+    if (fillBtn) fillBtn.style.display = 'none';
+    if (submitBtn) submitBtn.disabled = false;
+    return;
+  }
+
+  const cap = Number(gen.tank_capacity_l || 25.0);
+  const inTank = Number(gen.fuel_tank_level_l || 0);
+  const freeInTank = Math.max(0, Number((cap - inTank).toFixed(1)));
+  const stockBal = stock ? Math.max(0, Number(Number(stock.current_balance_l || 0).toFixed(1))) : 0;
+  const maxAllowed = stock ? Math.max(0, Number(Math.min(freeInTank, stockBal).toFixed(1))) : freeInTank;
+
+  inputEl.max = String(maxAllowed > 0 ? maxAllowed : 0);
+  inputEl.placeholder = maxAllowed > 0 ? `макс. ${maxAllowed.toFixed(1)} л` : 'бак повний (0.0 л)';
+
+  if (fillBtn) {
+    if (maxAllowed > 0) {
+      fillBtn.style.display = 'inline-block';
+      fillBtn.innerText = `⚡ До повного (+${maxAllowed.toFixed(1)} л)`;
+    } else {
+      fillBtn.style.display = 'none';
+    }
+  }
+
+  window.validateTransferLitersInput();
+};
+
+window.fillTransferTankMax = function() {
+  const { stock, gen } = window._getSelectedTransferEntities();
+  const inputEl = document.getElementById('transLiters');
+  if (!gen || !inputEl) return;
+  const cap = Number(gen.tank_capacity_l || 25.0);
+  const inTank = Number(gen.fuel_tank_level_l || 0);
+  const freeInTank = Math.max(0, Number((cap - inTank).toFixed(1)));
+  const stockBal = stock ? Math.max(0, Number(Number(stock.current_balance_l || 0).toFixed(1))) : freeInTank;
+  const maxAllowed = Math.max(0, Number(Math.min(freeInTank, stockBal).toFixed(1)));
+  if (maxAllowed > 0) {
+    inputEl.value = maxAllowed.toFixed(1);
+    window.validateTransferLitersInput();
+  }
+};
+
+window.validateTransferLitersInput = function() {
+  const { stock, gen } = window._getSelectedTransferEntities();
+  const inputEl = document.getElementById('transLiters');
+  const hintEl = document.getElementById('transCapacityHint');
+  const submitBtn = document.querySelector('#transferForm button[type="submit"]');
+  if (!inputEl || !hintEl || !gen) return true;
+
+  const cap = Number(gen.tank_capacity_l || 25.0);
+  const inTank = Number(gen.fuel_tank_level_l || 0);
+  const freeInTank = Math.max(0, Number((cap - inTank).toFixed(1)));
+  const stockBal = stock ? Math.max(0, Number(Number(stock.current_balance_l || 0).toFixed(1))) : 0;
+  const maxAllowed = stock ? Math.max(0, Number(Math.min(freeInTank, stockBal).toFixed(1))) : freeInTank;
+  const rawVal = inputEl.value.trim();
+  const val = rawVal !== '' ? parseFloat(rawVal) : null;
+
+  if (freeInTank <= 0) {
+    hintEl.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⛔ Бак генератора вже повний (${inTank.toFixed(1)} з ${cap.toFixed(1)} л). Заправка неможлива.</span>`;
+    if (submitBtn) submitBtn.disabled = true;
+    return false;
+  }
+
+  if (stock && stockBal <= 0) {
+    hintEl.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⛔ На обраному складі ГСМ немає палива (0.0 л).</span>`;
+    if (submitBtn) submitBtn.disabled = true;
+    return false;
+  }
+
+  if (val !== null && !Number.isNaN(val)) {
+    if (val > freeInTank + 0.001) {
+      hintEl.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ Перевищення ємності бака! Місткість: ${cap.toFixed(1)} л, в баку: ${inTank.toFixed(1)} л. Влізе максимум: <b>${freeInTank.toFixed(1)} л</b>.</span>`;
+      if (submitBtn) submitBtn.disabled = true;
+      return false;
+    }
+    if (stock && val > stockBal + 0.001) {
+      hintEl.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ На складі недостатньо палива! Доступно на складі: <b>${stockBal.toFixed(1)} л</b>.</span>`;
+      if (submitBtn) submitBtn.disabled = true;
+      return false;
+    }
+  }
+
+  if (submitBtn) submitBtn.disabled = false;
+  const afterTank = (val !== null && !Number.isNaN(val) && val > 0) ? Math.min(cap, inTank + val) : null;
+  const afterText = afterTank !== null ? ` • Після заправки буде: <b style="color: #4ade80;">${afterTank.toFixed(1)} / ${cap.toFixed(1)} л</b>` : '';
+  hintEl.innerHTML = `Місткість бака: <b>${cap.toFixed(1)} л</b> • Зараз у баку: <b>${inTank.toFixed(1)} л</b> • Вільно в баку: <b style="color: var(--accent-cyan);">${freeInTank.toFixed(1)} л</b> (макс. до заправки: <b>${maxAllowed.toFixed(1)} л</b>)${afterText}`;
+  return true;
+};
+
+window.checkTransferClientBounds = function() {
+  const { stock, gen } = window._getSelectedTransferEntities();
+  const inputEl = document.getElementById('transLiters');
+  if (!gen || !inputEl) return true;
+  const val = parseFloat(inputEl.value);
+  const cap = Number(gen.tank_capacity_l || 25.0);
+  const inTank = Number(gen.fuel_tank_level_l || 0);
+  const freeInTank = Math.max(0, Number((cap - inTank).toFixed(1)));
+  const stockBal = stock ? Math.max(0, Number(Number(stock.current_balance_l || 0).toFixed(1))) : 0;
+
+  if (Number.isNaN(val) || val <= 0) {
+    showToast('Вкажіть коректну кількість літрів (> 0)', 'error');
+    return false;
+  }
+  if (val > freeInTank + 0.001) {
+    showToast(`Перевищення місткості бака (${cap.toFixed(1)} л)! У баку вже ${inTank.toFixed(1)} л, можна додати максимум ${freeInTank.toFixed(1)} л`, 'error');
+    return false;
+  }
+  if (stock && val > stockBal + 0.001) {
+    showToast(`Недостатньо палива на складі! Доступно: ${stockBal.toFixed(1)} л`, 'error');
+    return false;
+  }
+  return true;
 };

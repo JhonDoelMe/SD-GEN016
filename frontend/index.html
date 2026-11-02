@@ -38,7 +38,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/frontend/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.13">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.14">
 </head>
 <body>
 
@@ -1596,15 +1596,15 @@
         </p>
         <div class="form-group">
           <label>Зі складу ГСМ</label>
-          <select id="transStock" required></select>
+          <select id="transStock" required onchange="updateTransferCapacityHint()"></select>
         </div>
         <div class="form-group">
           <label>Генератор (куди заправити)</label>
-          <select id="transGenerator" required></select>
+          <select id="transGenerator" required onchange="updateTransferCapacityHint()"></select>
         </div>
         <div class="form-group">
-          <label>Кількість літрів для заправки</label>
-          <input type="number" step="0.1" id="transLiters" required placeholder="напр. 20.0">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;"><label style="margin-bottom: 0;">Кількість літрів для заправки</label><button type="button" id="btnTransFillTank" onclick="fillTransferTankMax()" style="display: none; background: rgba(56, 189, 248, 0.14); color: var(--accent-cyan); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 6px; padding: 0.18rem 0.55rem; font-size: 0.76rem; font-weight: 600; cursor: pointer;">⚡ До повного</button></div>
+          <input type="number" step="0.1" min="0.1" id="transLiters" required placeholder="напр. 20.0" oninput="validateTransferLitersInput()"><div id="transCapacityHint" style="margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;"></div>
         </div>
         <div class="form-group">
           <label>Коментар</label>
@@ -3060,7 +3060,7 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.9.13"></script>
+  <script src="/frontend/app.js?v=4.9.14"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>
