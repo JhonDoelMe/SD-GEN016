@@ -14,6 +14,7 @@ class FuelStockUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=100, description="Нова назва складу ГСМ")
     fuel_type: Optional[str] = Field(None, min_length=2, max_length=50, description="Новий тип палива")
     facility_id: Optional[int] = Field(None, description="Перенесення на інший об'єкт")
+    is_active: Optional[bool] = Field(None, description="Статус активності складу")
 
 
 class FuelStockOut(BaseModel):
@@ -23,6 +24,7 @@ class FuelStockOut(BaseModel):
     name: str
     fuel_type: str
     current_balance_l: float
+    is_active: bool = True
     updated_at: datetime.datetime
 
     model_config = {"from_attributes": True}
@@ -31,8 +33,8 @@ class FuelStockOut(BaseModel):
 class FuelReceiptCreate(BaseModel):
     facility_id: Optional[int] = None
     stock_id: Optional[int] = None
-    fuel_provider: Optional[str] = Field(default="wog", description="Мережа АЗС / Постачальник (wog, okko, other)")
-    fuel_type: str = Field(default="А-95")
+    fuel_provider: Optional[str] = Field(default=None, description="Мережа АЗС / Постачальник (wog, okko, other)")
+    fuel_type: Optional[str] = Field(default=None, description="Тип палива (за замовчуванням зі складу)")
     liters: float = Field(..., gt=0, description="Кількість літрів за чеком")
     cost_total: Optional[float] = Field(
         default=None,
@@ -48,6 +50,7 @@ class FuelReceiptCreate(BaseModel):
     receipt_number: str = Field(..., min_length=1, description="Номер чека або накладної")
     comment: Optional[str] = None
     force_confirm: bool = Field(False, description="Підтвердження операції при значному об'ємі або нетиповій ціні")
+    idempotency_key: Optional[str] = Field(None, max_length=64, description="Унікальний ключ ідемпотентності")
 
 
 class FuelReceiptOut(BaseModel):
@@ -67,6 +70,7 @@ class FuelReceiptOut(BaseModel):
     driver_name: str
     receipt_number: str
     comment: Optional[str] = None
+    idempotency_key: Optional[str] = None
     created_at: datetime.datetime
 
     model_config = {"from_attributes": True}
@@ -78,6 +82,7 @@ class FuelTransferCreate(BaseModel):
     generator_id: Optional[int] = None
     liters: float = Field(..., gt=0, description="Кількість літрів для заправки бака")
     comment: Optional[str] = None
+    idempotency_key: Optional[str] = Field(None, max_length=64, description="Унікальний ключ ідемпотентності")
 
 
 class FuelTransferOut(BaseModel):
@@ -96,6 +101,7 @@ class FuelTransferOut(BaseModel):
     tank_balance_before: float
     tank_balance_after: float
     comment: Optional[str] = None
+    idempotency_key: Optional[str] = None
     created_at: datetime.datetime
 
     model_config = {"from_attributes": True}

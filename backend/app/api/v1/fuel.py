@@ -45,12 +45,13 @@ async def fuel_summary(
 @router.get("/stocks", response_model=List[FuelStockOut])
 async def get_stocks_list(
     facility_id: Optional[int] = None,
+    include_archived: bool = Query(False, description="Включити архівовані склади"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("fuel:view"))
 ):
     """Список усіх складів ГСМ (за об'єктом або загальний)"""
     eff_facility_id = verify_facility_access(current_user, facility_id)
-    stocks = await list_fuel_stocks(db, facility_id=eff_facility_id)
+    stocks = await list_fuel_stocks(db, facility_id=eff_facility_id, include_archived=include_archived)
     return [
         FuelStockOut(
             id=s.id,
@@ -58,7 +59,8 @@ async def get_stocks_list(
             facility_name=s.facility.name if s.facility else None,
             name=s.name,
             fuel_type=s.fuel_type,
-            current_balance_l=s.current_balance_l,
+            current_balance_l=float(s.current_balance_l),
+            is_active=s.is_active,
             updated_at=s.updated_at
         )
         for s in stocks
@@ -83,7 +85,8 @@ async def create_stock_api(
         facility_name=stock.facility.name if stock.facility else None,
         name=stock.name,
         fuel_type=stock.fuel_type,
-        current_balance_l=stock.current_balance_l,
+        current_balance_l=float(stock.current_balance_l),
+        is_active=stock.is_active,
         updated_at=stock.updated_at
     )
 
@@ -96,7 +99,7 @@ async def update_stock_api(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("fuel:configure"))
 ):
-    """Редагувати склад ГСМ (назву, тип палива, об'єкт)"""
+    """Редагувати склад ГСМ (назву, тип палива, об'єкт, статус активності)"""
     existing = await db.get(FuelStock, stock_id)
     if existing:
         verify_facility_access(current_user, existing.facility_id)
@@ -110,7 +113,8 @@ async def update_stock_api(
         facility_name=stock.facility.name if stock.facility else None,
         name=stock.name,
         fuel_type=stock.fuel_type,
-        current_balance_l=stock.current_balance_l,
+        current_balance_l=float(stock.current_balance_l),
+        is_active=stock.is_active,
         updated_at=stock.updated_at
     )
 
@@ -122,7 +126,7 @@ async def delete_stock_api(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("fuel:configure"))
 ):
-    """Видалити склад ГСМ із безпечним перенесенням залишків та історії на інший склад об'єкта"""
+    """Видалити або перевести в архів склад ГСМ (збереження історії)"""
     existing = await db.get(FuelStock, stock_id)
     if existing:
         verify_facility_access(current_user, existing.facility_id)
@@ -144,7 +148,8 @@ async def get_stock(
         facility_name=stock.facility.name if stock.facility else None,
         name=stock.name,
         fuel_type=stock.fuel_type,
-        current_balance_l=stock.current_balance_l,
+        current_balance_l=float(stock.current_balance_l),
+        is_active=stock.is_active,
         updated_at=stock.updated_at
     )
 
@@ -158,8 +163,10 @@ async def create_receipt(
 ):
     if data.facility_id is not None:
         verify_facility_access(current_user, data.facility_id)
-    elif not is_user_admin_or_super(current_user) and current_user.facility_id:
+    elif current_user.facility_id:
         data.facility_id = current_user.facility_id
+    elif not data.stock_id:
+        data.facility_id = 1
 
     if data.stock_id:
         st = await db.get(FuelStock, data.stock_id)
@@ -167,12 +174,18 @@ async def create_receipt(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
         verify_facility_access(current_user, st.facility_id)
 
+    user_perms = [perm.code for role in (current_user.roles or []) for perm in (role.permissions or [])]
+    is_admin = is_user_admin_or_super(current_user)
+
     receipt = await add_fuel_receipt(
         db=db,
         receipt_data=data,
         user_id=current_user.id,
-        ip_address=get_client_ip(request)
+        ip_address=get_client_ip(request),
+        user_permissions=user_perms,
+        is_admin=is_admin
     )
+
     # Eagerly fetch stock & facility details
     stock = None
     fac_name = None
@@ -198,12 +211,13 @@ async def create_receipt(
         user_name=current_user.full_name,
         fuel_provider=getattr(receipt, "fuel_provider", "wog") or "wog",
         fuel_type=receipt.fuel_type,
-        liters=receipt.liters,
-        cost_total=receipt.cost_total,
-        price_per_liter=receipt.price_per_liter,
+        liters=float(receipt.liters),
+        cost_total=float(receipt.cost_total),
+        price_per_liter=float(receipt.price_per_liter),
         driver_name=receipt.driver_name,
         receipt_number=receipt.receipt_number,
         comment=receipt.comment,
+        idempotency_key=receipt.idempotency_key,
         created_at=receipt.created_at
     )
 
@@ -239,12 +253,13 @@ async def list_receipts(
             user_name=(r.user.full_name or r.user.login) if r.user else None,
             fuel_provider=getattr(r, "fuel_provider", "wog") or "wog",
             fuel_type=r.fuel_type,
-            liters=r.liters,
-            cost_total=r.cost_total,
-            price_per_liter=r.price_per_liter,
+            liters=float(r.liters),
+            cost_total=float(r.cost_total),
+            price_per_liter=float(r.price_per_liter),
             driver_name=r.driver_name,
             receipt_number=r.receipt_number,
             comment=r.comment,
+            idempotency_key=r.idempotency_key,
             created_at=r.created_at
         )
         for r in receipts
@@ -260,8 +275,10 @@ async def create_transfer(
 ):
     if data.facility_id is not None:
         verify_facility_access(current_user, data.facility_id)
-    elif not is_user_admin_or_super(current_user) and current_user.facility_id:
+    elif current_user.facility_id:
         data.facility_id = current_user.facility_id
+    elif not data.stock_id:
+        data.facility_id = 1
 
     if data.generator_id is not None:
         await verify_generator_facility_access(db, current_user, data.generator_id)
@@ -304,12 +321,13 @@ async def create_transfer(
         generator_name=gen.name if gen else "Генератор",
         user_id=transfer.user_id,
         user_name=current_user.full_name,
-        liters=transfer.liters,
-        source_balance_before=transfer.source_balance_before,
-        source_balance_after=transfer.source_balance_after,
-        tank_balance_before=transfer.tank_balance_before,
-        tank_balance_after=transfer.tank_balance_after,
+        liters=float(transfer.liters),
+        source_balance_before=float(transfer.source_balance_before),
+        source_balance_after=float(transfer.source_balance_after),
+        tank_balance_before=float(transfer.tank_balance_before),
+        tank_balance_after=float(transfer.tank_balance_after),
         comment=transfer.comment,
+        idempotency_key=transfer.idempotency_key,
         created_at=transfer.created_at
     )
 
@@ -349,12 +367,13 @@ async def list_transfers(
             generator_name=t.generator.name if t.generator else "Генератор",
             user_id=t.user_id,
             user_name=(t.user.full_name or t.user.login) if t.user else None,
-            liters=t.liters,
-            source_balance_before=t.source_balance_before,
-            source_balance_after=t.source_balance_after,
-            tank_balance_before=t.tank_balance_before,
-            tank_balance_after=t.tank_balance_after,
+            liters=float(t.liters),
+            source_balance_before=float(t.source_balance_before),
+            source_balance_after=float(t.source_balance_after),
+            tank_balance_before=float(t.tank_balance_before),
+            tank_balance_after=float(t.tank_balance_after),
             comment=t.comment,
+            idempotency_key=t.idempotency_key,
             created_at=t.created_at
         )
         for t in transfers

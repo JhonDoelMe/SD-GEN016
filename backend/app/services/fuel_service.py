@@ -1,3 +1,5 @@
+import datetime
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, List
 from fastapi import HTTPException, status
 from sqlalchemy import select, func, or_, update, delete
@@ -13,36 +15,129 @@ from backend.app.schemas.fuel import (
 from backend.app.services.audit_service import log_audit
 
 
+def to_decimal(val, places: int = 2) -> Decimal:
+    """Конвертує значення в Decimal із заданою кількістю знаків та банківським/арифметичним округленням"""
+    if val is None:
+        return Decimal("0").quantize(Decimal(f"0.{'0' * places}"))
+    if isinstance(val, Decimal):
+        d = val
+    elif isinstance(val, (int, str)):
+        d = Decimal(str(val))
+    else:
+        # float
+        d = Decimal(str(round(val, places + 2)))
+    return d.quantize(Decimal(f"0.{'0' * places}"), rounding=ROUND_HALF_UP)
+
+
+def to_money(val) -> Decimal:
+    """Точність для грошових розрахунків: 2 знаки після коми (грн, коп)"""
+    return to_decimal(val, 2)
+
+
+def to_liters(val) -> Decimal:
+    """Точність для обліку об'єму пального: 3 знаки після коми (мл)"""
+    return to_decimal(val, 3)
+
+
+def to_float(val, places: int = 2) -> float:
+    if val is None:
+        return 0.0
+    return float(round(float(val), places))
+
+
 async def get_or_create_default_stock(db: AsyncSession, facility_id: Optional[int] = None) -> FuelStock:
-    query = select(FuelStock).options(selectinload(FuelStock.facility))
-    if facility_id:
-        query = query.where(FuelStock.facility_id == facility_id)
-    res = await db.execute(query)
-    stock = res.scalars().first()
-    if not stock:
-        res_any = await db.execute(select(FuelStock).options(selectinload(FuelStock.facility)))
-        stock = res_any.scalars().first()
+    """
+    FUEL-01: Отримати або створити стандартний склад ГСМ для вказаного об'єкта.
+    Суворо ізольовано:
+    - Заборонено повертати склад іншого об'єкта.
+    - Заборонено неявний fallback на facility_id=1.
+    - Перевіряється існування об'єкта перед створенням складу.
+    """
+    if facility_id is not None:
+        fac = await db.get(Facility, facility_id)
+        if not fac:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Об'єкт з ID {facility_id} не знайдено"
+            )
+
+        # Пошук активного складу суворо в межах цього об'єкта
+        query = (
+            select(FuelStock)
+            .options(selectinload(FuelStock.facility))
+            .where(FuelStock.facility_id == facility_id, FuelStock.is_active == True)
+            .order_by(FuelStock.id.asc())
+        )
+        res = await db.execute(query)
+        stock = res.scalars().first()
+
         if not stock:
+            # Створюємо стандартний склад виключно для цього об'єкта
             stock = FuelStock(
-                facility_id=facility_id or 1,
+                facility_id=facility_id,
                 name="Основний склад ГСМ",
                 fuel_type="А-95",
-                current_balance_l=0.0
+                current_balance_l=Decimal("0.000"),
+                is_active=True
             )
             db.add(stock)
-            await db.flush()
-    return stock
+            try:
+                await db.flush()
+            except Exception:
+                await db.rollback()
+                # Захист від race condition при паралельному створенні
+                res_retry = await db.execute(query)
+                stock = res_retry.scalars().first()
+                if not stock:
+                    raise
+            else:
+                await db.commit()
+                res_fetch = await db.execute(
+                    select(FuelStock).options(selectinload(FuelStock.facility)).where(FuelStock.id == stock.id)
+                )
+                stock = res_fetch.scalars().first()
+        return stock
+    else:
+        # facility_id is None: адміністративний глобальний контекст
+        res_any = await db.execute(
+            select(FuelStock)
+            .options(selectinload(FuelStock.facility))
+            .where(FuelStock.is_active == True)
+            .order_by(FuelStock.id.asc())
+        )
+        stock = res_any.scalars().first()
+        if not stock:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="У системі відсутні активні склади ГСМ. Вкажіть facility_id для створення складу."
+            )
+        return stock
 
 
-async def list_fuel_stocks(db: AsyncSession, facility_id: Optional[int] = None) -> List[FuelStock]:
-    """Список усіх складів ГСМ, опціонально за об'єктом"""
+async def list_fuel_stocks(
+    db: AsyncSession,
+    facility_id: Optional[int] = None,
+    include_archived: bool = False
+) -> List[FuelStock]:
+    """Список складів ГСМ із фільтрацією за об'єктом та архівацією"""
     query = select(FuelStock).options(selectinload(FuelStock.facility))
-    if facility_id:
+    if not include_archived:
+        query = query.where(FuelStock.is_active == True)
+
+    if facility_id is not None:
+        fac = await db.get(Facility, facility_id)
+        if not fac:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Об'єкт з ID {facility_id} не знайдено"
+            )
         query = query.where(FuelStock.facility_id == facility_id)
+
     res = await db.execute(query.order_by(FuelStock.id.asc()))
     stocks = res.scalars().all()
-    if not stocks and facility_id:
-        # Автоматично забезпечуємо хоча б один склад для об'єкта
+
+    if not stocks and facility_id is not None:
+        # Забезпечуємо хоча б один активний склад для об'єкта
         def_stock = await get_or_create_default_stock(db, facility_id=facility_id)
         return [def_stock]
     return stocks
@@ -57,13 +152,15 @@ async def create_fuel_stock(
     """Створити новий склад ГСМ для об'єкта"""
     fac = await db.get(Facility, data.facility_id)
     if not fac:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Об'єкт не знайдено")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Об'єкт з ID {data.facility_id} не знайдено")
 
+    initial_bal = to_liters(data.initial_balance_l)
     stock = FuelStock(
         facility_id=data.facility_id,
         name=data.name.strip(),
         fuel_type=data.fuel_type.strip(),
-        current_balance_l=round(data.initial_balance_l, 2)
+        current_balance_l=initial_bal,
+        is_active=True
     )
     db.add(stock)
     await db.flush()
@@ -78,7 +175,7 @@ async def create_fuel_stock(
             "name": stock.name,
             "facility_id": stock.facility_id,
             "fuel_type": stock.fuel_type,
-            "initial_balance_l": stock.current_balance_l
+            "initial_balance_l": float(stock.current_balance_l)
         },
         ip_address=ip_address
     )
@@ -97,7 +194,7 @@ async def update_fuel_stock(
     user_id: int,
     ip_address: Optional[str] = None
 ) -> FuelStock:
-    """Оновити склад ГСМ (назву, тип палива, об'єкт)"""
+    """Оновити параметри складу ГСМ (назву, тип палива, об'єкт, статус активності)"""
     stock = await db.get(FuelStock, stock_id)
     if not stock:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
@@ -105,18 +202,55 @@ async def update_fuel_stock(
     old_details = {
         "name": stock.name,
         "fuel_type": stock.fuel_type,
-        "facility_id": stock.facility_id
+        "facility_id": stock.facility_id,
+        "is_active": stock.is_active
     }
 
     if data.name is not None and data.name.strip():
         stock.name = data.name.strip()
+
     if data.fuel_type is not None and data.fuel_type.strip():
+        # Перевірка: якщо є залишок, змінювати тип пального заборонено без обнулення
+        if to_liters(stock.current_balance_l) > Decimal("0.000") and data.fuel_type.strip() != stock.fuel_type:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Неможливо змінити тип палива складу з '{stock.fuel_type}' на '{data.fuel_type.strip()}', оскільки на складі є залишок {float(stock.current_balance_l):.1f} л."
+            )
         stock.fuel_type = data.fuel_type.strip()
-    if data.facility_id is not None:
+
+    if data.facility_id is not None and data.facility_id != stock.facility_id:
         fac = await db.get(Facility, data.facility_id)
         if not fac:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Цільовий об'єкт не знайдено")
+        # Забороняємо переносити склад з історією або залишком на інший об'єкт
+        if to_liters(stock.current_balance_l) > Decimal("0.000"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Неможливо змінити об'єкт складу з ненульовим залишком. Перенесіть залишок або створіть новий склад."
+            )
         stock.facility_id = data.facility_id
+
+    if data.is_active is not None:
+        if not data.is_active:
+            # Деактивація (архівація) вимагає перевірки залишку
+            if to_liters(stock.current_balance_l) > Decimal("0.000"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Неможливо архівувати склад із залишком {float(stock.current_balance_l):.1f} л."
+                )
+            active_count = await db.scalar(
+                select(func.count(FuelStock.id)).where(
+                    FuelStock.facility_id == stock.facility_id,
+                    FuelStock.is_active == True,
+                    FuelStock.id != stock_id
+                )
+            )
+            if (active_count or 0) < 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Неможливо архівувати єдиний активний склад на цьому об'єкті."
+                )
+        stock.is_active = data.is_active
 
     stock.updated_at = utc_now()
     await db.flush()
@@ -132,7 +266,8 @@ async def update_fuel_stock(
             "new": {
                 "name": stock.name,
                 "fuel_type": stock.fuel_type,
-                "facility_id": stock.facility_id
+                "facility_id": stock.facility_id,
+                "is_active": stock.is_active
             }
         },
         ip_address=ip_address
@@ -151,69 +286,105 @@ async def delete_fuel_stock(
     user_id: int,
     ip_address: Optional[str] = None
 ) -> dict:
-    """Видалити склад ГСМ із безпечним перенесенням залишків та історії на інший склад об'єкта"""
+    """
+    FUEL-03: Безпечне видалення та архівація складу ГСМ.
+    - Перевіряє наявність альтернативного активного складу на об'єкті.
+    - Якщо склад має залишок — безпечно переносить його на альтернативний склад.
+    - Якщо склад має історичні чеки/переміщення — виконується м'яка архівація (is_active=False).
+    - Історичні записи НЕ переприв'язуються на інший склад і суворо зберігають автентичний stock_id!
+    - Якщо склад порожній і без історії — виконується фізичне видалення.
+    """
     stock = await db.get(FuelStock, stock_id)
     if not stock:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
 
-    # Перевірка: не дозволяти видалити останній склад на об'єкті
-    stocks_count = await db.scalar(
-        select(func.count(FuelStock.id)).where(FuelStock.facility_id == stock.facility_id)
+    # Знаходимо альтернативний активний склад цього ж об'єкта
+    alt_stock = await db.scalar(
+        select(FuelStock).where(
+            FuelStock.facility_id == stock.facility_id,
+            FuelStock.is_active == True,
+            FuelStock.id != stock_id
+        ).order_by(FuelStock.id.asc())
     )
-    if (stocks_count or 0) <= 1:
+
+    if not alt_stock:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Неможливо видалити єдиний склад ГСМ на цьому об'єкті. Створіть інший склад перед видаленням."
         )
 
-    # Знаходимо альтернативний склад цього ж об'єкта
-    alt_stock = await db.scalar(
-        select(FuelStock)
-        .where(FuelStock.facility_id == stock.facility_id, FuelStock.id != stock.id)
-        .order_by(FuelStock.id.asc())
-    )
-
     stock_name = stock.name
-    stock_balance = stock.current_balance_l
+    fac_id = stock.facility_id
+    stock_balance = to_liters(stock.current_balance_l)
 
-    # Якщо на складі був залишок — безпечно переносимо його на альтернативний склад
-    if alt_stock and stock_balance > 0:
-        alt_stock.current_balance_l = round(alt_stock.current_balance_l + stock_balance, 2)
-        alt_stock.updated_at = utc_now()
-
-    # Переприв'язуємо чеки та переміщення, щоб зберегти фінансову історію
-    if alt_stock:
-        await db.execute(
-            update(FuelReceipt).where(FuelReceipt.stock_id == stock_id).values(stock_id=alt_stock.id)
-        )
-        await db.execute(
-            update(FuelTransfer).where(FuelTransfer.stock_id == stock_id).values(stock_id=alt_stock.id)
-        )
-
-    await db.delete(stock)
-    await db.flush()
-
-    await log_audit(
-        db=db,
-        action="FUEL_STOCK_DELETED",
-        entity_type="FuelStock",
-        entity_id=str(stock_id),
-        user_id=user_id,
-        details={
-            "deleted_stock_name": stock_name,
-            "transferred_balance_l": stock_balance,
-            "target_stock_id": alt_stock.id if alt_stock else None,
-            "target_stock_name": alt_stock.name if alt_stock else None
-        },
-        ip_address=ip_address
+    # Перевіряємо наявність історичних операцій
+    receipts_count = await db.scalar(
+        select(func.count(FuelReceipt.id)).where(FuelReceipt.stock_id == stock_id)
     )
+    transfers_count = await db.scalar(
+        select(func.count(FuelTransfer.id)).where(FuelTransfer.stock_id == stock_id)
+    )
+    has_history = ((receipts_count or 0) > 0) or ((transfers_count or 0) > 0)
+
+    # Якщо на складі був залишок — переносимо його на альтернативний склад об'єкта
+    if stock_balance > Decimal("0.000"):
+        alt_stock.current_balance_l = to_liters(alt_stock.current_balance_l) + stock_balance
+        alt_stock.updated_at = utc_now()
+        stock.current_balance_l = Decimal("0.000")
+
+    if has_history:
+        # М'яка архівація — суворо зберігаємо історію без зміни зовнішніх ключів
+        stock.is_active = False
+        stock.updated_at = utc_now()
+        await db.flush()
+
+        await log_audit(
+            db=db,
+            action="FUEL_STOCK_DELETED",
+            entity_type="FuelStock",
+            entity_id=str(stock_id),
+            user_id=user_id,
+            details={
+                "deleted_stock_name": stock_name,
+                "transferred_balance_l": float(stock_balance),
+                "target_stock_id": alt_stock.id,
+                "target_stock_name": alt_stock.name,
+                "receipts_count": receipts_count,
+                "transfers_count": transfers_count,
+                "archived": True
+            },
+            ip_address=ip_address
+        )
+    else:
+        # Порожній склад без історії видаляється фізично
+        await db.delete(stock)
+        await db.flush()
+
+        await log_audit(
+            db=db,
+            action="FUEL_STOCK_DELETED",
+            entity_type="FuelStock",
+            entity_id=str(stock_id),
+            user_id=user_id,
+            details={
+                "deleted_stock_name": stock_name,
+                "transferred_balance_l": float(stock_balance),
+                "target_stock_id": alt_stock.id,
+                "target_stock_name": alt_stock.name,
+                "archived": False
+            },
+            ip_address=ip_address
+        )
+
     await db.commit()
+
+    detail_msg = f"Склад '{stock_name}' успішно видалено"
+    if stock_balance > Decimal("0.000"):
+        detail_msg += f". Залишок {float(stock_balance):.1f} л перенесено на склад '{alt_stock.name}'"
 
     return {
         "ok": True,
-        "detail": f"Склад '{stock_name}' успішно видалено" + (
-            f". Залишок {stock_balance:.1f} л перенесено на склад '{alt_stock.name}'" if (alt_stock and stock_balance > 0) else ""
-        )
+        "detail": detail_msg
     }
 
 
@@ -221,64 +392,140 @@ async def add_fuel_receipt(
     db: AsyncSession,
     receipt_data: FuelReceiptCreate,
     user_id: int,
-    ip_address: Optional[str] = None
+    ip_address: Optional[str] = None,
+    user_permissions: Optional[List[str]] = None,
+    is_admin: bool = False
 ) -> FuelReceipt:
-    stock = None
+    """
+    FUEL-02, FUEL-04, FUEL-05, FUEL-06, FUEL-07, FUEL-08:
+    Оприбуткування палива з транзакційним блокуванням, перевіркою відповідності об'єкта,
+    контролем типу палива, перевіркою дозволу force_confirm та точною арифметикою Decimal.
+    """
+    # Захист від повторного виконання (Idempotency)
+    if receipt_data.idempotency_key:
+        existing_receipt = (await db.execute(
+            select(FuelReceipt).where(FuelReceipt.idempotency_key == receipt_data.idempotency_key)
+        )).scalars().first()
+        if existing_receipt:
+            return existing_receipt
+
+    # Отримуємо склад із блокуванням рядка для запобігання гонкам
     if receipt_data.stock_id:
-        stock = await db.get(FuelStock, receipt_data.stock_id)
-    if not stock:
-        stock = await get_or_create_default_stock(db, facility_id=receipt_data.facility_id)
+        res_stock = await db.execute(
+            select(FuelStock).where(FuelStock.id == receipt_data.stock_id).with_for_update()
+        )
+        stock = res_stock.scalars().first()
+        if not stock:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+    else:
+        target_facility_id = receipt_data.facility_id or 1
+        stock_init = await get_or_create_default_stock(db, facility_id=target_facility_id)
+        res_stock = await db.execute(
+            select(FuelStock).where(FuelStock.id == stock_init.id).with_for_update()
+        )
+        stock = res_stock.scalars().first()
 
-    facility_id = receipt_data.facility_id or stock.facility_id or 1
+    # Перевірка активності складу
+    if not stock.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Склад '{stock.name}' архівовано. Оприбуткування палива на архівований склад заборонено."
+        )
 
-    receipt_provider = (receipt_data.fuel_provider or "").strip().lower()
-    if not receipt_provider:
-        fac = await db.get(Facility, facility_id)
-        receipt_provider = (fac.default_fuel_provider if fac and fac.default_fuel_provider else "wog").lower()
+    # FUEL-04: Сувора валідація facility_id
+    effective_facility_id = stock.facility_id
+    if receipt_data.facility_id is not None and int(receipt_data.facility_id) != int(effective_facility_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Невідповідність об'єкта: переданий facility_id ({receipt_data.facility_id}) не збігається з об'єктом складу ({effective_facility_id})."
+        )
 
-    if receipt_data.liters <= 0:
+    # Валідація кількості літрів
+    liters = to_liters(receipt_data.liters)
+    if liters <= Decimal("0.000"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Кількість літрів має бути більше 0")
 
-    effective_fuel_type = receipt_data.fuel_type or stock.fuel_type or "А-95"
-    price_source = "manual_total"
+    # FUEL-07: Контроль типу пального
+    effective_fuel_type = (receipt_data.fuel_type or stock.fuel_type or "А-95").strip()
+    stock_current_bal = to_liters(stock.current_balance_l)
+    if stock_current_bal == Decimal("0.000") and receipt_data.fuel_type:
+        # Якщо склад порожній (початковий стан), він приймає тип пального першого оприбуткування
+        stock.fuel_type = effective_fuel_type
+    elif receipt_data.fuel_type and receipt_data.fuel_type.strip().lower() != (stock.fuel_type or "").strip().lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Невідповідність типу палива: чек містить '{receipt_data.fuel_type}', а склад '{stock.name}' містить залишок типу '{stock.fuel_type}'."
+        )
 
+    # FUEL-06: Визначення постачальника за ієрархією
+    receipt_provider = (receipt_data.fuel_provider or "").strip().lower()
+    if not receipt_provider:
+        fac = await db.get(Facility, effective_facility_id)
+        if fac and getattr(fac, "default_fuel_provider", None):
+            receipt_provider = fac.default_fuel_provider.strip().lower()
+        else:
+            from backend.app.services.settings_service import get_runtime_setting
+            receipt_provider = str(get_runtime_setting("fuel_default_provider", "wog")).strip().lower()
+    if receipt_provider not in ("wog", "okko"):
+        receipt_provider = "wog"
+
+    # FUEL-08: Розрахунок вартості через точну арифметику Decimal
+    price_source = "manual_total"
     if receipt_data.cost_total is not None and receipt_data.cost_total > 0:
-        cost_total = round(receipt_data.cost_total, 2)
-        price_per_l = round(cost_total / receipt_data.liters, 2)
+        cost_total = to_money(receipt_data.cost_total)
+        price_per_l = (cost_total / liters).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         price_source = "manual_total"
     elif receipt_data.price_per_liter is not None and receipt_data.price_per_liter > 0:
-        price_per_l = round(receipt_data.price_per_liter, 2)
-        cost_total = round(receipt_data.liters * price_per_l, 2)
+        price_per_l = to_money(receipt_data.price_per_liter)
+        cost_total = (liters * price_per_l).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         price_source = "manual_unit_price"
     else:
         from backend.app.services.settings_service import resolve_fuel_price_per_liter
-        price_per_l, price_source = await resolve_fuel_price_per_liter(db, effective_fuel_type, provider=receipt_provider)
-        cost_total = round(receipt_data.liters * price_per_l, 2)
+        price_resolved, price_source = await resolve_fuel_price_per_liter(
+            db, effective_fuel_type, provider=receipt_provider
+        )
+        price_per_l = to_money(price_resolved)
+        cost_total = (liters * price_per_l).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-    # Fuel Receipt Safeguard: Scale & Price Sanity Checks
+    # FUEL-05: Запобіжники значного об'єму та аномальної ціни
     from backend.app.services.settings_service import get_runtime_setting
-    max_liters_warn = float(get_runtime_setting("fuel_receipt_max_liters_warning", 1000.0))
-    min_price_warn = float(get_runtime_setting("fuel_receipt_min_price", 15.0))
-    max_price_warn = float(get_runtime_setting("fuel_receipt_max_price", 250.0))
+    max_liters_warn = to_liters(get_runtime_setting("fuel_receipt_max_liters_warning", 1000.0))
+    min_price_warn = to_money(get_runtime_setting("fuel_receipt_min_price", 15.0))
+    max_price_warn = to_money(get_runtime_setting("fuel_receipt_max_price", 250.0))
 
-    if not receipt_data.force_confirm:
-        if receipt_data.liters > max_liters_warn:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"Запобіжник об'єму палива: вказано значний об'єм ({receipt_data.liters:.1f} л > {max_liters_warn:.0f} л). "
-                    f"Перевірте введені дані (можлива опечатка) або підтвердіть дію."
+    is_volume_breach = liters > max_liters_warn
+    is_price_breach = price_per_l < min_price_warn or price_per_l > max_price_warn
+    is_safeguard_triggered = is_volume_breach or is_price_breach
+
+    if is_safeguard_triggered:
+        if not receipt_data.force_confirm:
+            if is_volume_breach:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Запобіжник об'єму палива: вказано значний об'єм ({float(liters):.1f} л > {float(max_liters_warn):.0f} л). "
+                        f"Перевірте введені дані (можлива опечатка) або підтвердіть дію."
+                    )
                 )
-            )
-        if price_per_l < min_price_warn or price_per_l > max_price_warn:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"Запобіжник вартості палива: розрахункова ціна ({price_per_l:.2f} грн/л) виходить за межі "
-                    f"очікуваного діапазону ({min_price_warn:.0f} - {max_price_warn:.0f} грн/л). "
-                    f"Перевірте суму чека або підтвердіть дію."
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Запобіжник вартості палива: розрахункова ціна ({float(price_per_l):.2f} грн/л) виходить за межі "
+                        f"очікуваного діапазону ({float(min_price_warn):.0f} - {float(max_price_warn):.0f} грн/л). "
+                        f"Перевірте суму чека або підтвердіть дію."
+                    )
                 )
+        else:
+            # force_confirm передано: сувора серверна перевірка дозволу
+            has_override_permission = is_admin or (
+                user_permissions is not None and "fuel:receipt:override" in user_permissions
             )
+            if not has_override_permission:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Для підтвердження нетипового об'єму або ціни палива (force_confirm) потрібен дозвіл 'fuel:receipt:override'."
+                )
 
     comment_text = receipt_data.comment
     if price_source in ("system_settings", "internet", "internet_okko"):
@@ -288,26 +535,29 @@ async def add_fuel_receipt(
             src_ua = "АЗК OKKO (авторозрахунок)"
         else:
             src_ua = "АЗК WOG (авторозрахунок)"
-        auto_note = f"[Авторозрахунок: {price_per_l:.2f} грн/л ({src_ua})]"
+        auto_note = f"[Авторозрахунок: {float(price_per_l):.2f} грн/л ({src_ua})]"
         comment_text = f"{comment_text} {auto_note}".strip() if comment_text else auto_note
 
     receipt = FuelReceipt(
-        facility_id=facility_id,
+        facility_id=effective_facility_id,
         stock_id=stock.id,
         user_id=user_id,
         fuel_provider=receipt_provider,
         fuel_type=effective_fuel_type,
-        liters=round(receipt_data.liters, 2),
+        liters=liters,
         cost_total=cost_total,
         price_per_liter=price_per_l,
         driver_name=receipt_data.driver_name.strip(),
         receipt_number=receipt_data.receipt_number.strip(),
-        comment=comment_text
+        comment=comment_text,
+        idempotency_key=receipt_data.idempotency_key
     )
     db.add(receipt)
 
-    stock_before = stock.current_balance_l
-    stock.current_balance_l = round(stock.current_balance_l + receipt.liters, 2)
+    stock_before = to_liters(stock.current_balance_l)
+    stock_after = stock_before + liters
+    stock.current_balance_l = stock_after
+    stock.updated_at = utc_now()
 
     await db.flush()
 
@@ -319,18 +569,20 @@ async def add_fuel_receipt(
         user_id=user_id,
         details={
             "receipt_id": receipt.id,
-            "facility_id": facility_id,
+            "facility_id": effective_facility_id,
             "stock_id": stock.id,
             "stock_name": stock.name,
             "fuel_provider": receipt_provider,
-            "liters": receipt.liters,
-            "cost_total": receipt.cost_total,
-            "price_per_l": price_per_l,
+            "liters": float(receipt.liters),
+            "cost_total": float(receipt.cost_total),
+            "price_per_l": float(price_per_l),
             "price_source": price_source,
-            "stock_before": stock_before,
-            "stock_after": stock.current_balance_l,
+            "stock_before": float(stock_before),
+            "stock_after": float(stock_after),
             "receipt_no": receipt.receipt_number,
             "driver": receipt.driver_name,
+            "is_override": bool(receipt_data.force_confirm),
+            "idempotency_key": receipt_data.idempotency_key
         },
         ip_address=ip_address
     )
@@ -344,64 +596,132 @@ async def transfer_fuel_to_tank(
     user_id: int,
     ip_address: Optional[str] = None
 ) -> FuelTransfer:
-    stock = await db.get(FuelStock, transfer_data.stock_id) if transfer_data.stock_id else await get_or_create_default_stock(db, facility_id=transfer_data.facility_id)
-    if not stock:
-        stock = await get_or_create_default_stock(db, facility_id=transfer_data.facility_id)
+    """
+    FUEL-02, FUEL-04, FUEL-07, FUEL-08:
+    Заправка бака генератора зі складу з транзакційними блокуваннями для виключення race condition,
+    контролем належності до об'єкта, сумісності типу палива та захистом від переливу/від'ємного залишку.
+    """
+    # Захист від повторного виконання запиту
+    if transfer_data.idempotency_key:
+        existing_tr = (await db.execute(
+            select(FuelTransfer).where(FuelTransfer.idempotency_key == transfer_data.idempotency_key)
+        )).scalars().first()
+        if existing_tr:
+            return existing_tr
 
-    # Fetch generator
-    gen_res = await db.execute(select(Generator))
-    generator = await db.get(Generator, transfer_data.generator_id) if transfer_data.generator_id else gen_res.scalars().first()
+    # Послідовне взяття блокувань: спочатку склад, потім генератор
+    if transfer_data.stock_id:
+        res_st = await db.execute(
+            select(FuelStock).where(FuelStock.id == transfer_data.stock_id).with_for_update()
+        )
+        stock = res_st.scalars().first()
+    else:
+        if not transfer_data.facility_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Вкажіть stock_id або facility_id")
+        stock_init = await get_or_create_default_stock(db, facility_id=transfer_data.facility_id)
+        res_st = await db.execute(
+            select(FuelStock).where(FuelStock.id == stock_init.id).with_for_update()
+        )
+        stock = res_st.scalars().first()
+
+    if not stock:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+    if not stock.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Склад '{stock.name}' архівовано. Заправка з архівованого складу неможлива."
+        )
+
+    # Отримуємо генератор із блокуванням
+    if not transfer_data.generator_id:
+        # Якщо генератор не вказано, шукаємо генератор цього об'єкта
+        gen_q = select(Generator).where(Generator.facility_id == stock.facility_id).order_by(Generator.id.asc()).with_for_update()
+        res_gen = await db.execute(gen_q)
+        generator = res_gen.scalars().first()
+    else:
+        res_gen = await db.execute(
+            select(Generator).where(Generator.id == transfer_data.generator_id).with_for_update()
+        )
+        generator = res_gen.scalars().first()
+
     if not generator:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
 
-    # Invariant: cross-facility fuel transfer protection
+    # FUEL-04: Ізоляція об'єктів — генератор і склад повинні належати одному об'єкту
     if generator.facility_id and stock.facility_id and int(generator.facility_id) != int(stock.facility_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Неможливо виконати заправку: генератор '{generator.name}' (об'єкт ID {generator.facility_id}) та склад ГСМ '{stock.name}' (об'єкт ID {stock.facility_id}) належать до різних об'єктів"
+            detail=(
+                f"Неможливо виконати заправку: генератор '{generator.name}' (об'єкт ID {generator.facility_id}) "
+                f"та склад ГСМ '{stock.name}' (об'єкт ID {stock.facility_id}) належать до різних об'єктів."
+            )
         )
 
-    facility_id = transfer_data.facility_id or generator.facility_id or stock.facility_id or 1
+    if transfer_data.facility_id is not None and int(transfer_data.facility_id) != int(stock.facility_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Невідповідність об'єкта: переданий facility_id ({transfer_data.facility_id}) не збігається з об'єктом складу ({stock.facility_id})."
+        )
 
-    if transfer_data.liters <= 0:
+    facility_id = stock.facility_id
+
+    # FUEL-07: Перевірка сумісності типу пального
+    st_fuel = (stock.fuel_type or "").strip().lower()
+    gen_fuel = (generator.fuel_type or "").strip().lower()
+    if st_fuel != gen_fuel:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Несумісність типів палива: генератор '{generator.name}' потребує '{generator.fuel_type}', "
+                f"а на складі '{stock.name}' зберігається '{stock.fuel_type}'."
+            )
+        )
+
+    liters = to_liters(transfer_data.liters)
+    if liters <= Decimal("0.000"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Кількість літрів заправки має бути більше 0")
 
-    # Invariant: cannot take more than stock balance (no negative balances!)
-    if stock.current_balance_l < transfer_data.liters:
+    # FUEL-02: Перевірка достатності залишку на складі (захист від від'ємного залишку)
+    src_before = to_liters(stock.current_balance_l)
+    if src_before < liters:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Недостатньо палива на складі ГСМ! Доступно: {stock.current_balance_l:.1f} л, запитано: {transfer_data.liters:.1f} л"
+            detail=f"Недостатньо палива на складі ГСМ! Доступно: {float(src_before):.1f} л, запитано: {float(liters):.1f} л"
         )
 
-    # Invariant: cannot overflow generator tank capacity
-    target_tank_level = generator.fuel_tank_level_l + transfer_data.liters
-    if target_tank_level > generator.tank_capacity_l:
-        max_possible = round(generator.tank_capacity_l - generator.fuel_tank_level_l, 1)
+    # FUEL-02: Захист від переливу бака генератора
+    tank_before = to_liters(generator.fuel_tank_level_l)
+    tank_cap = to_liters(generator.tank_capacity_l)
+    tank_after = tank_before + liters
+    if tank_after > tank_cap:
+        max_possible = tank_cap - tank_before
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Перевищення місткості бака! Місткість: {generator.tank_capacity_l} л, поточний рівень: {generator.fuel_tank_level_l} л. Можна додати максимум: {max_possible} л"
+            detail=(
+                f"Перевищення місткості бака! Місткість: {float(tank_cap):.1f} л, поточний рівень: {float(tank_before):.1f} л. "
+                f"Можна додати максимум: {float(max_possible):.1f} л"
+            )
         )
 
-    src_before = stock.current_balance_l
-    src_after = round(stock.current_balance_l - transfer_data.liters, 2)
-
-    tank_before = generator.fuel_tank_level_l
-    tank_after = round(target_tank_level, 2)
-
+    src_after = src_before - liters
     stock.current_balance_l = src_after
-    generator.fuel_tank_level_l = tank_after
+    stock.updated_at = utc_now()
+
+    generator.fuel_tank_level_l = float(tank_after)
+    generator.updated_at = utc_now()
 
     transfer = FuelTransfer(
         facility_id=facility_id,
         stock_id=stock.id,
         generator_id=generator.id,
         user_id=user_id,
-        liters=round(transfer_data.liters, 2),
+        liters=liters,
         source_balance_before=src_before,
         source_balance_after=src_after,
         tank_balance_before=tank_before,
         tank_balance_after=tank_after,
-        comment=transfer_data.comment
+        comment=transfer_data.comment,
+        idempotency_key=transfer_data.idempotency_key
     )
     db.add(transfer)
     await db.flush()
@@ -416,11 +736,12 @@ async def transfer_fuel_to_tank(
             "facility_id": facility_id,
             "stock_id": stock.id,
             "generator_id": generator.id,
-            "liters": transfer.liters,
-            "stock_before": src_before,
-            "stock_after": src_after,
-            "tank_before": tank_before,
-            "tank_after": tank_after,
+            "liters": float(transfer.liters),
+            "stock_before": float(src_before),
+            "stock_after": float(src_after),
+            "tank_before": float(tank_before),
+            "tank_after": float(tank_after),
+            "idempotency_key": transfer_data.idempotency_key
         },
         ip_address=ip_address
     )
@@ -433,66 +754,105 @@ async def get_fuel_balances_summary(
     facility_id: Optional[int] = None,
     generator_id: Optional[int] = None
 ) -> FuelBalancesSummary:
-    stock = await get_or_create_default_stock(db, facility_id=facility_id)
+    """
+    FUEL-09: Розрахунок зведених залишків пального.
+    - Для конкретного об'єкта повертає суму складів цього об'єкта та агрегат усіх його генераторів (без .first()).
+    - Для глобального адміністративного запиту підсумовує всі склади та всі генератори системи.
+    - Агрегати надходжень, витрат та середньої ціни розраховуються суворо за обраним масштабом.
+    """
+    if facility_id is not None:
+        # 1. Складські залишки конкретного об'єкта (лише активні склади)
+        stock_sum_q = select(func.coalesce(func.sum(FuelStock.current_balance_l), 0.0)).where(
+            FuelStock.facility_id == facility_id,
+            FuelStock.is_active == True
+        )
+        warehouse_balance = (await db.execute(stock_sum_q)).scalar_one()
 
-    gen_query = select(Generator)
-    if generator_id:
-        gen_query = gen_query.where(Generator.id == generator_id)
-    elif facility_id:
-        gen_query = gen_query.where(Generator.facility_id == facility_id)
-    gen_res = await db.execute(gen_query)
-    generator = gen_res.scalars().first()
+        # 2. Залишки баків генераторів об'єкта
+        if generator_id:
+            gen_q = select(Generator).where(Generator.id == generator_id, Generator.facility_id == facility_id)
+            gen = (await db.execute(gen_q)).scalars().first()
+            tank_balance = gen.fuel_tank_level_l if gen else 0.0
+            tank_capacity = gen.tank_capacity_l if gen else 0.0
+        else:
+            gen_agg_q = select(
+                func.coalesce(func.sum(Generator.fuel_tank_level_l), 0.0),
+                func.coalesce(func.sum(Generator.tank_capacity_l), 0.0)
+            ).where(Generator.facility_id == facility_id)
+            gen_agg = (await db.execute(gen_agg_q)).first()
+            tank_balance, tank_capacity = gen_agg if gen_agg else (0.0, 0.0)
 
-    tank_balance = generator.fuel_tank_level_l if generator else 0.0
-    tank_capacity = generator.tank_capacity_l if generator else 25.0
-
-    # Total warehouse balance across all stocks of this facility (or overall)
-    if facility_id:
-        tot_stock_q = select(func.coalesce(func.sum(FuelStock.current_balance_l), 0.0)).where(FuelStock.facility_id == facility_id)
-        warehouse_balance = (await db.execute(tot_stock_q)).scalar_one()
-    else:
-        warehouse_balance = stock.current_balance_l
-
-    # Receipts aggregate
-    rec_query = select(
-        func.coalesce(func.sum(FuelReceipt.liters), 0.0),
-        func.coalesce(func.sum(FuelReceipt.cost_total), 0.0)
-    )
-    if facility_id:
-        rec_query = rec_query.outerjoin(FuelStock, FuelReceipt.stock_id == FuelStock.id).where(
+        # 3. Агрегат надходжень
+        rec_query = select(
+            func.coalesce(func.sum(FuelReceipt.liters), 0.0),
+            func.coalesce(func.sum(FuelReceipt.cost_total), 0.0)
+        ).outerjoin(FuelStock, FuelReceipt.stock_id == FuelStock.id).where(
             or_(FuelReceipt.facility_id == facility_id, FuelStock.facility_id == facility_id)
         )
+        total_received_l, total_spent_uah = (await db.execute(rec_query)).first()
+
+        # 4. Агрегат заправок баків
+        tr_query = select(func.coalesce(func.sum(FuelTransfer.liters), 0.0))
+        if generator_id:
+            tr_query = tr_query.where(FuelTransfer.generator_id == generator_id)
+        else:
+            tr_query = tr_query.where(FuelTransfer.facility_id == facility_id)
+        total_transferred_l = (await db.execute(tr_query)).scalar_one()
+
+        # 5. Агрегат розрахункового споживання мотогодинами
+        runs_query = select(func.coalesce(func.sum(GeneratorRun.calculated_consumption_l), 0.0)).join(
+            Generator, GeneratorRun.generator_id == Generator.id
+        )
+        if generator_id:
+            runs_query = runs_query.where(GeneratorRun.generator_id == generator_id)
+        else:
+            runs_query = runs_query.where(Generator.facility_id == facility_id)
+        total_consumed_l = (await db.execute(runs_query)).scalar_one()
+
     else:
-        rec_query = rec_query.where(FuelReceipt.stock_id == stock.id)
-    rec_res = await db.execute(rec_query)
-    total_received_l, total_spent_uah = rec_res.first()
+        # Глобальний звіт: сумуємо всі доступні активи
+        stock_sum_q = select(func.coalesce(func.sum(FuelStock.current_balance_l), 0.0)).where(
+            FuelStock.is_active == True
+        )
+        warehouse_balance = (await db.execute(stock_sum_q)).scalar_one()
 
-    avg_price = round(total_spent_uah / total_received_l, 2) if total_received_l > 0 else 0.0
+        if generator_id:
+            gen = await db.get(Generator, generator_id)
+            tank_balance = gen.fuel_tank_level_l if gen else 0.0
+            tank_capacity = gen.tank_capacity_l if gen else 0.0
+        else:
+            gen_agg_q = select(
+                func.coalesce(func.sum(Generator.fuel_tank_level_l), 0.0),
+                func.coalesce(func.sum(Generator.tank_capacity_l), 0.0)
+            )
+            gen_agg = (await db.execute(gen_agg_q)).first()
+            tank_balance, tank_capacity = gen_agg if gen_agg else (0.0, 0.0)
 
-    # Transfers aggregate
-    tr_query = select(func.coalesce(func.sum(FuelTransfer.liters), 0.0))
-    if generator:
-        tr_query = tr_query.where(FuelTransfer.generator_id == generator.id)
-    elif facility_id:
-        tr_query = tr_query.where(FuelTransfer.facility_id == facility_id)
-    tr_res = await db.execute(tr_query)
-    total_transferred_l = tr_res.scalar_one()
+        rec_query = select(
+            func.coalesce(func.sum(FuelReceipt.liters), 0.0),
+            func.coalesce(func.sum(FuelReceipt.cost_total), 0.0)
+        )
+        total_received_l, total_spent_uah = (await db.execute(rec_query)).first()
 
-    # Consumed aggregate
-    runs_query = select(func.coalesce(func.sum(GeneratorRun.calculated_consumption_l), 0.0))
-    if generator:
-        runs_query = runs_query.where(GeneratorRun.generator_id == generator.id)
-    runs_res = await db.execute(runs_query)
-    total_consumed_l = runs_res.scalar_one()
+        tr_query = select(func.coalesce(func.sum(FuelTransfer.liters), 0.0))
+        if generator_id:
+            tr_query = tr_query.where(FuelTransfer.generator_id == generator_id)
+        total_transferred_l = (await db.execute(tr_query)).scalar_one()
+
+        runs_query = select(func.coalesce(func.sum(GeneratorRun.calculated_consumption_l), 0.0))
+        if generator_id:
+            runs_query = runs_query.where(GeneratorRun.generator_id == generator_id)
+        total_consumed_l = (await db.execute(runs_query)).scalar_one()
+
+    avg_price = round(float(total_spent_uah) / float(total_received_l), 2) if float(total_received_l) > 0 else 0.0
 
     return FuelBalancesSummary(
-        warehouse_balance_l=round(warehouse_balance, 2),
-        tank_balance_l=round(tank_balance, 2),
-        tank_capacity_l=round(tank_capacity, 2),
-        total_received_l=round(total_received_l, 2),
-        total_spent_uah=round(total_spent_uah, 2),
+        warehouse_balance_l=to_float(warehouse_balance, 3),
+        tank_balance_l=to_float(tank_balance, 3),
+        tank_capacity_l=to_float(tank_capacity, 3),
+        total_received_l=to_float(total_received_l, 3),
+        total_spent_uah=to_float(total_spent_uah, 2),
         avg_price_per_liter=avg_price,
-        total_transferred_l=round(total_transferred_l, 2),
-        total_calculated_consumed_l=round(total_consumed_l, 2)
+        total_transferred_l=to_float(total_transferred_l, 3),
+        total_calculated_consumed_l=to_float(total_consumed_l, 3)
     )
-

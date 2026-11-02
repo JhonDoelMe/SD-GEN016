@@ -497,7 +497,9 @@ async def generate_operational_report(
             )
         )
     rec_res = await db.execute(rec_q)
-    fuel_rec_l, fuel_rec_cost = rec_res.first()
+    raw_rec_l, raw_rec_cost = rec_res.first()
+    fuel_rec_l = float(raw_rec_l or 0.0)
+    fuel_rec_cost = float(raw_rec_cost or 0.0)
     avg_price = round(fuel_rec_cost / fuel_rec_l, 2) if fuel_rec_l > 0 else 0.0
 
     # 3. Fuel transfers aggregate
@@ -512,16 +514,16 @@ async def generate_operational_report(
     elif facility_id:
         tr_q = tr_q.where(FuelTransfer.facility_id == facility_id)
     tr_res = await db.execute(tr_q)
-    fuel_transferred_l = tr_res.scalar_one()
+    fuel_transferred_l = float(tr_res.scalar_one() or 0.0)
 
     # Stock & tank
     if facility_id:
         stock_bal_q = select(func.coalesce(func.sum(FuelStock.current_balance_l), 0.0)).where(FuelStock.facility_id == facility_id)
-        stock_bal = (await db.execute(stock_bal_q)).scalar_one()
+        stock_bal = float((await db.execute(stock_bal_q)).scalar_one() or 0.0)
     else:
         stock_bal_q = select(func.coalesce(func.sum(FuelStock.current_balance_l), 0.0))
-        stock_bal = (await db.execute(stock_bal_q)).scalar_one()
-    tank_bal = generator.fuel_tank_level_l if generator else 0.0
+        stock_bal = float((await db.execute(stock_bal_q)).scalar_one() or 0.0)
+    tank_bal = float(generator.fuel_tank_level_l if generator else 0.0)
 
     # 4. Maintenance aggregate
     m_all_q = select(func.count(MaintenanceRecord.id), func.coalesce(func.sum(MaintenanceRecord.cost), 0.0)).where(
@@ -613,9 +615,9 @@ async def generate_operational_report(
         ReportFuelReceiptItem(
             id=rec.id,
             created_at=fmt_dt_ua(rec.created_at),
-            liters=round(rec.liters or 0.0, 2),
-            price_per_liter=round(rec.price_per_liter or 0.0, 2),
-            cost_total=round(rec.cost_total or 0.0, 2),
+            liters=round(float(rec.liters or 0.0), 2),
+            price_per_liter=round(float(rec.price_per_liter or 0.0), 2),
+            cost_total=round(float(rec.cost_total or 0.0), 2),
             receipt_number=rec.receipt_number or "-",
             driver_name=rec.driver_name or "-",
             supplier=f"АЗК {rec.fuel_provider.upper()}" if getattr(rec, "fuel_provider", None) else "АЗК WOG",
@@ -647,7 +649,7 @@ async def generate_operational_report(
         ReportFuelTransferItem(
             id=tr.id,
             created_at=fmt_dt_ua(tr.created_at),
-            liters=round(tr.liters or 0.0, 2),
+            liters=round(float(tr.liters or 0.0), 2),
             stock_name=tr.stock.name if tr.stock else "Склад ГСМ",
             generator_name=tr.generator.name if tr.generator else (gen_name or "Генератор"),
             operator_name=(tr.user.full_name or tr.user.login) if tr.user else "Система"
@@ -1049,12 +1051,12 @@ async def generate_excel_report(
     transfers_by_date = {}
     for tr in transfers:
         d_str = fmt_date(tr.created_at)
-        transfers_by_date[d_str] = transfers_by_date.get(d_str, 0.0) + (tr.liters or 0.0)
+        transfers_by_date[d_str] = transfers_by_date.get(d_str, 0.0) + float(tr.liters or 0.0)
 
     receipts_by_date = {}
     for rc in receipts:
         d_str = fmt_date(rc.created_at)
-        receipts_by_date[d_str] = receipts_by_date.get(d_str, 0.0) + (rc.liters or 0.0)
+        receipts_by_date[d_str] = receipts_by_date.get(d_str, 0.0) + float(rc.liters or 0.0)
 
     tot_dur_hours = 0.0
     tot_cons_l = 0.0
@@ -1224,8 +1226,8 @@ async def generate_excel_report(
     tot_rec_uah = 0.0
     row_cur = 3
     for idx, rc in enumerate(receipts, start=1):
-        tot_rec_l += rc.liters
-        tot_rec_uah += rc.cost_total
+        tot_rec_l += float(rc.liters or 0.0)
+        tot_rec_uah += float(rc.cost_total or 0.0)
         fac_rec_name = rc.stock.facility.name if rc.stock and rc.stock.facility else facility_name
         stock_name = rc.stock.name if rc.stock else "Склад ГСМ"
         rec_user = rc.user.full_name if rc.user else "Користувач"
@@ -1239,9 +1241,9 @@ async def generate_excel_report(
             prov_label,
             rc.driver_name,
             rc.fuel_type,
-            rc.liters,
-            rc.cost_total,
-            rc.price_per_liter,
+            float(rc.liters or 0.0),
+            float(rc.cost_total or 0.0),
+            float(rc.price_per_liter or 0.0),
             rec_user,
             rc.comment or ""
         ]
@@ -1308,7 +1310,7 @@ async def generate_excel_report(
 
     tot_tr_l = 0.0
     for idx, tr in enumerate(transfers, start=1):
-        tot_tr_l += tr.liters
+        tot_tr_l += float(tr.liters or 0.0)
         fac_tr_name = tr.stock.facility.name if tr.stock and tr.stock.facility else facility_name
         stock_name = tr.stock.name if tr.stock else "Склад ГСМ"
         gen_tr_name = tr.generator.name if tr.generator else generator_name
@@ -1319,11 +1321,11 @@ async def generate_excel_report(
             fac_tr_name,
             stock_name,
             gen_tr_name,
-            tr.liters,
-            tr.source_balance_before,
-            tr.source_balance_after,
-            tr.tank_balance_before,
-            tr.tank_balance_after,
+            float(tr.liters or 0.0),
+            float(tr.source_balance_before or 0.0),
+            float(tr.source_balance_after or 0.0),
+            float(tr.tank_balance_before or 0.0),
+            float(tr.tank_balance_after or 0.0),
             tr_user,
             tr.comment or ""
         ]
@@ -1382,14 +1384,14 @@ async def generate_excel_report(
 
     tot_stk_l = 0.0
     for idx, stk in enumerate(stocks_list, start=1):
-        tot_stk_l += stk.current_balance_l
+        tot_stk_l += float(stk.current_balance_l or 0.0)
         stk_fac = stk.facility.name if stk.facility else facility_name
         vals = [
             idx,
             stk.name,
             stk_fac,
             stk.fuel_type,
-            stk.current_balance_l,
+            float(stk.current_balance_l or 0.0),
             fmt_dt(stk.updated_at)
         ]
         ws3.row_dimensions[row_cur].height = 20

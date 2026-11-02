@@ -5,6 +5,7 @@ import hashlib
 import datetime
 import shutil
 import asyncio
+from decimal import Decimal
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from sqlalchemy import select, delete, insert, text, DateTime, Date, Time
@@ -163,6 +164,8 @@ def model_row_to_dict(row: Any) -> Dict[str, Any]:
         val = getattr(row, col.name)
         if isinstance(val, (datetime.datetime, datetime.date, datetime.time)):
             data[col.name] = val.isoformat()
+        elif isinstance(val, Decimal):
+            data[col.name] = float(val)
         else:
             data[col.name] = val
     return data
@@ -252,7 +255,7 @@ async def create_backup(
         db_dump = await dump_all_tables_to_dict(session)
         db_dump_file = staging_dir / "database_export.json"
         with open(db_dump_file, "w", encoding="utf-8") as f:
-            json.dump(db_dump["tables"], f, ensure_ascii=False, indent=2)
+            json.dump(db_dump["tables"], f, ensure_ascii=False, indent=2, default=lambda o: float(o) if isinstance(o, Decimal) else str(o))
 
         included_components = ["database_export.json (дамп 20 таблиць БД)"]
 

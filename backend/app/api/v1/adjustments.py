@@ -120,7 +120,7 @@ async def perform_adjustment(
             old_val_str = str(gen.current_operating_hours)
             gen.current_operating_hours = _parse_non_negative_float(data.new_value, data.field_name)
         elif data.field_name == "fuel_tank_level_l":
-            old_val_str = str(gen.fuel_tank_level_l)
+            old_val_str = str(float(gen.fuel_tank_level_l))
             gen.fuel_tank_level_l = _parse_float(data.new_value, data.field_name)
         elif data.field_name == "status":
             new_status = str(data.new_value).strip().upper()
@@ -145,7 +145,7 @@ async def perform_adjustment(
         target_name = f"{stock.name} ({stock.fuel_type})"
 
         if data.field_name == "current_balance_l":
-            old_val_str = str(stock.current_balance_l)
+            old_val_str = str(float(stock.current_balance_l))
             stock.current_balance_l = _parse_non_negative_float(data.new_value, data.field_name)
         elif data.field_name == "name":
             old_val_str = str(stock.name)

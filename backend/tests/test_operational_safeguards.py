@@ -80,10 +80,25 @@ async def test_fuel_receipt_scale_and_price_sanity_checks(client, superadmin_aut
     assert res_large.status_code == 400
     assert "Запобіжник об'єму палива" in res_large.json()["detail"]
 
-    # 2. Allow large receipt with force_confirm=True
-    res_large_ok = await client.post(
+    # Operator without fuel:receipt:override is rejected with 403 (FUEL-05)
+    res_large_forbidden = await client.post(
         "/api/v1/fuel/receipt",
         headers=operator_auth,
+        json={
+            "liters": 2500.0,
+            "cost_total": 140000.0,
+            "fuel_type": "А-95",
+            "driver_name": "Іванов І.І.",
+            "receipt_number": "ЧЕК-LARGE-01",
+            "force_confirm": True
+        }
+    )
+    assert res_large_forbidden.status_code == 403
+
+    # 2. Allow large receipt with force_confirm=True (Admin/SuperAdmin)
+    res_large_ok = await client.post(
+        "/api/v1/fuel/receipt",
+        headers=superadmin_auth,
         json={
             "liters": 2500.0,
             "cost_total": 140000.0,
@@ -112,10 +127,25 @@ async def test_fuel_receipt_scale_and_price_sanity_checks(client, superadmin_aut
     assert res_abnormal.status_code == 400
     assert "Запобіжник вартості палива" in res_abnormal.json()["detail"]
 
-    # 4. Allow abnormal receipt with force_confirm=True
-    res_abnormal_ok = await client.post(
+    # Operator without override permission is rejected with 403
+    res_abnormal_forbidden = await client.post(
         "/api/v1/fuel/receipt",
         headers=operator_auth,
+        json={
+            "liters": 100.0,
+            "cost_total": 100.0,
+            "fuel_type": "А-95",
+            "driver_name": "Сидоров С.С.",
+            "receipt_number": "ЧЕК-PRICE-01",
+            "force_confirm": True
+        }
+    )
+    assert res_abnormal_forbidden.status_code == 403
+
+    # 4. Allow abnormal receipt with force_confirm=True (Admin/SuperAdmin)
+    res_abnormal_ok = await client.post(
+        "/api/v1/fuel/receipt",
+        headers=superadmin_auth,
         json={
             "liters": 100.0,
             "cost_total": 100.0,
