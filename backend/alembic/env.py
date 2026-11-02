@@ -63,6 +63,13 @@ def do_run_migrations(connection: Connection) -> None:
 async def run_async_migrations() -> None:
     configuration = config.get_section(config.config_ini_section, {})
     url = get_database_url()
+    try:
+        from urllib.parse import urlparse
+        p = urlparse(url)
+        print(f"[ALEMBIC] Connecting to DB -> Scheme: {p.scheme}, Host: '{p.hostname}', Port: {p.port}, User: '{p.username}', DB: '{p.path}'", flush=True)
+    except Exception:
+        pass
+
     configuration["sqlalchemy.url"] = url
     connectable = async_engine_from_config(
         configuration,
@@ -70,8 +77,17 @@ async def run_async_migrations() -> None:
         poolclass=pool.NullPool,
     )
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
+    max_retries = 15
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with connectable.connect() as connection:
+                await connection.run_sync(do_run_migrations)
+            break
+        except Exception as e:
+            if attempt == max_retries:
+                raise e
+            print(f"[ALEMBIC] Database connection attempt {attempt}/{max_retries} failed ({e}). Retrying in 2s...", flush=True)
+            await asyncio.sleep(2)
 
     await connectable.dispose()
 

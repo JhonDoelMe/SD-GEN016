@@ -1,6 +1,8 @@
 import logging
+import urllib.parse
 from functools import lru_cache
 from pathlib import Path
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger("config")
@@ -36,6 +38,21 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = ""
     LOGIN_MAX_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_SECONDS: int = 300
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def sanitize_database_url(cls, v: str) -> str:
+        if not isinstance(v, str):
+            return v
+        v = v.strip()
+        # Handle unescaped @ or special chars in password: postgresql+asyncpg://user:pass@word@host:port/dbname
+        if "://" in v and v.count("@") > 1:
+            scheme, rest = v.split("://", 1)
+            auth, host_path = rest.rsplit("@", 1)
+            if ":" in auth:
+                user, password = auth.split(":", 1)
+                v = f"{scheme}://{user}:{urllib.parse.quote_plus(password)}@{host_path}"
+        return v
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
