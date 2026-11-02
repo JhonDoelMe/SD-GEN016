@@ -4,11 +4,15 @@
 (function checkDomainIntegrity() {
   // Read dynamic primary domain injected from .env via meta tag or global config
   const metaDomain = document.querySelector('meta[name="app-primary-domain"]')?.getAttribute('content');
-  const primaryDomain = (metaDomain || window.__APP_PRIMARY_DOMAIN__ || 'generator-016.pp.ua').toLowerCase().trim();
+  const primaryDomain = (metaDomain || window.__APP_PRIMARY_DOMAIN__ || 'sdgen.pp.ua').toLowerCase().trim();
 
   const allowedHosts = [
     primaryDomain,
     `www.${primaryDomain}`,
+    'sdgen.pp.ua',
+    'www.sdgen.pp.ua',
+    'generator-016.pp.ua',
+    'www.generator-016.pp.ua',
     'localhost',
     '127.0.0.1'
   ];

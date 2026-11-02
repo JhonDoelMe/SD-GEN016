@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     BACKUP_DIR: str = "./backups"
 
     # Domain, Host Protection & CORS (Configured via .env)
-    PRIMARY_DOMAIN: str = "generator-016.pp.ua"
+    PRIMARY_DOMAIN: str = "sdgen.pp.ua"
     ALLOWED_HOSTS: str = ""
     CORS_ORIGINS: str = ""
     LOGIN_MAX_ATTEMPTS: int = 5
@@ -117,6 +117,10 @@ class Settings(BaseSettings):
             hosts = [
                 domain,
                 f"www.{domain}",
+                "sdgen.pp.ua",
+                "www.sdgen.pp.ua",
+                "generator-016.pp.ua",
+                "www.generator-016.pp.ua",
                 "localhost",
                 "127.0.0.1",
             ]
@@ -124,7 +128,7 @@ class Settings(BaseSettings):
         for def_host in ("testserver", "test", "app", "nginx"):
             if def_host not in hosts:
                 hosts.append(def_host)
-        return hosts
+        return list(dict.fromkeys(hosts))
 
     @property
     def effective_cors_origins(self) -> list[str]:
@@ -134,13 +138,20 @@ class Settings(BaseSettings):
         if self.CORS_ORIGINS.strip():
             return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
         domain = self.PRIMARY_DOMAIN.strip()
-        return [
+        origins = [
             f"https://{domain}",
             f"https://www.{domain}",
             f"http://{domain}",
+            "https://sdgen.pp.ua",
+            "https://www.sdgen.pp.ua",
+            "http://sdgen.pp.ua",
+            "https://generator-016.pp.ua",
+            "https://www.generator-016.pp.ua",
+            "http://generator-016.pp.ua",
             "http://localhost:8000",
             "http://127.0.0.1:8000",
         ]
+        return list(dict.fromkeys(origins))
 
 
 @lru_cache
