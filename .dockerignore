@@ -19,10 +19,15 @@ uploads/
 
 # Python cache and bytecode
 __pycache__/
+*.py[cod]
 *.pyc
 *.pyo
 *.pyd
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
 .coverage
 htmlcov/
 dist/
@@ -32,9 +37,18 @@ build/
 venv/
 ENV/
 
-# IDE and editors
+# IDE, OS, and editors
 .idea/
 .vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+
+# Temporary and backup files
+*.tmp
+*.bak
 
 # Local SSL and sensitive credentials
 docker/ssl/
