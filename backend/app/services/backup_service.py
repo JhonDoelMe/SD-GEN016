@@ -877,7 +877,8 @@ async def run_backup_scheduler():
                     )
 
                     try:
-                        from backend.app.services.settings_service import update_system_settings
+                        from backend.app.services.settings_service import update_system_settings, set_runtime_setting
+                        set_runtime_setting("backup_last_auto_run_date", today_str)
                         await update_system_settings(session, {"backup_last_auto_run_date": today_str})
                     except Exception as e:
                         print(f"[BACKUP_SCHEDULER] Failed to persist backup_last_auto_run_date: {e}", flush=True)

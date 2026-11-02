@@ -76,6 +76,32 @@ ROLE_PERMISSIONS_MAP = {
 
 
 async def seed_initial_data(db: AsyncSession) -> None:
+    # 0. Defensive runtime schema safeguard for PostgreSQL
+    try:
+        bind = db.get_bind()
+        if bind and bind.dialect.name == "postgresql":
+            from sqlalchemy import text as sa_text
+            await db.execute(sa_text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fuel_stocks' AND column_name='is_active') THEN
+                    ALTER TABLE fuel_stocks ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fuel_receipts' AND column_name='idempotency_key') THEN
+                    ALTER TABLE fuel_receipts ADD COLUMN idempotency_key VARCHAR(64);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fuel_transfers' AND column_name='idempotency_key') THEN
+                    ALTER TABLE fuel_transfers ADD COLUMN idempotency_key VARCHAR(64);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='facilities' AND column_name='default_fuel_provider') THEN
+                    ALTER TABLE facilities ADD COLUMN default_fuel_provider VARCHAR(30) NOT NULL DEFAULT 'wog';
+                END IF;
+            END $$;
+            """))
+            await db.commit()
+    except Exception as ex:
+        logger.warning(f"Defensive schema self-heal bypassed: {ex}")
+
     # 1. Seed Permissions
     existing_perms_res = await db.execute(select(Permission))
     existing_perms = {p.code: p for p in existing_perms_res.scalars().all()}

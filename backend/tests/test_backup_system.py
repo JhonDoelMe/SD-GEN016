@@ -167,7 +167,7 @@ async def test_backup_system_full_flow(client, superadmin_auth, operator_auth):
 
 
 @pytest.mark.asyncio
-async def test_backup_scheduler_no_spurious_triggers_on_reboot():
+async def test_backup_scheduler_no_spurious_triggers_on_reboot(db_session):
     """Verify that rebooting the container outside the scheduled window does NOT trigger a backup."""
     from backend.app.services.settings_service import set_runtime_setting, get_runtime_setting
     from backend.app.services.backup_service import run_backup_scheduler, list_backups

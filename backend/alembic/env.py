@@ -56,6 +56,10 @@ def do_run_migrations(connection: Connection) -> None:
     except Exception:
         pass
 
+    # Ensure reflection cache is clean before running migration suite
+    if hasattr(connection, "info_cache"):
+        connection.info_cache.clear()
+
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
