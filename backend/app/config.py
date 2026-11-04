@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     LOGIN_LOCKOUT_SECONDS: int = 300
 
     # Weather & Alerts Integration
-    OPENWEATHER_API_KEY: str = "b084afc0b8a3457bcbe1588a428ec949"
+    OPENWEATHER_API_KEY: str = ""
     ALERTS_IN_UA_TOKEN: str = ""
     UKRAINE_ALARM_API_KEY: str = ""
     WEATHER_CACHE_MINUTES: int = 20

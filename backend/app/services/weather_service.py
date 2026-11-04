@@ -181,7 +181,9 @@ async def get_facility_weather(db: AsyncSession, facility_id: int) -> Dict[str, 
             "city": city_name,
             "temp_c": None,
             "description": "API ключ погоди не налаштовано",
-            "icon_emoji": "⛅"
+            "icon_emoji": "⛅",
+            "generator_tip": "Налаштуйте OPENWEATHER_API_KEY у .env для отримання порад оператору",
+            "updated_at": now_utc().isoformat()
         }
 
     data = await fetch_openweather_data(city_name, api_key)
@@ -194,7 +196,9 @@ async def get_facility_weather(db: AsyncSession, facility_id: int) -> Dict[str, 
             "city": city_name,
             "temp_c": None,
             "description": "Погодні дані тимчасово недоступні",
-            "icon_emoji": "⛅"
+            "icon_emoji": "⛅",
+            "generator_tip": "Налаштуйте OPENWEATHER_API_KEY у .env для отримання порад оператору",
+            "updated_at": now_utc().isoformat()
         }
 
     main = data.get("main", {})
