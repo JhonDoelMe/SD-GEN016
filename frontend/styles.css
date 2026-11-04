@@ -141,6 +141,12 @@ textarea {
   -webkit-tap-highlight-color: transparent;
 }
 
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  width: 100%;
+}
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
@@ -1542,23 +1548,103 @@ input[type="checkbox"], input[type="radio"] {
     padding: 0.85rem 0.75rem;
   }
 
-  /* Header on Mobile */
+  /* Header on Mobile: 2-Row Executive Layout (Brand/User + Indicators) */
   .app-header {
-    padding: 0.65rem 0.75rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    gap: 0.35rem 0.5rem;
+    width: 100%;
+    box-sizing: border-box;
   }
   .brand-title {
-    font-size: 1.1rem;
+    order: 1;
+    flex: 0 1 auto;
+    font-size: 1rem;
+    gap: 0.45rem;
   }
-  .header-clock {
-    display: none; /* Hide clock from small mobile headers to prevent wrapping */
+  .brand-logo {
+    width: 30px;
+    height: 30px;
+  }
+  .brand-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .user-badge {
+    order: 2;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
   }
   .user-name {
-    max-width: 100px;
-    font-size: 0.8rem;
+    max-width: 85px;
+    font-size: 0.78rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .btn-theme-toggle {
+    width: 34px;
+    height: 34px;
+    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
   }
   .btn-logout {
-    padding: 0.35rem 0.5rem;
+    padding: 0.3rem 0.55rem;
     font-size: 0.75rem;
+    height: 34px;
+  }
+
+  /* Row 2: Weather & Air Alert Indicators Full-Width Control Strip */
+  .header-center-panel {
+    order: 3;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.15rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  [data-theme="light"] .header-center-panel {
+    border-top-color: rgba(0, 0, 0, 0.07);
+  }
+  .header-clock {
+    display: none !important;
+  }
+  .header-indicators {
+    width: 100%;
+    display: flex;
+    gap: 0.5rem;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .header-pill {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 36px;
+    justify-content: center;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.82rem;
+    border-radius: 8px;
+  }
+  .pill-subtext {
+    display: inline-block !important;
+    max-width: 75px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-left: 0.25rem;
+    font-size: 0.74rem;
   }
 
   /* PWA Banner on Mobile */
@@ -1688,23 +1774,40 @@ input[type="checkbox"], input[type="radio"] {
     font-size: 1.7rem;
   }
 
-  /* Modals on Mobile - Bottom Sheet Feel */
+  /* Modals on Mobile - Full Screen Width Bottom Sheet Safeguard */
   .modal-overlay {
-    align-items: flex-end;
-    padding: 0;
-    z-index: 1000;
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    padding: 0 !important;
+    align-items: flex-end !important;
+    justify-content: center !important;
+    z-index: 1000 !important;
+    box-sizing: border-box !important;
   }
   .modal-content {
-    max-height: 90vh;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-    padding: 1.25rem 1rem calc(2rem + var(--safe-bottom));
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 90vh !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    border-top-left-radius: 1.25rem !important;
+    border-top-right-radius: 1.25rem !important;
+    padding: 1.25rem 1rem calc(2rem + var(--safe-bottom)) !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
   }
   .auth-modal-content {
     /* Center the login screen modal nicely even on mobile */
-    border-bottom-left-radius: 1.15rem;
-    border-bottom-right-radius: 1.15rem;
-    margin: auto;
+    border-bottom-left-radius: 1.15rem !important;
+    border-bottom-right-radius: 1.15rem !important;
+    border-top-left-radius: 1.15rem !important;
+    border-top-right-radius: 1.15rem !important;
+    margin: auto !important;
+    max-width: calc(100% - 1.5rem) !important;
   }
 
   .toast {
@@ -3381,11 +3484,111 @@ button[disabled] {
   color: var(--text-primary);
 }
 
-@media (max-width: 768px) {
-  .pill-subtext {
-    display: none !important;
-  }
-  .header-center-panel {
-    gap: 0.35rem;
-  }
+
+
+
+/* ==========================================================================
+   Weather & Alerts: Light Theme High-Contrast Styling (WCAG AA)
+   ========================================================================== */
+[data-theme="light"] .pill-weather {
+  background: rgba(2, 132, 199, 0.1);
+  border-color: rgba(2, 132, 199, 0.35);
+  color: #0369a1;
+}
+[data-theme="light"] .pill-weather:hover {
+  background: rgba(2, 132, 199, 0.18);
+  box-shadow: 0 0 10px rgba(2, 132, 199, 0.2);
+}
+[data-theme="light"] .pill-alert-green {
+  background: rgba(22, 163, 74, 0.1);
+  border-color: rgba(22, 163, 74, 0.35);
+  color: #15803d;
+}
+[data-theme="light"] .pill-alert-green:hover {
+  background: rgba(22, 163, 74, 0.18);
+}
+[data-theme="light"] .pill-alert-yellow {
+  background: rgba(217, 119, 6, 0.12);
+  border-color: rgba(217, 119, 6, 0.45);
+  color: #9a3412;
+}
+[data-theme="light"] .pill-alert-yellow:hover {
+  background: rgba(217, 119, 6, 0.2);
+}
+[data-theme="light"] .pill-alert-red {
+  background: rgba(220, 38, 38, 0.12);
+  border-color: rgba(220, 38, 38, 0.45);
+  color: #991b1b;
+}
+[data-theme="light"] .pill-alert-red:hover {
+  background: rgba(220, 38, 38, 0.2);
+}
+[data-theme="light"] .pill-subtext {
+  border-left-color: rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="light"] .weather-hero-card {
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.1), rgba(241, 245, 249, 0.95));
+  border-color: rgba(2, 132, 199, 0.3);
+}
+[data-theme="light"] .weather-hero-temp {
+  color: #0284c7;
+}
+[data-theme="light"] .weather-param-box {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+[data-theme="light"] .weather-generator-advice {
+  background: rgba(217, 119, 6, 0.08);
+  border-color: rgba(217, 119, 6, 0.3);
+}
+[data-theme="light"] .advice-header {
+  color: #9a3412;
+}
+[data-theme="light"] .btn-action-small {
+  background: rgba(2, 132, 199, 0.1);
+  border-color: rgba(2, 132, 199, 0.35);
+  color: #0284c7;
+}
+[data-theme="light"] .btn-action-small:hover {
+  background: rgba(2, 132, 199, 0.2);
+}
+
+[data-theme="light"] .alert-hero-card.hero-alert-green {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(241, 245, 249, 0.95));
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #166534;
+}
+[data-theme="light"] .alert-hero-card.hero-alert-yellow {
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.12), rgba(241, 245, 249, 0.95));
+  border-color: rgba(234, 179, 8, 0.4);
+  color: #854d0e;
+}
+[data-theme="light"] .alert-hero-card.hero-alert-red {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(241, 245, 249, 0.95));
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #991b1b;
+}
+[data-theme="light"] .alert-advice-card {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+[data-theme="light"] .alert-advice-title {
+  color: #0284c7;
+}
+[data-theme="light"] .alert-legend-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+[data-theme="light"] .legend-green {
+  background: rgba(22, 163, 74, 0.15);
+  color: #15803d;
+}
+[data-theme="light"] .legend-yellow {
+  background: rgba(217, 119, 6, 0.15);
+  color: #9a3412;
+}
+[data-theme="light"] .legend-red {
+  background: rgba(220, 38, 38, 0.15);
+  color: #991b1b;
 }
