@@ -389,6 +389,129 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
             return f"Користувач: {login} (Роль: {roles_ua})"
         return f"Користувач: {login}"
 
+    # 6.1 Зміни параметрів генератора або об'єкта (Diff changes)
+    if "changes" in details and isinstance(details["changes"], dict):
+        change_parts = []
+        field_labels = {
+            "name": "Назва",
+            "model": "Модель",
+            "manufacturer": "Виробник",
+            "serial_number": "Серійний номер",
+            "nominal_consumption_l_per_h": "Нормативний розхід",
+            "tank_capacity_l": "Місткість бака",
+            "fuel_type": "Тип палива",
+            "rated_power_kw": "Потужність",
+            "address": "Адреса",
+            "default_fuel_provider": "Мережа АЗК",
+            "current_operating_hours": "Мотогодини",
+            "fuel_tank_level_l": "Паливо в баку",
+            "status": "Статус",
+            "is_configured": "Налаштовано",
+            "timezone": "Часовий пояс",
+            "work_schedule_start": "Початок зміни",
+            "work_schedule_end": "Кінець зміни",
+        }
+        for k, v in details["changes"].items():
+            k_name = field_labels.get(k, k)
+            if isinstance(v, dict):
+                old_v = v.get("old", "-")
+                new_v = v.get("new", "-")
+                change_parts.append(f"{k_name}: '{old_v}' ➔ '{new_v}'")
+            else:
+                change_parts.append(f"{k_name}: {v}")
+        if change_parts:
+            entity_label = "генератора" if "GENERATOR" in action else ("об'єкта" if "FACILITY" in action else "")
+            prefix = f"Змінено параметри {entity_label}: " if entity_label else "Змінено параметри: "
+            return prefix + "; ".join(change_parts)
+
+    # 6.2 Оновлення системних налаштувань (System settings updates)
+    if "updates" in details and isinstance(details["updates"], dict):
+        setting_labels = {
+            "organization_name": "Організація",
+            "work_schedule_start": "Початок зміни",
+            "work_schedule_end": "Кінець зміни",
+            "enforce_work_schedule": "Контроль графіка",
+            "facility_timezone": "Часовий пояс",
+            "default_maintenance_interval_hours": "Інтервал ТО",
+            "fuel_price_a95": "Ціна А-95",
+            "fuel_price_dp": "Ціна ДП",
+            "fuel_price_a92": "Ціна А-92",
+            "fuel_default_provider": "Мережа за замовчуванням",
+            "email_weekly_report_enabled": "Щотижневий email-звіт",
+            "email_weekly_recipients": "Отримувачі email-звіту",
+            "email_notify_safety_stop": "Сповіщення про автостоп",
+            "smtp_fallback_enabled": "Резервний SMTP",
+            "smtp_fallback_host": "Сервер SMTP",
+            "smtp_fallback_port": "Порт SMTP",
+            "smtp_fallback_user": "Користувач SMTP",
+            "login_max_attempts": "Ліміт спроб входу",
+            "login_lockout_seconds": "Час блокування (с)",
+            "fuel_receipt_max_liters_warning": "Поріг літрів чека",
+            "fuel_receipt_min_price": "Мін. ціна палива",
+            "fuel_receipt_max_price": "Макс. ціна палива",
+        }
+        update_parts = []
+        for k, v in details["updates"].items():
+            if "password" in k.lower() or "secret" in k.lower() or "token" in k.lower() or v == "***REDACTED***":
+                continue
+            k_name = setting_labels.get(k, k)
+            if isinstance(v, bool):
+                v_str = "увімкнено" if v else "вимкнено"
+            elif isinstance(v, (int, float)):
+                v_str = str(v)
+            else:
+                v_str = f"'{v}'"
+            update_parts.append(f"{k_name}: {v_str}")
+        if update_parts:
+            return "Оновлено налаштування: " + "; ".join(update_parts)
+
+    # 6.3 Видалення об'єкта (Facility deletion)
+    if action == "FACILITY_DELETED" or ("cascade" in details and "fuel_stocks_deleted" in details):
+        fac_name = details.get("name", "")
+        extra_info = []
+        gens_del = details.get("generators_deleted") or []
+        stocks_del = details.get("fuel_stocks_deleted") or []
+        unbound = details.get("users_unbound_count", 0)
+        if gens_del:
+            extra_info.append(f"генераторів: {len(gens_del)}")
+        if stocks_del:
+            extra_info.append(f"складів ГСМ: {len(stocks_del)}")
+        if unbound:
+            extra_info.append(f"відкріплено користувачів: {unbound}")
+        cascade_str = f" (каскадно видалено {', '.join(extra_info)})" if extra_info else ""
+        return f"Видалено об'єкт '{fac_name}'{cascade_str}"
+
+    # 6.4 Створення або оновлення об'єкта
+    if action in ("FACILITY_CREATE", "FACILITY_CREATED", "FACILITY_UPDATE", "FACILITY_UPDATED") and ("name" in details or "address" in details):
+        fac_name = details.get("name", "")
+        addr = details.get("address", "")
+        prov = details.get("default_fuel_provider", "")
+        parts = []
+        if fac_name:
+            parts.append(f"Об'єкт: '{fac_name}'")
+        if addr:
+            parts.append(f"Адреса: '{addr}'")
+        if prov:
+            parts.append(f"Мережа: {prov.upper()}")
+        return " | ".join(parts) if parts else (fac_name or str(details))
+
+    # 6.5 Резервні копії (Backups)
+    if "message" in details and ("backup" in str(details.get("message", "")).lower() or "бекап" in str(details.get("message", "")).lower() or "BACKUP" in action):
+        msg = str(details.get("message", "")).strip()
+        rec_cnt = details.get("records_count")
+        file_cnt = details.get("files_count")
+        notes = details.get("notes")
+        sub_info = []
+        if rec_cnt is not None:
+            sub_info.append(f"записів БД: {rec_cnt}")
+        if file_cnt is not None:
+            sub_info.append(f"файлів: {file_cnt}")
+        if notes:
+            sub_info.append(str(notes))
+        if sub_info:
+            return f"{msg} ({', '.join(sub_info)})"
+        return msg
+
     # 7. Налаштування сповіщень
     if "updated_keys" in details:
         return "Оновлено параметри та перемикачі сповіщень"
@@ -1164,7 +1287,7 @@ async def generate_excel_report(
         cell.alignment = ALIGN_CENTER
         cell.border = CELL_BORDER
 
-    # Map daily transfers and receipts by date
+    # Map daily transfers and receipts by date (Kyiv date string DD.MM.YYYY)
     transfers_by_date = {}
     for tr in transfers:
         d_str = fmt_date(tr.created_at)
@@ -1175,74 +1298,117 @@ async def generate_excel_report(
         d_str = fmt_date(rc.created_at)
         receipts_by_date[d_str] = receipts_by_date.get(d_str, 0.0) + float(rc.liters or 0.0)
 
+    # Group runs by date string (DD.MM.YYYY)
+    runs_by_date = {}
+    for r in runs:
+        d_str = fmt_date(r.start_time)
+        if d_str not in runs_by_date:
+            runs_by_date[d_str] = []
+        runs_by_date[d_str].append(r)
+
+    # Determine calendar range in facility timezone
+    k_start = to_facility_time(start_date) if start_date else None
+    k_end = to_facility_time(end_date) if end_date else None
+    d_start = k_start.date() if k_start else datetime.date.today()
+    d_end = k_end.date() if k_end else datetime.date.today()
+    if d_start > d_end:
+        d_start, d_end = d_end, d_start
+
+    span_days = (d_end - d_start).days
+    target_dates = []
+    if span_days <= 93:
+        # Standard calendar grid (every calendar day in sequence: 1st, 2nd, 3rd, ...)
+        curr = d_start
+        while curr <= d_end:
+            target_dates.append(curr.strftime("%d.%m.%Y"))
+            curr += datetime.timedelta(days=1)
+    else:
+        # Wide multi-year queries (e.g. 2020-2030 test queries):
+        # include active dates with runs/movements, sorted strictly chronologically
+        raw_dates = set(runs_by_date.keys()) | set(transfers_by_date.keys()) | set(receipts_by_date.keys())
+        parsed_dates = []
+        for ds in raw_dates:
+            try:
+                dt_obj = datetime.datetime.strptime(ds, "%d.%m.%Y").date()
+                parsed_dates.append(dt_obj)
+            except Exception:
+                pass
+        parsed_dates.sort()
+        target_dates = [dt.strftime("%d.%m.%Y") for dt in parsed_dates]
+
     tot_dur_hours = 0.0
     tot_cons_l = 0.0
     tot_fuel_added = 0.0
     tot_fuel_received = 0.0
 
     daily_rows = []
-    seen_dates = set()
 
-    for r in runs:
-        date_str = fmt_date(r.start_time)
-        seen_dates.add(date_str)
-        start_t = fmt_time(r.start_time)
-        end_t = fmt_time(r.end_time) if r.end_time else "-"
-        dur_str = getattr(r, "duration_formatted", None) or fmt_duration(r.duration_seconds, r.duration_hours)
-        dur_human = getattr(r, "duration_human", None) or fmt_duration_human(r.duration_seconds, r.duration_hours)
-        consumption = round(r.calculated_consumption_l or 0.0, 2)
-        fuel_added = round(transfers_by_date.pop(date_str, 0.0), 2)
-        fuel_rec = round(receipts_by_date.pop(date_str, 0.0), 2)
-        op_name = r.user.full_name if r.user else "Оператор"
-
-        tot_dur_hours += (r.duration_hours or 0.0)
-        tot_cons_l += consumption
+    for date_str in target_dates:
+        day_runs = runs_by_date.get(date_str, [])
+        fuel_added = round(transfers_by_date.get(date_str, 0.0), 2)
+        fuel_rec = round(receipts_by_date.get(date_str, 0.0), 2)
         tot_fuel_added += fuel_added
         tot_fuel_received += fuel_rec
 
-        daily_rows.append([
-            date_str,
-            start_t,
-            end_t,
-            dur_str,
-            dur_human,
-            round(r.start_hours, 3) if r.start_hours is not None else "-",
-            round(r.end_hours, 3) if r.end_hours is not None else "-",
-            round(r.start_fuel_level_l, 2) if r.start_fuel_level_l is not None else "-",
-            round(r.end_fuel_level_l, 2) if r.end_fuel_level_l is not None else "-",
-            consumption,
-            fuel_added if fuel_added > 0 else "-",
-            fuel_rec if fuel_rec > 0 else "-",
-            op_name,
-            RUN_STATUS_UA.get(str(r.status).upper(), str(r.status)),
-            r.note or ""
-        ])
+        if day_runs:
+            for idx_r, r in enumerate(day_runs):
+                start_t = fmt_time(r.start_time)
+                end_t = fmt_time(r.end_time) if r.end_time else "-"
+                dur_str = getattr(r, "duration_formatted", None) or fmt_duration(r.duration_seconds, r.duration_hours)
+                dur_human = getattr(r, "duration_human", None) or fmt_duration_human(r.duration_seconds, r.duration_hours)
+                consumption = round(r.calculated_consumption_l or 0.0, 2)
+                op_name = r.user.full_name if r.user else "Оператор"
 
-    # Add any dates that had fuel movements (receipts or transfers) but no generator runs
-    extra_dates = sorted(list(set(transfers_by_date.keys()) | set(receipts_by_date.keys())))
-    for d_str in extra_dates:
-        fuel_added = round(transfers_by_date.get(d_str, 0.0), 2)
-        fuel_rec = round(receipts_by_date.get(d_str, 0.0), 2)
-        tot_fuel_added += fuel_added
-        tot_fuel_received += fuel_rec
+                tot_dur_hours += (r.duration_hours or 0.0)
+                tot_cons_l += consumption
 
-        daily_rows.append([
-            d_str,
-            "-",
-            "-",
-            "-",
-            "-",
-            "-",
-            "-",
-            "-",
-            "-",
-            0.0,
-            fuel_added if fuel_added > 0 else "-",
-            fuel_rec if fuel_rec > 0 else "-",
-            "Склад ГСМ",
-            "Рух палива",
-            "Оприбуткування / заправка без пуску генератора"
-        ])
+                f_add_val = (fuel_added if fuel_added > 0 else "-") if idx_r == 0 else "-"
+                f_rec_val = (fuel_rec if fuel_rec > 0 else "-") if idx_r == 0 else "-"
+
+                daily_rows.append([
+                    date_str,
+                    start_t,
+                    end_t,
+                    dur_str,
+                    dur_human,
+                    round(r.start_hours, 3) if r.start_hours is not None else "-",
+                    round(r.end_hours, 3) if r.end_hours is not None else "-",
+                    round(r.start_fuel_level_l, 2) if r.start_fuel_level_l is not None else "-",
+                    round(r.end_fuel_level_l, 2) if r.end_fuel_level_l is not None else "-",
+                    consumption,
+                    f_add_val,
+                    f_rec_val,
+                    op_name,
+                    RUN_STATUS_UA.get(str(r.status).upper(), str(r.status)),
+                    r.note or ""
+                ])
+        else:
+            if fuel_added > 0 or fuel_rec > 0:
+                st_label = "Рух палива (без пуску)"
+                nt_label = "Оприбуткування / заправка без пуску генератора"
+                op_label = "Склад ГСМ"
+            else:
+                st_label = "Черговий режим (без запусків)"
+                nt_label = "Генератор не запускався"
+                op_label = "-"
+
+            daily_rows.append([
+                date_str,
+                "-",
+                "-",
+                "-",
+                "-",
+                "-",
+                "-",
+                "-",
+                "-",
+                0.0,
+                fuel_added if fuel_added > 0 else "-",
+                fuel_rec if fuel_rec > 0 else "-",
+                op_label,
+                st_label,
+                nt_label
+            ])
 
     for idx, vals in enumerate(daily_rows, start=1):
         r_row = idx + 1

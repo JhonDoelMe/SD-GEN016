@@ -409,6 +409,30 @@ async def setup_generator_wizard(
     return res.scalars().first()
 
 
+async def get_generator_cooldown_remaining(db: AsyncSession, generator_id: int) -> int:
+    """
+    Повертає кількість секунд, що залишились до завершення 60-секундного
+    кулдауну після останньої зупинки генератора.
+    """
+    q = (
+        select(GeneratorRun.end_time)
+        .where(
+            GeneratorRun.generator_id == generator_id,
+            GeneratorRun.status == "COMPLETED"
+        )
+        .order_by(GeneratorRun.end_time.desc())
+        .limit(1)
+    )
+    res = await db.execute(q)
+    last_stop_time = res.scalar_one_or_none()
+    if not last_stop_time:
+        return 0
+    elapsed_sec = (utc_now() - last_stop_time).total_seconds()
+    if elapsed_sec < 60:
+        return max(0, int(60 - elapsed_sec))
+    return 0
+
+
 async def start_generator(
     db: AsyncSession,
     generator_id: int,
@@ -418,7 +442,8 @@ async def start_generator(
     force_start_with_maintenance: bool = False,
     force_start_reason: Optional[str] = None,
     idempotency_key: Optional[str] = None,
-    facility_id: Optional[int] = None
+    facility_id: Optional[int] = None,
+    skip_cooldown: bool = False
 ) -> GeneratorRun:
     """
     GEN-01, GEN-04, GEN-06, GEN-09, GEN-11, GEN-12, GEN-15:
@@ -477,6 +502,19 @@ async def start_generator(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Неможливо запустити генератор: генератор уже працює"
         )
+
+    # 5.1 Check stop cooldown (60 seconds pause after stopping)
+    if not skip_cooldown:
+        cooldown_rem = await get_generator_cooldown_remaining(db, generator.id)
+        if cooldown_rem > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Захист від випадкового/передчасного запуску: генератор щойно зупинено. "
+                    f"Технологічна пауза охолодження та стабілізації двигуна: зачекайте ще {cooldown_rem} с "
+                    f"(повторний запуск дозволено не раніше ніж через 60 секунд після зупинки)."
+                )
+            )
 
     # 6. Check administrative block and faults
     if generator.status == "BLOCKED":

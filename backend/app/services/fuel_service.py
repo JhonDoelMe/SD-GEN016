@@ -45,6 +45,32 @@ def to_float(val, places: int = 2) -> float:
     return float(round(float(val), places))
 
 
+def normalize_fuel_family(fuel_type: Optional[str]) -> str:
+    """
+    Нормалізує назву або бренд палива до базової родини палив:
+    - Бензин 95 / 100: "a95"
+    - Дизель / ДП: "dp"
+    - Бензин 92: "a92"
+    - Газ / LPG / СПБТ: "gas"
+    """
+    if not fuel_type:
+        return ""
+    f = fuel_type.strip().lower()
+    # Дизель / ДП
+    if any(k in f for k in ("дизель", "дп", "dp", "dt", "дт", "diesel")):
+        return "dp"
+    # Бензин 95 / 100
+    if any(k in f for k in ("95", "а-95", "a-95", "100", "pulls", "mustang", "бензин")):
+        return "a95"
+    # Бензин 92
+    if any(k in f for k in ("92", "а-92", "a-92")):
+        return "a92"
+    # Газ
+    if any(k in f for k in ("газ", "lpg", "спбт", "gas", "автогаз")):
+        return "gas"
+    return f
+
+
 async def get_or_create_default_stock(db: AsyncSession, facility_id: Optional[int] = None) -> FuelStock:
     """
     FUEL-01: Отримати або створити стандартний склад ГСМ для вказаного об'єкта.
@@ -210,8 +236,8 @@ async def update_fuel_stock(
         stock.name = data.name.strip()
 
     if data.fuel_type is not None and data.fuel_type.strip():
-        # Перевірка: якщо є залишок, змінювати тип пального заборонено без обнулення
-        if to_liters(stock.current_balance_l) > Decimal("0.000") and data.fuel_type.strip() != stock.fuel_type:
+        # Перевірка: якщо є залишок, змінювати базову родину пального заборонено без обнулення
+        if to_liters(stock.current_balance_l) > Decimal("0.000") and normalize_fuel_family(data.fuel_type) != normalize_fuel_family(stock.fuel_type):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Неможливо змінити тип палива складу з '{stock.fuel_type}' на '{data.fuel_type.strip()}', оскільки на складі є залишок {float(stock.current_balance_l):.1f} л."
@@ -448,10 +474,14 @@ async def add_fuel_receipt(
     # FUEL-07: Контроль типу пального
     effective_fuel_type = (receipt_data.fuel_type or stock.fuel_type or "А-95").strip()
     stock_current_bal = to_liters(stock.current_balance_l)
-    if stock_current_bal == Decimal("0.000") and receipt_data.fuel_type:
-        # Якщо склад порожній (початковий стан), він приймає тип пального першого оприбуткування
-        stock.fuel_type = effective_fuel_type
-    elif receipt_data.fuel_type and receipt_data.fuel_type.strip().lower() != (stock.fuel_type or "").strip().lower():
+    rec_family = normalize_fuel_family(receipt_data.fuel_type)
+    stock_family = normalize_fuel_family(stock.fuel_type)
+
+    if stock_current_bal == Decimal("0.000"):
+        # Якщо склад порожній (початковий стан), він може прийняти новий тип пального
+        if not stock.fuel_type or (rec_family and rec_family != stock_family):
+            stock.fuel_type = effective_fuel_type
+    elif rec_family and stock_family and rec_family != stock_family:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Невідповідність типу палива: чек містить '{receipt_data.fuel_type}', а склад '{stock.name}' містить залишок типу '{stock.fuel_type}'."
@@ -666,9 +696,9 @@ async def transfer_fuel_to_tank(
     facility_id = stock.facility_id
 
     # FUEL-07: Перевірка сумісності типу пального
-    st_fuel = (stock.fuel_type or "").strip().lower()
-    gen_fuel = (generator.fuel_type or "").strip().lower()
-    if st_fuel != gen_fuel:
+    st_family = normalize_fuel_family(stock.fuel_type)
+    gen_family = normalize_fuel_family(generator.fuel_type)
+    if st_family != gen_family:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(

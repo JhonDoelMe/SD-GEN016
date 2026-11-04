@@ -84,6 +84,7 @@ class GeneratorOut(BaseModel):
     created_at: datetime.datetime
     updated_at: datetime.datetime
     schedules: List[GeneratorScheduleOut] = []
+    cooldown_remaining_seconds: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -94,6 +95,7 @@ class GeneratorStartRequest(BaseModel):
     force_start_with_maintenance: bool = Field(False, description="Дозвіл запуску генератора при простроченому ТО")
     force_start_reason: Optional[str] = Field(None, max_length=500, description="Обов'язкова причина примусового запуску при простроченому ТО")
     idempotency_key: Optional[str] = Field(None, max_length=64, description="Ключ ідемпотентності для захисту від дублювання")
+    skip_cooldown: bool = Field(False, description="Пропуск 60-секундного кулдауну (для адміністраторів або тестів)")
 
 
 class GeneratorStopRequest(BaseModel):
@@ -116,6 +118,7 @@ class GeneratorManualRunCreate(BaseModel):
     note: Optional[str] = Field(None, max_length=500, description="Примітки (напр. Внесено з паперового журналу)")
     force_confirm: bool = Field(False, description="Підтвердження при розходженні мотогодин із часом")
     idempotency_key: Optional[str] = Field(None, max_length=64, description="Ключ ідемпотентності для захисту від дублювання")
+    skip_cooldown: bool = Field(False, description="Пропуск 60-секундного кулдауну (для адміністраторів або тестів)")
 
 
 class GeneratorRunOut(BaseModel):

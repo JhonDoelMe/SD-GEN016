@@ -1245,6 +1245,24 @@ async function loadGeneratorData() {
       }
     }
 
+    if (currentGenerator.status !== 'RUNNING') {
+      const serverRem = parseInt(currentGenerator.cooldown_remaining_seconds, 10) || 0;
+      if (serverRem > 0 && currentCooldownSeconds <= 0) {
+        startCooldownTimer(serverRem);
+      } else if (currentCooldownSeconds > 0) {
+        btn.disabled = true;
+        btn.className = 'btn-hero btn-cooldown';
+        btn.innerHTML = `<span>⏳</span><span>ОХОЛОДЖЕННЯ: ${currentCooldownSeconds} с</span>`;
+        btn.title = `Захист від випадкового/передчасного запуску. Повторний запуск буде доступний через ${currentCooldownSeconds} с (технологічна пауза 60 с).`;
+      }
+    } else {
+      if (cooldownTimerInterval) {
+        clearInterval(cooldownTimerInterval);
+        cooldownTimerInterval = null;
+      }
+      currentCooldownSeconds = 0;
+    }
+
     if (btnTransfer) {
       if (isFuelDeficit && !isViewerOnly() && hasPermission('fuel:transfer')) {
         btnTransfer.classList.add('btn-action-refuel-highlight');
@@ -1274,6 +1292,70 @@ async function loadGeneratorData() {
 }
 
 let runTimerInterval = null;
+let cooldownTimerInterval = null;
+let currentCooldownSeconds = 0;
+
+function startCooldownTimer(seconds) {
+  if (cooldownTimerInterval) {
+    clearInterval(cooldownTimerInterval);
+    cooldownTimerInterval = null;
+  }
+  currentCooldownSeconds = Math.max(0, parseInt(seconds, 10) || 0);
+  if (currentCooldownSeconds <= 0) return;
+
+  const updateCooldownButton = () => {
+    const btn = document.getElementById('mainActionBtn');
+    if (!btn) return;
+    if (currentGenerator && currentGenerator.status === 'RUNNING') {
+      if (cooldownTimerInterval) {
+        clearInterval(cooldownTimerInterval);
+        cooldownTimerInterval = null;
+      }
+      currentCooldownSeconds = 0;
+      return;
+    }
+    if (currentCooldownSeconds > 0) {
+      btn.disabled = true;
+      btn.className = 'btn-hero btn-cooldown';
+      btn.innerHTML = `<span>⏳</span><span>ОХОЛОДЖЕННЯ: ${currentCooldownSeconds} с</span>`;
+      btn.title = `Захист від випадкового/передчасного запуску. Повторний запуск буде доступний через ${currentCooldownSeconds} с (технологічна пауза 60 с).`;
+    } else {
+      if (cooldownTimerInterval) {
+        clearInterval(cooldownTimerInterval);
+        cooldownTimerInterval = null;
+      }
+      currentCooldownSeconds = 0;
+      btn.disabled = false;
+      btn.removeAttribute('title');
+      if (currentGenerator) {
+        const isFuelDeficit = (currentGenerator.fuel_tank_level_l <= 0);
+        if (currentGenerator.status === 'MAINTENANCE_REQUIRED') {
+          btn.className = 'btn-hero btn-start' + (isFuelDeficit ? ' btn-fuel-warning' : '');
+          btn.innerHTML = isFuelDeficit
+            ? '<span style="font-size: 1.35rem;">⚠️</span><span style="font-size: 1.4rem;">▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>'
+            : '<span>▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>';
+        } else if (currentGenerator.status === 'FAULTY') {
+          btn.className = 'btn-hero btn-start';
+          btn.innerHTML = '<span>⚠️</span><span>НЕСПРАВНІСТЬ (БЛОК)</span>';
+        } else if (currentGenerator.status === 'BLOCKED') {
+          btn.className = 'btn-hero btn-start';
+          btn.innerHTML = '<span>🔒</span><span>ЗАБЛОКОВАНО</span>';
+        } else {
+          btn.className = 'btn-hero btn-start' + (isFuelDeficit ? ' btn-fuel-warning' : '');
+          btn.innerHTML = isFuelDeficit
+            ? '<span style="font-size: 1.35rem;">⚠️</span><span style="font-size: 1.4rem;">▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>'
+            : '<span>▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>';
+        }
+      }
+    }
+  };
+
+  updateCooldownButton();
+  cooldownTimerInterval = setInterval(() => {
+    currentCooldownSeconds--;
+    updateCooldownButton();
+  }, 1000);
+}
 
 let cachedMaintenanceSchedule = null;
 
@@ -1387,6 +1469,11 @@ document.getElementById('mainActionBtn').addEventListener('click', async () => {
 
   const btn = document.getElementById('mainActionBtn');
   if (btn.disabled || btn.dataset.busy === 'true') return;
+
+  if (currentCooldownSeconds > 0) {
+    showToast(`Захист від передчасного запуску: зачекайте ще ${currentCooldownSeconds} с (технологічна пауза 60 с)`, 'warning');
+    return;
+  }
 
   if (currentGenerator.status === 'RUNNING') {
     // Open Stop Modal
@@ -1635,6 +1722,7 @@ document.getElementById('stopGenForm').addEventListener('submit', async (e) => {
     });
     closeModal('modalStopGen');
     stopRunStopwatch();
+    startCooldownTimer(60);
     const durText = res.duration_formatted || formatDuration(res.duration_seconds) || `${res.duration_hours} год`;
     const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l} л` : '-';
     showToast(`Генератор зупинено! Відпрацьовано: ${durText}, розхід: ${fuelText}`, 'success');
@@ -2048,7 +2136,18 @@ document.getElementById('newStockForm')?.addEventListener('submit', async (e) =>
 window.openEditStockModal = function(id, name, fuelType) {
   document.getElementById('editStockId').value = id;
   document.getElementById('editStockName').value = name;
-  document.getElementById('editStockFuelType').value = fuelType || 'А-95';
+  const sel = document.getElementById('editStockFuelType');
+  let val = fuelType || 'А-95';
+  if (sel) {
+    if (![...sel.options].some(o => o.value === val)) {
+      const lower = String(val).toLowerCase();
+      if (lower.includes('дизель') || lower.includes('дп') || lower.includes('diesel')) val = 'ДП';
+      else if (lower.includes('92')) val = 'А-92';
+      else if (lower.includes('газ') || lower.includes('lpg')) val = 'ГАЗ';
+      else val = 'А-95';
+    }
+    sel.value = val;
+  }
   openModal('modalEditStock');
 };
 
@@ -2641,6 +2740,119 @@ function formatAuditDetailsUa(detailsRaw, action) {
     return `Користувач: ${details.login}${rolesUa ? ` (Роль: ${rolesUa})` : ''}`;
   }
 
+  // 6.1 Зміни параметрів генератора або об'єкта (Diff changes)
+  if (details.changes && typeof details.changes === 'object') {
+    const fieldMap = {
+      name: 'Назва',
+      model: 'Модель',
+      manufacturer: 'Виробник',
+      serial_number: 'Серійний номер',
+      nominal_consumption_l_per_h: 'Нормативний розхід',
+      tank_capacity_l: 'Місткість бака',
+      fuel_type: 'Тип палива',
+      rated_power_kw: 'Потужність',
+      address: 'Адреса',
+      default_fuel_provider: 'Мережа АЗК',
+      current_operating_hours: 'Мотогодини',
+      fuel_tank_level_l: 'Паливо в баку',
+      status: 'Статус',
+      is_configured: 'Налаштовано',
+      timezone: 'Часовий пояс',
+      work_schedule_start: 'Початок зміни',
+      work_schedule_end: 'Кінець зміни'
+    };
+    const cParts = [];
+    for (const [fKey, diff] of Object.entries(details.changes)) {
+      const fUa = fieldMap[fKey] || fKey;
+      if (diff && typeof diff === 'object' && ('old' in diff || 'new' in diff)) {
+        cParts.push(`${fUa}: '${diff.old ?? '-'}' ➔ '${diff.new ?? '-'}'`);
+      } else {
+        cParts.push(`${fUa}: ${diff}`);
+      }
+    }
+    if (cParts.length > 0) {
+      const entityLabel = (action && action.includes('GENERATOR')) ? 'генератора' : ((action && action.includes('FACILITY')) ? "об'єкта" : '');
+      const prefix = entityLabel ? `Змінено параметри ${entityLabel}: ` : 'Змінено параметри: ';
+      return prefix + cParts.join('; ');
+    }
+  }
+
+  // 6.2 Оновлення системних налаштувань (System settings updates)
+  if (details.updates && typeof details.updates === 'object') {
+    const settingMap = {
+      organization_name: 'Організація',
+      work_schedule_start: 'Початок зміни',
+      work_schedule_end: 'Кінець зміни',
+      enforce_work_schedule: 'Контроль графіка',
+      facility_timezone: 'Часовий пояс',
+      default_maintenance_interval_hours: 'Інтервал ТО',
+      fuel_price_a95: 'Ціна А-95',
+      fuel_price_dp: 'Ціна ДП',
+      fuel_price_a92: 'Ціна А-92',
+      fuel_default_provider: 'Мережа за замовчуванням',
+      email_weekly_report_enabled: 'Щотижневий email-звіт',
+      email_weekly_recipients: 'Отримувачі email-звіту',
+      email_notify_safety_stop: 'Сповіщення про автостоп',
+      smtp_fallback_enabled: 'Резервний SMTP',
+      smtp_fallback_host: 'Сервер SMTP',
+      smtp_fallback_port: 'Порт SMTP',
+      smtp_fallback_user: 'Користувач SMTP',
+      login_max_attempts: 'Ліміт спроб входу',
+      login_lockout_seconds: 'Час блокування (с)',
+      fuel_receipt_max_liters_warning: "Поріг літрів чека",
+      fuel_receipt_min_price: 'Мін. ціна палива',
+      fuel_receipt_max_price: 'Макс. ціна палива'
+    };
+    const uParts = [];
+    for (const [k, v] of Object.entries(details.updates)) {
+      if (k.toLowerCase().includes('password') || k.toLowerCase().includes('secret') || k.toLowerCase().includes('token') || v === '***REDACTED***') continue;
+      const kUa = settingMap[k] || k;
+      let vStr = v;
+      if (typeof v === 'boolean') vStr = v ? 'увімкнено' : 'вимкнено';
+      else if (typeof v === 'string') vStr = `'${v}'`;
+      uParts.push(`${kUa}: ${vStr}`);
+    }
+    if (uParts.length > 0) {
+      return 'Оновлено системні налаштування: ' + uParts.join('; ');
+    }
+  }
+
+  // 6.3 Видалення об'єкта (Facility deletion)
+  if (action === 'FACILITY_DELETED' || (details.cascade !== undefined && details.fuel_stocks_deleted)) {
+    const facName = details.name || '';
+    const extraInfo = [];
+    const gens = Array.isArray(details.generators_deleted) ? details.generators_deleted : [];
+    const stocks = Array.isArray(details.fuel_stocks_deleted) ? details.fuel_stocks_deleted : [];
+    const unbound = details.users_unbound_count || 0;
+    if (gens.length > 0) extraInfo.push(`генераторів: ${gens.length}`);
+    if (stocks.length > 0) extraInfo.push(`складів ГСМ: ${stocks.length}`);
+    if (unbound > 0) extraInfo.push(`відкріплено користувачів: ${unbound}`);
+    const cascadeStr = extraInfo.length > 0 ? ` (каскадно видалено ${extraInfo.join(', ')})` : '';
+    return `Видалено об'єкт '${facName}'${cascadeStr}`;
+  }
+
+  // 6.4 Створення або оновлення об'єкта
+  if (action && (action.startsWith('FACILITY_CREATE') || action.startsWith('FACILITY_UPDATE')) && (details.name || details.address)) {
+    const parts = [];
+    if (details.name) parts.push(`Об'єкт: '${details.name}'`);
+    if (details.address) parts.push(`Адреса: '${details.address}'`);
+    if (details.default_fuel_provider) parts.push(`Мережа: ${details.default_fuel_provider.toUpperCase()}`);
+    return parts.join(' | ') || details.name;
+  }
+
+  // 6.5 Резервні копії (Backups)
+  if (details.message && (String(details.message).toLowerCase().includes('backup') || String(details.message).toLowerCase().includes('бекап') || (action && action.includes('BACKUP')))) {
+    const msg = String(details.message).trim();
+    const subInfo = [];
+    if (details.records_count !== undefined) subInfo.push(`записів БД: ${details.records_count}`);
+    if (details.files_count !== undefined) subInfo.push(`файлів: ${details.files_count}`);
+    if (details.notes) subInfo.push(String(details.notes));
+    if (subInfo.length > 0) {
+      return `${msg} (${subInfo.join(', ')})`;
+    }
+    return msg;
+  }
+
   // 7. Сповіщення
   if (details.updated_keys) {
     return 'Оновлено параметри та перемикачі сповіщень';
@@ -2661,21 +2873,26 @@ function formatAuditDetailsUa(detailsRaw, action) {
   const keyTrans = {
     title: 'Назва', description: 'Опис', priority: 'Пріоритет', status: 'Статус', operating_hours: 'Мотогодини',
     liters: 'Літри', cost: 'Вартість', cost_total: 'Загальна сума', source: 'Джерело', updated_at: 'Оновлено',
-    name: 'Назва', fuel_type: 'Тип палива', reason: 'Причина', field: 'Поле', old_value: 'Було', new_value: 'Стало'
+    name: 'Назва', fuel_type: 'Тип палива', reason: 'Причина', field: 'Поле', old_value: 'Було', new_value: 'Стало',
+    address: 'Адреса', default_fuel_provider: 'Мережа АЗК', cascade: 'Каскадне видалення',
+    generators_deleted: 'Видалені генератори', fuel_stocks_deleted: 'Видалені склади ГСМ',
+    users_unbound_count: 'Відкріплено користувачів', records_count: 'Кількість записів',
+    files_count: 'Кількість файлів', notes: 'Примітки', message: 'Повідомлення'
   };
   const valTrans = {
     STOPPED: 'Зупинено', RUNNING: 'В роботі', MAINTENANCE: 'На обслуговуванні',
     MAINTENANCE_REQUIRED: 'Потрібне ТО', FAULT: 'Несправність', FAULTY: 'Несправний',
     BLOCKED: 'Заблоковано', ARCHIVED: 'В архіві',
     LOW: 'Низький', MEDIUM: 'Середній', HIGH: 'Високий', CRITICAL: 'Критичний',
-    SCHEDULED: 'Регламентне ТО', INTERMEDIATE: 'Проміжне ТО'
+    SCHEDULED: 'Регламентне ТО', INTERMEDIATE: 'Проміжне ТО',
+    TRUE: 'Так', FALSE: 'Ні'
   };
 
   const parts = [];
   for (const [k, v] of Object.entries(details)) {
-    if (['facility_id', 'generator_id', 'run_id', 'stock_id', 'user_id'].includes(k)) continue;
+    if (['facility_id', 'generator_id', 'run_id', 'stock_id', 'user_id', 'receipt_id'].includes(k)) continue;
     const kUa = keyTrans[k] || k;
-    const vUa = typeof v === 'string' ? (valTrans[v.toUpperCase()] || v) : (typeof v === 'object' ? JSON.stringify(v) : v);
+    const vUa = typeof v === 'string' ? (valTrans[v.toUpperCase()] || v) : (typeof v === 'boolean' ? (v ? 'Так' : 'Ні') : (typeof v === 'object' ? JSON.stringify(v) : v));
     parts.push(`${kUa}: ${vUa}`);
   }
   return parts.join(' | ') || JSON.stringify(details);

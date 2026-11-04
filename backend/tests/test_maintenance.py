@@ -65,7 +65,8 @@ async def test_maintenance_scheduled_vs_intermediate(client, superadmin_auth, op
     assert s_inter["hours_remaining"] == 130.0  # 1500 - 1370
 
     # 2. Simulate running until 1505 hours (overdue)
-    await client.post("/api/v1/generator/start", headers=operator_auth, json={})
+    start_overdue = await client.post("/api/v1/generator/start", headers=operator_auth, json={"skip_cooldown": True})
+    assert start_overdue.status_code == 200
     stop_overdue = await client.post(
         "/api/v1/generator/stop",
         headers=operator_auth,

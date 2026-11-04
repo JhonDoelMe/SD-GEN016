@@ -24,7 +24,8 @@ from backend.app.services.generator_service import (
     get_or_create_default_generator, setup_generator_wizard,
     start_generator, stop_generator, get_generators_list,
     create_generator, delete_generator, update_generator, add_manual_run,
-    restore_generator, transfer_generator_facility, reconcile_generator_state
+    restore_generator, transfer_generator_facility, reconcile_generator_state,
+    get_generator_cooldown_remaining
 )
 
 
@@ -81,7 +82,9 @@ async def get_generator(
         facility_id=eff_facility_id,
         include_archived=include_archived
     )
-    return gen
+    out = GeneratorOut.model_validate(gen)
+    out.cooldown_remaining_seconds = await get_generator_cooldown_remaining(db, gen.id)
+    return out
 
 
 @router.get("/list", response_model=List[GeneratorOut])
@@ -93,7 +96,13 @@ async def list_all_generators(
 ):
     """Список усіх генераторів (з можливістю фільтрації за об'єктом)"""
     eff_facility_id = verify_facility_access(current_user, facility_id)
-    return await get_generators_list(db, facility_id=eff_facility_id, include_archived=include_archived)
+    gens = await get_generators_list(db, facility_id=eff_facility_id, include_archived=include_archived)
+    res = []
+    for g in gens:
+        item = GeneratorOut.model_validate(g)
+        item.cooldown_remaining_seconds = await get_generator_cooldown_remaining(db, g.id)
+        res.append(item)
+    return res
 
 
 @router.post("", response_model=GeneratorOut, status_code=status.HTTP_201_CREATED)
@@ -225,7 +234,8 @@ async def api_start_generator(
         force_start_with_maintenance=data.force_start_with_maintenance,
         force_start_reason=data.force_start_reason,
         idempotency_key=data.idempotency_key,
-        facility_id=eff_fac_id
+        facility_id=eff_fac_id,
+        skip_cooldown=getattr(data, "skip_cooldown", False)
     )
     return run_to_out(run, user_name=current_user.full_name)
 
