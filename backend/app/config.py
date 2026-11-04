@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     LOGIN_MAX_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_SECONDS: int = 300
 
+    # Weather & Alerts Integration
+    OPENWEATHER_API_KEY: str = "b084afc0b8a3457bcbe1588a428ec949"
+    ALERTS_IN_UA_TOKEN: str = ""
+    UKRAINE_ALARM_API_KEY: str = ""
+    WEATHER_CACHE_MINUTES: int = 20
+    ALERTS_CACHE_SECONDS: int = 15
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def sanitize_database_url(cls, v: str) -> str:

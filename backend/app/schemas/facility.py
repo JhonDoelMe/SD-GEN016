@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, ConfigDict
 class FacilityBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=150, description="Назва об'єкту")
     address: Optional[str] = Field(None, max_length=255, description="Адреса / Локація")
+    city: Optional[str] = Field(None, max_length=100, description="Місто / Населений пункт для погоди та тривог")
     description: Optional[str] = Field(None, description="Опис або примітки")
     timezone: str = Field("Europe/Kyiv", max_length=50, description="Часовий пояс")
     yasno_enabled: bool = Field(False, description="Увімкнено моніторинг графіка YASNO")
@@ -22,6 +23,7 @@ class FacilityCreate(FacilityBase):
 class FacilityUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=150)
     address: Optional[str] = Field(None, max_length=255)
+    city: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = None
     timezone: Optional[str] = Field(None, max_length=50)
     yasno_enabled: Optional[bool] = None

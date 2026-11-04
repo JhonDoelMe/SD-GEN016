@@ -38,7 +38,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/frontend/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.16">
+  <link rel="stylesheet" href="/frontend/styles.css?v=4.9.17">
 </head>
 <body>
 
@@ -104,7 +104,25 @@
       <img src="/frontend/icons/logo.png" alt="SD-GEN016" class="brand-logo" width="36" height="36">
       <span class="brand-name">Service Desk Генератора</span>
     </div>
-    <div class="header-clock" id="clockKyiv">--:--:-- (Київ)</div>
+    <!-- Header Center: Clock, Weather, Alert Indicators -->
+    <div class="header-center-panel" id="headerCenterPanel">
+      <div class="header-clock" id="clockKyiv">--:--:-- (Київ)</div>
+      <div class="header-indicators" id="headerIndicators">
+        <!-- Weather Badge -->
+        <button type="button" id="headerWeatherBadge" class="header-pill pill-weather" style="display: none;" title="Погода на об'єкті (натисніть для деталей)" onclick="openWeatherModal()">
+          <span class="pill-icon" id="weatherPillIcon">⛅</span>
+          <span class="pill-text" id="weatherPillText">--°C</span>
+          <span class="pill-subtext" id="weatherPillCity">--</span>
+        </button>
+        <!-- Alert Badge -->
+        <button type="button" id="headerAlertBadge" class="header-pill pill-alert pill-alert-green" style="display: none;" title="Статус повітряної тривоги (натисніть для деталей)" onclick="openAlertModal()">
+          <span class="pill-pulse-dot" id="alertPulseDot"></span>
+          <span class="pill-icon" id="alertPillIcon">🟢</span>
+          <span class="pill-text" id="alertPillText">Відбій</span>
+          <span class="pill-subtext" id="alertPillRegion">--</span>
+        </button>
+      </div>
+    </div>
     <div class="user-badge">
       <button id="themeToggleBtn" class="btn-theme-toggle" type="button" aria-label="Перемикач теми" title="Тема: Авто">🌓</button>
       <button id="headerInstallBtn" class="btn-header-install" style="display: none;" title="Встановити додаток на екран">
@@ -2011,6 +2029,10 @@
           <input type="text" id="newFacilityAddress" placeholder="м. Київ, вул. Промислова, 12">
         </div>
         <div class="form-group">
+          <label>Місто / Населений пункт (для погоди та тривог)</label>
+          <input type="text" id="newFacilityCity" placeholder="напр. Самар або Київ (якщо порожньо — визначається автоматично)">
+        </div>
+        <div class="form-group">
           <label>Опис / Примітки</label>
           <textarea id="newFacilityDescription" rows="2" placeholder="Опис об'єкта та його призначення"></textarea>
         </div>
@@ -2221,6 +2243,10 @@
         <div class="form-group">
           <label>Адреса / Локація</label>
           <input type="text" id="quickEditFacilityAddress" placeholder="напр. вул. Шевченка, 12">
+        </div>
+        <div class="form-group">
+          <label>Місто / Населений пункт (для погоди та тривог)</label>
+          <input type="text" id="quickEditFacilityCity" placeholder="напр. Самар або Київ (якщо порожньо — визначається автоматично)">
         </div>
         <div class="form-group">
           <label>Опис / Примітки</label>
@@ -3053,10 +3079,112 @@
   </div>
 
   <!-- Toast Notification -->
-  <div id="toast" class="toast">Повідомлення</div>
+
+  <!-- Modal: Weather Details -->
+  <div id="modalWeatherDetails" class="modal-overlay">
+    <div class="modal-content modal-weather-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 id="weatherModalTitle" style="display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <span>⛅</span> Погода на об'єкті
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalWeatherDetails')">&times;</button>
+      </div>
+      <div class="weather-modal-body">
+        <div class="weather-hero-card">
+          <div class="weather-hero-main">
+            <span class="weather-hero-icon" id="weatherHeroIcon">⛅</span>
+            <div class="weather-hero-temp" id="weatherHeroTemp">+8.0°C</div>
+          </div>
+          <div class="weather-hero-desc" id="weatherHeroDesc">Хмарно з проясненнями</div>
+          <div class="weather-hero-loc" id="weatherHeroLoc">📍 м. Самар</div>
+        </div>
+
+        <div class="weather-details-grid">
+          <div class="weather-param-box">
+            <span class="param-label">Відчувається</span>
+            <span class="param-val" id="weatherParamFeels">+6.5°C</span>
+          </div>
+          <div class="weather-param-box">
+            <span class="param-label">Вологість</span>
+            <span class="param-val" id="weatherParamHumidity">74%</span>
+          </div>
+          <div class="weather-param-box">
+            <span class="param-label">Вітер</span>
+            <span class="param-val" id="weatherParamWind">2.5 м/с</span>
+          </div>
+          <div class="weather-param-box">
+            <span class="param-label">Тиск</span>
+            <span class="param-val" id="weatherParamPressure">752 мм</span>
+          </div>
+        </div>
+
+        <div class="weather-generator-advice" id="weatherGenAdviceWrap">
+          <div class="advice-header">⚙️ Інженерна рекомендація для генератора:</div>
+          <div class="advice-text" id="weatherGenAdviceText">Температура в межах норми для стабільної роботи генератора.</div>
+        </div>
+
+        <div class="modal-footer-sync">
+          <small id="weatherSyncTime">Оновлено: щойно</small>
+          <button type="button" class="btn-action-small" onclick="refreshFacilityIndicators(true)">Оновити зараз 🔄</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Alert Details -->
+  <div id="modalAlertDetails" class="modal-overlay">
+    <div class="modal-content modal-alert-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 id="alertModalTitle" style="display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <span id="alertModalHeaderIcon">🚨</span> Повітряна безпека об'єкта
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalAlertDetails')">&times;</button>
+      </div>
+      <div class="alert-modal-body">
+        <div class="alert-hero-card" id="alertHeroCard">
+          <div class="alert-hero-badge" id="alertHeroBadge">
+            <span id="alertHeroIcon">🟢</span>
+            <span id="alertHeroStatus">ВІДБІЙ ТРИВОГИ</span>
+          </div>
+          <div class="alert-hero-threat" id="alertHeroThreat">Небо чисте (загроз не зафіксовано)</div>
+          <div class="alert-hero-loc" id="alertHeroLoc">📍 Дніпропетровська область, м. Самар</div>
+        </div>
+
+        <div class="alert-advice-card" id="alertAdviceCard">
+          <div class="alert-advice-title">🛡️ Операційний протокол безпеки:</div>
+          <div class="alert-advice-body" id="alertAdviceBody">
+            Повітряна тривога відсутня. Дозволено штатні регламентні роботи, заправку бака та оприбуткування палива.
+          </div>
+        </div>
+
+        <div class="alert-legend-box">
+          <div class="legend-title">Диференційовані рівні загроз у системі:</div>
+          <div class="legend-row">
+            <span class="legend-badge legend-green">🟢 Зелений</span>
+            <span class="legend-desc">Відбій загрози. Штатна експлуатація.</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-badge legend-yellow">🟡 Жовтий</span>
+            <span class="legend-desc">Ударні БПЛА (Шахеди) / активність авіації. Підвищена готовність.</span>
+          </div>
+          <div class="legend-row">
+            <span class="legend-badge legend-red">🔴 Червоний</span>
+            <span class="legend-desc">Балістика / ракети / МіГ-31К / КАБ / артобстріл. Негайно в укриття! Робота біля генератора заборонена.</span>
+          </div>
+        </div>
+
+        <div class="modal-footer-sync">
+          <small id="alertSyncProvider">Провайдери: alerts.in.ua / ukrainealarm.com</small>
+          <button type="button" class="btn-action-small" onclick="refreshFacilityIndicators(true)">Оновити зараз 🔄</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=4.9.16"></script>
+  <script src="/frontend/app.js?v=4.9.17"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

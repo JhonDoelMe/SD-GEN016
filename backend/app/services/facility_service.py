@@ -67,6 +67,7 @@ async def get_facility_by_id(db: AsyncSession, facility_id: int) -> FacilityOut:
         id=f.id,
         name=f.name,
         address=f.address,
+        city=getattr(f, "city", None),
         description=f.description,
         timezone=f.timezone,
         yasno_enabled=bool(f.yasno_enabled),
@@ -99,6 +100,7 @@ async def create_facility(
     facility = Facility(
         name=data.name.strip(),
         address=data.address.strip() if data.address else None,
+        city=data.city.strip() if getattr(data, "city", None) else None,
         description=data.description.strip() if data.description else None,
         timezone=data.timezone.strip() if data.timezone else "Europe/Kyiv",
         yasno_enabled=bool(data.yasno_enabled),
@@ -164,6 +166,8 @@ async def update_facility(
 
     if data.address is not None:
         facility.address = data.address.strip() if data.address else None
+    if getattr(data, "city", None) is not None:
+        facility.city = data.city.strip() if data.city else None
     if data.description is not None:
         facility.description = data.description.strip() if data.description else None
     if data.timezone is not None:

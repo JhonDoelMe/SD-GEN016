@@ -45,6 +45,8 @@ def ensure_schema_updates(sync_conn):
             sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN yasno_group VARCHAR(10)"))
         if "default_fuel_provider" not in fac_cols:
             sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN default_fuel_provider VARCHAR(30) DEFAULT 'wog'"))
+        if "city" not in fac_cols:
+            sync_conn.execute(text("ALTER TABLE facilities ADD COLUMN city VARCHAR(100)"))
 
         res = sync_conn.execute(text("SELECT COUNT(*) FROM facilities")).scalar()
         if res == 0:

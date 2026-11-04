@@ -1,7 +1,10 @@
 from typing import List
 from fastapi import APIRouter, Depends, Request, Response, status, HTTPException
+from pydantic import BaseModel
 from backend.app.models.facility import Facility
 from backend.app.services.yasno_service import fetch_raw_yasno_schedule, get_facility_outage_schedule
+from backend.app.services.weather_service import get_facility_weather
+from backend.app.services.alert_service import get_facility_alert, set_demo_alert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
@@ -113,3 +116,56 @@ async def get_facility_outage(
         force_refresh=force_refresh
     )
     return get_facility_outage_schedule(fac, raw_schedule=raw_data)
+
+
+@router.get("/{facility_id}/weather")
+async def get_facility_weather_data(
+    facility_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Отримати поточну погоду для об'єкта"""
+    verify_facility_access(current_user, facility_id)
+    return await get_facility_weather(db, facility_id)
+
+
+@router.get("/{facility_id}/alert")
+async def get_facility_alert_data(
+    facility_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Отримати статус повітряної тривоги для об'єкта"""
+    verify_facility_access(current_user, facility_id)
+    return await get_facility_alert(db, facility_id)
+
+
+@router.get("/{facility_id}/status-indicators")
+async def get_facility_indicators(
+    facility_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Отримати об'єднані індикатори погоди та тривог в одному швидкому запиті"""
+    verify_facility_access(current_user, facility_id)
+    weather = await get_facility_weather(db, facility_id)
+    alert = await get_facility_alert(db, facility_id)
+    return {
+        "weather": weather,
+        "alert": alert
+    }
+
+
+class DemoAlertRequest(BaseModel):
+    level: str = "green"  # green, yellow, red
+    threat_type: str = "none"
+
+
+@router.post("/demo-alert")
+async def trigger_demo_alert(
+    data: DemoAlertRequest,
+    current_user: User = Depends(get_current_superadmin)
+):
+    """Тестовий перемикач рівнів тривог для перевірки UI (доступно для SuperAdmin)"""
+    set_demo_alert(data.level, data.threat_type)
+    return {"ok": True, "level": data.level, "threat_type": data.threat_type}

@@ -1121,6 +1121,7 @@ async function loadAllData() {
   }
   await loadRecentRuns();
   await loadFacilityOutageSchedule(currentFacilityId);
+  await loadFacilityIndicators(currentFacilityId);
   applyRolePermissionsUI();
 }
 
@@ -4113,6 +4114,7 @@ document.getElementById('facilityCreateForm')?.addEventListener('submit', async 
   e.preventDefault();
   const name = document.getElementById('newFacilityName')?.value?.trim();
   const address = document.getElementById('newFacilityAddress')?.value?.trim();
+  const city = document.getElementById('newFacilityCity')?.value?.trim() || null;
   const description = document.getElementById('newFacilityDescription')?.value?.trim();
 
   if (!name) {
@@ -4129,7 +4131,7 @@ document.getElementById('facilityCreateForm')?.addEventListener('submit', async 
     const created = await api('/facilities', {
       method: 'POST',
       body: JSON.stringify({
-        name, address, description, timezone: 'Europe/Kyiv',
+        name, address, city, description, timezone: 'Europe/Kyiv',
         yasno_enabled, yasno_dso_id, yasno_group, yasno_region_id: 3,
         default_fuel_provider
       })
@@ -4266,6 +4268,9 @@ window.openQuickEditFacilityModal = async function() {
     document.getElementById('quickEditFacilityId').value = fac.id;
     document.getElementById('quickEditFacilityName').value = fac.name || '';
     document.getElementById('quickEditFacilityAddress').value = fac.address || '';
+    if (document.getElementById('quickEditFacilityCity')) {
+      document.getElementById('quickEditFacilityCity').value = fac.city || '';
+    }
     document.getElementById('quickEditFacilityDescription').value = fac.description || '';
 
     const yasnoEn = document.getElementById('quickEditFacilityYasnoEnabled');
@@ -4292,6 +4297,7 @@ document.getElementById('quickEditFacilityForm')?.addEventListener('submit', asy
   const facId = parseInt(document.getElementById('quickEditFacilityId').value);
   const name = document.getElementById('quickEditFacilityName').value.trim();
   const address = document.getElementById('quickEditFacilityAddress').value.trim();
+  const city = document.getElementById('quickEditFacilityCity')?.value?.trim() || null;
   const description = document.getElementById('quickEditFacilityDescription').value.trim();
 
   const yasno_enabled = document.getElementById('quickEditFacilityYasnoEnabled')?.checked ?? false;
@@ -4303,7 +4309,7 @@ document.getElementById('quickEditFacilityForm')?.addEventListener('submit', asy
     const updated = await api(`/facilities/${facId}`, {
       method: 'PUT',
       body: JSON.stringify({
-        name, address, description,
+        name, address, city, description,
         yasno_enabled, yasno_dso_id, yasno_group, yasno_region_id: 3,
         default_fuel_provider
       })
@@ -5864,6 +5870,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadMaintenanceSummary();
       }
       loadFacilityOutageSchedule(currentFacilityId);
+      loadFacilityIndicators(currentFacilityId);
     }
   }, 15000);
 });
@@ -6633,4 +6640,160 @@ window.checkTransferClientBounds = function() {
     return false;
   }
   return true;
+};
+
+
+// =============================================================================
+// Header Indicators: Weather & Air Alert Management
+// =============================================================================
+window._currentWeatherData = null;
+window._currentAlertData = null;
+
+window.loadFacilityIndicators = async function(facilityId, force = false) {
+  if (!facilityId) {
+    const wb = document.getElementById('headerWeatherBadge');
+    const ab = document.getElementById('headerAlertBadge');
+    if (wb) wb.style.display = 'none';
+    if (ab) ab.style.display = 'none';
+    return;
+  }
+  try {
+    const res = await api(`/facilities/${facilityId}/status-indicators`);
+    if (!res) return;
+
+    // 1. Weather Badge
+    const weather = res.weather;
+    window._currentWeatherData = weather;
+    const weatherBadge = document.getElementById('headerWeatherBadge');
+    if (weather && weather.is_available && weatherBadge) {
+      const wIcon = document.getElementById('weatherPillIcon');
+      const wText = document.getElementById('weatherPillText');
+      const wCity = document.getElementById('weatherPillCity');
+      if (wIcon) wIcon.innerText = weather.icon_emoji || '⛅';
+      if (wText) wText.innerText = weather.temp_formatted || `${weather.temp_c}°C`;
+      if (wCity) wCity.innerText = weather.city || '';
+      weatherBadge.style.display = 'inline-flex';
+      weatherBadge.title = `Погода: ${weather.city}, ${weather.temp_formatted}, ${weather.description}. Натисніть для деталей.`;
+    } else if (weatherBadge) {
+      weatherBadge.style.display = 'none';
+    }
+
+    // 2. Alert Badge
+    const alert = res.alert;
+    window._currentAlertData = alert;
+    const alertBadge = document.getElementById('headerAlertBadge');
+    if (alert && alertBadge) {
+      const level = alert.level || 'green';
+      alertBadge.className = `header-pill pill-alert pill-alert-${level}`;
+      const aIcon = document.getElementById('alertPillIcon');
+      const aText = document.getElementById('alertPillText');
+      const aReg = document.getElementById('alertPillRegion');
+
+      if (aIcon) aIcon.innerText = alert.threat_icon || (level === 'green' ? '🟢' : '🚨');
+      if (aText) {
+        if (level === 'red') {
+          const tType = (alert.threat_type || '').toLowerCase();
+          if (tType.includes('ballistic')) aText.innerText = 'Балістика!';
+          else if (tType.includes('mig31k')) aText.innerText = 'МіГ-31К!';
+          else aText.innerText = 'Ракета!';
+        } else if (level === 'yellow') {
+          aText.innerText = 'БПЛА';
+        } else {
+          aText.innerText = 'Відбій';
+        }
+      }
+      if (aReg) aReg.innerText = alert.city || '';
+      alertBadge.style.display = 'inline-flex';
+      alertBadge.title = `Повітряна безпека: ${alert.threat_title} (${alert.region_name}). Натисніть для деталей.`;
+    }
+  } catch (err) {
+    console.warn("Не вдалося завантажити індикатори погоди та тривог:", err);
+  }
+};
+
+window.refreshFacilityIndicators = async function(manual = true) {
+  if (!currentFacilityId) return;
+  if (manual) showToast("Оновлення погоди та статусу тривоги...", "info");
+  await window.loadFacilityIndicators(currentFacilityId, true);
+  if (window._currentWeatherData && document.getElementById('modalWeatherDetails')?.classList.contains('active')) {
+    window.populateWeatherModal(window._currentWeatherData);
+  }
+  if (window._currentAlertData && document.getElementById('modalAlertDetails')?.classList.contains('active')) {
+    window.populateAlertModal(window._currentAlertData);
+  }
+  if (manual) showToast("Дані успішно оновлено!", "success");
+};
+
+window.openWeatherModal = function() {
+  if (!window._currentWeatherData) {
+    if (currentFacilityId) window.loadFacilityIndicators(currentFacilityId);
+  }
+  window.populateWeatherModal(window._currentWeatherData);
+  openModal('modalWeatherDetails');
+};
+
+window.populateWeatherModal = function(w) {
+  if (!w || !w.is_available) {
+    const loc = document.getElementById('weatherHeroLoc');
+    if (loc) loc.innerText = "Погодні дані завантажуються...";
+    return;
+  }
+  const icon = document.getElementById('weatherHeroIcon');
+  const temp = document.getElementById('weatherHeroTemp');
+  const desc = document.getElementById('weatherHeroDesc');
+  const loc = document.getElementById('weatherHeroLoc');
+  const feels = document.getElementById('weatherParamFeels');
+  const hum = document.getElementById('weatherParamHumidity');
+  const wind = document.getElementById('weatherParamWind');
+  const press = document.getElementById('weatherParamPressure');
+  const advText = document.getElementById('weatherGenAdviceText');
+  const sync = document.getElementById('weatherSyncTime');
+
+  if (icon) icon.innerText = w.icon_emoji || '⛅';
+  if (temp) temp.innerText = w.temp_formatted || `${w.temp_c}°C`;
+  if (desc) desc.innerText = w.description || 'Хмарно';
+  if (loc) loc.innerText = `📍 м. ${w.city}`;
+  if (feels) feels.innerText = w.feels_like_formatted || `${w.feels_like_c}°C`;
+  if (hum) hum.innerText = `${w.humidity_percent}%`;
+  if (wind) wind.innerText = `${w.wind_speed_mps} м/с`;
+  if (press) press.innerText = `${w.pressure_mmhg} мм рт. ст.`;
+  if (advText) advText.innerText = w.generator_tip || 'Штатні умови експлуатації генератора.';
+  if (sync) {
+    const dt = w.updated_at ? new Date(w.updated_at).toLocaleTimeString('uk-UA', {hour: '2-digit', minute:'2-digit'}) : 'щойно';
+    sync.innerText = `Оновлено: ${dt}`;
+  }
+};
+
+window.openAlertModal = function() {
+  if (!window._currentAlertData) {
+    if (currentFacilityId) window.loadFacilityIndicators(currentFacilityId);
+  }
+  window.populateAlertModal(window._currentAlertData);
+  openModal('modalAlertDetails');
+};
+
+window.populateAlertModal = function(a) {
+  if (!a) return;
+  const heroCard = document.getElementById('alertHeroCard');
+  const heroIcon = document.getElementById('alertHeroIcon');
+  const heroStatus = document.getElementById('alertHeroStatus');
+  const heroThreat = document.getElementById('alertHeroThreat');
+  const heroLoc = document.getElementById('alertHeroLoc');
+  const advBody = document.getElementById('alertAdviceBody');
+  const provEl = document.getElementById('alertSyncProvider');
+
+  const level = a.level || 'green';
+  if (heroCard) {
+    heroCard.className = `alert-hero-card hero-alert-${level}`;
+  }
+  if (heroIcon) heroIcon.innerText = a.threat_icon || (level === 'green' ? '🟢' : '🚨');
+  if (heroStatus) {
+    if (level === 'red') heroStatus.innerText = 'КРИТИЧНА НЕБЕЗПЕКА (РАКЕТИ)';
+    else if (level === 'yellow') heroStatus.innerText = 'ПІДВИЩЕНА ЗАГРОЗА (БПЛА)';
+    else heroStatus.innerText = 'ВІДБІЙ ТРИВОГИ (БЕЗПЕЧНО)';
+  }
+  if (heroThreat) heroThreat.innerText = a.threat_title || 'Загроз не зафіксовано';
+  if (heroLoc) heroLoc.innerText = `📍 ${a.region_name || 'Україна'}, м. ${a.city || ''}`;
+  if (advBody) advBody.innerText = a.operator_advice || 'Дозволено штатну роботу.';
+  if (provEl) provEl.innerText = `Провайдери: ${a.provider || 'alerts.in.ua'}`;
 };
