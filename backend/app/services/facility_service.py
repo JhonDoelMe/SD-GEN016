@@ -97,10 +97,15 @@ async def create_facility(
         )
 
     now = utc_now()
+    clean_city_val = None
+    if getattr(data, "city", None) and data.city.strip():
+        from backend.app.services.weather_service import clean_city_and_region
+        clean_city_val, _ = clean_city_and_region(data.city, data.address, data.name)
+
     facility = Facility(
         name=data.name.strip(),
         address=data.address.strip() if data.address else None,
-        city=data.city.strip() if getattr(data, "city", None) else None,
+        city=clean_city_val,
         description=data.description.strip() if data.description else None,
         timezone=data.timezone.strip() if data.timezone else "Europe/Kyiv",
         yasno_enabled=bool(data.yasno_enabled),
@@ -167,7 +172,16 @@ async def update_facility(
     if data.address is not None:
         facility.address = data.address.strip() if data.address else None
     if getattr(data, "city", None) is not None:
-        facility.city = data.city.strip() if data.city else None
+        if data.city and data.city.strip():
+            from backend.app.services.weather_service import clean_city_and_region
+            clean_c, _ = clean_city_and_region(data.city, data.address or facility.address, data.name or facility.name)
+            facility.city = clean_c
+        else:
+            facility.city = None
+        from backend.app.services.weather_service import clear_weather_cache
+        from backend.app.services.alert_service import clear_alerts_cache
+        clear_weather_cache()
+        clear_alerts_cache()
     if data.description is not None:
         facility.description = data.description.strip() if data.description else None
     if data.timezone is not None:

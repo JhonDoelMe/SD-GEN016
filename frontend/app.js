@@ -4114,7 +4114,12 @@ document.getElementById('facilityCreateForm')?.addEventListener('submit', async 
   e.preventDefault();
   const name = document.getElementById('newFacilityName')?.value?.trim();
   const address = document.getElementById('newFacilityAddress')?.value?.trim();
-  const city = document.getElementById('newFacilityCity')?.value?.trim() || null;
+  let city = document.getElementById('newFacilityCity')?.value?.trim() || null;
+  if (city) {
+    city = city.replace(/^(?:м\.|місто|смт|с\.)\s*/i, '');
+    const cParts = city.split(/[,;]/);
+    if (cParts.length > 1 && cParts[0].trim()) city = cParts[0].trim();
+  }
   const description = document.getElementById('newFacilityDescription')?.value?.trim();
 
   if (!name) {
@@ -4297,7 +4302,12 @@ document.getElementById('quickEditFacilityForm')?.addEventListener('submit', asy
   const facId = parseInt(document.getElementById('quickEditFacilityId').value);
   const name = document.getElementById('quickEditFacilityName').value.trim();
   const address = document.getElementById('quickEditFacilityAddress').value.trim();
-  const city = document.getElementById('quickEditFacilityCity')?.value?.trim() || null;
+  let city = document.getElementById('quickEditFacilityCity')?.value?.trim() || null;
+  if (city) {
+    city = city.replace(/^(?:м\.|місто|смт|с\.)\s*/i, '');
+    const cParts = city.split(/[,;]/);
+    if (cParts.length > 1 && cParts[0].trim()) city = cParts[0].trim();
+  }
   const description = document.getElementById('quickEditFacilityDescription').value.trim();
 
   const yasno_enabled = document.getElementById('quickEditFacilityYasnoEnabled')?.checked ?? false;
@@ -6671,7 +6681,8 @@ window.loadFacilityIndicators = async function(facilityId, force = false) {
       const wCity = document.getElementById('weatherPillCity');
       if (wIcon) wIcon.innerText = weather.icon_emoji || '⛅';
       if (wText) wText.innerText = weather.temp_formatted || `${weather.temp_c}°C`;
-      if (wCity) wCity.innerText = weather.city || '';
+      const cleanWCity = (weather.city || '').replace(/^(?:м\.|місто|смт|с\.)\s*/i, '').replace(/[,;].*$/, '').trim();
+      if (wCity) wCity.innerText = cleanWCity || '';
       weatherBadge.style.display = 'inline-flex';
       weatherBadge.title = `Погода: ${weather.city}, ${weather.temp_formatted}, ${weather.description}. Натисніть для деталей.`;
     } else if (weatherBadge) {
@@ -6702,7 +6713,8 @@ window.loadFacilityIndicators = async function(facilityId, force = false) {
           aText.innerText = 'Відбій';
         }
       }
-      if (aReg) aReg.innerText = alert.city || '';
+      const cleanACity = (alert.city || '').replace(/^(?:м\.|місто|смт|с\.)\s*/i, '').replace(/[,;].*$/, '').trim();
+      if (aReg) aReg.innerText = cleanACity || '';
       alertBadge.style.display = 'inline-flex';
       alertBadge.title = `Повітряна безпека: ${alert.threat_title} (${alert.region_name}). Натисніть для деталей.`;
     }
@@ -6732,6 +6744,50 @@ window.openWeatherModal = function() {
   openModal('modalWeatherDetails');
 };
 
+window.formatLocationDisplay = function(region, city) {
+  let cleanCity = (city || '').replace(/^(?:м\.|місто|смт|с\.)\s*/i, '').trim();
+  let cleanRegion = (region || '').trim();
+
+  // Очищення розділових знаків у кінці рядків
+  cleanCity = cleanCity.replace(/[,;.]+$/, '').trim();
+  cleanRegion = cleanRegion.replace(/[,;.]+$/, '').trim();
+
+  // Видалення повторного артефакту (область) або (район)
+  cleanRegion = cleanRegion.replace(/\s*\((?:область|район)\)\s*$/i, '');
+  if (cleanRegion && !cleanRegion.toLowerCase().endsWith('область') && !cleanRegion.toLowerCase().startsWith('м.') && cleanRegion !== 'Україна') {
+    cleanRegion = `${cleanRegion} область`;
+  }
+
+  if (!cleanCity && !cleanRegion) return '📍 Україна';
+  if (!cleanCity) return `📍 ${cleanRegion}`;
+  if (!cleanRegion || cleanRegion === 'Україна') return `📍 м. ${cleanCity}`;
+
+  const cLower = cleanCity.toLowerCase();
+  const rLower = cleanRegion.toLowerCase();
+
+  // Спеціальний випадок: м. Київ
+  if (cLower === 'київ' || rLower === 'м. київ') {
+    return '📍 м. Київ';
+  }
+
+  // Якщо місто збігається з областю/регіоном
+  if (cLower === rLower) {
+    return cleanRegion.startsWith('м.') ? `📍 ${cleanRegion}` : `📍 м. ${cleanCity}`;
+  }
+
+  // Якщо місто вже включає назву області (напр. "Самар, Дніпропетровська область")
+  if (cLower.includes(rLower)) {
+    return `📍 ${cleanCity}`;
+  }
+
+  // Якщо область вже включає назву міста (напр. "Дніпропетровська область, м. Самар")
+  if (rLower.includes(cLower)) {
+    return `📍 ${cleanRegion}`;
+  }
+
+  return `📍 ${cleanRegion}, м. ${cleanCity}`;
+};
+
 window.populateWeatherModal = function(w) {
   if (!w || !w.is_available) {
     const loc = document.getElementById('weatherHeroLoc');
@@ -6752,7 +6808,8 @@ window.populateWeatherModal = function(w) {
   if (icon) icon.innerText = w.icon_emoji || '⛅';
   if (temp) temp.innerText = w.temp_formatted || `${w.temp_c}°C`;
   if (desc) desc.innerText = w.description || 'Хмарно';
-  if (loc) loc.innerText = `📍 м. ${w.city}`;
+  const cleanCity = (w.city || '').replace(/^(?:м\.|місто|смт|с\.)\s*/i, '').replace(/[,;].*$/, '').trim();
+  if (loc) loc.innerText = `📍 м. ${cleanCity || 'Самар'}`;
   if (feels) feels.innerText = w.feels_like_formatted || `${w.feels_like_c}°C`;
   if (hum) hum.innerText = `${w.humidity_percent}%`;
   if (wind) wind.innerText = `${w.wind_speed_mps} м/с`;
@@ -6793,7 +6850,7 @@ window.populateAlertModal = function(a) {
     else heroStatus.innerText = 'ВІДБІЙ ТРИВОГИ (БЕЗПЕЧНО)';
   }
   if (heroThreat) heroThreat.innerText = a.threat_title || 'Загроз не зафіксовано';
-  if (heroLoc) heroLoc.innerText = `📍 ${a.region_name || 'Україна'}, м. ${a.city || ''}`;
+  if (heroLoc) heroLoc.innerText = window.formatLocationDisplay(a.region_name, a.city);
   if (advBody) advBody.innerText = a.operator_advice || 'Дозволено штатну роботу.';
   if (provEl) provEl.innerText = `Провайдери: ${a.provider || 'alerts.in.ua'}`;
 };

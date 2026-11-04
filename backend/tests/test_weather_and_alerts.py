@@ -46,6 +46,23 @@ def test_weather_helpers():
     assert map_icon_to_emoji("10d") == "🌧️"
     assert map_icon_to_emoji("13d") == "❄️"
 
+    # 4. Anti-duplication test when city contains oblast
+    from backend.app.services.weather_service import clean_city_and_region
+    c_samar, r_samar = clean_city_and_region("Самар, Дніпропетровська область.")
+    assert c_samar == "Самар"
+    assert r_samar == "Дніпропетровська область"
+
+    f4 = Facility(name="Самар-Центр", address="м. Самар", city="Самар, Дніпропетровська область.")
+    assert extract_city_from_facility(f4) == "Самар"
+
+    c_kyiv, r_kyiv = clean_city_and_region("м. Київ")
+    assert c_kyiv == "Київ"
+    assert r_kyiv == "м. Київ"
+
+    c_dnipro, r_dnipro = clean_city_and_region("Дніпро, Дніпропетровська обл.")
+    assert c_dnipro == "Дніпро"
+    assert r_dnipro == "Дніпропетровська область"
+
 
 def test_alert_helpers():
     # 1. Display info

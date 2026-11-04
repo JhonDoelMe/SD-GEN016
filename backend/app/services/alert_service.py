@@ -287,6 +287,15 @@ def set_demo_alert(level: str, threat_type: str = "none", started_at: Optional[s
     _ALERTS_CACHE.clear()
 
 
+def clear_alerts_cache(region: Optional[str] = None) -> None:
+    """Очищує кеш статусів тривог."""
+    global _ALERTS_CACHE
+    if region:
+        _ALERTS_CACHE.pop(f"alert_{region.lower()}", None)
+    else:
+        _ALERTS_CACHE.clear()
+
+
 async def get_facility_alert(db: AsyncSession, facility_id: int) -> Dict[str, Any]:
     """
     Повертає статус повітряної тривоги для конкретного об'єкта
@@ -304,13 +313,13 @@ async def get_facility_alert(db: AsyncSession, facility_id: int) -> Dict[str, An
             "icon": "🟢"
         }
 
-    # Визначення регіону/області об'єкта
-    city_name = getattr(facility, "city", None)
-    if not city_name:
-        from backend.app.services.weather_service import extract_city_from_facility
-        city_name = extract_city_from_facility(facility)
-
-    region_name = CITY_TO_REGION.get(city_name.lower(), f"{city_name} (область)")
+    # Уніфіковане визначення чистого міста та області без дублювання
+    from backend.app.services.weather_service import clean_city_and_region
+    city_name, region_name = clean_city_and_region(
+        city_raw=getattr(facility, "city", None),
+        address_raw=facility.address,
+        name_raw=facility.name
+    )
     cache_key = f"alert_{region_name.lower()}"
     now_ts = time.time()
     cache_ttl = settings.ALERTS_CACHE_SECONDS
