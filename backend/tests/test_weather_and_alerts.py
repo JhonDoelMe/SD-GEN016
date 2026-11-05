@@ -89,6 +89,73 @@ def test_alert_helpers():
     adv_green = get_operator_safety_advice("green", "none")
     assert "Тривоги немає" in adv_green
 
+    adv_art = get_operator_safety_advice("red", "artillery")
+    assert "АРТОБСТРІЛ" in adv_art
+
+    # 3. Hierarchical alert matching & parsing
+    from backend.app.services.alert_service import match_target_alert, parse_alert_payload
+    mock_active_alerts = [
+        {
+            "id": 1,
+            "location_title": "Самарівський район",
+            "location_type": "raion",
+            "alert_type": "air_raid",
+            "location_oblast": "Дніпропетровська область",
+            "alert_level": "red",
+            "threats": [{"threat_type": "unspecified_missiles", "level": "red", "started_at": "2026-11-05T19:14:21.000Z"}]
+        },
+        {
+            "id": 2,
+            "location_title": "м. Київ",
+            "location_type": "oblast",
+            "alert_type": "air_raid",
+            "location_oblast": "м. Київ",
+            "alert_level": "yellow",
+            "threats": None
+        },
+        {
+            "id": 3,
+            "location_title": "Нікопольська міська територіальна громада",
+            "location_type": "hromada",
+            "location_raion": "Нікопольський район",
+            "alert_type": "artillery_shelling",
+            "location_oblast": "Дніпропетровська область",
+            "alert_level": "red",
+            "threats": None
+        }
+    ]
+
+    # Samar facility matches Samarivskyi raion red alert
+    al_samar = match_target_alert(mock_active_alerts, "Дніпропетровська область", "Самар")
+    assert al_samar is not None
+    p_samar = parse_alert_payload(al_samar)
+    assert p_samar["is_active"] is True
+    assert p_samar["level"] == "red"
+    assert p_samar["threat_type"] == "cruise"
+
+    # Kyiv facility matches Kyiv yellow alert
+    al_kyiv = match_target_alert(mock_active_alerts, "м. Київ", "Київ")
+    assert al_kyiv is not None
+    p_kyiv = parse_alert_payload(al_kyiv)
+    assert p_kyiv["is_active"] is True
+    assert p_kyiv["level"] == "yellow"
+    assert p_kyiv["threat_type"] == "drones"
+
+    # Nikopol facility matches artillery shelling
+    al_nikopol = match_target_alert(mock_active_alerts, "Дніпропетровська область", "Нікополь")
+    assert al_nikopol is not None
+    p_nikopol = parse_alert_payload(al_nikopol)
+    assert p_nikopol["is_active"] is True
+    assert p_nikopol["level"] == "red"
+    assert p_nikopol["threat_type"] == "artillery"
+
+    # Lviv facility has no active alerts
+    al_lviv = match_target_alert(mock_active_alerts, "Львівська область", "Львів")
+    assert al_lviv is None
+    p_lviv = parse_alert_payload(al_lviv)
+    assert p_lviv["is_active"] is False
+    assert p_lviv["level"] == "green"
+
 
 @pytest.mark.asyncio
 async def test_facility_weather_and_alerts_endpoints(client: AsyncClient, superadmin_auth: dict, db_session):
