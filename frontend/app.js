@@ -486,6 +486,9 @@ window.openModal = function (id) {
   if (id === 'modalNewStock') setupNewStockModal();
   if (id === 'modalAdjustment') openAdjustmentModal();
   if (id === 'modalExportAudit') openAuditExportModal();
+  if (typeof window.updateOperationalSafetyBanners === 'function') {
+    window.updateOperationalSafetyBanners();
+  }
 };
 
 window.closeModal = function (id) {
@@ -806,6 +809,102 @@ function formatPricePerLiter(price) {
   const n = Number(price);
   return `${_fmtNum2.format(n)} грн/л`;
 }
+
+// ==========================================================================
+// Universal Client-Side Pagination (10 records per page)
+// ==========================================================================
+const _tablePaginationState = {};
+
+function _renderTablePage(tableId) {
+  const st = _tablePaginationState[tableId];
+  if (!st) return;
+  const table = document.getElementById(tableId);
+  const tbody = table ? (table.querySelector('tbody') || document.getElementById(`${tableId}Body`)) : document.getElementById(`${tableId}Body`);
+  if (!tbody) return;
+
+  const total = st.items.length;
+  const pageSize = st.pageSize || 10;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (st.page > totalPages) st.page = totalPages;
+  if (st.page < 1) st.page = 1;
+
+  if (total === 0) {
+    tbody.innerHTML = `<tr><td colspan="${st.colspan}" style="text-align:center; color:var(--text-muted); padding: 1.1rem;">${st.emptyText}</td></tr>`;
+  } else {
+    const startIdx = (st.page - 1) * pageSize;
+    const pageItems = st.items.slice(startIdx, startIdx + pageSize);
+    tbody.innerHTML = pageItems.map((item, idx) => st.renderRowFn(item, startIdx + idx)).join('');
+  }
+
+  const wrapper = (table && (table.closest('.table-wrapper') || table.closest('.table-container'))) || table;
+  if (!wrapper || !wrapper.parentNode) return;
+
+  let bar = document.getElementById(`pag-${tableId}`);
+  if (total <= pageSize) {
+    if (bar) bar.style.display = 'none';
+    return;
+  }
+
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = `pag-${tableId}`;
+    bar.className = 'pagination-bar';
+    wrapper.parentNode.insertBefore(bar, wrapper.nextSibling);
+  }
+
+  const fromNum = (st.page - 1) * pageSize + 1;
+  const toNum = Math.min(total, st.page * pageSize);
+
+  const maxBtns = 5;
+  let startP = Math.max(1, st.page - Math.floor(maxBtns / 2));
+  let endP = Math.min(totalPages, startP + maxBtns - 1);
+  if (endP - startP + 1 < maxBtns) {
+    startP = Math.max(1, endP - maxBtns + 1);
+  }
+
+  let pageBtnsHtml = '';
+  for (let p = startP; p <= endP; p++) {
+    pageBtnsHtml += `<button type="button" class="pagination-btn ${p === st.page ? 'active' : ''}" onclick="changeTablePage('${tableId}', ${p})">${p}</button>`;
+  }
+
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <div class="pagination-info">
+      Показано <b>${fromNum}–${toNum}</b> із <b>${total}</b> • Сторінка <b>${st.page}</b> з <b>${totalPages}</b>
+    </div>
+    <div class="pagination-controls">
+      <button type="button" class="pagination-btn" onclick="changeTablePage('${tableId}', ${st.page - 1})" ${st.page <= 1 ? 'disabled' : ''}>« Попередня</button>
+      ${pageBtnsHtml}
+      <button type="button" class="pagination-btn" onclick="changeTablePage('${tableId}', ${st.page + 1})" ${st.page >= totalPages ? 'disabled' : ''}>Наступна »</button>
+    </div>
+  `;
+}
+
+window.renderPaginatedTable = function(tableId, items, renderRowFn, colspan, emptyText, pageSize = 10) {
+  const prev = _tablePaginationState[tableId];
+  const arr = Array.isArray(items) ? items : [];
+  const totalPages = Math.max(1, Math.ceil(arr.length / pageSize));
+  const keepPage = prev && prev.page ? Math.min(prev.page, totalPages) : 1;
+  _tablePaginationState[tableId] = {
+    items: arr,
+    renderRowFn,
+    colspan,
+    emptyText,
+    pageSize,
+    page: keepPage
+  };
+  _renderTablePage(tableId);
+};
+
+window.changeTablePage = function(tableId, nextPage) {
+  const st = _tablePaginationState[tableId];
+  if (!st) return;
+  const totalPages = Math.max(1, Math.ceil(st.items.length / (st.pageSize || 10)));
+  const target = Math.max(1, Math.min(totalPages, parseInt(nextPage, 10) || 1));
+  if (target === st.page) return;
+  st.page = target;
+  _renderTablePage(tableId);
+};
 
 // Auth Lifecycle
 function showAuthScreen() {
@@ -1313,6 +1412,12 @@ async function loadGeneratorData() {
       banner.style.display = 'none';
       stopRunStopwatch();
     }
+    if (typeof window.updateOperationalSafetyBanners === 'function') {
+      window.updateOperationalSafetyBanners();
+    }
+    if (typeof window.updateYasnoFuelReadiness === 'function') {
+      window.updateYasnoFuelReadiness();
+    }
     applyRolePermissionsUI();
   } catch (_) {}
 }
@@ -1468,6 +1573,11 @@ function updateRunStopwatchDisplay() {
         cardMaintRem.style.color = 'inherit';
         if (cardMaintSub) cardMaintSub.innerText = `план: ${dueH.toFixed(0)} год`;
       }
+    }
+
+    // 4. Periodically refresh YASNO fuel readiness during active run (every 30s)
+    if (elapsedSeconds % 30 === 0 && typeof window.updateYasnoFuelReadiness === 'function') {
+      window.updateYasnoFuelReadiness(liveTank);
     }
   }
 }
@@ -2006,15 +2116,13 @@ async function loadFuelData() {
       `).join('') || '<tr><td colspan="7" style="text-align:center; color:var(--text-muted)">Складів ГСМ не знайдено</td></tr>';
     }
 
-    // Receipts Table
-    const rTbody = document.querySelector('#fuelReceiptsTable tbody');
-    if (rTbody) {
-      rTbody.innerHTML = receipts.map((r) => {
-        const isOkko = (r.fuel_provider || 'wog').toLowerCase() === 'okko';
-        const provBadge = isOkko
-          ? '<span class="badge" style="background: rgba(234, 179, 8, 0.2); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.4);">OKKO</span>'
-          : '<span class="badge" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4);">WOG</span>';
-        return `
+    // Receipts Table (Paginated: 10 per page)
+    window.renderPaginatedTable('fuelReceiptsTable', receipts, (r) => {
+      const isOkko = (r.fuel_provider || 'wog').toLowerCase() === 'okko';
+      const provBadge = isOkko
+        ? '<span class="badge" style="background: rgba(234, 179, 8, 0.2); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.4);">OKKO</span>'
+        : '<span class="badge" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4);">WOG</span>';
+      return `
         <tr>
           <td>${formatDateTime(r.created_at)}</td>
           <td>${escapeHtml(r.facility_name || '-')}</td>
@@ -2028,25 +2136,21 @@ async function loadFuelData() {
           <td>${escapeHtml(r.user_name || '-')}</td>
         </tr>
       `;
-      }).join('') || '<tr><td colspan="10" style="text-align:center; color:var(--text-muted)">Надходжень не зареєстровано</td></tr>';
-    }
+    }, 10, 'Надходжень не зареєстровано', 10);
 
-    // Transfers Table
-    const tTbody = document.querySelector('#fuelTransfersTable tbody');
-    if (tTbody) {
-      tTbody.innerHTML = transfers.map((t) => `
-        <tr>
-          <td>${formatDateTime(t.created_at)}</td>
-          <td>${escapeHtml(t.stock_name || '-')}</td>
-          <td><b>${escapeHtml(t.generator_name || '-')}</b></td>
-          <td><b style="color:#38bdf8;">+${formatLiters(t.liters)}</b></td>
-          <td>${formatLiters(t.source_balance_before)} → ${formatLiters(t.source_balance_after)}</td>
-          <td>${formatLiters(t.tank_balance_before)} → ${formatLiters(t.tank_balance_after)}</td>
-          <td>${escapeHtml(t.comment || '-')}</td>
-          <td>${escapeHtml(t.user_name || '-')}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="8" style="text-align:center; color:var(--text-muted)">Заправок не зареєстровано</td></tr>';
-    }
+    // Transfers Table (Paginated: 10 per page)
+    window.renderPaginatedTable('fuelTransfersTable', transfers, (t) => `
+      <tr>
+        <td>${formatDateTime(t.created_at)}</td>
+        <td>${escapeHtml(t.stock_name || '-')}</td>
+        <td><b>${escapeHtml(t.generator_name || '-')}</b></td>
+        <td><b style="color:#38bdf8;">+${formatLiters(t.liters)}</b></td>
+        <td>${formatLiters(t.source_balance_before)} → ${formatLiters(t.source_balance_after)}</td>
+        <td>${formatLiters(t.tank_balance_before)} → ${formatLiters(t.tank_balance_after)}</td>
+        <td>${escapeHtml(t.comment || '-')}</td>
+        <td>${escapeHtml(t.user_name || '-')}</td>
+      </tr>
+    `, 8, 'Заправок не зареєстровано', 10);
   } catch (_) {}
 }
 
@@ -2300,8 +2404,7 @@ async function loadMaintenanceData() {
   try {
     const q = currentGeneratorId ? `?generator_id=${encodeURIComponent(currentGeneratorId)}` : '';
     const records = await api(`/maintenance/records${q}`);
-    const tbody = document.querySelector('#maintenanceHistoryTable tbody');
-    tbody.innerHTML = records.map((r) => `
+    window.renderPaginatedTable('maintenanceHistoryTable', records, (r) => `
       <tr>
         <td>${formatDateTime(r.created_at)}</td>
         <td><span class="badge ${r.maintenance_type === 'SCHEDULED' ? 'badge-running' : 'badge-stopped'}">${r.maintenance_type === 'SCHEDULED' ? 'Регламентне' : 'Проміжне'}</span></td>
@@ -2311,7 +2414,7 @@ async function loadMaintenanceData() {
         <td>${formatMoney(r.cost)}</td>
         <td>${escapeHtml(r.user_name || '-')}</td>
       </tr>
-    `).join('') || '<tr><td colspan="7" style="text-align:center; color:var(--text-muted)">Записів ТО не знайдено</td></tr>';
+    `, 7, 'Записів ТО не знайдено', 10);
   } catch (_) {}
 }
 
@@ -2426,7 +2529,6 @@ async function loadFaultsData() {
   try {
     const qGen = currentGeneratorId ? `?generator_id=${encodeURIComponent(currentGeneratorId)}` : '';
     const faults = await api(`/faults${qGen}`);
-    const tbody = document.querySelector('#faultsTable tbody');
     const prioMap = { CRITICAL: 'Критичний', HIGH: 'Високий', MEDIUM: 'Середній', LOW: 'Низький' };
     const statMap = {
       NEW: 'Нова',
@@ -2437,7 +2539,7 @@ async function loadFaultsData() {
       RESOLVED: 'Усунено',
       CLOSED: 'Закрито'
     };
-    tbody.innerHTML = faults.map((f) => {
+    window.renderPaginatedTable('faultsTable', faults, (f) => {
       const isResolved = f.status === 'RESOLVED' || f.status === 'CLOSED';
       const resolvedInfo = isResolved
         ? `Усунув: ${escapeHtml(f.resolved_by_name || 'Оператор')}${f.resolution_notes ? ' | ' + escapeHtml(f.resolution_notes) : ''}`
@@ -2460,7 +2562,7 @@ async function loadFaultsData() {
           </td>
         </tr>
       `;
-    }).join('') || '<tr><td colspan="8" style="text-align:center; color:var(--text-muted)">Несправностей немає</td></tr>';
+    }, 8, 'Несправностей немає', 10);
   } catch (err) {
     console.warn('loadFaultsData error:', err);
   }
@@ -2548,9 +2650,8 @@ async function loadRecentRuns() {
 async function loadRunsData() {
   try {
     const q = currentGeneratorId ? '&generator_id=' + encodeURIComponent(currentGeneratorId) : '';
-    const runs = await api('/generator/runs?limit=50' + q);
-    const tbody = document.querySelector('#allRunsTable tbody');
-    tbody.innerHTML = runs.map((r) => {
+    const runs = await api('/generator/runs?limit=200' + q);
+    window.renderPaginatedTable('allRunsTable', runs, (r) => {
       const durText = r.duration_formatted || (r.duration_seconds != null ? formatDuration(r.duration_seconds) : (r.duration_hours ? formatHoursToHms(r.duration_hours) : '-'));
       const consText = r.calculated_consumption_l != null ? formatLiters(r.calculated_consumption_l) : '-';
       const startFuel = r.start_fuel_level_l != null ? formatLiters(r.start_fuel_level_l) : '-';
@@ -2569,7 +2670,7 @@ async function loadRunsData() {
           <td>${escapeHtml(r.note || '-')}</td>
         </tr>
       `;
-    }).join('') || '<tr><td colspan="10" style="text-align:center; color:var(--text-muted)">Записів не знайдено</td></tr>';
+    }, 10, 'Записів не знайдено', 10);
   } catch (_) {}
 }
 
@@ -2931,11 +3032,10 @@ async function loadAuditData() {
   try {
     const qFac = currentFacilityId ? `&facility_id=${encodeURIComponent(currentFacilityId)}` : '';
     const [logs, adjustments] = await Promise.all([
-      api('/audit?limit=50'),
-      api(`/adjustments?limit=50${qFac}`)
+      api('/audit?limit=200'),
+      api(`/adjustments?limit=200${qFac}`)
     ]);
-    const tbody = document.querySelector('#auditTable tbody');
-    tbody.innerHTML = logs.map((l) => {
+    window.renderPaginatedTable('auditTable', logs, (l) => {
       const actionUa = AUDIT_ACTION_MAP_UA[l.action] || l.action;
       const entityUa = AUDIT_ENTITY_MAP_UA[l.entity_type] || l.entity_type;
       const detailsUa = formatAuditDetailsUa(l.details_json, l.action);
@@ -2949,10 +3049,9 @@ async function loadAuditData() {
           <td>${escapeHtml(l.ip_address || '-')}</td>
         </tr>
       `;
-    }).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Аудит порожній</td></tr>';
+    }, 6, 'Аудит порожній', 10);
 
-    const adjTbody = document.querySelector('#adjustmentsTable tbody');
-    adjTbody.innerHTML = adjustments.map((a) => {
+    window.renderPaginatedTable('adjustmentsTable', adjustments, (a) => {
       const entityUa = AUDIT_ENTITY_MAP_UA[a.entity_type] || a.entity_type;
       const fieldUa = ADJUSTMENT_FIELD_MAP_UA[a.field_name] || a.field_name;
       const facName = a.facility_name || (a.facility_id ? `Об'єкт #${a.facility_id}` : 'Базовий об\'єкт');
@@ -2970,7 +3069,7 @@ async function loadAuditData() {
           <td>${escapeHtml(a.reason)}</td>
         </tr>
       `;
-    }).join('') || '<tr><td colspan="9" style="text-align:center; color:var(--text-muted)">Коригувань не виконувалось</td></tr>';
+    }, 9, 'Коригувань не виконувалось', 10);
   } catch (_) {}
 }
 
@@ -3548,82 +3647,54 @@ async function loadReport(isUserTriggered = false) {
       if (bRec) bRec.textContent = receipts.length;
       if (bMaint) bMaint.textContent = maint.length;
 
-      // Table 1: Runs
-      const runsTbody = document.getElementById('repRunsTableBody');
-      if (runsTbody) {
-        if (!runs.length) {
-          runsTbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Немає зафіксованих пусків за обраний період</td></tr>`;
-        } else {
-          runsTbody.innerHTML = runs.map(row => `
-            <tr>
-              <td><b>${escapeHtml(row.start_time)}</b></td>
-              <td>${escapeHtml(row.end_time || 'В роботі')}</td>
-              <td><b style="color: #38bdf8; font-family: monospace;">${escapeHtml(row.duration_formatted || formatHoursToHms(row.duration_hours))}</b></td>
-              <td>${formatHoursCounter(row.start_hours)} ➔ ${row.end_hours !== null && row.end_hours !== undefined ? formatHoursCounter(row.end_hours) : '-'}</td>
-              <td style="color:#38bdf8; font-weight:600;">${formatLiters(row.calculated_consumption_l)}</td>
-              <td>${escapeHtml(row.operator_name || '-')}</td>
-            </tr>
-          `).join('');
-        }
-      }
+      // Table 1: Runs (Paginated: 10 per page)
+      window.renderPaginatedTable('repRunsTable', runs, row => `
+        <tr>
+          <td><b>${escapeHtml(row.start_time)}</b></td>
+          <td>${escapeHtml(row.end_time || 'В роботі')}</td>
+          <td><b style="color: #38bdf8; font-family: monospace;">${escapeHtml(row.duration_formatted || formatHoursToHms(row.duration_hours))}</b></td>
+          <td>${formatHoursCounter(row.start_hours)} ➔ ${row.end_hours !== null && row.end_hours !== undefined ? formatHoursCounter(row.end_hours) : '-'}</td>
+          <td style="color:#38bdf8; font-weight:600;">${formatLiters(row.calculated_consumption_l)}</td>
+          <td>${escapeHtml(row.operator_name || '-')}</td>
+        </tr>
+      `, 6, 'Немає зафіксованих пусків за обраний період', 10);
 
-      // Table 2: Fuel Transfers
-      const trTbody = document.getElementById('repTransfersTableBody');
-      if (trTbody) {
-        if (!transfers.length) {
-          trTbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Немає заправок бака за обраний період</td></tr>`;
-        } else {
-          trTbody.innerHTML = transfers.map(row => `
-            <tr>
-              <td><b>${escapeHtml(row.created_at)}</b></td>
-              <td style="color:#4ade80; font-weight:700;">${formatLiters(row.liters)}</td>
-              <td>${escapeHtml(row.stock_name || 'Склад ГСМ')}</td>
-              <td>${escapeHtml(row.generator_name || 'Генератор')}</td>
-              <td>${escapeHtml(row.operator_name || '-')}</td>
-            </tr>
-          `).join('');
-        }
-      }
+      // Table 2: Fuel Transfers (Paginated: 10 per page)
+      window.renderPaginatedTable('repTransfersTable', transfers, row => `
+        <tr>
+          <td><b>${escapeHtml(row.created_at)}</b></td>
+          <td style="color:#4ade80; font-weight:700;">${formatLiters(row.liters)}</td>
+          <td>${escapeHtml(row.stock_name || 'Склад ГСМ')}</td>
+          <td>${escapeHtml(row.generator_name || 'Генератор')}</td>
+          <td>${escapeHtml(row.operator_name || '-')}</td>
+        </tr>
+      `, 5, 'Немає заправок бака за обраний період', 10);
 
-      // Table 3: Fuel Receipts
-      const recTbody = document.getElementById('repReceiptsTableBody');
-      if (recTbody) {
-        if (!receipts.length) {
-          recTbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Немає надходжень на склад за обраний період</td></tr>`;
-        } else {
-          recTbody.innerHTML = receipts.map(row => `
-            <tr>
-              <td><b>${escapeHtml(row.created_at)}</b></td>
-              <td style="color:#4ade80; font-weight:700;">${formatLiters(row.liters)}</td>
-              <td>${formatPricePerLiter(row.price_per_liter)}</td>
-              <td style="font-weight:600;">${formatMoney(row.cost_total)}</td>
-              <td>${escapeHtml(row.supplier || '-')}</td>
-              <td>${escapeHtml(row.stock_name || 'Склад ГСМ')}</td>
-              <td>${escapeHtml(row.operator_name || '-')}</td>
-            </tr>
-          `).join('');
-        }
-      }
+      // Table 3: Fuel Receipts (Paginated: 10 per page)
+      window.renderPaginatedTable('repReceiptsTable', receipts, row => `
+        <tr>
+          <td><b>${escapeHtml(row.created_at)}</b></td>
+          <td style="color:#4ade80; font-weight:700;">${formatLiters(row.liters)}</td>
+          <td>${formatPricePerLiter(row.price_per_liter)}</td>
+          <td style="font-weight:600;">${formatMoney(row.cost_total)}</td>
+          <td>${escapeHtml(row.supplier || '-')}</td>
+          <td>${escapeHtml(row.stock_name || 'Склад ГСМ')}</td>
+          <td>${escapeHtml(row.operator_name || '-')}</td>
+        </tr>
+      `, 7, 'Немає надходжень на склад за обраний період', 10);
 
-      // Table 4: Maintenance
-      const maintTbody = document.getElementById('repMaintTableBody');
-      if (maintTbody) {
-        if (!maint.length) {
-          maintTbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:1.5rem;">Немає записів обслуговування за обраний період</td></tr>`;
-        } else {
-          maintTbody.innerHTML = maint.map(row => `
-            <tr>
-              <td><b>${escapeHtml(row.created_at)}</b></td>
-              <td><span class="badge" style="background: rgba(6,182,212,0.15); color: var(--accent-cyan);">${escapeHtml(row.maintenance_type)}</span></td>
-              <td>${formatHoursCounter(row.operating_hours)}</td>
-              <td>${escapeHtml(row.work_description || '-')}</td>
-              <td style="font-weight:600;">${formatMoney(row.cost)}</td>
-              <td>${escapeHtml(row.technician || '-')}</td>
-              <td>${escapeHtml(row.operator_name || '-')}</td>
-            </tr>
-          `).join('');
-        }
-      }
+      // Table 4: Maintenance (Paginated: 10 per page)
+      window.renderPaginatedTable('repMaintTable', maint, row => `
+        <tr>
+          <td><b>${escapeHtml(row.created_at)}</b></td>
+          <td><span class="badge" style="background: rgba(6,182,212,0.15); color: var(--accent-cyan);">${escapeHtml(row.maintenance_type)}</span></td>
+          <td>${formatHoursCounter(row.operating_hours)}</td>
+          <td>${escapeHtml(row.work_description || '-')}</td>
+          <td style="font-weight:600;">${formatMoney(row.cost)}</td>
+          <td>${escapeHtml(row.technician || '-')}</td>
+          <td>${escapeHtml(row.operator_name || '-')}</td>
+        </tr>
+      `, 7, 'Немає записів обслуговування за обраний період', 10);
     }
 
     if (isUserTriggered) {
@@ -5808,10 +5879,7 @@ window.saveNotificationSettings = async function(e) {
 
 async function loadNotificationLogs() {
   try {
-    const logs = await api('/notifications/logs?limit=30');
-    const tbody = document.querySelector('#notifLogsTable tbody');
-    if (!tbody) return;
-
+    const logs = await api('/notifications/logs?limit=100');
     const eventIcons = {
       'GENERATOR_START': '🟢 Пуск',
       'GENERATOR_STOP': '🔴 Зупинка',
@@ -5821,7 +5889,7 @@ async function loadNotificationLogs() {
       'TEST': '📲 Тест'
     };
 
-    tbody.innerHTML = logs.map(l => `
+    window.renderPaginatedTable('notifLogsTable', logs, l => `
       <tr>
         <td>${formatDateTime(l.created_at)}</td>
         <td><b>${eventIcons[l.event_type] || l.event_type}</b></td>
@@ -5834,7 +5902,7 @@ async function loadNotificationLogs() {
           </span>
         </td>
       </tr>
-    `).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Журнал сповіщень порожній</td></tr>';
+    `, 6, 'Журнал сповіщень порожній', 10);
   } catch (_) {}
 }
 
@@ -6418,6 +6486,9 @@ window.loadFacilityOutageSchedule = async function(facilityId = null, forceRefre
     const hasTomorrowOutages = Array.isArray(data.timeline_tomorrow) && data.timeline_tomorrow.some(h => h.status === 'DEFINITE' || h.status === 'PROBABLE');
     const defaultDay = data.timeline_day || ((data.next_outage && data.next_outage.day === 'tomorrow' && hasTomorrowOutages) ? 'tomorrow' : 'today');
     window.renderYasnoTimeline(defaultDay);
+    if (typeof window.updateYasnoFuelReadiness === 'function') {
+      window.updateYasnoFuelReadiness();
+    }
 
     // Indicator of current hour
     const curHourInd = document.getElementById('yasnoCurrentHourIndicator');
@@ -6479,6 +6550,98 @@ window._parseHhMmToMinutes = function(str) {
   const parts = str.split(':').map(Number);
   if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return null;
   return parts[0] * 60 + parts[1];
+};
+
+window.updateYasnoFuelReadiness = function(liveTankOverride = null) {
+  const el = document.getElementById('yasnoFuelReadiness');
+  if (!el) return;
+  const data = window._yasnoLastData;
+  if (!data || !data.enabled || !data.configured || !currentGenerator) {
+    el.style.display = 'none';
+    return;
+  }
+
+  let slot = null;
+  let isCurrentOutage = false;
+  if (data.is_outage_now && data.current_outage && data.current_outage.start && data.current_outage.end) {
+    slot = data.current_outage;
+    isCurrentOutage = true;
+  } else if (data.next_outage && data.next_outage.start && data.next_outage.end) {
+    slot = data.next_outage;
+  }
+
+  if (!slot) {
+    el.style.display = 'none';
+    return;
+  }
+
+  const startMin = window._parseHhMmToMinutes(slot.start);
+  let endMin = window._parseHhMmToMinutes(slot.end);
+  if (startMin === null || endMin === null) {
+    el.style.display = 'none';
+    return;
+  }
+  if (endMin <= startMin) endMin += 1440;
+
+  let slotMinutes = endMin - startMin;
+  if (isCurrentOutage) {
+    const now = new Date();
+    let nowMin = now.getHours() * 60 + now.getMinutes();
+    if (nowMin < startMin && endMin > 1440) nowMin += 1440;
+    if (nowMin >= startMin && nowMin < endMin) {
+      slotMinutes = Math.max(5, endMin - nowMin);
+    }
+  }
+  const slotHours = slotMinutes / 60.0;
+  if (slotHours <= 0) {
+    el.style.display = 'none';
+    return;
+  }
+
+  let fuelL = Number(currentGenerator.fuel_tank_level_l || 0);
+  if (typeof liveTankOverride === 'number' && !Number.isNaN(liveTankOverride)) {
+    fuelL = liveTankOverride;
+  } else if (currentGenerator.status === 'RUNNING' && activeRun && activeRun.start_time) {
+    const startDt = parseUTCDate(activeRun.start_time);
+    if (startDt) {
+      const elapsedH = Math.max(0, (Date.now() - startDt.getTime()) / 3600000);
+      const nom = Number(currentGenerator.nominal_consumption_l_per_h || 2.2);
+      const startFuel = activeRun.start_fuel_level_l ?? activeRun.start_fuel ?? fuelL;
+      fuelL = startFuel - elapsedH * nom;
+    }
+  }
+
+  const nominal = Number(currentGenerator.nominal_consumption_l_per_h || 2.2);
+  const effectiveFuelL = Math.max(0, fuelL);
+  const tankHours = nominal > 0 ? (effectiveFuelL / nominal) : 0;
+  const neededLiters = slotHours * nominal;
+
+  const sig = `${currentGenerator.id}|${isCurrentOutage ? 'cur' : 'next'}|${slot.start}-${slot.end}|${Math.round(slotMinutes)}|${effectiveFuelL.toFixed(1)}|${nominal.toFixed(2)}`;
+  if (el.dataset.renderSig === sig) return;
+  el.dataset.renderSig = sig;
+
+  const slotHoursStr = formatHoursToHuman(slotHours);
+  const tankHoursStr = formatHoursToHuman(tankHours);
+  const fuelStr = `${effectiveFuelL.toFixed(1).replace('.', ',')} л`;
+  const neededStr = `${neededLiters.toFixed(1).replace('.', ',')} л`;
+  const slotContext = isCurrentOutage
+    ? `поточне відключення до <b>${escapeHtml(slot.end)}</b> (залишилось ${escapeHtml(slotHoursStr)})`
+    : `відключення <b>${escapeHtml(slot.start)}–${escapeHtml(slot.end)}</b> (${escapeHtml(slotHoursStr)})`;
+
+  el.style.display = 'flex';
+  if (tankHours + 0.05 >= slotHours && fuelL > 0) {
+    el.className = 'yasno-fuel-readiness readiness-ok';
+    el.innerHTML = `
+      <div>✅ <b>Паливо в баку ↔ YASNO:</b> на ${slotContext} палива <b>вистачить</b> (у баку <b>${fuelStr}</b> ≈ ${escapeHtml(tankHoursStr)}, потрібно ~${neededStr}).</div>
+    `;
+  } else {
+    const deficitL = Math.max(0.1, neededLiters - effectiveFuelL);
+    const deficitStr = `${deficitL.toFixed(1).replace('.', ',')} л`;
+    el.className = `yasno-fuel-readiness ${fuelL <= 0 ? 'readiness-crit' : 'readiness-warn'}`;
+    el.innerHTML = `
+      <div>⚠️ <b>Паливо в баку ↔ YASNO:</b> на ${slotContext} у баку є <b>${fuelStr}</b> (~${escapeHtml(tankHoursStr)}), <b>бракує ~${deficitStr}</b> — рекомендується дозаправити.</div>
+    `;
+  }
 };
 
 window.switchYasnoTimelineDay = function(day) {
@@ -6761,8 +6924,78 @@ window.loadFacilityIndicators = async function(facilityId, force = false) {
       alertBadge.style.display = 'inline-flex';
       alertBadge.title = `Повітряна безпека: ${alert.threat_title} (${alert.region_name}). Натисніть для деталей.`;
     }
+    if (typeof window.updateOperationalSafetyBanners === 'function') {
+      window.updateOperationalSafetyBanners();
+    }
   } catch (err) {
     console.warn("Не вдалося завантажити індикатори погоди та тривог:", err);
+  }
+};
+
+window.isDieselGenerator = function(gen) {
+  if (!gen) return false;
+  const ft = String(gen.fuel_type || '').toLowerCase();
+  const modelAndName = `${gen.name || ''} ${gen.model || ''}`.toLowerCase();
+  return /дп|дизель|diesel/.test(ft) || /дизель|diesel/.test(modelAndName);
+};
+
+window.updateOperationalSafetyBanners = function() {
+  // 1. Diesel Frost / Winter Fuel Notice (< 0°C, strictly for Diesel generators)
+  const frostBanner = document.getElementById('genDieselFrostBanner');
+  if (frostBanner) {
+    const w = window._currentWeatherData;
+    const isDiesel = window.isDieselGenerator(currentGenerator);
+    const isSubZero = Boolean(w && w.is_available && typeof w.temp_c === 'number' && w.temp_c < 0);
+    if (isDiesel && isSubZero) {
+      const tempText = w.temp_formatted || `${Math.round(w.temp_c)}°C`;
+      frostBanner.style.display = 'flex';
+      frostBanner.innerHTML = `
+        <span style="font-size: 1.15rem; line-height: 1.2; flex-shrink: 0;">❄️</span>
+        <div><b>На об'єкті ${escapeHtml(tempText)}:</b> переконайтесь, що залито зимове ДП, та прогрійте двигун 3–5 хв без навантаження.</div>
+      `;
+    } else {
+      frostBanner.style.display = 'none';
+    }
+  }
+
+  // 2. Operator Safety Notice during Red Alert while Generator is RUNNING (strictly informational, zero blocking)
+  const alertData = window._currentAlertData;
+  const isRedAlert = Boolean(alertData && alertData.level === 'red');
+  const isRunning = Boolean(currentGenerator && currentGenerator.status === 'RUNNING');
+  const threatTitle = (alertData && alertData.threat_title) ? alertData.threat_title : 'Повітряна тривога';
+  const infoHtml = `
+    <span style="font-size: 1.15rem; line-height: 1.2; flex-shrink: 0;">🚨</span>
+    <div><b>Безпека оператора (${escapeHtml(threatTitle)}):</b> на об'єкті триває 🔴 Червона тривога під час роботи генератора. Дотримуйтесь правил безпеки та утримайтесь від перебування на відкритому просторі біля обладнання (інформаційне нагадування).</div>
+  `;
+
+  const dashRedBanner = document.getElementById('redAlertRunSafetyBanner');
+  if (dashRedBanner) {
+    if (isRedAlert && isRunning) {
+      dashRedBanner.style.display = 'flex';
+      dashRedBanner.innerHTML = infoHtml;
+    } else {
+      dashRedBanner.style.display = 'none';
+    }
+  }
+
+  const stopRedNotice = document.getElementById('stopModalRedAlertNotice');
+  if (stopRedNotice) {
+    if (isRedAlert && isRunning) {
+      stopRedNotice.style.display = 'flex';
+      stopRedNotice.innerHTML = infoHtml;
+    } else {
+      stopRedNotice.style.display = 'none';
+    }
+  }
+
+  const transferRedNotice = document.getElementById('transferModalRedAlertNotice');
+  if (transferRedNotice) {
+    if (isRedAlert && isRunning) {
+      transferRedNotice.style.display = 'flex';
+      transferRedNotice.innerHTML = infoHtml;
+    } else {
+      transferRedNotice.style.display = 'none';
+    }
   }
 };
 
@@ -6889,7 +7122,17 @@ window.populateWeatherModal = function(w) {
     }
   }
 
-  if (advText) advText.innerText = w.generator_tip || 'Штатні умови експлуатації генератора.';
+  if (advText) {
+    let tip = w.generator_tip || 'Штатні умови експлуатації генератора.';
+    if (typeof w.temp_c === 'number' && w.temp_c < 0) {
+      if (window.isDieselGenerator(currentGenerator)) {
+        tip = `❄️ На об'єкті ${w.temp_formatted || `${Math.round(w.temp_c)}°C`}: переконайтесь, що залито зимове ДП, та прогрійте двигун 3–5 хв без навантаження.`;
+      } else {
+        tip = `❄️ На об'єкті ${w.temp_formatted || `${Math.round(w.temp_c)}°C`}: перед подачею навантаження прогрійте бензиновий двигун 2–3 хв на холостому ходу.`;
+      }
+    }
+    advText.innerText = tip;
+  }
   if (sync) {
     let dtStr = 'щойно';
     if (w.updated_at) {

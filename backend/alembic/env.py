@@ -88,6 +88,7 @@ async def run_async_migrations() -> None:
         try:
             async with connectable.connect() as connection:
                 await connection.run_sync(do_run_migrations)
+                await connection.commit()
             break
         except Exception as e:
             if attempt == max_retries:
