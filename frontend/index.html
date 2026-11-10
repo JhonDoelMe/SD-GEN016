@@ -3101,7 +3101,7 @@
 
   <!-- Modal: Weather Details -->
   <div id="modalWeatherDetails" class="modal-overlay">
-    <div class="modal-content modal-weather-content" style="max-width: 440px;">
+    <div class="modal-content modal-weather-content" style="max-width: 480px;">
       <div class="modal-header">
         <h3 id="weatherModalTitle" style="display: flex; align-items: center; gap: 0.5rem; margin: 0;">
           <span>⛅</span> Погода на об'єкті
@@ -3135,6 +3135,11 @@
             <span class="param-label">Тиск</span>
             <span class="param-val" id="weatherParamPressure">752 мм</span>
           </div>
+        </div>
+
+        <div class="weather-forecast-section" id="weatherForecastSection" style="display: none;">
+          <div class="weather-forecast-title">📅 Прогноз на 5 днів:</div>
+          <div class="weather-forecast-grid" id="weatherForecastGrid"></div>
         </div>
 
         <div class="weather-generator-advice" id="weatherGenAdviceWrap">
@@ -3172,7 +3177,7 @@
 
         <div class="alert-verification-banner verif-verified" id="alertVerificationBanner">
           <span class="verif-icon" id="alertVerificationIcon">✅</span>
-          <span class="verif-text" id="alertVerificationText">Верифіковано: чистоту неба синхронно підтверджено обома провайдерами (alerts.in.ua + UkraineAlarm).</span>
+          <span class="verif-text" id="alertVerificationText">Підтверджено обома джерелами (Alerts.in.ua + UkraineAlarm)</span>
         </div>
 
         <div class="alert-advice-card" id="alertAdviceCard">

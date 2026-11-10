@@ -30,7 +30,7 @@ def test_weather_helpers():
     f3 = Facility(name="Склад Захід", address="м. Львів, вул. Городоцька 15")
     assert extract_city_from_facility(f3) == "Львів"
 
-    # 2. Generator tips
+    # 2. Generator tips & 5-day forecast parsing
     tip_frost = get_generator_weather_tip(-12.0, 80, False)
     assert "Сильний мороз" in tip_frost
 
@@ -39,6 +39,36 @@ def test_weather_helpers():
 
     tip_heat = get_generator_weather_tip(33.0, 40, False)
     assert "Спека" in tip_heat
+
+    from backend.app.services.weather_service import parse_5day_forecast
+    mock_forecast_payload = {
+        "list": [
+            {
+                "dt_txt": "2026-11-11 12:00:00",
+                "main": {"temp": 6.5, "temp_min": 2.1, "temp_max": 7.4},
+                "weather": [{"icon": "10d", "description": "помірний дощ"}],
+                "pop": 0.85
+            },
+            {
+                "dt_txt": "2026-11-12 12:00:00",
+                "main": {"temp": -2.0, "temp_min": -3.4, "temp_max": 1.2},
+                "weather": [{"icon": "13n", "description": "невеликий сніг"}],
+                "pop": 0.6
+            }
+        ]
+    }
+    parsed_days = parse_5day_forecast(mock_forecast_payload)
+    assert len(parsed_days) == 2
+    assert parsed_days[0]["date"] == "2026-11-11"
+    assert parsed_days[0]["temp_max_formatted"] == "+7°"
+    assert parsed_days[0]["temp_min_formatted"] == "+2°"
+    assert parsed_days[0]["pop_percent"] == 85
+    assert parsed_days[1]["icon_code"] == "13d"
+    assert parsed_days[1]["icon_emoji"] == "❄️"
+
+    # Proactive frost warning when current temp is mild (+5°C) but forecast has frost (-3.4°C)
+    tip_upcoming_frost = get_generator_weather_tip(5.0, 65, False, forecast_days=parsed_days)
+    assert "заморозки" in tip_upcoming_frost
 
     # 3. Icon emoji mapping
     assert map_icon_to_emoji("01d") == "☀️"
@@ -266,7 +296,8 @@ def test_alert_helpers():
     assert fused_red["level"] == "red"
     assert fused_red["threat_type"] == "cruise"
     assert fused_red["verification_status"] == "verified"
-    assert fused_red["provider"] == "alerts.in.ua + ukrainealarm.com"
+    assert fused_red["provider"] == "Alerts.in.ua + UkraineAlarm"
+    assert fused_red["verification_note"] == "Тривогу підтверджено обома джерелами (Alerts.in.ua + UkraineAlarm)"
 
     # Case C: Premature all-clear on one provider -> holds worst-case active alert!
     fused_insurance_1 = fuse_provider_results(p_lviv, p_ua_samar)

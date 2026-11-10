@@ -709,15 +709,13 @@ def fuse_provider_results(
     if len(valid_results) == 1:
         single = dict(valid_results[0])
         prov_name = single.get("provider", "alerts.in.ua")
+        short_prov = "UkraineAlarm" if "ukrainealarm" in prov_name else "Alerts.in.ua"
         if prov_name == "mock":
             single["verification_status"] = "mock"
-            single["verification_note"] = "Тестовий режим (демо-емулятор без бойових ключів у .env)."
+            single["verification_note"] = "Демо-режим (тестовий емулятор)"
         else:
             single["verification_status"] = "single_source"
-            single["verification_note"] = (
-                f"Автоматичний моніторинг за джерелом {prov_name} "
-                f"(другий провайдер оновлюється або не підключений)."
-            )
+            single["verification_note"] = f"Моніторинг за одним джерелом ({short_prov})"
         return single
 
     # Обидва провайдери повернули дані — виконуємо автоматичну звірку
@@ -775,32 +773,21 @@ def fuse_provider_results(
         or r2.get("location_title")
     )
 
-    # Формування автоматичного статусу звірки провайдерів для користувача
+    # Формування лаконічного автоматичного статусу звірки провайдерів
     if act1 == act2 and lvl1 == lvl2:
         verification_status = "verified"
         if not final_active:
-            verification_note = (
-                "Верифіковано: чистоту неба синхронно підтверджено обома провайдерами "
-                "(alerts.in.ua + UkraineAlarm)."
-            )
+            verification_note = "Підтверджено обома джерелами (Alerts.in.ua + UkraineAlarm)"
         else:
-            verification_note = (
-                "Верифіковано: активну загрозу синхронно підтверджено обома провайдерами "
-                "(alerts.in.ua + UkraineAlarm)."
-            )
+            verification_note = "Тривогу підтверджено обома джерелами (Alerts.in.ua + UkraineAlarm)"
     elif act1 != act2:
         verification_status = "insurance_hold"
-        active_prov = r1.get("provider") if act1 else r2.get("provider")
-        verification_note = (
-            f"Страхування від передчасного відбою: загроза ще активна за даними {active_prov} — "
-            f"утримується вищий рівень безпеки до підтвердження відбою обома джерелами."
-        )
+        active_prov_raw = (r1.get("provider") if act1 else r2.get("provider")) or ""
+        short_prov = "UkraineAlarm" if "ukrainealarm" in active_prov_raw else "Alerts.in.ua"
+        verification_note = f"Страхування відбою: загроза ще активна у {short_prov}"
     else:
         verification_status = "insurance_hold"
-        verification_note = (
-            "Страхування безпеки: обидва провайдери фіксують тривогу (рівні різняться) — "
-            "автоматично обрано вищий рівень загрози."
-        )
+        verification_note = "Страхування безпеки: обрано вищий рівень загрози з двох джерел"
 
     return {
         "is_active": final_active,
@@ -808,7 +795,7 @@ def fuse_provider_results(
         "threat_type": final_threat,
         "started_at": earliest_start,
         "location_title": loc_title,
-        "provider": "alerts.in.ua + ukrainealarm.com",
+        "provider": "Alerts.in.ua + UkraineAlarm",
         "verification_status": verification_status,
         "verification_note": verification_note,
     }

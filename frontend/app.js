@@ -6797,6 +6797,8 @@ window.populateWeatherModal = function(w) {
   if (!w || !w.is_available) {
     const loc = document.getElementById('weatherHeroLoc');
     if (loc) loc.innerText = "Погодні дані завантажуються...";
+    const fcSec = document.getElementById('weatherForecastSection');
+    if (fcSec) fcSec.style.display = 'none';
     return;
   }
   const icon = document.getElementById('weatherHeroIcon');
@@ -6807,6 +6809,8 @@ window.populateWeatherModal = function(w) {
   const hum = document.getElementById('weatherParamHumidity');
   const wind = document.getElementById('weatherParamWind');
   const press = document.getElementById('weatherParamPressure');
+  const fcSection = document.getElementById('weatherForecastSection');
+  const fcGrid = document.getElementById('weatherForecastGrid');
   const advText = document.getElementById('weatherGenAdviceText');
   const sync = document.getElementById('weatherSyncTime');
 
@@ -6819,6 +6823,34 @@ window.populateWeatherModal = function(w) {
   if (hum) hum.innerText = `${w.humidity_percent}%`;
   if (wind) wind.innerText = `${w.wind_speed_mps} м/с`;
   if (press) press.innerText = `${w.pressure_mmhg} мм рт. ст.`;
+
+  if (fcSection && fcGrid) {
+    const days = Array.isArray(w.forecast) ? w.forecast : [];
+    if (days.length > 0) {
+      fcGrid.innerHTML = days.map((d) => {
+        const popHtml = (d.pop_percent && d.pop_percent >= 20)
+          ? `<span class="fc-day-pop">💧 ${d.pop_percent}%</span>`
+          : `<span class="fc-day-pop fc-day-pop-empty">&nbsp;</span>`;
+        const safeDesc = String(d.description || '').replace(/"/g, '&quot;');
+        return `
+          <div class="weather-forecast-day" title="${safeDesc}">
+            <span class="fc-day-label">${d.day_label || d.date}</span>
+            <span class="fc-day-icon">${d.icon_emoji || '⛅'}</span>
+            <div class="fc-day-temps">
+              <span class="fc-temp-max">${d.temp_max_formatted || ''}</span>
+              <span class="fc-temp-min">${d.temp_min_formatted || ''}</span>
+            </div>
+            ${popHtml}
+          </div>
+        `;
+      }).join('');
+      fcSection.style.display = 'block';
+    } else {
+      fcGrid.innerHTML = '';
+      fcSection.style.display = 'none';
+    }
+  }
+
   if (advText) advText.innerText = w.generator_tip || 'Штатні умови експлуатації генератора.';
   if (sync) {
     const dt = w.updated_at ? new Date(w.updated_at).toLocaleTimeString('uk-UA', {hour: '2-digit', minute:'2-digit'}) : 'щойно';
@@ -6892,16 +6924,16 @@ window.populateAlertModal = function(a) {
     const vStatus = a.verification_status || 'verified';
     let vClass = 'verif-verified';
     let vEmoji = '✅';
-    let defaultNote = 'Верифіковано: статус синхронно підтверджено обома провайдерами (alerts.in.ua + UkraineAlarm).';
+    let defaultNote = 'Підтверджено обома джерелами (Alerts.in.ua + UkraineAlarm)';
 
     if (vStatus === 'insurance_hold') {
       vClass = 'verif-insurance';
       vEmoji = '🛡️';
-      defaultNote = 'Страхування від передчасного відбою: дані провайдерів різняться — утримується вищий рівень безпеки.';
+      defaultNote = 'Страхування відбою: утримується вищий рівень безпеки';
     } else if (vStatus === 'single_source' || vStatus === 'mock') {
       vClass = 'verif-single';
       vEmoji = 'ℹ️';
-      defaultNote = 'Автоматичний моніторинг активний за одним джерелом.';
+      defaultNote = 'Моніторинг за одним джерелом';
     }
 
     verifBanner.className = `alert-verification-banner ${vClass}`;
@@ -6910,5 +6942,5 @@ window.populateAlertModal = function(a) {
   }
 
   if (advBody) advBody.innerText = a.operator_advice || 'Дозволено штатну роботу.';
-  if (provEl) provEl.innerText = `Джерела: ${a.provider || 'alerts.in.ua + ukrainealarm.com'}`;
+  if (provEl) provEl.innerText = `Джерела: ${a.provider || 'Alerts.in.ua + UkraineAlarm'}`;
 };

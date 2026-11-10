@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
+import asyncio
 import time
 import re
 import logging
-from typing import Dict, Any, Optional, Tuple
+from datetime import datetime
+from typing import Dict, Any, Optional, Tuple, List
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.config import settings
 from backend.app.models.facility import Facility
-from backend.app.core.timezone import now_utc
+from backend.app.core.timezone import now_utc, now_facility
 
 logger = logging.getLogger("sd_gen016.weather")
+
+UA_WEEKDAYS_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"]
 
 # In-memory cache: city_key -> (timestamp, weather_dict)
 _WEATHER_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
@@ -258,22 +262,139 @@ def extract_city_from_facility(facility: Facility) -> str:
     return clean_c
 
 
-def get_generator_weather_tip(temp_c: float, humidity: int, rain: bool) -> str:
-    """Формує корисну інженерну пораду для оператора генератора."""
+def get_generator_weather_tip(
+    temp_c: float,
+    humidity: int,
+    rain: bool,
+    forecast_days: Optional[List[Dict[str, Any]]] = None
+) -> str:
+    """Формує корисну інженерну пораду для оператора генератора з урахуванням прогнозу на 5 днів."""
     if temp_c < -10.0:
-        return "Сильний мороз! Загусання ДТ, перевірте заряд АКБ та підігрів картера перед пуском."
+        base_tip = "Сильний мороз! Загусання ДП, перевірте заряд АКБ та підігрів картера перед пуском."
     elif temp_c < 0.0:
-        return "Заморозки: використовуйте зимове ДТ. Рекомендується короткий прогрів двигуна (3–5 хв)."
+        base_tip = "Заморозки: використовуйте зимове ДП. Рекомендується короткий прогрів двигуна (3–5 хв)."
     elif temp_c > 30.0:
-        return "Спека: підвищений ризик перегріву. Контролюйте рівень оливи та вільний приплив повітря."
+        base_tip = "Спека: підвищений ризик перегріву. Контролюйте рівень оливи та вільний приплив повітря."
     elif rain:
-        return "Опади: забезпечте надійне укриття панелі керування та електробезпеку контактів."
+        base_tip = "Опади: забезпечте надійне укриття панелі керування та електробезпеку контактів."
     else:
-        return "Оптимальні погодні умови для стабільної експлуатації генератора."
+        base_tip = "Оптимальні погодні умови для стабільної експлуатації генератора."
+
+    if forecast_days and temp_c >= 0.0:
+        min_future = min((d.get("temp_min_c", temp_c) for d in forecast_days), default=temp_c)
+        if min_future < -8.0:
+            base_tip += f" Увага: у найближчі дні очікується сильний мороз (до {min_future:.0f}°C) — завчасно підготуйте зимове ДП та АКБ."
+        elif min_future < 0.0:
+            base_tip += f" Прогноз: у найближчі дні очікуються заморозки (до {min_future:.0f}°C) — перевірте зимове паливо."
+
+    return base_tip
 
 
-async def fetch_openweather_data(city: str, api_key: str) -> Optional[Dict[str, Any]]:
-    """Виконує прямий асинхронний запит до OpenWeatherMap з автоматичним геолокуванням."""
+def parse_5day_forecast(forecast_data: Optional[Dict[str, Any]], max_days: int = 5) -> List[Dict[str, Any]]:
+    """
+    Агрегує 3-годинні інтервали OpenWeather (/data/2.5/forecast) у щоденний прогноз на 5 днів
+    (мін/макс температура, денна іконка, опис та ймовірність опадів).
+    """
+    if not forecast_data or not isinstance(forecast_data, dict):
+        return []
+    slots = forecast_data.get("list")
+    if not slots or not isinstance(slots, list):
+        return []
+
+    by_date: Dict[str, List[Dict[str, Any]]] = {}
+    for item in slots:
+        dt_txt = str(item.get("dt_txt") or "")
+        if len(dt_txt) < 10:
+            continue
+        day_str = dt_txt[:10]  # YYYY-MM-DD
+        by_date.setdefault(day_str, []).append(item)
+
+    if not by_date:
+        return []
+
+    sorted_dates = sorted(by_date.keys())
+    today_str = now_facility().strftime("%Y-%m-%d")
+
+    # Якщо для сьогодні залишилось лише 1-2 нічні слоти і попереду є повні 5 днів — показуємо наступні 5 днів
+    if len(sorted_dates) > max_days and sorted_dates[0] == today_str and len(by_date[today_str]) <= 2:
+        sorted_dates = sorted_dates[1:1 + max_days]
+    else:
+        sorted_dates = sorted_dates[:max_days]
+
+    result_days: List[Dict[str, Any]] = []
+    for d_str in sorted_dates:
+        day_slots = by_date[d_str]
+        temps_min = []
+        temps_max = []
+        pops = []
+        chosen_slot = day_slots[len(day_slots) // 2]
+
+        for s in day_slots:
+            m = s.get("main") or {}
+            t = m.get("temp")
+            t_min = m.get("temp_min", t)
+            t_max = m.get("temp_max", t)
+            if t_min is not None:
+                temps_min.append(float(t_min))
+            if t_max is not None:
+                temps_max.append(float(t_max))
+            pop_val = s.get("pop", 0.0)
+            if pop_val is not None:
+                pops.append(float(pop_val))
+
+            # Віддаємо перевагу денному слоту (12:00 або 15:00) для репрезентативної іконки дня
+            dt_t = str(s.get("dt_txt") or "")
+            if "12:00:00" in dt_t or "15:00:00" in dt_t:
+                chosen_slot = s
+
+        if not temps_min or not temps_max:
+            continue
+
+        min_c = round(min(temps_min), 1)
+        max_c = round(max(temps_max), 1)
+        min_int = int(round(min_c))
+        max_int = int(round(max_c))
+
+        w_arr = chosen_slot.get("weather") or [{}]
+        w_first = w_arr[0] if w_arr else {}
+        raw_icon = str(w_first.get("icon") or "02d")
+        # Для денної картки прогнозу використовуємо денну іконку (☀️ замість 🌙)
+        day_icon = raw_icon.replace("n", "d") if len(day_icon := raw_icon) == 3 else "02d"
+        desc = str(w_first.get("description") or "Хмарно").capitalize()
+        pop_pct = int(round(max(pops) * 100)) if pops else 0
+
+        try:
+            dt_obj = datetime.strptime(d_str, "%Y-%m-%d")
+            wd_short = UA_WEEKDAYS_SHORT[dt_obj.weekday()]
+            day_label = f"{wd_short}, {dt_obj.strftime('%d.%m')}"
+        except Exception:
+            day_label = d_str
+
+        result_days.append({
+            "date": d_str,
+            "day_label": day_label,
+            "temp_min_c": min_c,
+            "temp_max_c": max_c,
+            "temp_min_formatted": f"{'+' if min_int > 0 else ''}{min_int}°",
+            "temp_max_formatted": f"{'+' if max_int > 0 else ''}{max_int}°",
+            "icon_code": day_icon,
+            "icon_emoji": map_icon_to_emoji(day_icon),
+            "description": desc,
+            "pop_percent": pop_pct,
+        })
+
+    return result_days
+
+
+async def fetch_openweather_data(
+    city: str,
+    api_key: str
+) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Виконує паралельний асинхронний запит до OpenWeatherMap:
+    1) Поточна погода (/data/2.5/weather)
+    2) Прогноз на 5 днів (/data/2.5/forecast)
+    """
     city_clean = city.strip()
     city_lower = city_clean.lower()
 
@@ -292,32 +413,45 @@ async def fetch_openweather_data(city: str, api_key: str) -> Optional[Dict[str, 
             except Exception as e:
                 logger.warning(f"Помилка геокодування OpenWeather для міста {city_clean}: {e}")
 
-        # Формуємо URL запиту погоди
         if lat_lon:
-            weather_url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat_lon[0]}&lon={lat_lon[1]}&units=metric&lang=ua&appid={api_key}"
+            q_params = f"lat={lat_lon[0]}&lon={lat_lon[1]}&units=metric&lang=ua&appid={api_key}"
         else:
-            weather_url = f"https://api.openweathermap.org/data/2.5/weather?q={city_clean},UA&units=metric&lang=ua&appid={api_key}"
+            q_params = f"q={city_clean},UA&units=metric&lang=ua&appid={api_key}"
+
+        weather_url = f"https://api.openweathermap.org/data/2.5/weather?{q_params}"
+        forecast_url = f"https://api.openweathermap.org/data/2.5/forecast?{q_params}"
+
+        current_data: Optional[Dict[str, Any]] = None
+        forecast_days: List[Dict[str, Any]] = []
 
         try:
-            res = await client.get(weather_url)
-            if res.status_code == 200:
-                return res.json()
-            elif res.status_code == 404 and city_lower != "київ":
-                # Fallback до Києва якщо місто взагалі не знайдено
-                fallback_url = f"https://api.openweathermap.org/data/2.5/weather?q=Kyiv,UA&units=metric&lang=ua&appid={api_key}"
-                fb_res = await client.get(fallback_url)
-                if fb_res.status_code == 200:
-                    return fb_res.json()
+            w_res, f_res = await asyncio.gather(
+                client.get(weather_url),
+                client.get(forecast_url),
+                return_exceptions=True
+            )
+
+            if not isinstance(w_res, Exception):
+                if w_res.status_code == 200:
+                    current_data = w_res.json()
+                elif w_res.status_code == 404 and city_lower != "київ":
+                    fb_url = f"https://api.openweathermap.org/data/2.5/weather?q=Kyiv,UA&units=metric&lang=ua&appid={api_key}"
+                    fb_res = await client.get(fb_url)
+                    if fb_res.status_code == 200:
+                        current_data = fb_res.json()
+
+            if not isinstance(f_res, Exception) and f_res.status_code == 200:
+                forecast_days = parse_5day_forecast(f_res.json())
         except Exception as e:
             logger.error(f"Помилка запиту погоди OpenWeather: {e}")
-            return None
+            return None, []
 
-    return None
+    return current_data, forecast_days
 
 
-async def get_facility_weather(db: AsyncSession, facility_id: int) -> Dict[str, Any]:
+async def get_facility_weather(db: AsyncSession, facility_id: int, force: bool = False) -> Dict[str, Any]:
     """
-    Повертає структуровані погодні дані для об'єкта з кешуванням в оперативній пам'яті.
+    Повертає структуровані погодні дані та 5-денний прогноз для об'єкта з кешуванням в оперативній пам'яті.
     """
     facility = await db.get(Facility, facility_id)
     if not facility:
@@ -325,7 +459,8 @@ async def get_facility_weather(db: AsyncSession, facility_id: int) -> Dict[str, 
             "is_available": False,
             "city": "Невідомо",
             "temp_c": None,
-            "description": "Об'єкт не знайдено"
+            "description": "Об'єкт не знайдено",
+            "forecast": []
         }
 
     city_name = extract_city_from_facility(facility)
@@ -333,9 +468,9 @@ async def get_facility_weather(db: AsyncSession, facility_id: int) -> Dict[str, 
     now_ts = time.time()
     cache_ttl = settings.WEATHER_CACHE_MINUTES * 60
 
-    # Перевірка кешу
+    # Перевірка кешу (якщо не запрошено примусове оновлення)
     cached = _WEATHER_CACHE.get(cache_key)
-    if cached and (now_ts - cached[0]) < cache_ttl:
+    if not force and cached and (now_ts - cached[0]) < cache_ttl:
         return cached[1]
 
     api_key = settings.OPENWEATHER_API_KEY.strip()
@@ -347,10 +482,11 @@ async def get_facility_weather(db: AsyncSession, facility_id: int) -> Dict[str, 
             "description": "API ключ погоди не налаштовано",
             "icon_emoji": "⛅",
             "generator_tip": "Налаштуйте OPENWEATHER_API_KEY у .env для отримання порад оператору",
+            "forecast": [],
             "updated_at": now_utc().isoformat()
         }
 
-    data = await fetch_openweather_data(city_name, api_key)
+    data, forecast_days = await fetch_openweather_data(city_name, api_key)
     if not data or "main" not in data:
         # Якщо свіжий запит не вдався, але в пам'яті є попередні дані — повертаємо їх
         if cached:
@@ -362,6 +498,7 @@ async def get_facility_weather(db: AsyncSession, facility_id: int) -> Dict[str, 
             "description": "Погодні дані тимчасово недоступні",
             "icon_emoji": "⛅",
             "generator_tip": "Налаштуйте OPENWEATHER_API_KEY у .env для отримання порад оператору",
+            "forecast": [],
             "updated_at": now_utc().isoformat()
         }
 
@@ -392,7 +529,8 @@ async def get_facility_weather(db: AsyncSession, facility_id: int) -> Dict[str, 
         "description": desc,
         "icon_code": icon_code,
         "icon_emoji": map_icon_to_emoji(icon_code),
-        "generator_tip": get_generator_weather_tip(temp_c, humidity, is_rain),
+        "generator_tip": get_generator_weather_tip(temp_c, humidity, is_rain, forecast_days=forecast_days),
+        "forecast": forecast_days,
         "updated_at": now_utc().isoformat()
     }
 
