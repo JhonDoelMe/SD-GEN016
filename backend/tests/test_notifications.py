@@ -290,3 +290,58 @@ async def test_clear_notification_logs(
     logs_res = await client.get('/api/v1/notifications/logs?facility_id=1', headers=superadmin_auth)
     assert logs_res.status_code == 200
     assert len(logs_res.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_air_alert_start_and_end_notifications(
+    client: AsyncClient,
+    superadmin_auth: dict,
+    db_session: AsyncSession
+):
+    from backend.app.services.alert_service import (
+        set_demo_alert,
+        get_facility_alert,
+        reset_alert_notification_state,
+    )
+    from backend.app.models.facility import Facility
+
+    reset_alert_notification_state()
+    fac_res = await db_session.execute(select(Facility).where(Facility.id == 1))
+    fac = fac_res.scalars().first()
+    if not fac:
+        fac = Facility(id=1, name="Головний офіс Самар", city="Самар", address="вул. Гетьманська, 31")
+        db_session.add(fac)
+        await db_session.commit()
+
+    # Clear existing logs for facility 1
+    await client.delete('/api/v1/notifications/logs?facility_id=1', headers=superadmin_auth)
+
+    # 1. Initial GREEN state -> no notification
+    set_demo_alert("green", "none")
+    a0 = await get_facility_alert(db_session, 1, force=True)
+    assert a0["level"] == "green"
+
+    # 2. Transition GREEN -> RED (Ballistic) -> dispatches AIR_ALERT_START
+    set_demo_alert("red", "ballistic")
+    a1 = await get_facility_alert(db_session, 1, force=True)
+    assert a1["level"] == "red"
+
+    logs_after_start = (await client.get('/api/v1/notifications/logs?facility_id=1', headers=superadmin_auth)).json()
+    start_logs = [l for l in logs_after_start if l["event_type"] == "AIR_ALERT_START"]
+    assert len(start_logs) == 1
+    assert "Повітряна тривога" in start_logs[0]["title"]
+
+    # 3. Repeated check while still RED -> no duplicate notification
+    await get_facility_alert(db_session, 1, force=True)
+    logs_repeat = (await client.get('/api/v1/notifications/logs?facility_id=1', headers=superadmin_auth)).json()
+    assert len([l for l in logs_repeat if l["event_type"] == "AIR_ALERT_START"]) == 1
+
+    # 4. Transition RED -> GREEN (All-Clear / Відбій) -> dispatches AIR_ALERT_END
+    set_demo_alert("green", "none")
+    a2 = await get_facility_alert(db_session, 1, force=True)
+    assert a2["level"] == "green"
+
+    logs_after_end = (await client.get('/api/v1/notifications/logs?facility_id=1', headers=superadmin_auth)).json()
+    end_logs = [l for l in logs_after_end if l["event_type"] == "AIR_ALERT_END"]
+    assert len(end_logs) == 1
+    assert "Відбій повітряної тривоги" in end_logs[0]["title"]

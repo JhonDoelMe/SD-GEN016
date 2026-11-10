@@ -252,10 +252,12 @@ async def lifespan(app: FastAPI):
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     os.makedirs(settings.BACKUP_DIR, exist_ok=True)
 
-    # 4. Start background backup scheduler
+    # 4. Start background backup scheduler and notification loops
+    from backend.app.services.alert_service import run_air_alert_checker_loop
     backup_scheduler_task = asyncio.create_task(run_backup_scheduler())
     guard_worker_task = asyncio.create_task(run_operational_guard_loop())
     yasno_worker_task = asyncio.create_task(run_yasno_checker_loop())
+    air_alert_worker_task = asyncio.create_task(run_air_alert_checker_loop())
 
     yield
 
@@ -263,7 +265,14 @@ async def lifespan(app: FastAPI):
     backup_scheduler_task.cancel()
     guard_worker_task.cancel()
     yasno_worker_task.cancel()
-    await asyncio.gather(backup_scheduler_task, guard_worker_task, yasno_worker_task, return_exceptions=True)
+    air_alert_worker_task.cancel()
+    await asyncio.gather(
+        backup_scheduler_task,
+        guard_worker_task,
+        yasno_worker_task,
+        air_alert_worker_task,
+        return_exceptions=True
+    )
     await engine.dispose()
 
 

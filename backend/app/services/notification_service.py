@@ -214,12 +214,14 @@ async def get_notification_settings_data(db: AsyncSession) -> Dict[str, Any]:
         "max_maintenance_notifications_per_day": int(get_runtime_setting("max_maintenance_notifications_per_day", 2)),
         "notify_critical_faults": bool(get_runtime_setting("notify_critical_faults", True)),
         "notify_yasno_outages": bool(get_runtime_setting("notify_yasno_outages", True)),
+        "notify_air_alerts": bool(get_runtime_setting("notify_air_alerts", True)),
+        "notify_air_alert_end": bool(get_runtime_setting("notify_air_alert_end", True)),
         "vapid_public_key": pub_key,
         "active_subscriptions_count": active_count
     }
 
 
-def _send_single_webpush_sync(sub_info: Dict[str, Any], payload_str: str, vapid_obj: Vapid, claims: Dict[str, str]) -> Tuple[bool, bool]:
+def _send_single_webpush_sync(sub_info: Dict[str, Any], payload_str: str, vapid_obj: Any, claims: Dict[str, str]) -> Tuple[bool, bool]:
     """
     Synchronous WebPush sender executed in threadpool.
     NOTIF-08 / NOTIF-09: Безпечне логування через logger без витоку секретів,
@@ -230,13 +232,18 @@ def _send_single_webpush_sync(sub_info: Dict[str, Any], payload_str: str, vapid_
     masked_ep = (endpoint[:35] + "...") if len(endpoint) > 35 else endpoint
     try:
         # Use copy of claims to avoid cross-request mutation of 'aud' by pywebpush
-        claims_copy = dict(claims)
+        claims_copy = dict(claims) if claims else {}
+        vapid_key = vapid_obj
+        if isinstance(vapid_key, str) and "BEGIN" in vapid_key:
+            vapid_key = Vapid.from_pem(vapid_key.encode("utf-8"))
         pywebpush.webpush(
             subscription_info=sub_info,
             data=payload_str,
-            vapid_private_key=vapid_obj,
+            vapid_private_key=vapid_key,
             vapid_claims=claims_copy,
-            ttl=3600
+            ttl=14400,
+            timeout=8.0,
+            headers={"Urgency": "high"}
         )
         return True, False
     except pywebpush.WebPushException as ex:
@@ -274,14 +281,21 @@ async def send_push_notification(
     event_toggle_map = {
         "GENERATOR_START": "notify_generator_start",
         "GENERATOR_STOP": "notify_generator_stop",
+        "GENERATOR_SAFETY_STOP": "notify_generator_stop",
+        "GENERATOR_AUTO_STOP": "notify_generator_stop",
+        "GENERATOR_HEARTBEAT": "notify_running_heartbeat",
         "LOW_FUEL": "notify_low_fuel",
         "MAINTENANCE_DUE": "notify_maintenance",
         "CRITICAL_FAULT": "notify_critical_faults",
         "YASNO_OUTAGE_ALERT": "notify_yasno_outages",
+        "AIR_ALERT_START": "notify_air_alerts",
+        "AIR_ALERT_END": "notify_air_alert_end",
     }
     toggle_key = event_toggle_map.get(event_type)
     if toggle_key and not get_runtime_setting(toggle_key, True):
         return {"sent": 0, "failed": 0, "skipped": True, "reason": f"Тип сповіщення {event_type} вимкнено"}
+    if event_type == "AIR_ALERT_END" and not get_runtime_setting("notify_air_alerts", True):
+        return {"sent": 0, "failed": 0, "skipped": True, "reason": "Сповіщення про повітряні тривоги вимкнено"}
 
     now = now_utc(naive=True)
 
@@ -394,7 +408,7 @@ async def send_push_notification(
         if is_admin_or_super:
             subscriptions.append(s)
             seen_endpoints.add(s.endpoint)
-        elif not facility_id or s.facility_id is None or s.facility_id == facility_id:
+        elif not facility_id or user.facility_id is None or s.facility_id is None or s.facility_id == facility_id or user.facility_id == facility_id:
             subscriptions.append(s)
             seen_endpoints.add(s.endpoint)
 
@@ -415,7 +429,7 @@ async def send_push_notification(
         await db.commit()
         return {"sent": 0, "failed": 0, "recipients": 0}
 
-    # 6. Prepare VAPID keys and payload
+    # 6. Prepare VAPID keys, pre-flush log entry for unique tag deduplication, and build payload
     pub_b64, priv_pem, sub_claim = await get_or_create_vapid_keys(db)
     claims = {"sub": _clean_sub_claim(sub_claim)}
 
@@ -424,19 +438,40 @@ async def send_push_notification(
     except Exception:
         vapid_obj = Vapid.from_string(priv_pem)
 
+    log_entry = NotificationLog(
+        event_type=event_type,
+        generator_id=generator_id,
+        facility_id=facility_id,
+        title=title,
+        body=body,
+        recipients_count=len(subscriptions),
+        success_count=0,
+        failure_count=0,
+        created_at=now
+    )
+    db.add(log_entry)
+    await db.flush()
+
     payload = json.dumps({
         "title": title,
         "body": body,
         "icon": "/frontend/icons/icon-192.png",
         "badge": "/frontend/icons/icon-192.png",
-        "data": {"url": url, "event_type": event_type},
-        "tag": f"sd-{event_type.lower()}"
+        "data": {
+            "url": url,
+            "event_type": event_type,
+            "log_id": log_entry.id,
+            "facility_id": facility_id,
+            "generator_id": generator_id,
+        },
+        "tag": f"sd-log-{log_entry.id}" if log_entry.id else f"sd-{event_type.lower()}"
     })
 
     success_count = 0
     failure_count = 0
     expired_sub_ids = []
 
+    push_tasks = []
     for s in subscriptions:
         sub_info = {
             "endpoint": s.endpoint,
@@ -445,7 +480,14 @@ async def send_push_notification(
                 "auth": s.auth
             }
         }
-        ok, is_expired = await asyncio.to_thread(_send_single_webpush_sync, sub_info, payload, vapid_obj, claims)
+        push_tasks.append(asyncio.to_thread(_send_single_webpush_sync, sub_info, payload, vapid_obj, claims))
+
+    results = await asyncio.gather(*push_tasks, return_exceptions=True)
+    for s, res in zip(subscriptions, results):
+        if isinstance(res, Exception):
+            failure_count += 1
+            continue
+        ok, is_expired = res
         if ok:
             success_count += 1
         else:
@@ -461,19 +503,9 @@ async def send_push_notification(
                     s.is_active = False
                     s.updated_at = now
 
-    # 7. Record notification log
-    log_entry = NotificationLog(
-        event_type=event_type,
-        generator_id=generator_id,
-        facility_id=facility_id,
-        title=title,
-        body=body,
-        recipients_count=len(subscriptions),
-        success_count=success_count,
-        failure_count=failure_count,
-        created_at=now
-    )
-    db.add(log_entry)
+    # 7. Finalize notification log counts
+    log_entry.success_count = success_count
+    log_entry.failure_count = failure_count
     await db.commit()
 
     return {
@@ -557,7 +589,8 @@ async def check_and_notify_low_fuel(
 
 async def check_and_notify_maintenance_due(
     db: AsyncSession,
-    generator_id: int
+    generator_id: int,
+    current_hours: Optional[float] = None
 ):
     """
     Checks if maintenance is due or overdue for generator, and triggers notification
@@ -578,12 +611,13 @@ async def check_and_notify_maintenance_due(
     if not schedule:
         return
 
-    remaining_hours = schedule.next_due_hours - generator.current_operating_hours
+    effective_hours = float(current_hours) if current_hours is not None else float(generator.current_operating_hours or 0.0)
+    remaining_hours = schedule.next_due_hours - effective_hours
 
     if remaining_hours <= 0:
         overdue_h = abs(remaining_hours)
         title = f"🔧 УВАГА: Прострочено ТО — {generator.name}!"
-        body = f"Регламент ТО прострочено на {overdue_h:.1f} год (напрацювання: {generator.current_operating_hours:.1f} год, план: {schedule.next_due_hours:.1f} год). Необхідно терміново виконати регламентні роботи!"
+        body = f"Регламент ТО прострочено на {overdue_h:.1f} год (напрацювання: {effective_hours:.1f} год, план: {schedule.next_due_hours:.1f} год). Необхідно терміново виконати регламентні роботи!"
         await send_push_notification(
             db=db,
             title=title,
@@ -623,4 +657,78 @@ async def notify_critical_fault(
         generator_id=generator.id,
         facility_id=generator.facility_id,
         url="/?tab=tab-faults"
+    )
+
+
+async def notify_air_alert_start(
+    db: AsyncSession,
+    facility_id: int,
+    facility_name: str,
+    city_name: str,
+    level: str,
+    threat_title: str,
+    threat_icon: str = "🚨",
+    location_title: str = "",
+    operator_advice: str = "",
+    running_generator_names: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Sends push notification when an air alert (or drone/ballistic threat) starts or escalates at a facility.
+    """
+    loc_label = city_name or location_title or "регіон"
+    if level == "yellow":
+        title = f"🛸 Підвищена загроза — {facility_name} ({loc_label})"
+    else:
+        title = f"🚨 Повітряна тривога — {facility_name} ({loc_label})"
+
+    parts = [f"{threat_icon} {threat_title}."]
+    if running_generator_names:
+        gens_str = ", ".join(running_generator_names)
+        parts.append(
+            f"⚡ Генератор ({gens_str}) зараз у роботі — НЕ виходьте до генератора та НЕ проводьте заправку палива на відкритому просторі до відбою!"
+        )
+    elif operator_advice:
+        parts.append(operator_advice)
+    else:
+        parts.append("Дотримуйтесь правил безпеки та перебувайте в укритті.")
+
+    return await send_push_notification(
+        db=db,
+        title=title,
+        body=" ".join(parts),
+        event_type="AIR_ALERT_START",
+        facility_id=facility_id,
+        url="/?tab=tab-dashboard"
+    )
+
+
+async def notify_air_alert_end(
+    db: AsyncSession,
+    facility_id: int,
+    facility_name: str,
+    city_name: str,
+    duration_minutes: int = 0
+) -> Dict[str, Any]:
+    """
+    Sends push notification when an air alert ends (All-Clear / Відбій тривоги) at a facility.
+    """
+    loc_label = city_name or "регіон"
+    title = f"🟢 Відбій повітряної тривоги — {facility_name} ({loc_label})"
+    dur_str = ""
+    if duration_minutes and duration_minutes > 0:
+        if duration_minutes >= 60:
+            h = duration_minutes // 60
+            m = duration_minutes % 60
+            dur_str = f" (тривала {h} год {m} хв)" if m else f" (тривала {h} год)"
+        else:
+            dur_str = f" (тривала {duration_minutes} хв)"
+
+    body = f"Небо чисте{dur_str}. Загрозу скасовано — дозволено штатний огляд, заправку палива та обслуговування генераторів."
+    return await send_push_notification(
+        db=db,
+        title=title,
+        body=body,
+        event_type="AIR_ALERT_END",
+        facility_id=facility_id,
+        url="/?tab=tab-dashboard"
     )

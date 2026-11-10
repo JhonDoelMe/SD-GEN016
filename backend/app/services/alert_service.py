@@ -831,12 +831,140 @@ def set_demo_alert(level: str, threat_type: str = "none", started_at: Optional[s
     _GLOBAL_UKRAINE_ALARM_CACHE["fetched_at"] = 0.0
 
 
+_FACILITY_ALERT_HISTORY: Dict[int, Dict[str, Any]] = {}
+
+
 def clear_alerts_cache(region: Optional[str] = None) -> None:
     """Очищує кеш статусів тривог."""
     global _ALERTS_CACHE, _GLOBAL_ALERTS_IN_UA_CACHE, _GLOBAL_UKRAINE_ALARM_CACHE
     _ALERTS_CACHE.clear()
     _GLOBAL_ALERTS_IN_UA_CACHE["fetched_at"] = 0.0
     _GLOBAL_UKRAINE_ALARM_CACHE["fetched_at"] = 0.0
+
+
+def reset_alert_notification_state() -> None:
+    """Скидає історію станів тривог по об'єктах (використовується у тестах)."""
+    _FACILITY_ALERT_HISTORY.clear()
+
+
+async def evaluate_and_notify_facility_alert_transition(
+    db: AsyncSession,
+    facility: Facility,
+    alert_data: Dict[str, Any]
+) -> None:
+    """
+    Відстежує переходи стану повітряної тривоги для об'єкта (GREEN <-> YELLOW/RED)
+    та відправляє миттєві сповіщення про оголошення тривоги (AIR_ALERT_START)
+    і про відбій тривоги (AIR_ALERT_END).
+    """
+    try:
+        from sqlalchemy import select
+        from backend.app.models.generator import Generator
+        from backend.app.models.notification import NotificationLog
+        from backend.app.services.notification_service import notify_air_alert_start, notify_air_alert_end
+
+        fac_id = facility.id
+        curr_level = str(alert_data.get("level") or AlertLevel.GREEN.value).lower()
+        curr_dur = int(alert_data.get("duration_minutes") or 0)
+        curr_started = alert_data.get("started_at")
+
+        prev_state = _FACILITY_ALERT_HISTORY.get(fac_id)
+        if prev_state is None:
+            # Відновлюємо останній відомий стан з журналу сповіщень у БД (щоб перезапуск сервера не губив відбій)
+            last_log_q = (
+                select(NotificationLog)
+                .where(
+                    NotificationLog.facility_id == fac_id,
+                    NotificationLog.event_type.in_(["AIR_ALERT_START", "AIR_ALERT_END"])
+                )
+                .order_by(NotificationLog.created_at.desc())
+                .limit(1)
+            )
+            last_log_res = await db.execute(last_log_q)
+            last_log = last_log_res.scalars().first()
+            if last_log and last_log.event_type == "AIR_ALERT_START":
+                inferred_level = "yellow" if "підвищена загроза" in (last_log.title or "").lower() else "red"
+                prev_state = {
+                    "level": inferred_level,
+                    "started_at": last_log.created_at.isoformat() if last_log.created_at else None,
+                    "duration_minutes": curr_dur,
+                }
+            else:
+                prev_state = {
+                    "level": "green",
+                    "started_at": None,
+                    "duration_minutes": 0,
+                }
+            _FACILITY_ALERT_HISTORY[fac_id] = dict(prev_state)
+
+        prev_level = str(prev_state.get("level") or "green").lower()
+
+        # 1. Оголошення тривоги (GREEN -> YELLOW/RED) або ескалація (YELLOW -> RED)
+        if (prev_level == "green" and curr_level in ("yellow", "red")) or (prev_level == "yellow" and curr_level == "red"):
+            _FACILITY_ALERT_HISTORY[fac_id] = {
+                "level": curr_level,
+                "started_at": curr_started or now_utc().isoformat(),
+                "duration_minutes": curr_dur,
+            }
+            # Перевіряємо, чи є працюючі генератори на об'єкті
+            gen_q = select(Generator.name).where(
+                Generator.facility_id == fac_id,
+                Generator.is_active == True,  # noqa: E712
+                Generator.status == "RUNNING"
+            )
+            gen_res = await db.execute(gen_q)
+            running_names = [row[0] for row in gen_res.all() if row[0]]
+
+            await notify_air_alert_start(
+                db=db,
+                facility_id=fac_id,
+                facility_name=facility.name,
+                city_name=alert_data.get("city") or getattr(facility, "city", "") or "",
+                level=curr_level,
+                threat_title=alert_data.get("threat_title") or "Активна повітряна тривога",
+                threat_icon=alert_data.get("threat_icon") or "🚨",
+                location_title=alert_data.get("location_title") or alert_data.get("region_name") or "",
+                operator_advice=alert_data.get("operator_advice") or "",
+                running_generator_names=running_names
+            )
+
+        # 2. Відбій повітряної тривоги (YELLOW/RED -> GREEN)
+        elif prev_level in ("yellow", "red") and curr_level == "green":
+            final_dur = int(prev_state.get("duration_minutes") or 0)
+            prev_started = prev_state.get("started_at")
+            if not final_dur and prev_started:
+                try:
+                    dt_s = datetime.fromisoformat(str(prev_started).replace("Z", "+00:00"))
+                    if dt_s.tzinfo is None:
+                        dt_s = dt_s.replace(tzinfo=timezone.utc)
+                    diff_s = (now_utc() - dt_s).total_seconds()
+                    if diff_s > 0:
+                        final_dur = max(1, int(diff_s // 60))
+                except Exception:
+                    final_dur = 0
+
+            _FACILITY_ALERT_HISTORY[fac_id] = {
+                "level": "green",
+                "started_at": None,
+                "duration_minutes": 0,
+            }
+            await notify_air_alert_end(
+                db=db,
+                facility_id=fac_id,
+                facility_name=facility.name,
+                city_name=alert_data.get("city") or getattr(facility, "city", "") or "",
+                duration_minutes=final_dur
+            )
+
+        # 3. Тривога триває — оновлюємо тривалість для точного звіту при відбої
+        elif curr_level in ("yellow", "red"):
+            _FACILITY_ALERT_HISTORY[fac_id] = {
+                "level": curr_level,
+                "started_at": curr_started or prev_state.get("started_at") or now_utc().isoformat(),
+                "duration_minutes": max(int(prev_state.get("duration_minutes") or 0), curr_dur),
+            }
+    except Exception as ex:
+        logger.warning("Помилка обробки сповіщення повітряної тривоги для об'єкта %s: %s", getattr(facility, "id", None), ex)
 
 
 async def get_facility_alert(db: AsyncSession, facility_id: int, force: bool = False) -> Dict[str, Any]:
@@ -950,4 +1078,37 @@ async def get_facility_alert(db: AsyncSession, facility_id: int, force: bool = F
     }
 
     _ALERTS_CACHE[cache_key] = (now_ts, result)
+    await evaluate_and_notify_facility_alert_transition(db, facility, result)
     return result
+
+
+async def check_all_facilities_air_alerts(db: AsyncSession) -> None:
+    """
+    Перевіряє статус повітряної тривоги по всіх активних об'єктах
+    та автоматично відправляє сповіщення при оголошенні тривоги або відбої.
+    """
+    from sqlalchemy import select
+    res = await db.execute(select(Facility).where(Facility.is_active == True))  # noqa: E712
+    facilities = res.scalars().all()
+    for fac in facilities:
+        try:
+            await get_facility_alert(db, fac.id, force=False)
+        except Exception as ex:
+            logger.warning("Помилка фонової перевірки тривоги для об'єкта %s: %s", fac.id, ex)
+
+
+async def run_air_alert_checker_loop(interval_seconds: int = 45) -> None:
+    """
+    Фоновий цикл моніторингу повітряних тривог та відбоїв по всіх об'єктах.
+    """
+    from backend.app.database import AsyncSessionLocal
+    logger.info("Air Alert notification checker loop started (interval: %ss)", interval_seconds)
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            async with AsyncSessionLocal() as db:
+                await check_all_facilities_air_alerts(db)
+        except asyncio.CancelledError:
+            break
+        except Exception as ex:
+            logger.error("Air Alert checker loop error: %s", ex)

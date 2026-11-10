@@ -403,14 +403,18 @@ async function api(endpoint, options = {}) {
 }
 
 // Toast Helper
-function showToast(message, type = 'info') {
+let _toastTimerId = null;
+function showToast(message, type = 'info', durationMs = 4000) {
   const toast = document.getElementById('toast');
+  if (!toast) return;
   toast.innerText = message;
   toast.className = `toast ${type}`;
   toast.style.display = 'block';
-  setTimeout(() => {
+  if (_toastTimerId) clearTimeout(_toastTimerId);
+  _toastTimerId = setTimeout(() => {
     toast.style.display = 'none';
-  }, 4000);
+    _toastTimerId = null;
+  }, durationMs);
 }
 
 // Modal Helpers
@@ -945,6 +949,12 @@ async function checkAuth() {
       try { await refreshServerStatus(); } catch (_) {}
     }
     await loadAllData();
+    if (typeof window.syncPushSubscriptionWithServer === 'function') {
+      window.syncPushSubscriptionWithServer(true);
+    }
+    if (typeof window.pollRecentNotifications === 'function') {
+      window.pollRecentNotifications(true);
+    }
   } catch (dataErr) {
     console.error('Error loading initial dashboard data:', dataErr);
   }
@@ -1005,6 +1015,12 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     applyRolePermissionsUI();
     showToast(`Вітаємо, ${currentUser.full_name}!`, 'success');
     loadAllData();
+    if (typeof window.syncPushSubscriptionWithServer === 'function') {
+      window.syncPushSubscriptionWithServer(true);
+    }
+    if (typeof window.pollRecentNotifications === 'function') {
+      window.pollRecentNotifications(true);
+    }
   } catch (err) {
     if (errorBox) {
       errorBox.style.display = 'block';
@@ -5672,6 +5688,235 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
+function areUint8ArraysEqual(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+const _seenNotifLogIds = new Set();
+
+function getToastTypeForNotificationEvent(eventType) {
+  switch (eventType) {
+    case 'AIR_ALERT_START':
+    case 'CRITICAL_FAULT':
+    case 'GENERATOR_SAFETY_STOP':
+      return 'error';
+    case 'AIR_ALERT_END':
+    case 'GENERATOR_START':
+      return 'success';
+    case 'LOW_FUEL':
+    case 'MAINTENANCE_DUE':
+    case 'YASNO_OUTAGE_ALERT':
+    case 'GENERATOR_HEARTBEAT':
+    case 'FUEL_DISCREPANCY':
+      return 'warning';
+    default:
+      return 'info';
+  }
+}
+
+window.syncPushSubscriptionWithServer = async function(silent = true) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    return false;
+  }
+  if (!token || !currentUser || Notification.permission !== 'granted') {
+    return false;
+  }
+
+  try {
+    const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+    const vapidFetch = await fetch('/api/v1/notifications/vapid-public-key', { headers });
+    if (!vapidFetch.ok) return false;
+    const vapidRes = await vapidFetch.json();
+    if (!vapidRes || !vapidRes.public_key) return false;
+
+    const applicationServerKey = urlBase64ToUint8Array(vapidRes.public_key);
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+
+    // Verify existing browser subscription's applicationServerKey matches current server VAPID key
+    if (sub && sub.options && sub.options.applicationServerKey) {
+      const existingKey = new Uint8Array(sub.options.applicationServerKey);
+      if (!areUint8ArraysEqual(existingKey, applicationServerKey)) {
+        try { await sub.unsubscribe(); } catch (_) {}
+        sub = null;
+      }
+    }
+
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey
+      });
+    }
+
+    const buildSubPayload = (s) => {
+      const sj = s.toJSON();
+      return {
+        endpoint: s.endpoint,
+        keys: {
+          p256dh: sj.keys.p256dh,
+          auth: sj.keys.auth
+        },
+        user_agent: navigator.userAgent,
+        facility_id: (currentUser && currentUser.facility_id) ? currentUser.facility_id : null
+      };
+    };
+
+    let subRes = await fetch('/api/v1/notifications/subscribe', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(buildSubPayload(sub))
+    });
+
+    // Self-heal if endpoint was previously bound to another user on this shared browser (403)
+    if (subRes.status === 403) {
+      try { await sub.unsubscribe(); } catch (_) {}
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey
+      });
+      subRes = await fetch('/api/v1/notifications/subscribe', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(buildSubPayload(sub))
+      });
+    }
+
+    if (!subRes.ok) {
+      if (!silent) {
+        const errData = await subRes.json().catch(() => null);
+        throw new Error(extractErrorMessage(errData, `Помилка реєстрації підписки (${subRes.status})`));
+      }
+      return false;
+    }
+
+    checkPushSubscriptionStatus();
+    return true;
+  } catch (err) {
+    if (!silent) {
+      showToast('Помилка підписки: ' + err.message, 'error');
+    } else {
+      console.warn('Auto push sync:', err);
+    }
+    return false;
+  }
+};
+
+window.pollRecentNotifications = async function(isInitial = false) {
+  if (!token || !currentUser || !hasPermission('notifications:view')) return;
+  try {
+    const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+    const res = await fetch('/api/v1/notifications/logs?limit=5', { headers });
+    if (!res.ok) return;
+    const logs = await res.json();
+    if (!Array.isArray(logs) || logs.length === 0) return;
+
+    let lastSeenId = parseInt(localStorage.getItem('sd_last_seen_notif_id') || '0', 10);
+    const nowMs = Date.now();
+
+    if (!lastSeenId && isInitial) {
+      const newest = logs[0];
+      let newestAgeMs = Infinity;
+      if (newest && newest.created_at) {
+        const iso = String(newest.created_at).endsWith('Z') ? newest.created_at : `${newest.created_at}Z`;
+        newestAgeMs = nowMs - new Date(iso).getTime();
+      }
+      if (newest && newestAgeMs <= 90000) {
+        lastSeenId = Math.max(0, newest.id - 1);
+      } else {
+        localStorage.setItem('sd_last_seen_notif_id', String(newest.id));
+        return;
+      }
+    }
+
+    const freshLogs = logs
+      .filter((l) => l && l.id > lastSeenId && !_seenNotifLogIds.has(l.id))
+      .sort((a, b) => a.id - b.id);
+
+    if (freshLogs.length === 0) return;
+
+    let maxId = lastSeenId;
+    for (const log of freshLogs) {
+      if (log.id > maxId) maxId = log.id;
+      _seenNotifLogIds.add(log.id);
+
+      // Filter by user's facility if non-admin restricted to a facility
+      if (!isAdmin() && currentUser.facility_id && log.facility_id && log.facility_id !== currentUser.facility_id) {
+        continue;
+      }
+
+      // Only alert for recent notifications (within last 10 minutes)
+      let ageMs = 0;
+      if (log.created_at) {
+        const rawIso = String(log.created_at);
+        const iso = (rawIso.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(rawIso)) ? rawIso : `${rawIso}Z`;
+        ageMs = nowMs - new Date(iso).getTime();
+      }
+      if (ageMs > 600000) continue;
+
+      const tType = getToastTypeForNotificationEvent(log.event_type);
+      showToast(`${log.title} — ${log.body}`, tType, 7500);
+
+      // Also show native OS / Browser notification (deduplicated by tag 'sd-log-{id}' if WebPush already showed it)
+      if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          await reg.showNotification(log.title, {
+            body: log.body,
+            icon: '/frontend/icons/icon-192.png',
+            badge: '/frontend/icons/icon-192.png',
+            tag: `sd-log-${log.id}`,
+            renotify: false,
+            data: {
+              url: '/?tab=tab-dashboard',
+              event_type: log.event_type,
+              log_id: log.id
+            }
+          });
+        } catch (_) {}
+      }
+    }
+
+    if (maxId > lastSeenId) {
+      localStorage.setItem('sd_last_seen_notif_id', String(maxId));
+    }
+  } catch (_) {}
+};
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    const msg = event.data;
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'PUSH_SUBSCRIPTION_CHANGED') {
+      window.syncPushSubscriptionWithServer(true);
+      return;
+    }
+    if (msg.type === 'PUSH_NOTIFICATION_RECEIVED' && msg.payload) {
+      const p = msg.payload;
+      const logId = p.data && p.data.log_id ? Number(p.data.log_id) : null;
+      if (logId) {
+        _seenNotifLogIds.add(logId);
+        const prevMax = parseInt(localStorage.getItem('sd_last_seen_notif_id') || '0', 10);
+        if (logId > prevMax) {
+          localStorage.setItem('sd_last_seen_notif_id', String(logId));
+        }
+      }
+      const evType = p.data && p.data.event_type ? String(p.data.event_type) : '';
+      const tType = getToastTypeForNotificationEvent(evType);
+      showToast(`${p.title || 'Сповіщення'} — ${p.body || ''}`, tType, 7500);
+
+      if (currentFacilityId && (evType.startsWith('AIR_ALERT') || evType.startsWith('YASNO') || evType.startsWith('GENERATOR'))) {
+        loadFacilityIndicators(currentFacilityId, true);
+        loadGeneratorData();
+      }
+    }
+  });
+}
+
 async function checkPushSubscriptionStatus() {
   const badge = document.getElementById('pushStatusBadge');
   const infoText = document.getElementById('pushDeviceInfoText');
@@ -5702,7 +5947,7 @@ async function checkPushSubscriptionStatus() {
         badge.innerText = 'АКТИВНО 📲';
       }
       if (infoText) {
-        infoText.innerHTML = '✅ <b>Сповіщення увімкнено!</b> Цей пристрій успішно підписаний на системні сповіщення. Повідомлення надходитимуть у шторку Android та на екран блокування.';
+        infoText.innerHTML = '✅ <b>Сповіщення увімкнено!</b> Цей пристрій успішно підписаний на системні сповіщення (включно з повітряними тривогами та відбоями). Повідомлення надходитимуть у шторку пристрою, на екран блокування та на сайт.';
       }
       if (btnSub) btnSub.style.display = 'none';
       if (btnUnsub) btnUnsub.style.display = 'inline-block';
@@ -5725,7 +5970,7 @@ async function checkPushSubscriptionStatus() {
         badge.innerText = 'НЕ ПІДКЛЮЧЕНО';
       }
       if (infoText) {
-        infoText.innerHTML = 'ℹ️ Сповіщення на цьому пристрої ще не увімкнені. Натисніть кнопку нижче, щоб отримувати нагадування про ТО, старт/стоп та залишок палива.';
+        infoText.innerHTML = 'ℹ️ Сповіщення на цьому пристрої ще не увімкнені. Натисніть кнопку нижче, щоб отримувати сповіщення про повітряні тривоги, відбій, ТО, старт/стоп та залишок палива.';
       }
       if (btnSub) {
         btnSub.style.display = 'inline-block';
@@ -5752,36 +5997,12 @@ window.subscribeDevicePush = async function() {
       return;
     }
 
-    // Get VAPID public key from backend
-    const vapidRes = await api('/notifications/vapid-public-key');
-    const applicationServerKey = urlBase64ToUint8Array(vapidRes.public_key);
-
-    const reg = await navigator.serviceWorker.ready;
-    let sub = await reg.pushManager.getSubscription();
-    if (!sub) {
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: applicationServerKey
-      });
+    const ok = await window.syncPushSubscriptionWithServer(false);
+    if (ok) {
+      showToast('Пристрій успішно підписано на сповіщення!', 'success');
+      checkPushSubscriptionStatus();
+      loadNotificationSettings();
     }
-
-    const subJson = sub.toJSON();
-    await api('/notifications/subscribe', {
-      method: 'POST',
-      body: JSON.stringify({
-        endpoint: sub.endpoint,
-        keys: {
-          p256dh: subJson.keys.p256dh,
-          auth: subJson.keys.auth
-        },
-        user_agent: navigator.userAgent,
-        facility_id: currentFacilityId || null
-      })
-    });
-
-    showToast('Пристрій успішно підписано на сповіщення!', 'success');
-    checkPushSubscriptionStatus();
-    loadNotificationSettings();
   } catch (err) {
     showToast('Помилка підписки: ' + err.message, 'error');
   }
@@ -5792,10 +6013,12 @@ window.unsubscribeDevicePush = async function() {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
     if (sub) {
-      await api('/notifications/unsubscribe', {
-        method: 'POST',
-        body: JSON.stringify({ endpoint: sub.endpoint })
-      });
+      try {
+        await api('/notifications/unsubscribe', {
+          method: 'POST',
+          body: JSON.stringify({ endpoint: sub.endpoint })
+        });
+      } catch (_) {}
       await sub.unsubscribe();
     }
     showToast('Сповіщення для цього пристрою вимкнено', 'info');
@@ -5809,6 +6032,10 @@ window.unsubscribeDevicePush = async function() {
 window.triggerTestPushNotification = async function() {
   try {
     showToast('Відправка тестового сповіщення...', 'info');
+    // Ensure device subscription is synced before testing
+    if (Notification.permission === 'granted') {
+      await window.syncPushSubscriptionWithServer(true);
+    }
     const res = await api('/notifications/test', {
       method: 'POST',
       body: JSON.stringify({
@@ -5850,6 +6077,9 @@ async function loadNotificationSettings() {
     setCheck('notifMaintEnabled', s.notify_maintenance);
     setVal('notifMaxMaintPerDay', s.max_maintenance_notifications_per_day);
     setCheck('notifFaultsEnabled', s.notify_critical_faults);
+    setCheck('notifAirAlertsEnabled', s.notify_air_alerts !== false);
+    setCheck('notifAirAlertEndEnabled', s.notify_air_alert_end !== false);
+    setCheck('notifYasnoEnabled', s.notify_yasno_outages !== false);
   } catch (_) {}
 }
 
@@ -5863,7 +6093,10 @@ window.saveNotificationSettings = async function(e) {
     low_fuel_threshold_l: parseFloat(document.getElementById('notifLowFuelThreshold')?.value || '5.0'),
     notify_maintenance: document.getElementById('notifMaintEnabled')?.checked ?? true,
     max_maintenance_notifications_per_day: parseInt(document.getElementById('notifMaxMaintPerDay')?.value || '2', 10),
-    notify_critical_faults: document.getElementById('notifFaultsEnabled')?.checked ?? true
+    notify_critical_faults: document.getElementById('notifFaultsEnabled')?.checked ?? true,
+    notify_air_alerts: document.getElementById('notifAirAlertsEnabled')?.checked ?? true,
+    notify_air_alert_end: document.getElementById('notifAirAlertEndEnabled')?.checked ?? true,
+    notify_yasno_outages: document.getElementById('notifYasnoEnabled')?.checked ?? true
   };
 
   try {
@@ -5883,9 +6116,16 @@ async function loadNotificationLogs() {
     const eventIcons = {
       'GENERATOR_START': '🟢 Пуск',
       'GENERATOR_STOP': '🔴 Зупинка',
+      'GENERATOR_SAFETY_STOP': '🛑 Автостоп',
+      'GENERATOR_AUTO_STOP': '🕒 Графік',
+      'GENERATOR_HEARTBEAT': '⏱️ Робота',
       'LOW_FUEL': '⚠️ Паливо',
+      'FUEL_DISCREPANCY': '⛽ Баланс',
       'MAINTENANCE_DUE': '🔧 ТО',
       'CRITICAL_FAULT': '🚨 Аварія',
+      'AIR_ALERT_START': '🚨 Тривога',
+      'AIR_ALERT_END': '🟢 Відбій',
+      'YASNO_OUTAGE_ALERT': '⚡ YASNO',
       'TEST': '📲 Тест'
     };
 
@@ -5898,7 +6138,7 @@ async function loadNotificationLogs() {
         <td>${l.recipients_count} пристр.</td>
         <td>
           <span style="color: ${l.success_count > 0 ? '#4ade80' : 'var(--text-muted)'};">
-            ${l.success_count > 0 ? `✅ Доставлено (${l.success_count})` : (l.recipients_count === 0 ? 'ℹ️ Без підписників' : '⚠️ Помилка')}
+            ${l.success_count > 0 ? `✅ Доставлено (${l.success_count})` : (l.recipients_count === 0 ? 'ℹ️ На сайті / В додатку' : '⚠️ Помилка Push')}
           </span>
         </td>
       </tr>
@@ -5981,7 +6221,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const tasks = [
         loadGeneratorData(),
         loadFacilityOutageSchedule(currentFacilityId),
-        loadFacilityIndicators(currentFacilityId)
+        loadFacilityIndicators(currentFacilityId),
+        window.pollRecentNotifications(false)
       ];
       if (!isViewerOnly() && hasPermission('fuel:view')) {
         tasks.push(loadFuelSummary());

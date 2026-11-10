@@ -38,7 +38,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/frontend/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=5.3.1">
+  <link rel="stylesheet" href="/frontend/styles.css?v=5.4.0">
 </head>
 <body>
 
@@ -629,6 +629,21 @@
               <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; color: var(--text-primary); border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
                 <input type="checkbox" id="notifFaultsEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-red);">
                 <span>🚨 <b>Критичні несправності та аварійні блокування</b></span>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; color: var(--text-primary); border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+                <input type="checkbox" id="notifAirAlertsEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-red);">
+                <span>🚨 <b>Повітряна тривога на об'єкті</b> (миттєве сповіщення про тривогу, ракетну небезпеку або БПЛА)</span>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; color: var(--text-primary);">
+                <input type="checkbox" id="notifAirAlertEndEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-green);">
+                <span>🟢 <b>Відбій повітряної тривоги</b> (сповіщення про скасування загрози та тривалість тривоги)</span>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; color: var(--text-primary); border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+                <input type="checkbox" id="notifYasnoEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-amber);">
+                <span>⚡ <b>Графіки відключень YASNO</b> (попередження за 20–35 хв до планового знеструмлення об'єкта)</span>
               </label>
             </div>
 
@@ -3227,7 +3242,7 @@
     <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/app.js?v=5.3.1"></script>
+  <script src="/frontend/app.js?v=5.4.0"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

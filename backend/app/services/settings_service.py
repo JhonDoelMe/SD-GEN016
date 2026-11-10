@@ -117,6 +117,9 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "notify_maintenance": True,
     "max_maintenance_notifications_per_day": 2,
     "notify_critical_faults": True,
+    "notify_yasno_outages": True,
+    "notify_air_alerts": True,
+    "notify_air_alert_end": True,
     "vapid_claims_sub": "mailto:maxiuallc@gmail.com",
     # Automated Backups configuration
     "backup_auto_enabled": False,

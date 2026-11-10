@@ -193,6 +193,20 @@ async def check_operational_guardrails(db: AsyncSession) -> Dict[str, Any]:
                     )
                     await db.commit()
                     results["heartbeats_sent"] += 1
+
+            # -------------------------------------------------------------
+            # 4. Live Low Fuel & Maintenance Due Checks During Active Run
+            # -------------------------------------------------------------
+            from backend.app.services.notification_service import (
+                check_and_notify_low_fuel,
+                check_and_notify_maintenance_due,
+            )
+            nom_cons = float(gen.nominal_consumption_l_per_h or 0.0)
+            est_consumed_l = elapsed_hours * nom_cons
+            live_fuel_l = max(0.0, float(gen.fuel_tank_level_l or 0.0) - est_consumed_l)
+            live_hours = float(gen.current_operating_hours or 0.0) + elapsed_hours
+            await check_and_notify_low_fuel(db, gen, live_fuel_l)
+            await check_and_notify_maintenance_due(db, gen.id, current_hours=live_hours)
         except Exception as run_err:
             print(f"[GUARD] Error processing generator run {getattr(run, 'id', None)}: {run_err}", flush=True)
             continue

@@ -1,9 +1,9 @@
-const CACHE_NAME = 'sd-gen016-v5.3.1';
+const CACHE_NAME = 'sd-gen016-v5.4.0';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
-  '/frontend/styles.css?v=5.3.1',
-  '/frontend/app.js?v=5.3.1',
+  '/frontend/styles.css?v=5.4.0',
+  '/frontend/app.js?v=5.4.0',
   '/frontend/icons/logo.png',
   '/frontend/icons/apple-touch-icon.png',
   '/frontend/icons/icon-192.png',
@@ -88,18 +88,57 @@ self.addEventListener('push', (event) => {
   }
 
   const title = data.title || '🔔 Service Desk Генератора';
+  const eventType = (data.data && data.data.event_type) ? String(data.data.event_type) : '';
+  const isCritical = ['AIR_ALERT_START', 'CRITICAL_FAULT', 'LOW_FUEL', 'GENERATOR_SAFETY_STOP'].includes(eventType);
+
   const options = {
     body: data.body || '',
     icon: data.icon || '/frontend/icons/icon-192.png',
     badge: data.badge || '/frontend/icons/icon-192.png',
     tag: data.tag || 'sd-general-notification',
     data: data.data || { url: '/' },
-    vibrate: [200, 100, 200, 100, 200],
+    vibrate: isCritical ? [300, 120, 300, 120, 400] : [200, 100, 200],
     renotify: true,
-    requireInteraction: false
+    requireInteraction: isCritical
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  const notifyClientsPromise = self.clients
+    .matchAll({ type: 'window', includeUncontrolled: true })
+    .then((clientList) => {
+      for (const client of clientList) {
+        try {
+          client.postMessage({
+            type: 'PUSH_NOTIFICATION_RECEIVED',
+            payload: {
+              title,
+              body: options.body,
+              tag: options.tag,
+              data: options.data
+            }
+          });
+        } catch (_) {}
+      }
+    })
+    .catch(() => {});
+
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(title, options),
+      notifyClientsPromise
+    ])
+  );
+});
+
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        try {
+          client.postMessage({ type: 'PUSH_SUBSCRIPTION_CHANGED' });
+        } catch (_) {}
+      }
+    })
+  );
 });
 
 // Notification Click Event Handling: focus or open app window to target tab

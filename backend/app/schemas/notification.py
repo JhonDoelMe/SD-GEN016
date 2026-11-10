@@ -85,6 +85,9 @@ class NotificationSettingsIn(BaseModel):
     notify_maintenance: bool = True
     max_maintenance_notifications_per_day: int = Field(default=2, ge=1, le=10)
     notify_critical_faults: bool = True
+    notify_yasno_outages: bool = True
+    notify_air_alerts: bool = True
+    notify_air_alert_end: bool = True
 
 
 class NotificationSettingsOut(BaseModel):
@@ -96,6 +99,9 @@ class NotificationSettingsOut(BaseModel):
     notify_maintenance: bool
     max_maintenance_notifications_per_day: int
     notify_critical_faults: bool
+    notify_yasno_outages: bool = True
+    notify_air_alerts: bool = True
+    notify_air_alert_end: bool = True
     vapid_public_key: str
     active_subscriptions_count: int
 

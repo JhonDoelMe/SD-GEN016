@@ -948,6 +948,15 @@ async def stop_generator(
                 url="/?tab=tab-dashboard"
             )
 
+        if reason != "MANUAL":
+            from backend.app.services.notification_service import (
+                check_and_notify_low_fuel,
+                check_and_notify_maintenance_due,
+            )
+            if generator.fuel_tank_level_l is not None:
+                await check_and_notify_low_fuel(db, generator, float(generator.fuel_tank_level_l))
+            await check_and_notify_maintenance_due(db, generator.id)
+
         if fuel_shortage_l > 0:
             from backend.app.services.notification_service import send_push_notification
             await send_push_notification(
