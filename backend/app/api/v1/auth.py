@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import logging
 from typing import Optional
@@ -75,7 +76,7 @@ async def login(
 
     if not user:
         # Constant-time dummy bcrypt check to prevent username enumeration via timing
-        verify_dummy_password(login_data.password)
+        await asyncio.to_thread(verify_dummy_password, login_data.password)
         record_failed_login(ip, login_clean)
         await log_audit(
             db=db,
@@ -91,7 +92,8 @@ async def login(
             detail="Невірний логін або пароль"
         )
 
-    if not verify_password(login_data.password, user.password_hash):
+    is_pwd_valid = await asyncio.to_thread(verify_password, login_data.password, user.password_hash)
+    if not is_pwd_valid:
         record_failed_login(ip, login_clean)
         await log_audit(
             db=db,
@@ -224,13 +226,14 @@ async def change_own_password(
     db: AsyncSession = Depends(get_db)
 ):
     """Зміна власного пароля будь-яким авторизованим користувачем (включно з SuperAdmin)."""
-    if not verify_password(payload.current_password, current_user.password_hash):
+    is_cur_valid = await asyncio.to_thread(verify_password, payload.current_password, current_user.password_hash)
+    if not is_cur_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Поточний пароль вказано невірно"
         )
 
-    current_user.password_hash = get_password_hash(payload.new_password)
+    current_user.password_hash = await asyncio.to_thread(get_password_hash, payload.new_password)
     await db.flush()
 
     # Issue a fresh access token with the new password signature so current session stays valid
@@ -431,7 +434,7 @@ async def reset_password(
             detail="Користувач не активний або заблокований адміністратором"
         )
 
-    user.password_hash = get_password_hash(payload.new_password)
+    user.password_hash = await asyncio.to_thread(get_password_hash, payload.new_password)
     reset_record.used = True
     await db.flush()
 

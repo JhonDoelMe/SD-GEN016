@@ -148,6 +148,9 @@ function applyRolePermissionsUI() {
   document.querySelectorAll('.nav-item').forEach((tab) => {
     const paneId = tab.getAttribute('data-tab');
     const isAllowed = tabRules[paneId] ?? true;
+    const targetState = isAllowed ? 'allowed' : (viewer ? 'locked-viewer' : 'locked-op');
+    if (tab.getAttribute('data-role-state') === targetState) return;
+    tab.setAttribute('data-role-state', targetState);
     let orig = tab.getAttribute('data-orig-html');
     if (!orig) {
       orig = tab.innerHTML;
@@ -203,6 +206,9 @@ function applyRolePermissionsUI() {
   const setBtnState = (btnId, isAllowed, reason, lockedHtml = null) => {
     const b = document.getElementById(btnId);
     if (!b) return;
+    const stateKey = isAllowed ? 'allowed' : `locked:${reason}`;
+    if (b.getAttribute('data-role-state') === stateKey && b.disabled === !isAllowed) return;
+    b.setAttribute('data-role-state', stateKey);
     let orig = b.getAttribute('data-orig-html');
     if (!orig) {
       orig = b.innerHTML;
@@ -650,19 +656,42 @@ function initTheme() {
 window.cycleTheme = cycleTheme;
 window.applyTheme = applyTheme;
 
+// Singleton Intl formatters (avoids re-instantiating formatters on every second tick & table cell)
+const _fmtKyivTime = new Intl.DateTimeFormat('uk-UA', {
+  timeZone: kyivTz,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+});
+const _fmtKyivDateTime = new Intl.DateTimeFormat('uk-UA', {
+  timeZone: kyivTz,
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false
+});
+const _fmtKyivDateOnly = new Intl.DateTimeFormat('uk-UA', {
+  timeZone: kyivTz,
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric'
+});
+const _fmtNum1 = new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const _fmtNum2 = new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const _fmtNumCache = { 1: _fmtNum1, 2: _fmtNum2 };
+
 function updateKyivClock() {
   try {
     const el = document.getElementById('clockKyiv');
     if (!el) return;
     const now = new Date();
-    const kyivTime = new Intl.DateTimeFormat('uk-UA', {
-      timeZone: kyivTz,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    }).format(now);
-    el.innerText = `${kyivTime} (Київ)`;
+    const kyivTime = _fmtKyivTime.format(now);
+    const nextText = `${kyivTime} (Київ)`;
+    if (el.innerText !== nextText) el.innerText = nextText;
 
     // Check auto theme day/night transition on minute boundary
     if (now.getSeconds() === 0) {
@@ -699,16 +728,7 @@ function formatDateTime(val) {
   const d = parseUTCDate(val);
   if (!d || isNaN(d.getTime())) return '-';
   try {
-    return new Intl.DateTimeFormat('uk-UA', {
-      timeZone: kyivTz,
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    }).format(d);
+    return _fmtKyivDateTime.format(d);
   } catch (_) {
     return d.toLocaleString('uk-UA');
   }
@@ -718,12 +738,7 @@ function formatDateOnly(val) {
   const d = parseUTCDate(val);
   if (!d || isNaN(d.getTime())) return '-';
   try {
-    return new Intl.DateTimeFormat('uk-UA', {
-      timeZone: kyivTz,
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    }).format(d);
+    return _fmtKyivDateOnly.format(d);
   } catch (_) {
     return d.toLocaleDateString('uk-UA');
   }
@@ -733,13 +748,7 @@ function formatTime(val) {
   const d = parseUTCDate(val);
   if (!d || isNaN(d.getTime())) return '-';
   try {
-    return new Intl.DateTimeFormat('uk-UA', {
-      timeZone: kyivTz,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    }).format(d);
+    return _fmtKyivTime.format(d);
   } catch (_) {
     return d.toLocaleTimeString('uk-UA');
   }
@@ -772,25 +781,30 @@ function formatHoursToHuman(hours) {
 function formatHoursCounter(hours) {
   if (hours == null || isNaN(hours)) return '0,0 год';
   const n = Number(hours);
-  return `${new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n)} год`;
+  return `${_fmtNum1.format(n)} год`;
 }
 
 function formatMoney(amount) {
   if (amount == null || isNaN(amount)) return '0,00 грн';
   const n = Number(amount);
-  return `${new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)} грн`;
+  return `${_fmtNum2.format(n)} грн`;
 }
 
 function formatLiters(liters, decimals = 2) {
   if (liters == null || isNaN(liters)) return `0,${'0'.repeat(decimals)} л`;
   const n = Number(liters);
-  return `${new Intl.NumberFormat('uk-UA', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(n)} л`;
+  let fmt = _fmtNumCache[decimals];
+  if (!fmt) {
+    fmt = new Intl.NumberFormat('uk-UA', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    _fmtNumCache[decimals] = fmt;
+  }
+  return `${fmt.format(n)} л`;
 }
 
 function formatPricePerLiter(price) {
   if (price == null || isNaN(price)) return '0,00 грн/л';
   const n = Number(price);
-  return `${new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)} грн/л`;
+  return `${_fmtNum2.format(n)} грн/л`;
 }
 
 // Auth Lifecycle
@@ -829,7 +843,7 @@ async function checkAuth() {
     applyRolePermissionsUI();
     // Preload system status / default bindings cache before loading initial data
     if (!window.systemSettingsCache) {
-      try { await fetchServerStatus(); } catch (_) {}
+      try { await refreshServerStatus(); } catch (_) {}
     }
     await loadAllData();
   } catch (dataErr) {
@@ -1096,7 +1110,7 @@ async function loadGeneratorsList(facilityId) {
   }
 }
 
-// Load All Dashboard Data
+// Load All Dashboard Data (parallelized after facility & generator selection)
 async function loadAllData() {
   if (!currentFacilityId) {
     await loadFacilitiesList();
@@ -1104,24 +1118,31 @@ async function loadAllData() {
   if (!currentGeneratorId) {
     await loadGeneratorsList(currentFacilityId);
   }
-  await loadGeneratorData();
+
+  const tasks = [
+    loadGeneratorData(),
+    loadRecentRuns(),
+    loadFacilityOutageSchedule(currentFacilityId),
+    loadFacilityIndicators(currentFacilityId)
+  ];
+
   if (!isViewerOnly() && hasPermission('fuel:view')) {
-    await loadFuelSummary();
+    tasks.push(loadFuelSummary());
   } else {
     const cardStock = document.getElementById('cardStock');
     if (cardStock) cardStock.innerText = '-';
   }
+
   if (!isViewerOnly() && hasPermission('maintenance:view')) {
-    await loadMaintenanceSummary();
+    tasks.push(loadMaintenanceSummary());
   } else {
     const cardMaintRem = document.getElementById('cardMaintRem');
     if (cardMaintRem) cardMaintRem.innerHTML = `- <small style="font-size:0.9rem;">год</small>`;
     const cardMaintSub = document.getElementById('cardMaintSub');
     if (cardMaintSub) cardMaintSub.innerText = `доступно для оператора`;
   }
-  await loadRecentRuns();
-  await loadFacilityOutageSchedule(currentFacilityId);
-  await loadFacilityIndicators(currentFacilityId);
+
+  await Promise.allSettled(tasks);
   applyRolePermissionsUI();
 }
 
@@ -1152,8 +1173,12 @@ async function loadGeneratorData() {
     return;
   }
   try {
-    let url = `/generator?generator_id=${encodeURIComponent(currentGeneratorId)}`;
-    currentGenerator = await api(url);
+    const qGenParam = `?generator_id=${encodeURIComponent(currentGeneratorId)}`;
+    const [genData, activeRunData] = await Promise.all([
+      api(`/generator${qGenParam}`),
+      api(`/generator/active-run${qGenParam}`).catch(() => null)
+    ]);
+    currentGenerator = genData;
     if (!currentGenerator) return;
     currentGeneratorId = currentGenerator.id;
     const sel = document.getElementById('generatorSelect');
@@ -1273,12 +1298,12 @@ async function loadGeneratorData() {
     }
 
     // Active Run Check
-        const btnManual = document.getElementById('btnOpenManualRun');
+    const btnManual = document.getElementById('btnOpenManualRun');
     if (btnManual) {
       btnManual.style.display = (currentGenerator && currentGenerator.status === 'RUNNING' ? 'none' : 'inline-flex');
     }
 
-    activeRun = await api(`/generator/active-run${currentGeneratorId ? '?generator_id=' + encodeURIComponent(currentGeneratorId) : ''}`);
+    activeRun = activeRunData;
     if (activeRun) {
       banner.style.display = 'block';
       document.getElementById('activeRunStart').innerText = formatTime(activeRun.start_time);
@@ -1920,9 +1945,8 @@ async function setupTransferModal() {
         genSel.innerHTML = '<option value="">(Немає генераторів)</option>';
       } else {
         genSel.innerHTML = gens.map(g => { const cap = Number(g.tank_capacity_l || 25.0); const cur = Number(g.fuel_tank_level_l || 0); const free = Math.max(0, cap - cur); return `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)}, в баку: ${cur.toFixed(1)} / ${cap.toFixed(1)} л • вільно: ${free.toFixed(1)} л)</option>`; }).join('');
-        if (currentGeneratorId && gens.some(g => g.id === currentGeneratorId)) genSel.value = currentGeneratorId; if (typeof window.updateTransferCapacityHint === 'function') window.updateTransferCapacityHint(); if (false) {
-          genSel.value = currentGeneratorId;
-        }
+        if (currentGeneratorId && gens.some(g => g.id === currentGeneratorId)) genSel.value = currentGeneratorId;
+        if (typeof window.updateTransferCapacityHint === 'function') window.updateTransferCapacityHint();
       }
     }
   } catch (err) {
@@ -1949,12 +1973,16 @@ async function loadFuelSummary() {
 }
 
 async function loadFuelData() {
-  await loadFuelSummary();
   try {
     const qFac = currentFacilityId ? `?facility_id=${encodeURIComponent(currentFacilityId)}` : '';
+    const [, stocks, receipts, transfers] = await Promise.all([
+      loadFuelSummary(),
+      api(`/fuel/stocks${qFac}`),
+      api(`/fuel/receipts${qFac}`),
+      api(`/fuel/transfers${qFac}`)
+    ]);
 
     // Stocks Table
-    const stocks = await api(`/fuel/stocks${qFac}`);
     const sTbody = document.querySelector('#fuelStocksTable tbody');
     if (sTbody) {
       sTbody.innerHTML = stocks.map((s) => `
@@ -1979,7 +2007,6 @@ async function loadFuelData() {
     }
 
     // Receipts Table
-    const receipts = await api(`/fuel/receipts${qFac}`);
     const rTbody = document.querySelector('#fuelReceiptsTable tbody');
     if (rTbody) {
       rTbody.innerHTML = receipts.map((r) => {
@@ -2005,7 +2032,6 @@ async function loadFuelData() {
     }
 
     // Transfers Table
-    const transfers = await api(`/fuel/transfers${qFac}`);
     const tTbody = document.querySelector('#fuelTransfersTable tbody');
     if (tTbody) {
       tTbody.innerHTML = transfers.map((t) => `
@@ -2384,7 +2410,7 @@ window.submitAdminResetMaint = async function(e) {
     closeModal('modalAdminResetMaint');
     showToast(`Лічильник ТО успішно скинуто! Зафіксовано ТО на ${opHours.toFixed(1).replace('.', ',')} год`, 'success');
     await loadMaintenanceData();
-    await loadDashboardOverview();
+    await loadAllData();
   } catch (err) {
     showToast('Помилка скидання лічильника: ' + (err.message || 'Невідома помилка'), 'error');
   } finally {
@@ -2903,7 +2929,11 @@ function formatAuditDetailsUa(detailsRaw, action) {
 
 async function loadAuditData() {
   try {
-    const logs = await api('/audit?limit=50');
+    const qFac = currentFacilityId ? `&facility_id=${encodeURIComponent(currentFacilityId)}` : '';
+    const [logs, adjustments] = await Promise.all([
+      api('/audit?limit=50'),
+      api(`/adjustments?limit=50${qFac}`)
+    ]);
     const tbody = document.querySelector('#auditTable tbody');
     tbody.innerHTML = logs.map((l) => {
       const actionUa = AUDIT_ACTION_MAP_UA[l.action] || l.action;
@@ -2921,8 +2951,6 @@ async function loadAuditData() {
       `;
     }).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Аудит порожній</td></tr>';
 
-    const qFac = currentFacilityId ? `&facility_id=${encodeURIComponent(currentFacilityId)}` : '';
-    const adjustments = await api(`/adjustments?limit=50${qFac}`);
     const adjTbody = document.querySelector('#adjustmentsTable tbody');
     adjTbody.innerHTML = adjustments.map((a) => {
       const entityUa = AUDIT_ENTITY_MAP_UA[a.entity_type] || a.entity_type;
@@ -4721,9 +4749,12 @@ async function loadAdminSystemSettings() {
     if (document.getElementById('sysAutoFetchPrices')) document.getElementById('sysAutoFetchPrices').checked = s.auto_fetch_fuel_prices !== false;
     if (document.getElementById('sysApplyAllGens')) document.getElementById('sysApplyAllGens').checked = s.apply_to_all_generators !== false;
 
-    // Default Chain & Weekly Options
-    await populateAdminDefaultChain(s.default_facility_id, s.default_generator_id, s.default_fuel_stock_id);
-    await populateAdminEmailWeeklyOptions(s.email_weekly_facility_id, s.email_weekly_generator_id);
+    // Default Chain & Weekly Options (parallelized & deduplicated facilities request)
+    const sharedFacilities = await api('/facilities').catch(() => []);
+    await Promise.all([
+      populateAdminDefaultChain(s.default_facility_id, s.default_generator_id, s.default_fuel_stock_id, sharedFacilities),
+      populateAdminEmailWeeklyOptions(s.email_weekly_facility_id, s.email_weekly_generator_id, sharedFacilities)
+    ]);
 
     // SMTP & Failover Settings
     if (document.getElementById('sysSmtpEnabled')) document.getElementById('sysSmtpEnabled').checked = s.smtp_enabled === true;
@@ -4771,12 +4802,12 @@ async function loadAdminSystemSettings() {
   } catch (_) {}
 }
 
-async function populateAdminDefaultChain(defaultFacId, defaultGenId, defaultStockId) {
+async function populateAdminDefaultChain(defaultFacId, defaultGenId, defaultStockId, preloadedFacilities = null) {
   try {
     const facSel = document.getElementById('sysDefaultFacilityId');
     if (!facSel) return;
 
-    const facilities = await api('/facilities');
+    const facilities = Array.isArray(preloadedFacilities) ? preloadedFacilities : await api('/facilities');
     facSel.innerHTML = '<option value="">(Авто / Перший об\'єкт)</option>' +
       (facilities || []).map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
 
@@ -4878,12 +4909,12 @@ window.saveDefaultChainSettings = async function() {
   }
 };
 
-async function populateAdminEmailWeeklyOptions(weeklyFacId, weeklyGenId) {
+async function populateAdminEmailWeeklyOptions(weeklyFacId, weeklyGenId, preloadedFacilities = null) {
   try {
     const facSel = document.getElementById('sysEmailWeeklyFacilityId');
     if (!facSel) return;
 
-    const facilities = await api('/facilities');
+    const facilities = Array.isArray(preloadedFacilities) ? preloadedFacilities : await api('/facilities');
     facSel.innerHTML = '<option value="">(За замовчуванням)</option>' +
       (facilities || []).map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
 
@@ -5827,7 +5858,9 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPwaInstall();
   checkAuth();
   refreshServerStatus();
-  setInterval(refreshServerStatus, 30000);
+  setInterval(() => {
+    if (!document.hidden) refreshServerStatus();
+  }, 30000);
   setTimeout(checkPushSubscriptionStatus, 1500);
 
   // Audit export modal trigger listener
@@ -5869,20 +5902,39 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (_) {}
   }
 
-  // Periodic background refresh for dashboard tiles (updates metrics live without manual F5)
-  setInterval(() => {
-    if (token && currentUser) {
-      loadGeneratorData();
+  // Periodic background refresh for dashboard tiles (smart visibility-aware polling)
+  let _isBgRefreshRunning = false;
+  let _lastBgRefreshAt = Date.now();
+  const runDashboardBackgroundRefresh = async () => {
+    if (_isBgRefreshRunning || document.hidden || !token || !currentUser) return;
+    _isBgRefreshRunning = true;
+    _lastBgRefreshAt = Date.now();
+    try {
+      const tasks = [
+        loadGeneratorData(),
+        loadFacilityOutageSchedule(currentFacilityId),
+        loadFacilityIndicators(currentFacilityId)
+      ];
       if (!isViewerOnly() && hasPermission('fuel:view')) {
-        loadFuelSummary();
+        tasks.push(loadFuelSummary());
       }
       if (!isViewerOnly() && hasPermission('maintenance:view')) {
-        loadMaintenanceSummary();
+        tasks.push(loadMaintenanceSummary());
       }
-      loadFacilityOutageSchedule(currentFacilityId);
-      loadFacilityIndicators(currentFacilityId);
+      await Promise.allSettled(tasks);
+    } finally {
+      _isBgRefreshRunning = false;
     }
-  }, 15000);
+  };
+
+  setInterval(runDashboardBackgroundRefresh, 15000);
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && token && currentUser && (Date.now() - _lastBgRefreshAt > 5000)) {
+      refreshServerStatus();
+      runDashboardBackgroundRefresh();
+    }
+  });
 });
 
 
@@ -6366,26 +6418,6 @@ window.loadFacilityOutageSchedule = async function(facilityId = null, forceRefre
     const hasTomorrowOutages = Array.isArray(data.timeline_tomorrow) && data.timeline_tomorrow.some(h => h.status === 'DEFINITE' || h.status === 'PROBABLE');
     const defaultDay = data.timeline_day || ((data.next_outage && data.next_outage.day === 'tomorrow' && hasTomorrowOutages) ? 'tomorrow' : 'today');
     window.renderYasnoTimeline(defaultDay);
-    const barEl = null;
-    if (barEl && Array.isArray(data.timeline_today)) {
-      barEl.innerHTML = data.timeline_today.map(h => {
-        let cls = 'cell-not-planned';
-        let tooltip = `${h.time_range}: Світло є 🟢`;
-        if (h.status === 'DEFINITE') {
-          cls = 'cell-definite';
-          tooltip = `${h.time_range}: Планове відключення 🔴`;
-        } else if (h.status === 'PROBABLE') {
-          cls = 'cell-probable';
-          tooltip = `${h.time_range}: Можливе відключення 🟡`;
-        }
-        if (h.is_current) cls += ' cell-current';
-
-        return `<div class="yasno-hour-cell ${cls}" title="${tooltip}">
-          <span class="hour-label">${h.label}</span>
-          ${h.is_current ? '<span class="current-dot"></span>' : ''}
-        </div>`;
-      }).join('');
-    }
 
     // Indicator of current hour
     const curHourInd = document.getElementById('yasnoCurrentHourIndicator');
@@ -6487,6 +6519,11 @@ window.renderYasnoTimeline = function(day = 'today') {
     fallbackEndMin = window._parseHhMmToMinutes(data.next_outage.end);
     fallbackStatus = (String(data.next_outage.type || '').toLowerCase() === 'probable') ? 'PROBABLE' : 'DEFINITE';
   }
+
+  const renderSig = `${activeDay}|${fallbackStartMin}|${fallbackEndMin}|${fallbackStatus}|` +
+    sourceTimeline.map(h => `${h.hour}:${h.status}:${h.is_current ? 1 : 0}`).join(',');
+  if (barEl.dataset.renderSig === renderSig) return;
+  barEl.dataset.renderSig = renderSig;
 
   barEl.innerHTML = sourceTimeline.map(h => {
     let status = h.status;

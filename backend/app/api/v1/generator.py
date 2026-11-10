@@ -25,7 +25,7 @@ from backend.app.services.generator_service import (
     start_generator, stop_generator, get_generators_list,
     create_generator, delete_generator, update_generator, add_manual_run,
     restore_generator, transfer_generator_facility, reconcile_generator_state,
-    get_generator_cooldown_remaining
+    get_generator_cooldown_remaining, get_generators_cooldown_map
 )
 
 
@@ -83,7 +83,9 @@ async def get_generator(
         include_archived=include_archived
     )
     out = GeneratorOut.model_validate(gen)
-    out.cooldown_remaining_seconds = await get_generator_cooldown_remaining(db, gen.id)
+    out.cooldown_remaining_seconds = (
+        0 if gen.status == "RUNNING" else await get_generator_cooldown_remaining(db, gen.id)
+    )
     return out
 
 
@@ -94,13 +96,15 @@ async def list_all_generators(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Список усіх генераторів (з можливістю фільтрації за об'єктом)"""
+    """Список усіх генераторів (з можливістю фільтрації за об'єкти)"""
     eff_facility_id = verify_facility_access(current_user, facility_id)
     gens = await get_generators_list(db, facility_id=eff_facility_id, include_archived=include_archived)
+    stopped_ids = [g.id for g in gens if g.status != "RUNNING"]
+    cooldown_map = await get_generators_cooldown_map(db, stopped_ids) if stopped_ids else {}
     res = []
     for g in gens:
         item = GeneratorOut.model_validate(g)
-        item.cooldown_remaining_seconds = await get_generator_cooldown_remaining(db, g.id)
+        item.cooldown_remaining_seconds = cooldown_map.get(g.id, 0)
         res.append(item)
     return res
 

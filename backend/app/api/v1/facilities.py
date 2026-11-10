@@ -1,3 +1,4 @@
+import asyncio
 from typing import List
 from fastapi import APIRouter, Depends, Request, Response, status, HTTPException
 from pydantic import BaseModel
@@ -160,8 +161,12 @@ async def get_facility_indicators(
     verify_facility_access(current_user, facility_id)
     if response:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    weather = await get_facility_weather(db, facility_id, force=force)
-    alert = await get_facility_alert(db, facility_id, force=force)
+    # Warm facility in session identity map so concurrent tasks do not contend on AsyncSession
+    await db.get(Facility, facility_id)
+    weather, alert = await asyncio.gather(
+        get_facility_weather(db, facility_id, force=force),
+        get_facility_alert(db, facility_id, force=force)
+    )
     return {
         "weather": weather,
         "alert": alert

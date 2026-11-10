@@ -433,6 +433,34 @@ async def get_generator_cooldown_remaining(db: AsyncSession, generator_id: int) 
     return 0
 
 
+async def get_generators_cooldown_map(db: AsyncSession, generator_ids: List[int]) -> Dict[int, int]:
+    """
+    Пакетне (batch) обчислення залишку 60-секундного кулдауну для списку генераторів
+    одним SQL-запитом (усуває проблему N+1 у /generator/list).
+    """
+    if not generator_ids:
+        return {}
+    now = utc_now()
+    cutoff = now - datetime.timedelta(seconds=60)
+    q = (
+        select(GeneratorRun.generator_id, func.max(GeneratorRun.end_time))
+        .where(
+            GeneratorRun.generator_id.in_(generator_ids),
+            GeneratorRun.status == "COMPLETED",
+            GeneratorRun.end_time >= cutoff
+        )
+        .group_by(GeneratorRun.generator_id)
+    )
+    res = await db.execute(q)
+    cooldown_map: Dict[int, int] = {}
+    for gen_id, last_stop_time in res.all():
+        if last_stop_time:
+            elapsed_sec = (now - last_stop_time).total_seconds()
+            if elapsed_sec < 60:
+                cooldown_map[gen_id] = max(0, int(60 - elapsed_sec))
+    return cooldown_map
+
+
 async def start_generator(
     db: AsyncSession,
     generator_id: int,

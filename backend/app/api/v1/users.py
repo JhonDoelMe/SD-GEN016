@@ -1,3 +1,4 @@
+import asyncio
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select, func
@@ -59,11 +60,12 @@ async def create_user(
         roles_res = await db.execute(select(Role).where(Role.id.in_(data.role_ids)))
         roles = list(roles_res.scalars().all())
 
+    pwd_hash = await asyncio.to_thread(get_password_hash, data.password)
     new_user = User(
         login=clean_login,
         email=data.email.strip() if data.email else None,
         full_name=data.full_name.strip(),
-        password_hash=get_password_hash(data.password),
+        password_hash=pwd_hash,
         facility_id=data.facility_id if data.facility_id is not None else 1,
         is_active=True,
         is_superadmin=False,
@@ -143,7 +145,7 @@ async def update_user(
         target_user.roles = list(roles_res.scalars().all())
 
     if data.password:
-        target_user.password_hash = get_password_hash(data.password)
+        target_user.password_hash = await asyncio.to_thread(get_password_hash, data.password)
 
     await db.flush()
 
@@ -185,7 +187,7 @@ async def reset_password(
             detail="Скидання пароля головного суперадміністратора заборонено"
         )
 
-    target_user.password_hash = get_password_hash(data.new_password)
+    target_user.password_hash = await asyncio.to_thread(get_password_hash, data.new_password)
     await db.flush()
 
     await log_audit(
