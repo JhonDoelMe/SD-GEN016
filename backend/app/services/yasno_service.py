@@ -284,20 +284,38 @@ def get_facility_outage_schedule(
             break
 
     slot_type = _normalize_slot_type(current_slot.get("type", "NotPlanned")) if current_slot else "NotPlanned"
+    base_response["is_outage_now"] = slot_type in ("Definite", "Probable")
+    base_response["current_outage"] = None
 
     if slot_type == "Definite":
         base_response["status"] = "DEFINITE"
         base_response["status_label"] = "Відключення 🔴"
         base_response["status_color"] = "danger"
+        start_val = int(float(current_slot.get("start", 0)))
         end_val = int(float(current_slot.get("end", 1440)))
-        remaining = end_val - cur_minute
+        remaining = max(0, end_val - cur_minute)
+        base_response["current_outage"] = {
+            "start": _format_minutes(start_val),
+            "end": _format_minutes(end_val),
+            "type": slot_type,
+            "remaining_minutes": remaining,
+            "human_remaining": _format_time_left(remaining),
+        }
         base_response["message"] = f"Планове відключення до {_format_minutes(end_val)} (залишилось {_format_time_left(remaining)})"
     elif slot_type == "Probable":
         base_response["status"] = "PROBABLE"
         base_response["status_label"] = "Можливе відключення 🟡"
         base_response["status_color"] = "warning"
+        start_val = int(float(current_slot.get("start", 0)))
         end_val = int(float(current_slot.get("end", 1440)))
-        remaining = end_val - cur_minute
+        remaining = max(0, end_val - cur_minute)
+        base_response["current_outage"] = {
+            "start": _format_minutes(start_val),
+            "end": _format_minutes(end_val),
+            "type": slot_type,
+            "remaining_minutes": remaining,
+            "human_remaining": _format_time_left(remaining),
+        }
         base_response["message"] = f"Сіра зона: можливе знеструмлення до {_format_minutes(end_val)} (залишилось {_format_time_left(remaining)})"
     else:
         base_response["status"] = "NOT_PLANNED"

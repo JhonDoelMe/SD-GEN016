@@ -1,9 +1,9 @@
-const CACHE_NAME = 'sd-gen016-v5.3.0';
+const CACHE_NAME = 'sd-gen016-v5.3.1';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
-  '/frontend/styles.css?v=5.3.0',
-  '/frontend/app.js?v=5.3.0',
+  '/frontend/styles.css?v=5.3.1',
+  '/frontend/app.js?v=5.3.1',
   '/frontend/icons/logo.png',
   '/frontend/icons/apple-touch-icon.png',
   '/frontend/icons/icon-192.png',
