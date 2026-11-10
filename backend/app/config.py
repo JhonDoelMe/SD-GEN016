@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     UKRAINE_ALARM_API_KEY: str = ""
     WEATHER_CACHE_MINUTES: int = 20
     ALERTS_CACHE_SECONDS: int = 15
+    UKRAINE_ALARM_CACHE_SECONDS: int = 60
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod

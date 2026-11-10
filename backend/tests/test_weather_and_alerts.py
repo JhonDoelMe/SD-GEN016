@@ -156,6 +156,138 @@ def test_alert_helpers():
     assert p_lviv["is_active"] is False
     assert p_lviv["level"] == "green"
 
+    # 4. UkraineAlarm v3 schema matching & parsing
+    from backend.app.services.alert_service import (
+        match_ukraine_alarm_regions,
+        parse_ukraine_alarm_payload,
+        fuse_provider_results,
+    )
+    mock_ua_alarm_v3 = [
+        {
+            "regionId": "43",
+            "regionType": "District",
+            "regionName": "Самарівський район",
+            "regionEngName": "Samarivskyi district",
+            "lastUpdate": "2026-11-10T18:02:50Z",
+            "activeAlerts": [
+                {
+                    "regionId": "43",
+                    "regionType": "District",
+                    "type": "AIR",
+                    "lastUpdate": "2026-11-10T18:02:50Z",
+                    "activeAlertLevels": [
+                        {
+                            "alertLevel": "Red",
+                            "reason": "",
+                            "createdAt": "2026-11-10T18:02:51Z"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "regionId": "335",
+            "regionType": "Community",
+            "regionName": "м. Нікополь та Нікопольська територіальна громада",
+            "lastUpdate": "2026-11-10T18:05:00Z",
+            "activeAlerts": [
+                {
+                    "regionId": "335",
+                    "regionType": "Community",
+                    "type": "ARTILLERY",
+                    "lastUpdate": "2026-11-10T18:05:00Z",
+                    "activeAlertLevels": [
+                        {
+                            "alertLevel": "Red",
+                            "reason": "",
+                            "createdAt": "2026-11-10T18:05:01Z"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "regionId": "31",
+            "regionType": "State",
+            "regionName": "м. Київ",
+            "lastUpdate": "2026-11-10T18:10:00Z",
+            "activeAlerts": [
+                {
+                    "regionId": "31",
+                    "regionType": "State",
+                    "type": "AIR",
+                    "lastUpdate": "2026-11-10T18:10:00Z",
+                    "activeAlertLevels": [
+                        {
+                            "alertLevel": "Yellow",
+                            "reason": "UAV threat",
+                            "createdAt": "2026-11-10T18:10:01Z"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+
+    ua_samar = match_ukraine_alarm_regions(mock_ua_alarm_v3, "Дніпропетровська область", "Самар")
+    assert len(ua_samar) == 1
+    p_ua_samar = parse_ukraine_alarm_payload(ua_samar)
+    assert p_ua_samar["is_active"] is True
+    assert p_ua_samar["level"] == "red"
+    assert p_ua_samar["started_at"] == "2026-11-10T18:02:51Z"
+
+    ua_nikopol = match_ukraine_alarm_regions(mock_ua_alarm_v3, "Дніпропетровська область", "Нікополь")
+    p_ua_nikopol = parse_ukraine_alarm_payload(ua_nikopol)
+    assert p_ua_nikopol["is_active"] is True
+    assert p_ua_nikopol["level"] == "red"
+    assert p_ua_nikopol["threat_type"] == "artillery"
+
+    ua_kyiv = match_ukraine_alarm_regions(mock_ua_alarm_v3, "м. Київ", "Київ")
+    p_ua_kyiv = parse_ukraine_alarm_payload(ua_kyiv)
+    assert p_ua_kyiv["is_active"] is True
+    assert p_ua_kyiv["level"] == "yellow"
+    assert p_ua_kyiv["threat_type"] == "drones"
+
+    ua_lviv = match_ukraine_alarm_regions(mock_ua_alarm_v3, "Львівська область", "Львів")
+    p_ua_lviv = parse_ukraine_alarm_payload(ua_lviv)
+    assert p_ua_lviv["is_active"] is False
+    assert p_ua_lviv["level"] == "green"
+
+    # 5. Dual-Provider Fusion & Insurance Rule (Страхування від передчасного відбою)
+    # Case A: Both agree on Green
+    fused_green = fuse_provider_results(p_lviv, p_ua_lviv)
+    assert fused_green["is_active"] is False
+    assert fused_green["level"] == "green"
+    assert fused_green["verification_status"] == "verified"
+
+    # Case B: Both agree on Red, alerts.in.ua enriches specific threat_type ("cruise")
+    fused_red = fuse_provider_results(p_samar, p_ua_samar)
+    assert fused_red["is_active"] is True
+    assert fused_red["level"] == "red"
+    assert fused_red["threat_type"] == "cruise"
+    assert fused_red["verification_status"] == "verified"
+    assert fused_red["provider"] == "alerts.in.ua + ukrainealarm.com"
+
+    # Case C: Premature all-clear on one provider -> holds worst-case active alert!
+    fused_insurance_1 = fuse_provider_results(p_lviv, p_ua_samar)
+    assert fused_insurance_1["is_active"] is True
+    assert fused_insurance_1["level"] == "red"
+    assert fused_insurance_1["verification_status"] == "insurance_hold"
+    assert "Страхування" in fused_insurance_1["verification_note"]
+
+    # Case D: Reverse discrepancy (alerts.in.ua still Yellow, UkraineAlarm already Green)
+    fused_insurance_2 = fuse_provider_results(p_kyiv, p_ua_lviv)
+    assert fused_insurance_2["is_active"] is True
+    assert fused_insurance_2["level"] == "yellow"
+    assert fused_insurance_2["threat_type"] == "drones"
+    assert fused_insurance_2["verification_status"] == "insurance_hold"
+
+    # Case E: Level discrepancy (alerts.in.ua Yellow vs UkraineAlarm Red) -> picks Red
+    fused_insurance_3 = fuse_provider_results(p_kyiv, p_ua_samar)
+    assert fused_insurance_3["is_active"] is True
+    assert fused_insurance_3["level"] == "red"
+    assert fused_insurance_3["verification_status"] == "insurance_hold"
+
 
 @pytest.mark.asyncio
 async def test_facility_weather_and_alerts_endpoints(client: AsyncClient, superadmin_auth: dict, db_session):

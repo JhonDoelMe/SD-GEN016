@@ -6668,7 +6668,10 @@ window.loadFacilityIndicators = async function(facilityId, force = false) {
     return;
   }
   try {
-    const res = await api(`/facilities/${facilityId}/status-indicators`);
+    const endpoint = force
+      ? `/facilities/${facilityId}/status-indicators?force=true`
+      : `/facilities/${facilityId}/status-indicators`;
+    const res = await api(endpoint);
     if (!res) return;
 
     // 1. Weather Badge
@@ -6706,6 +6709,8 @@ window.loadFacilityIndicators = async function(facilityId, force = false) {
           const tType = (alert.threat_type || '').toLowerCase();
           if (tType.includes('ballistic')) aText.innerText = 'Балістика!';
           else if (tType.includes('mig31k')) aText.innerText = 'МіГ-31К!';
+          else if (tType.includes('bombs') || tType.includes('kab')) aText.innerText = 'КАБ!';
+          else if (tType.includes('artillery') || tType.includes('shelling')) aText.innerText = 'Артобстріл!';
           else aText.innerText = 'Ракета!';
         } else if (level === 'yellow') {
           aText.innerText = 'БПЛА';
@@ -6836,21 +6841,74 @@ window.populateAlertModal = function(a) {
   const heroStatus = document.getElementById('alertHeroStatus');
   const heroThreat = document.getElementById('alertHeroThreat');
   const heroLoc = document.getElementById('alertHeroLoc');
+  const heroTime = document.getElementById('alertHeroTime');
+  const verifBanner = document.getElementById('alertVerificationBanner');
+  const verifIcon = document.getElementById('alertVerificationIcon');
+  const verifText = document.getElementById('alertVerificationText');
   const advBody = document.getElementById('alertAdviceBody');
   const provEl = document.getElementById('alertSyncProvider');
 
   const level = a.level || 'green';
+  const tType = (a.threat_type || '').toLowerCase();
   if (heroCard) {
     heroCard.className = `alert-hero-card hero-alert-${level}`;
   }
   if (heroIcon) heroIcon.innerText = a.threat_icon || (level === 'green' ? '🟢' : '🚨');
   if (heroStatus) {
-    if (level === 'red') heroStatus.innerText = 'КРИТИЧНА НЕБЕЗПЕКА (РАКЕТИ)';
-    else if (level === 'yellow') heroStatus.innerText = 'ПІДВИЩЕНА ЗАГРОЗА (БПЛА)';
-    else heroStatus.innerText = 'ВІДБІЙ ТРИВОГИ (БЕЗПЕЧНО)';
+    if (level === 'red') {
+      if (tType.includes('artillery') || tType.includes('shelling')) {
+        heroStatus.innerText = 'КРИТИЧНА НЕБЕЗПЕКА (АРТОБСТРІЛ)';
+      } else if (tType.includes('bombs') || tType.includes('kab')) {
+        heroStatus.innerText = 'КРИТИЧНА НЕБЕЗПЕКА (КАБ)';
+      } else {
+        heroStatus.innerText = 'КРИТИЧНА НЕБЕЗПЕКА (РАКЕТИ)';
+      }
+    } else if (level === 'yellow') {
+      heroStatus.innerText = 'ПІДВИЩЕНА ЗАГРОЗА (БПЛА)';
+    } else {
+      heroStatus.innerText = 'ВІДБІЙ ТРИВОГИ (БЕЗПЕЧНО)';
+    }
   }
   if (heroThreat) heroThreat.innerText = a.threat_title || 'Загроз не зафіксовано';
   if (heroLoc) heroLoc.innerText = window.formatLocationDisplay(a.region_name, a.city);
+
+  if (heroTime) {
+    if (a.is_active && a.started_at) {
+      try {
+        const dt = new Date(a.started_at);
+        const timeStr = dt.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+        const durMin = a.duration_minutes || Math.max(1, Math.floor((Date.now() - dt.getTime()) / 60000));
+        heroTime.innerText = `⏱ Триває з ${timeStr} (${durMin} хв)`;
+        heroTime.style.display = 'inline-block';
+      } catch (e) {
+        heroTime.style.display = 'none';
+      }
+    } else {
+      heroTime.style.display = 'none';
+    }
+  }
+
+  if (verifBanner && verifText && verifIcon) {
+    const vStatus = a.verification_status || 'verified';
+    let vClass = 'verif-verified';
+    let vEmoji = '✅';
+    let defaultNote = 'Верифіковано: статус синхронно підтверджено обома провайдерами (alerts.in.ua + UkraineAlarm).';
+
+    if (vStatus === 'insurance_hold') {
+      vClass = 'verif-insurance';
+      vEmoji = '🛡️';
+      defaultNote = 'Страхування від передчасного відбою: дані провайдерів різняться — утримується вищий рівень безпеки.';
+    } else if (vStatus === 'single_source' || vStatus === 'mock') {
+      vClass = 'verif-single';
+      vEmoji = 'ℹ️';
+      defaultNote = 'Автоматичний моніторинг активний за одним джерелом.';
+    }
+
+    verifBanner.className = `alert-verification-banner ${vClass}`;
+    verifIcon.innerText = vEmoji;
+    verifText.innerText = a.verification_note || defaultNote;
+  }
+
   if (advBody) advBody.innerText = a.operator_advice || 'Дозволено штатну роботу.';
-  if (provEl) provEl.innerText = `Провайдери: ${a.provider || 'alerts.in.ua'}`;
+  if (provEl) provEl.innerText = `Джерела: ${a.provider || 'alerts.in.ua + ukrainealarm.com'}`;
 };

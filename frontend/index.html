@@ -3167,6 +3167,12 @@
           </div>
           <div class="alert-hero-threat" id="alertHeroThreat">Небо чисте (загроз не зафіксовано)</div>
           <div class="alert-hero-loc" id="alertHeroLoc">📍 Дніпропетровська область, м. Самар</div>
+          <div class="alert-hero-time" id="alertHeroTime" style="display: none;"></div>
+        </div>
+
+        <div class="alert-verification-banner verif-verified" id="alertVerificationBanner">
+          <span class="verif-icon" id="alertVerificationIcon">✅</span>
+          <span class="verif-text" id="alertVerificationText">Верифіковано: чистоту неба синхронно підтверджено обома провайдерами (alerts.in.ua + UkraineAlarm).</span>
         </div>
 
         <div class="alert-advice-card" id="alertAdviceCard">
@@ -3176,24 +3182,26 @@
           </div>
         </div>
 
-        <div class="alert-legend-box">
-          <div class="legend-title">Диференційовані рівні загроз у системі:</div>
-          <div class="legend-row">
-            <span class="legend-badge legend-green">🟢 Зелений</span>
-            <span class="legend-desc">Відбій загрози. Штатна експлуатація.</span>
+        <details class="alert-legend-box alert-legend-details">
+          <summary class="legend-title">ℹ️ Довідка: диференційовані рівні загроз у системі</summary>
+          <div class="legend-body">
+            <div class="legend-row">
+              <span class="legend-badge legend-green">🟢 Зелений</span>
+              <span class="legend-desc">Відбій загрози. Штатна експлуатація.</span>
+            </div>
+            <div class="legend-row">
+              <span class="legend-badge legend-yellow">🟡 Жовтий</span>
+              <span class="legend-desc">Ударні БПЛА (Шахеди) / активність авіації. Підвищена готовність.</span>
+            </div>
+            <div class="legend-row">
+              <span class="legend-badge legend-red">🔴 Червоний</span>
+              <span class="legend-desc">Балістика / ракети / МіГ-31К / КАБ / артобстріл. Негайно в укриття! Робота біля генератора заборонена.</span>
+            </div>
           </div>
-          <div class="legend-row">
-            <span class="legend-badge legend-yellow">🟡 Жовтий</span>
-            <span class="legend-desc">Ударні БПЛА (Шахеди) / активність авіації. Підвищена готовність.</span>
-          </div>
-          <div class="legend-row">
-            <span class="legend-badge legend-red">🔴 Червоний</span>
-            <span class="legend-desc">Балістика / ракети / МіГ-31К / КАБ / артобстріл. Негайно в укриття! Робота біля генератора заборонена.</span>
-          </div>
-        </div>
+        </details>
 
         <div class="modal-footer-sync">
-          <small id="alertSyncProvider">Провайдери: alerts.in.ua / ukrainealarm.com</small>
+          <small id="alertSyncProvider">Джерела: alerts.in.ua + ukrainealarm.com</small>
           <button type="button" class="btn-action-small" onclick="refreshFacilityIndicators(true)">Оновити зараз 🔄</button>
         </div>
       </div>
