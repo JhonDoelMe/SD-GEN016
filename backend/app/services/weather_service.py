@@ -440,8 +440,14 @@ async def fetch_openweather_data(
                     if fb_res.status_code == 200:
                         current_data = fb_res.json()
 
-            if not isinstance(f_res, Exception) and f_res.status_code == 200:
-                forecast_days = parse_5day_forecast(f_res.json())
+            if not isinstance(f_res, Exception):
+                if f_res.status_code == 200:
+                    forecast_days = parse_5day_forecast(f_res.json())
+                elif f_res.status_code == 404 and city_lower != "київ":
+                    fb_fc_url = f"https://api.openweathermap.org/data/2.5/forecast?q=Kyiv,UA&units=metric&lang=ua&appid={api_key}"
+                    fb_fc_res = await client.get(fb_fc_url)
+                    if fb_fc_res.status_code == 200:
+                        forecast_days = parse_5day_forecast(fb_fc_res.json())
         except Exception as e:
             logger.error(f"Помилка запиту погоди OpenWeather: {e}")
             return None, []
@@ -468,9 +474,9 @@ async def get_facility_weather(db: AsyncSession, facility_id: int, force: bool =
     now_ts = time.time()
     cache_ttl = settings.WEATHER_CACHE_MINUTES * 60
 
-    # Перевірка кешу (якщо не запрошено примусове оновлення)
+    # Перевірка кешу (якщо не запрошено примусове оновлення і в кеші вже є 5-денний прогноз)
     cached = _WEATHER_CACHE.get(cache_key)
-    if not force and cached and (now_ts - cached[0]) < cache_ttl:
+    if not force and cached and (now_ts - cached[0]) < cache_ttl and cached[1].get("forecast"):
         return cached[1]
 
     api_key = settings.OPENWEATHER_API_KEY.strip()
@@ -483,7 +489,7 @@ async def get_facility_weather(db: AsyncSession, facility_id: int, force: bool =
             "icon_emoji": "⛅",
             "generator_tip": "Налаштуйте OPENWEATHER_API_KEY у .env для отримання порад оператору",
             "forecast": [],
-            "updated_at": now_utc().isoformat()
+            "updated_at": now_facility().isoformat()
         }
 
     data, forecast_days = await fetch_openweather_data(city_name, api_key)
@@ -499,7 +505,7 @@ async def get_facility_weather(db: AsyncSession, facility_id: int, force: bool =
             "icon_emoji": "⛅",
             "generator_tip": "Налаштуйте OPENWEATHER_API_KEY у .env для отримання порад оператору",
             "forecast": [],
-            "updated_at": now_utc().isoformat()
+            "updated_at": now_facility().isoformat()
         }
 
     main = data.get("main", {})
@@ -516,6 +522,9 @@ async def get_facility_weather(db: AsyncSession, facility_id: int, force: bool =
     pressure_mmhg = int(round(pressure_hpa * 0.750062))
     is_rain = "rain" in data or "drizzle" in desc.lower() or "дощ" in desc.lower()
 
+    if not forecast_days and cached and cached[1].get("forecast"):
+        forecast_days = cached[1]["forecast"]
+
     result = {
         "is_available": True,
         "city": city_name,
@@ -531,7 +540,7 @@ async def get_facility_weather(db: AsyncSession, facility_id: int, force: bool =
         "icon_emoji": map_icon_to_emoji(icon_code),
         "generator_tip": get_generator_weather_tip(temp_c, humidity, is_rain, forecast_days=forecast_days),
         "forecast": forecast_days,
-        "updated_at": now_utc().isoformat()
+        "updated_at": now_facility().isoformat()
     }
 
     _WEATHER_CACHE[cache_key] = (now_ts, result)

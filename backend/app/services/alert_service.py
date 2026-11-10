@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.config import settings
 from backend.app.models.facility import Facility
-from backend.app.core.timezone import now_utc
+from backend.app.core.timezone import now_utc, now_facility
 
 logger = logging.getLogger("sd_gen016.alerts")
 
@@ -26,6 +26,7 @@ class AlertLevel(str, Enum):
 class AlertThreatType(str, Enum):
     NONE = "none"
     DRONES = "drones"
+    MISSILE_DANGER = "missile_danger"
     BALLISTIC = "ballistic"
     CRUISE = "cruise"
     MIG31K = "mig31k"
@@ -46,11 +47,12 @@ THREAT_SPECIFICITY_RANK: Dict[str, int] = {
     AlertThreatType.UNKNOWN.value: 1,
     AlertThreatType.AIR_DEFENSE.value: 2,
     AlertThreatType.DRONES.value: 3,
-    AlertThreatType.CRUISE.value: 4,
-    AlertThreatType.BOMBS.value: 5,
-    AlertThreatType.MIG31K.value: 6,
-    AlertThreatType.BALLISTIC.value: 7,
-    AlertThreatType.ARTILLERY.value: 8,
+    AlertThreatType.MISSILE_DANGER.value: 4,
+    AlertThreatType.CRUISE.value: 5,
+    AlertThreatType.BOMBS.value: 6,
+    AlertThreatType.MIG31K.value: 7,
+    AlertThreatType.BALLISTIC.value: 8,
+    AlertThreatType.ARTILLERY.value: 9,
 }
 
 # In-memory cache: facility_cache_key -> (timestamp, alert_dict)
@@ -148,26 +150,28 @@ CITY_TO_REGION: Dict[str, str] = {
 
 
 def get_threat_display_info(threat_type: str, level: str) -> Tuple[str, str]:
-    """Повертає назву загрози та відповідну іконку для плашки."""
+    """Повертає точну назву загрози та відповідну іконку для плашки й модального вікна."""
     t = (threat_type or "").lower()
     if t in ("ballistic", "ballistic_missiles"):
-        return "Балістична небезпека", "🚀"
-    if t in ("cruise", "cruise_missiles", "unspecified_missiles"):
-        return "Ракетна небезпека", "🚀"
+        return "Загроза застосування балістичного озброєння", "🚀"
+    if t in ("cruise", "cruise_missiles"):
+        return "Зафіксовано рух крилатих ракет", "🚀"
+    if t in ("missile_danger", "unspecified_missiles"):
+        return "Ракетна небезпека в регіоні", "🚨"
     if t in ("mig31k", "mig31k_departure"):
-        return "Зліт МіГ-31К (Кинджал)", "🚀"
+        return "Зліт МіГ-31К (носій «Кинджал»)", "🚀"
     if t in ("drones", "uav"):
-        return "Загроза ударних БПЛА", "🛸"
+        return "Загроза ударних БПЛА (Шахед)", "🛸"
     if t in ("bombs", "guided_aerial_bombs", "kab"):
-        return "Загроза КАБ (авіабомби)", "💣"
+        return "Загроза пусків керованих авіабомб (КАБ)", "💣"
     if t in ("artillery", "shelling"):
-        return "Загроза артобстрілу", "💥"
+        return "Загроза артилерійського обстрілу", "💥"
     if t in ("air_defense",):
         return "Робота сил ППО", "🛡️"
     if level == "red":
-        return "Повітряна тривога (Ракети)", "🚨"
+        return "Активна повітряна тривога в регіоні", "🚨"
     if level == "yellow":
-        return "Підвищена загроза (БПЛА)", "🛸"
+        return "Підвищена загроза (БПЛА / авіація)", "🛸"
     return "Небо чисте (Відбій)", "🟢"
 
 
@@ -319,6 +323,11 @@ def parse_alert_payload(target_alert: Optional[Dict[str, Any]], provider_name: s
     has_red = (base_level == "red")
     has_yellow = (base_level == "yellow")
 
+    def set_best_threat(candidate: str):
+        nonlocal main_threat_type
+        if THREAT_SPECIFICITY_RANK.get(candidate, 0) > THREAT_SPECIFICITY_RANK.get(main_threat_type, 0):
+            main_threat_type = candidate
+
     threats = target_alert.get("threats") or []
     for th in threats:
         th_type = str(th.get("threat_type", "")).lower()
@@ -330,26 +339,28 @@ def parse_alert_payload(target_alert: Optional[Dict[str, Any]], provider_name: s
         ):
             has_red = True
             if th_type in ("ballistic_missiles", "ballistic"):
-                main_threat_type = AlertThreatType.BALLISTIC.value
-            elif th_type in ("cruise_missiles", "unspecified_missiles", "cruise"):
-                main_threat_type = AlertThreatType.CRUISE.value
+                set_best_threat(AlertThreatType.BALLISTIC.value)
+            elif th_type in ("cruise_missiles", "cruise"):
+                set_best_threat(AlertThreatType.CRUISE.value)
+            elif th_type in ("unspecified_missiles", "missile_danger"):
+                set_best_threat(AlertThreatType.MISSILE_DANGER.value)
             elif th_type in ("mig31k_departure", "mig31k"):
-                main_threat_type = AlertThreatType.MIG31K.value
+                set_best_threat(AlertThreatType.MIG31K.value)
             elif th_type in ("guided_aerial_bombs", "bombs", "kab"):
-                main_threat_type = AlertThreatType.BOMBS.value
+                set_best_threat(AlertThreatType.BOMBS.value)
             elif th_type in ("artillery", "artillery_shelling"):
-                main_threat_type = AlertThreatType.ARTILLERY.value
+                set_best_threat(AlertThreatType.ARTILLERY.value)
             else:
-                main_threat_type = th_type
+                set_best_threat(th_type)
         elif th_level == "yellow" or th_type in ("drones", "air_defense", "tactic_aircraft_activity"):
             has_yellow = True
             if not has_red:
                 if th_type in ("drones", "uav"):
-                    main_threat_type = AlertThreatType.DRONES.value
+                    set_best_threat(AlertThreatType.DRONES.value)
                 elif th_type in ("air_defense",):
-                    main_threat_type = AlertThreatType.AIR_DEFENSE.value
+                    set_best_threat(AlertThreatType.AIR_DEFENSE.value)
                 else:
-                    main_threat_type = th_type
+                    set_best_threat(th_type)
 
     final_level = AlertLevel.RED.value if has_red else (AlertLevel.YELLOW.value if has_yellow else AlertLevel.RED.value)
 
@@ -935,7 +946,7 @@ async def get_facility_alert(db: AsyncSession, facility_id: int, force: bool = F
         "provider": raw_result.get("provider", "local"),
         "verification_status": raw_result.get("verification_status", "single_source"),
         "verification_note": raw_result.get("verification_note", ""),
-        "updated_at": now_utc().isoformat()
+        "updated_at": now_facility().isoformat()
     }
 
     _ALERTS_CACHE[cache_key] = (now_ts, result)

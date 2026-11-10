@@ -97,8 +97,16 @@ def test_weather_helpers():
 def test_alert_helpers():
     # 1. Display info
     title_b, icon_b = get_threat_display_info("ballistic", "red")
-    assert "Балістична небезпека" in title_b
+    assert "балістичного" in title_b
     assert icon_b == "🚀"
+
+    title_md, icon_md = get_threat_display_info("missile_danger", "red")
+    assert "Ракетна небезпека в регіоні" in title_md
+    assert icon_md == "🚨"
+
+    title_unk, icon_unk = get_threat_display_info("unknown", "red")
+    assert "Активна повітряна тривога" in title_unk
+    assert icon_unk == "🚨"
 
     title_d, icon_d = get_threat_display_info("drones", "yellow")
     assert "БПЛА" in title_d
@@ -155,13 +163,13 @@ def test_alert_helpers():
         }
     ]
 
-    # Samar facility matches Samarivskyi raion red alert
+    # Samar facility matches Samarivskyi raion red alert (unspecified_missiles -> missile_danger)
     al_samar = match_target_alert(mock_active_alerts, "Дніпропетровська область", "Самар")
     assert al_samar is not None
     p_samar = parse_alert_payload(al_samar)
     assert p_samar["is_active"] is True
     assert p_samar["level"] == "red"
-    assert p_samar["threat_type"] == "cruise"
+    assert p_samar["threat_type"] == "missile_danger"
 
     # Kyiv facility matches Kyiv yellow alert
     al_kyiv = match_target_alert(mock_active_alerts, "м. Київ", "Київ")
@@ -290,11 +298,11 @@ def test_alert_helpers():
     assert fused_green["level"] == "green"
     assert fused_green["verification_status"] == "verified"
 
-    # Case B: Both agree on Red, alerts.in.ua enriches specific threat_type ("cruise")
+    # Case B: Both agree on Red, alerts.in.ua enriches specific threat_type ("missile_danger")
     fused_red = fuse_provider_results(p_samar, p_ua_samar)
     assert fused_red["is_active"] is True
     assert fused_red["level"] == "red"
-    assert fused_red["threat_type"] == "cruise"
+    assert fused_red["threat_type"] == "missile_danger"
     assert fused_red["verification_status"] == "verified"
     assert fused_red["provider"] == "Alerts.in.ua + UkraineAlarm"
     assert fused_red["verification_note"] == "Тривогу підтверджено обома джерелами (Alerts.in.ua + UkraineAlarm)"

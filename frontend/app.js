@@ -6669,7 +6669,7 @@ window.loadFacilityIndicators = async function(facilityId, force = false) {
   }
   try {
     const endpoint = force
-      ? `/facilities/${facilityId}/status-indicators?force=true`
+      ? `/facilities/${facilityId}/status-indicators?force=true&_t=${Date.now()}`
       : `/facilities/${facilityId}/status-indicators`;
     const res = await api(endpoint);
     if (!res) return;
@@ -6709,9 +6709,10 @@ window.loadFacilityIndicators = async function(facilityId, force = false) {
           const tType = (alert.threat_type || '').toLowerCase();
           if (tType.includes('ballistic')) aText.innerText = 'Балістика!';
           else if (tType.includes('mig31k')) aText.innerText = 'МіГ-31К!';
+          else if (tType === 'cruise' || tType === 'cruise_missiles') aText.innerText = 'Крилаті ракети!';
           else if (tType.includes('bombs') || tType.includes('kab')) aText.innerText = 'КАБ!';
           else if (tType.includes('artillery') || tType.includes('shelling')) aText.innerText = 'Артобстріл!';
-          else aText.innerText = 'Ракета!';
+          else aText.innerText = 'Тривога!';
         } else if (level === 'yellow') {
           aText.innerText = 'БПЛА';
         } else {
@@ -6741,12 +6742,12 @@ window.refreshFacilityIndicators = async function(manual = true) {
   if (manual) showToast("Дані успішно оновлено!", "success");
 };
 
-window.openWeatherModal = function() {
-  if (!window._currentWeatherData) {
-    if (currentFacilityId) window.loadFacilityIndicators(currentFacilityId);
+window.openWeatherModal = async function() {
+  openModal('modalWeatherDetails');
+  if (!window._currentWeatherData || !Array.isArray(window._currentWeatherData.forecast) || window._currentWeatherData.forecast.length === 0) {
+    if (currentFacilityId) await window.loadFacilityIndicators(currentFacilityId, true);
   }
   window.populateWeatherModal(window._currentWeatherData);
-  openModal('modalWeatherDetails');
 };
 
 window.formatLocationDisplay = function(region, city) {
@@ -6853,8 +6854,24 @@ window.populateWeatherModal = function(w) {
 
   if (advText) advText.innerText = w.generator_tip || 'Штатні умови експлуатації генератора.';
   if (sync) {
-    const dt = w.updated_at ? new Date(w.updated_at).toLocaleTimeString('uk-UA', {hour: '2-digit', minute:'2-digit'}) : 'щойно';
-    sync.innerText = `Оновлено: ${dt}`;
+    let dtStr = 'щойно';
+    if (w.updated_at) {
+      try {
+        let rawIso = String(w.updated_at);
+        if (!rawIso.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(rawIso)) {
+          rawIso += 'Z';
+        }
+        dtStr = new Date(rawIso).toLocaleTimeString('uk-UA', {
+          timeZone: 'Europe/Kyiv',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+      } catch (_) {
+        dtStr = 'щойно';
+      }
+    }
+    sync.innerText = `Оновлено: ${dtStr} (Київ)`;
   }
 };
 
@@ -6889,11 +6906,17 @@ window.populateAlertModal = function(a) {
   if (heroStatus) {
     if (level === 'red') {
       if (tType.includes('artillery') || tType.includes('shelling')) {
-        heroStatus.innerText = 'КРИТИЧНА НЕБЕЗПЕКА (АРТОБСТРІЛ)';
+        heroStatus.innerText = 'ЗАГРОЗА АРТОБСТРІЛУ';
       } else if (tType.includes('bombs') || tType.includes('kab')) {
-        heroStatus.innerText = 'КРИТИЧНА НЕБЕЗПЕКА (КАБ)';
+        heroStatus.innerText = 'ЗАГРОЗА АВІАБОМБ (КАБ)';
+      } else if (tType.includes('ballistic')) {
+        heroStatus.innerText = 'ЗАГРОЗА БАЛІСТИКИ';
+      } else if (tType.includes('mig31k')) {
+        heroStatus.innerText = 'РАКЕТНА НЕБЕЗПЕКА (МіГ-31К)';
+      } else if (tType === 'cruise' || tType === 'cruise_missiles') {
+        heroStatus.innerText = 'РАКЕТНА НЕБЕЗПЕКА';
       } else {
-        heroStatus.innerText = 'КРИТИЧНА НЕБЕЗПЕКА (РАКЕТИ)';
+        heroStatus.innerText = 'ПОВІТРЯНА ТРИВОГА';
       }
     } else if (level === 'yellow') {
       heroStatus.innerText = 'ПІДВИЩЕНА ЗАГРОЗА (БПЛА)';
@@ -6907,8 +6930,16 @@ window.populateAlertModal = function(a) {
   if (heroTime) {
     if (a.is_active && a.started_at) {
       try {
-        const dt = new Date(a.started_at);
-        const timeStr = dt.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+        let rawStart = String(a.started_at);
+        if (!rawStart.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(rawStart)) {
+          rawStart += 'Z';
+        }
+        const dt = new Date(rawStart);
+        const timeStr = dt.toLocaleTimeString('uk-UA', {
+          timeZone: 'Europe/Kyiv',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
         const durMin = a.duration_minutes || Math.max(1, Math.floor((Date.now() - dt.getTime()) / 60000));
         heroTime.innerText = `⏱ Триває з ${timeStr} (${durMin} хв)`;
         heroTime.style.display = 'inline-block';

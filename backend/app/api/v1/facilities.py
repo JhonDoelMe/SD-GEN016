@@ -122,11 +122,14 @@ async def get_facility_outage(
 async def get_facility_weather_data(
     facility_id: int,
     force: bool = False,
+    response: Response = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Отримати поточну погоду для об'єкта"""
     verify_facility_access(current_user, facility_id)
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return await get_facility_weather(db, facility_id, force=force)
 
 
@@ -134,11 +137,14 @@ async def get_facility_weather_data(
 async def get_facility_alert_data(
     facility_id: int,
     force: bool = False,
+    response: Response = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Отримати статус повітряної тривоги для об'єкта"""
     verify_facility_access(current_user, facility_id)
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return await get_facility_alert(db, facility_id, force=force)
 
 
@@ -146,11 +152,14 @@ async def get_facility_alert_data(
 async def get_facility_indicators(
     facility_id: int,
     force: bool = False,
+    response: Response = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Отримати об'єднані індикатори погоди та тривог в одному швидкому запиті"""
     verify_facility_access(current_user, facility_id)
+    if response:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     weather = await get_facility_weather(db, facility_id, force=force)
     alert = await get_facility_alert(db, facility_id, force=force)
     return {
