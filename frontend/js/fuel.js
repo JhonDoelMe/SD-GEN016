@@ -486,6 +486,7 @@ document.getElementById('receiptForm').addEventListener('submit', async (e) => {
   }
 
   try {
+    const recFacilityId = parseInt(document.getElementById('recFacility').value, 10) || currentFacilityId;
     if (inCanisterMode) {
       const updatedPool = await api(`/fuel/canisters/${encodeURIComponent(selPool.id)}/receive`, {
         method: 'POST',
@@ -499,18 +500,28 @@ document.getElementById('receiptForm').addEventListener('submit', async (e) => {
           receipt_number: receiptNumber,
           comment: commentVal,
           force_confirm: forceConfirm
-        })
+        }),
+        offlineMeta: {
+          action_type: 'canister_receive',
+          title: 'Прийом заправлених каністр',
+          summary: `${canCount} каністр (+${liters.toFixed(1)} л) на склад «${selPool.stock_name || selPool.name}» (чек ${receiptNumber})`,
+          facility_id: recFacilityId,
+        }
       });
       closeModal('modalReceipt');
-      showToast(
-        `Прийнято ${canCount} каністр (+${liters.toFixed(1)} л) на склад «${updatedPool.stock_name || updatedPool.name}»!`,
-        'success'
-      );
+      if (updatedPool && updatedPool._queuedOffline) {
+        showToast(`📥 Прийом ${canCount} каністр (+${liters.toFixed(1)} л) збережено в офлайн-чергу`, 'warning');
+      } else {
+        showToast(
+          `Прийнято ${canCount} каністр (+${liters.toFixed(1)} л) на склад «${updatedPool.stock_name || updatedPool.name}»!`,
+          'success'
+        );
+      }
     } else {
       const saved = await api('/fuel/receipt', {
         method: 'POST',
         body: JSON.stringify({
-          facility_id: parseInt(document.getElementById('recFacility').value, 10),
+          facility_id: recFacilityId,
           stock_id: parseInt(stockVal, 10),
           fuel_provider: providerVal,
           liters: liters,
@@ -520,13 +531,23 @@ document.getElementById('receiptForm').addEventListener('submit', async (e) => {
           fuel_type: document.getElementById('recFuelType').value,
           comment: commentVal,
           force_confirm: forceConfirm
-        })
+        }),
+        offlineMeta: {
+          action_type: 'fuel_receipt',
+          title: 'Прийом палива на склад ГСМ',
+          summary: `+${liters.toFixed(1)} л (чек ${receiptNumber})`,
+          facility_id: recFacilityId,
+        }
       });
       closeModal('modalReceipt');
-      showToast(
-        `Паливо оприбутковано: +${Number(saved.liters).toFixed(1)} л (${Number(saved.cost_total).toFixed(2)} грн)!`,
-        'success'
-      );
+      if (saved && saved._queuedOffline) {
+        showToast(`📥 Прийом +${liters.toFixed(1)} л збережено в офлайн-чергу`, 'warning');
+      } else {
+        showToast(
+          `Паливо оприбутковано: +${Number(saved.liters).toFixed(1)} л (${Number(saved.cost_total).toFixed(2)} грн)!`,
+          'success'
+        );
+      }
     }
 
     document.getElementById('recCostTotal').value = '';
@@ -647,16 +668,31 @@ document.getElementById('transferForm').addEventListener('submit', async (e) => 
 
   try {
     if (typeof window.checkTransferClientBounds === 'function' && !window.checkTransferClientBounds()) return;
-    const savedTr = await api('/fuel/transfer', { method: 'POST', body: JSON.stringify(body) });
+    const { stock: selSt, gen: selGen } = window._getSelectedTransferEntities();
+    const savedTr = await api('/fuel/transfer', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      offlineMeta: {
+        action_type: 'fuel_transfer',
+        title: 'Заправка бака генератора',
+        summary: `+${Number(body.liters).toFixed(1)} л зі складу «${selSt?.name || 'Склад'}» у «${selGen?.name || 'Генератор'}»`,
+        facility_id: currentFacilityId,
+        generator_id: body.generator_id,
+      }
+    });
     closeModal('modalTransfer');
-    let toastMsg = `Бак генератора заправлено (+${Number(savedTr.liters || body.liters).toFixed(1)} л)!`;
-    if (savedTr.used_from_reserve_l !== null && savedTr.used_from_reserve_l !== undefined) {
-      const parts = [];
-      if (Number(savedTr.used_from_reserve_l) > 0) parts.push(`${Number(savedTr.used_from_reserve_l).toFixed(1)} л з резерву`);
-      if (Number(savedTr.opened_canisters_count) > 0) parts.push(`${Number(savedTr.opened_canisters_count)} каністр`);
-      if (parts.length > 0) toastMsg += ` (${parts.join(' + ')}, у резерві: ${Number(savedTr.canister_reserve_after_l || 0).toFixed(1)} л)`;
+    if (savedTr && savedTr._queuedOffline) {
+      showToast(`📥 Заправку бака (+${Number(body.liters).toFixed(1)} л) збережено в офлайн-чергу`, 'warning');
+    } else {
+      let toastMsg = `Бак генератора заправлено (+${Number(savedTr.liters || body.liters).toFixed(1)} л)!`;
+      if (savedTr.used_from_reserve_l !== null && savedTr.used_from_reserve_l !== undefined) {
+        const parts = [];
+        if (Number(savedTr.used_from_reserve_l) > 0) parts.push(`${Number(savedTr.used_from_reserve_l).toFixed(1)} л з резерву`);
+        if (Number(savedTr.opened_canisters_count) > 0) parts.push(`${Number(savedTr.opened_canisters_count)} каністр`);
+        if (parts.length > 0) toastMsg += ` (${parts.join(' + ')}, у резерві: ${Number(savedTr.canister_reserve_after_l || 0).toFixed(1)} л)`;
+      }
+      showToast(toastMsg, 'success');
     }
-    showToast(toastMsg, 'success');
     loadAllData();
     loadFuelData();
   } catch (_) {}
@@ -1086,18 +1122,31 @@ document.getElementById('canisterActionForm')?.addEventListener('submit', async 
   const comment = document.getElementById('canActionComment').value.trim() || null;
 
   try {
+    const poolObj = (window._cachedCanisterPools || []).find(p => Number(p.id) === Number(poolId));
     if (mode === 'dispatch') {
-      await api(`/fuel/canisters/${encodeURIComponent(poolId)}/dispatch`, {
+      const res = await api(`/fuel/canisters/${encodeURIComponent(poolId)}/dispatch`, {
         method: 'POST',
-        body: JSON.stringify({ count, comment })
+        body: JSON.stringify({ count, comment }),
+        offlineMeta: {
+          action_type: 'canister_dispatch',
+          title: 'Відправка каністр на АЗС',
+          summary: `Відправка ${count} порожніх каністр («${poolObj?.name || 'Пул'}»)`,
+          facility_id: poolObj?.facility_id || currentFacilityId,
+        }
       });
-      showToast(`Відправлено на заправку: ${count} каністр`, 'success');
+      showToast(res?._queuedOffline ? `📥 Відправку ${count} каністр збережено в офлайн-чергу` : `Відправлено на заправку: ${count} каністр`, res?._queuedOffline ? 'warning' : 'success');
     } else {
-      await api(`/fuel/canisters/${encodeURIComponent(poolId)}/return-empty`, {
+      const res = await api(`/fuel/canisters/${encodeURIComponent(poolId)}/return-empty`, {
         method: 'POST',
-        body: JSON.stringify({ count, comment })
+        body: JSON.stringify({ count, comment }),
+        offlineMeta: {
+          action_type: 'canister_return_empty',
+          title: 'Повернення порожніх каністр',
+          summary: `Повернення ${count} порожніх каністр («${poolObj?.name || 'Пул'}»)`,
+          facility_id: poolObj?.facility_id || currentFacilityId,
+        }
       });
-      showToast(`Повернуто порожніми: ${count} каністр`, 'success');
+      showToast(res?._queuedOffline ? `📥 Повернення ${count} каністр збережено в офлайн-чергу` : `Повернуто порожніми: ${count} каністр`, res?._queuedOffline ? 'warning' : 'success');
     }
     closeModal('modalCanisterAction');
     await Promise.allSettled([loadFuelData(), loadAllData()]);

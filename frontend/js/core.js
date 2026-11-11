@@ -368,15 +368,46 @@ function extractErrorMessage(data, fallback) {
   return fallback;
 }
 
-// API Helper
+// API Helper (with IndexedDB Read Cache & Offline Mutation Queue)
 async function api(endpoint, options = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  const { offlineMeta, suppressToast, headers: optHeaders, ...fetchOpts } = options;
+  const headers = { 'Content-Type': 'application/json', ...(optHeaders || {}) };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  const method = (fetchOpts.method || 'GET').toUpperCase();
+  let parsedBody = null;
+  let idempotencyKey = null;
+
+  if (method !== 'GET' && offlineMeta && typeof window.OfflineQueue === 'object') {
+    try {
+      parsedBody = typeof fetchOpts.body === 'string'
+        ? JSON.parse(fetchOpts.body)
+        : (fetchOpts.body && typeof fetchOpts.body === 'object' ? { ...fetchOpts.body } : {});
+    } catch (_) {
+      parsedBody = {};
+    }
+    idempotencyKey = parsedBody.idempotency_key || headers['Idempotency-Key'] || window.OfflineQueue.createIdempotencyKey();
+    parsedBody.idempotency_key = idempotencyKey;
+    headers['Idempotency-Key'] = idempotencyKey;
+    fetchOpts.body = JSON.stringify(parsedBody);
+
+    if (!navigator.onLine) {
+      const qItem = await window.OfflineQueue.enqueueMutation(endpoint, method, parsedBody, offlineMeta, idempotencyKey);
+      return { _queuedOffline: true, queueItem: qItem };
+    }
+  }
+
   try {
-    const res = await fetch(`/api/v1${endpoint}`, { ...options, headers });
+    const res = await fetch(`/api/v1${endpoint}`, { ...fetchOpts, headers });
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      const gatewayErr = new Error(`Сервер тимчасово недоступний (${res.status})`);
+      gatewayErr.httpStatus = res.status;
+      gatewayErr.isOffline = true;
+      throw gatewayErr;
+    }
+
     const data = await res.json().catch(() => null);
 
     if (res.status === 401) {
@@ -385,10 +416,14 @@ async function api(endpoint, options = {}) {
         localStorage.removeItem('sd_token');
         sessionStorage.removeItem('sd_token');
         showAuthScreen();
-        throw new Error('Сесія закінчилась. Будь ласка, увійдіть знову');
+        const authErr = new Error('Сесія закінчилась. Будь ласка, увійдіть знову');
+        authErr.isAuthError = true;
+        throw authErr;
       } else {
         const msg = extractErrorMessage(data, 'Невірний логін або пароль');
-        throw new Error(msg);
+        const loginErr = new Error(msg);
+        loginErr.isAuthError = true;
+        throw loginErr;
       }
     }
 
@@ -396,9 +431,35 @@ async function api(endpoint, options = {}) {
       const msg = extractErrorMessage(data, `Помилка сервера (${res.status})`);
       throw new Error(msg);
     }
+
+    if (typeof window.OfflineQueue === 'object') {
+      window.OfflineQueue.setOfflineMode(false);
+      if (method === 'GET' && window.OfflineQueue.shouldCacheEndpoint(endpoint)) {
+        window.OfflineQueue.cachePut(endpoint, data);
+      }
+    }
     return data;
   } catch (err) {
-    showToast(err.message, 'error');
+    const oq = typeof window.OfflineQueue === 'object' ? window.OfflineQueue : null;
+    if (!err.isAuthError && oq && oq.isNetworkFailure(err, err?.httpStatus)) {
+      err.isOffline = true;
+      if (method === 'GET' && oq.shouldCacheEndpoint(endpoint)) {
+        const cached = await oq.cacheGet(endpoint);
+        if (cached && cached.data !== undefined && cached.data !== null) {
+          oq.setOfflineMode(true, cached.updated_at);
+          return cached.data;
+        }
+      }
+      if (method !== 'GET' && offlineMeta && parsedBody) {
+        const qItem = await oq.enqueueMutation(endpoint, method, parsedBody, offlineMeta, idempotencyKey);
+        return { _queuedOffline: true, queueItem: qItem };
+      }
+      oq.setOfflineMode(true);
+    }
+
+    if (!suppressToast) {
+      showToast(err.message, 'error');
+    }
     throw err;
   }
 }
@@ -491,6 +552,7 @@ window.openModal = function (id) {
   if (id === 'modalNewStock') setupNewStockModal();
   if (id === 'modalAdjustment') openAdjustmentModal();
   if (id === 'modalExportAudit') openAuditExportModal();
+  if (id === 'modalOfflineQueue' && typeof window.OfflineQueue === 'object') window.OfflineQueue.renderQueueModal();
   if (typeof window.updateOperationalSafetyBanners === 'function') {
     window.updateOperationalSafetyBanners();
   }

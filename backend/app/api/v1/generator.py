@@ -27,6 +27,7 @@ from backend.app.services.generator_service import (
     restore_generator, transfer_generator_facility, reconcile_generator_state,
     get_generator_cooldown_remaining, get_generators_cooldown_map
 )
+from backend.app.services.idempotency_service import resolve_idempotency_key, run_idempotent_endpoint
 
 
 def format_seconds(seconds: Optional[int]) -> Optional[str]:
@@ -229,6 +230,7 @@ async def api_start_generator(
         facility_id=eff_fac_id,
         include_archived=True
     )
+    idem_key = resolve_idempotency_key(request, data.idempotency_key)
     run = await start_generator(
         db=db,
         generator_id=gen.id,
@@ -237,7 +239,7 @@ async def api_start_generator(
         ip_address=get_client_ip(request),
         force_start_with_maintenance=data.force_start_with_maintenance,
         force_start_reason=data.force_start_reason,
-        idempotency_key=data.idempotency_key,
+        idempotency_key=idem_key,
         facility_id=eff_fac_id,
         skip_cooldown=getattr(data, "skip_cooldown", False)
     )
@@ -253,21 +255,33 @@ async def api_stop_generator(
 ):
     await verify_generator_facility_access(db, current_user, data.generator_id)
     eff_fac_id = None if is_user_admin_or_super(current_user) else current_user.facility_id
-    gen = await get_or_create_default_generator(
-        db,
-        generator_id=data.generator_id,
-        facility_id=eff_fac_id,
-        include_archived=True
-    )
-    run = await stop_generator(
+
+    async def _exec():
+        gen = await get_or_create_default_generator(
+            db,
+            generator_id=data.generator_id,
+            facility_id=eff_fac_id,
+            include_archived=True
+        )
+        run = await stop_generator(
+            db=db,
+            generator_id=gen.id,
+            user_id=current_user.id,
+            stop_data=data,
+            ip_address=get_client_ip(request),
+            facility_id=eff_fac_id
+        )
+        return run_to_out(run, user_name=current_user.full_name)
+
+    return await run_idempotent_endpoint(
         db=db,
-        generator_id=gen.id,
-        user_id=current_user.id,
-        stop_data=data,
-        ip_address=get_client_ip(request),
-        facility_id=eff_fac_id
+        request=request,
+        current_user=current_user,
+        endpoint="/generator/stop",
+        body_data=data,
+        success_status=status.HTTP_200_OK,
+        action_fn=_exec,
     )
-    return run_to_out(run, user_name=current_user.full_name)
 
 
 @router.post("/manual-run", response_model=GeneratorRunOut, status_code=status.HTTP_201_CREATED)
@@ -286,6 +300,7 @@ async def api_add_manual_run(
         facility_id=eff_fac_id,
         include_archived=True
     )
+    data.idempotency_key = resolve_idempotency_key(request, data.idempotency_key)
     run = await add_manual_run(
         db=db,
         generator_id=gen.id,

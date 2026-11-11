@@ -9,6 +9,7 @@ class FaultCreate(BaseModel):
     description: str = Field(..., min_length=5)
     priority: str = Field(default="MEDIUM", pattern="^(LOW|MEDIUM|HIGH|CRITICAL)$")
     photo_urls: Optional[str] = None
+    idempotency_key: Optional[str] = Field(None, max_length=64)
 
 
 class FaultStatusUpdate(BaseModel):

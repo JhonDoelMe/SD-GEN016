@@ -42,6 +42,7 @@ from backend.app.services.canister_service import (
     list_canister_transactions,
     to_pool_out,
 )
+from backend.app.services.idempotency_service import resolve_idempotency_key, run_idempotent_endpoint
 
 router = APIRouter(prefix="/fuel", tags=["Паливо"])
 
@@ -176,6 +177,7 @@ async def create_receipt(
 
     user_perms = [perm.code for role in (current_user.roles or []) for perm in (role.permissions or [])]
     is_admin = is_user_admin_or_super(current_user)
+    data.idempotency_key = resolve_idempotency_key(request, data.idempotency_key)
 
     receipt = await add_fuel_receipt(
         db=db,
@@ -289,6 +291,7 @@ async def create_transfer(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
         verify_facility_access(current_user, st.facility_id)
 
+    data.idempotency_key = resolve_idempotency_key(request, data.idempotency_key)
     transfer = await transfer_fuel_to_tank(
         db=db,
         transfer_data=data,
@@ -470,8 +473,20 @@ async def dispatch_canisters_api(
     existing = await db.get(CanisterPool, pool_id)
     if existing:
         verify_facility_access(current_user, existing.facility_id)
-    pool = await dispatch_canisters(db, pool_id, data, current_user.id, get_client_ip(request))
-    return to_pool_out(pool)
+
+    async def _exec():
+        pool = await dispatch_canisters(db, pool_id, data, current_user.id, get_client_ip(request))
+        return to_pool_out(pool)
+
+    return await run_idempotent_endpoint(
+        db=db,
+        request=request,
+        current_user=current_user,
+        endpoint=f"/fuel/canisters/{pool_id}/dispatch",
+        body_data=data,
+        success_status=status.HTTP_200_OK,
+        action_fn=_exec,
+    )
 
 
 @router.post("/canisters/{pool_id}/return-empty", response_model=CanisterPoolOut)
@@ -486,8 +501,20 @@ async def return_empty_canisters_api(
     existing = await db.get(CanisterPool, pool_id)
     if existing:
         verify_facility_access(current_user, existing.facility_id)
-    pool = await return_empty_canisters(db, pool_id, data, current_user.id, get_client_ip(request))
-    return to_pool_out(pool)
+
+    async def _exec():
+        pool = await return_empty_canisters(db, pool_id, data, current_user.id, get_client_ip(request))
+        return to_pool_out(pool)
+
+    return await run_idempotent_endpoint(
+        db=db,
+        request=request,
+        current_user=current_user,
+        endpoint=f"/fuel/canisters/{pool_id}/return-empty",
+        body_data=data,
+        success_status=status.HTTP_200_OK,
+        action_fn=_exec,
+    )
 
 
 @router.post("/canisters/{pool_id}/receive", response_model=CanisterPoolOut)
@@ -504,11 +531,24 @@ async def receive_canisters_api(
         verify_facility_access(current_user, existing.facility_id)
     user_perms = [perm.code for role in (current_user.roles or []) for perm in (role.permissions or [])]
     is_admin = is_user_admin_or_super(current_user)
-    pool = await receive_canisters(
-        db, pool_id, data, current_user.id, get_client_ip(request),
-        user_permissions=user_perms, is_admin=is_admin,
+    data.idempotency_key = resolve_idempotency_key(request, data.idempotency_key)
+
+    async def _exec():
+        pool = await receive_canisters(
+            db, pool_id, data, current_user.id, get_client_ip(request),
+            user_permissions=user_perms, is_admin=is_admin,
+        )
+        return to_pool_out(pool)
+
+    return await run_idempotent_endpoint(
+        db=db,
+        request=request,
+        current_user=current_user,
+        endpoint=f"/fuel/canisters/{pool_id}/receive",
+        body_data=data,
+        success_status=status.HTTP_200_OK,
+        action_fn=_exec,
     )
-    return to_pool_out(pool)
 
 
 @router.get("/canisters/transactions", response_model=List[CanisterTransactionOut])

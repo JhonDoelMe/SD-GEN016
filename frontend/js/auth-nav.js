@@ -14,14 +14,22 @@ async function checkAuth() {
   }
 
   try {
-    currentUser = await api('/auth/me');
+    currentUser = await api('/auth/me', { suppressToast: true });
   } catch (err) {
-    // Only real auth error redirects to login modal
-    token = null;
-    localStorage.removeItem('sd_token');
-    sessionStorage.removeItem('sd_token');
-    showAuthScreen();
-    return;
+    if (err && err.isOffline && token && typeof window.OfflineQueue === 'object') {
+      const cachedMe = await window.OfflineQueue.cacheGet('/auth/me');
+      if (cachedMe && cachedMe.data) {
+        currentUser = cachedMe.data;
+        window.OfflineQueue.setOfflineMode(true, cachedMe.updated_at);
+      }
+    }
+    if (!currentUser) {
+      token = null;
+      localStorage.removeItem('sd_token');
+      sessionStorage.removeItem('sd_token');
+      showAuthScreen();
+      return;
+    }
   }
 
   // User is authenticated
@@ -36,6 +44,12 @@ async function checkAuth() {
       try { await refreshServerStatus(); } catch (_) {}
     }
     await loadAllData();
+    if (typeof window.OfflineQueue === 'object') {
+      window.OfflineQueue.updateOfflineUIStatus();
+      if (navigator.onLine) {
+        window.OfflineQueue.syncOfflineQueue({ silent: true }).catch(() => {});
+      }
+    }
     if (typeof window.syncPushSubscriptionWithServer === 'function') {
       window.syncPushSubscriptionWithServer(true);
     }
@@ -101,7 +115,14 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     hideAuthScreen();
     applyRolePermissionsUI();
     showToast(`Вітаємо, ${currentUser.full_name}!`, 'success');
-    loadAllData();
+    if (typeof window.OfflineQueue === 'object') {
+      await window.OfflineQueue.cachePut('/auth/me', currentUser);
+      window.OfflineQueue.updateOfflineUIStatus();
+    }
+    await loadAllData();
+    if (typeof window.OfflineQueue === 'object' && navigator.onLine) {
+      window.OfflineQueue.syncOfflineQueue({ silent: true }).catch(() => {});
+    }
     if (typeof window.syncPushSubscriptionWithServer === 'function') {
       window.syncPushSubscriptionWithServer(true);
     }
@@ -123,8 +144,11 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {
   try {
-    await api('/auth/logout', { method: 'POST' });
+    await api('/auth/logout', { method: 'POST', suppressToast: true });
   } catch (_) {}
+  if (typeof window.OfflineQueue === 'object') {
+    await window.OfflineQueue.cachePut('/auth/me', null);
+  }
   token = null;
   localStorage.removeItem('sd_token');
   sessionStorage.removeItem('sd_token');

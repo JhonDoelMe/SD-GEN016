@@ -5,6 +5,16 @@
 
 ---
 
+## [Unreleased — Етап 4: Справжній Offline-режим PWA (`IndexedDB` + Ідемпотентність + Ручні конфлікти)] — 2026-11-12
+- **Універсальна ідемпотентність операцій на бекенді ([`models/idempotency.py`](backend/app/models/idempotency.py), [`alembic/versions/012_offline_idempotency.py`](backend/alembic/versions/012_offline_idempotency.py), [`services/idempotency_service.py`](backend/app/services/idempotency_service.py))**:
+  - Додано таблицю `idempotency_records` (ключ `idempotency_key` через тіло запиту або заголовок `Idempotency-Key` + SHA-256 хеш тіла запиту).
+  - Повторна відправка вже виконаної офлайн-операції повертає збережену відповідь із заголовком `X-Idempotency-Replayed: true` без дублювання (покрито `/generator/stop`, `/fuel/canisters/{id}/dispatch|return-empty|receive`, `/maintenance/record`, `/faults`, на додачу до `/generator/start`, `/generator/manual-run`, `/fuel/receipt`, `/fuel/transfer`); зміна даних при старому ключі відхиляється як `HTTP 409`.
+- **Клієнтський офлайн-рушій `IndexedDB` ([`frontend/js/offline-queue.js`](frontend/js/offline-queue.js), [`core.js`](frontend/js/core.js), [`auth-nav.js`](frontend/js/auth-nav.js), [`sw.js`](frontend/sw.js))**:
+  - Зберігає останній актуальний знімок даних у `read_cache` (зокрема `/auth/me`, об'єкти, генератори, склади, пули каністр, графіки ТО), щоб перезапуск PWA без інтернету не скидав сесію й дозволяв переглядати об'єкт і створювати операції.
+  - Постановляє операції запуску/зупинки/ручного журналу, заправки, прийому/відправки/повернення каністр, ТО та несправностей у чергу `mutation_queue` з оптимістичним локальним перерахунком залишків у кеші та автоматичною FIFO-синхронізацією при відновленні зв'язку (`online` / автозапуск).
+- **Індикатор зв'язку та ручне вирішення конфліктів ([`frontend/index.html`](frontend/index.html), [`frontend/styles.css`](frontend/styles.css))**:
+  - У шапці додано статус-пігулку `#headerOfflineSyncBadge` та банер `#offlineSyncBanner`; у модалці `#modalOfflineQueue` реалізовано перегляд черги, завантаження актуального стану з сервера при конфлікті (`HTTP 400/404/409/422`), вбудоване редагування полів із генерацією нового `idempotency_key` і повторною відправкою, повтор «як є» або видалення застарілого запису (`sd-gen016-v5.5.0`).
+
 ## [Unreleased — Уніфікація прийому палива в каністрах, коригування аудиту та виправлення UI форм] — 2026-11-11
 - **Єдина логіка оприбуткування палива ([`schemas/fuel.py`](backend/app/schemas/fuel.py), [`canister_service.py`](backend/app/services/canister_service.py), [`frontend/index.html`](frontend/index.html), [`frontend/js/fuel.js`](frontend/js/fuel.js))**:
   - Усунено дублювання «+ Оприбуткувати (Бензовоз)» vs «Привезли каністри»: усі кнопки прийому палива (Дашборд, вкладка «Паливо», рядок пулу каністр) відкривають єдину уніфіковану форму прийому каністр (`POST /api/v1/fuel/canisters/{id}/receive`, `source="auto"`).

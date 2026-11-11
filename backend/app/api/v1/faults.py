@@ -18,6 +18,7 @@ from backend.app.api.deps import (
     verify_generator_facility_access,
 )
 from backend.app.services.fault_service import create_fault, update_fault_status
+from backend.app.services.idempotency_service import run_idempotent_endpoint
 
 router = APIRouter(prefix="/faults", tags=["Несправності"])
 
@@ -80,30 +81,42 @@ async def report_fault(
 ):
     await verify_generator_facility_access(db, current_user, data.generator_id)
     user_fac_id = verify_facility_access(current_user, None)
-    fault = await create_fault(
+
+    async def _exec():
+        fault = await create_fault(
+            db=db,
+            fault_data=data,
+            user_id=current_user.id,
+            ip_address=get_client_ip(request),
+            facility_id=user_fac_id,
+        )
+        return FaultOut(
+            id=fault.id,
+            generator_id=fault.generator_id,
+            user_id=fault.user_id,
+            user_name=current_user.full_name,
+            title=fault.title,
+            description=fault.description,
+            operating_hours=fault.operating_hours,
+            priority=fault.priority,
+            status=fault.status,
+            photo_urls=fault.photo_urls,
+            resolved_by_id=fault.resolved_by_id,
+            resolved_by_name=None,
+            resolution_notes=fault.resolution_notes,
+            resolved_at=fault.resolved_at,
+            created_at=fault.created_at,
+            updated_at=fault.updated_at
+        )
+
+    return await run_idempotent_endpoint(
         db=db,
-        fault_data=data,
-        user_id=current_user.id,
-        ip_address=get_client_ip(request),
-        facility_id=user_fac_id,
-    )
-    return FaultOut(
-        id=fault.id,
-        generator_id=fault.generator_id,
-        user_id=fault.user_id,
-        user_name=current_user.full_name,
-        title=fault.title,
-        description=fault.description,
-        operating_hours=fault.operating_hours,
-        priority=fault.priority,
-        status=fault.status,
-        photo_urls=fault.photo_urls,
-        resolved_by_id=fault.resolved_by_id,
-        resolved_by_name=None,
-        resolution_notes=fault.resolution_notes,
-        resolved_at=fault.resolved_at,
-        created_at=fault.created_at,
-        updated_at=fault.updated_at
+        request=request,
+        current_user=current_user,
+        endpoint="/faults",
+        body_data=data,
+        success_status=status.HTTP_201_CREATED,
+        action_fn=_exec,
     )
 
 

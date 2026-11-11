@@ -82,9 +82,19 @@ document.getElementById('maintForm').addEventListener('submit', async (e) => {
   };
 
   try {
-    await api('/maintenance/record', { method: 'POST', body: JSON.stringify(body) });
+    const res = await api('/maintenance/record', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      offlineMeta: {
+        action_type: 'maint_record',
+        title: 'Фіксація ТО генератора',
+        summary: `${body.maintenance_type === 'SCHEDULED' ? 'Регламентне ТО' : 'Проміжне ТО'}: ${body.work_description}`,
+        facility_id: currentFacilityId,
+        generator_id: currentGeneratorId,
+      }
+    });
     closeModal('modalMaintenance');
-    showToast('ТО успішно зафіксовано в системі!', 'success');
+    showToast(res?._queuedOffline ? '📥 Запис ТО збережено в офлайн-чергу!' : 'ТО успішно зафіксовано в системі!', res?._queuedOffline ? 'warning' : 'success');
     loadAllData();
   } catch (_) {}
 });
@@ -158,12 +168,19 @@ window.submitAdminResetMaint = async function(e) {
   }
 
   try {
-    await api('/maintenance/record', {
+    const res = await api('/maintenance/record', {
       method: 'POST',
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      offlineMeta: {
+        action_type: 'maint_record',
+        title: 'Регламентне ТО (скидання лічильника)',
+        summary: `ТО на ${opHours.toFixed(1)} год: ${body.work_description}`,
+        facility_id: currentFacilityId,
+        generator_id: currentGeneratorId,
+      }
     });
     closeModal('modalAdminResetMaint');
-    showToast(`Лічильник ТО успішно скинуто! Зафіксовано ТО на ${opHours.toFixed(1).replace('.', ',')} год`, 'success');
+    showToast(res?._queuedOffline ? '📥 Скидання/ТО збережено в офлайн-чергу' : `Лічильник ТО успішно скинуто! Зафіксовано ТО на ${opHours.toFixed(1).replace('.', ',')} год`, res?._queuedOffline ? 'warning' : 'success');
     await loadMaintenanceData();
     await loadAllData();
   } catch (err) {
@@ -266,9 +283,19 @@ document.getElementById('faultForm')?.addEventListener('submit', async (e) => {
   };
 
   try {
-    await api('/faults', { method: 'POST', body: JSON.stringify(body) });
+    const res = await api('/faults', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      offlineMeta: {
+        action_type: 'fault_create',
+        title: 'Реєстрація несправності',
+        summary: `${body.title} (${body.priority})`,
+        facility_id: currentFacilityId,
+        generator_id: currentGeneratorId,
+      }
+    });
     closeModal('modalFault');
-    showToast('Заявку про несправність створено!', 'success');
+    showToast(res?._queuedOffline ? '📥 Заявку про несправність збережено в офлайн-чергу' : 'Заявку про несправність створено!', res?._queuedOffline ? 'warning' : 'success');
     loadFaultsData();
     loadGeneratorData();
   } catch (err) {

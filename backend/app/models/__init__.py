@@ -10,6 +10,7 @@ from backend.app.models.audit import AuditLog, SystemAdjustment
 from backend.app.models.settings import SystemSetting
 from backend.app.models.notification import PushSubscription, NotificationLog
 from backend.app.models.security import RevokedToken, AuthAttempt
+from backend.app.models.idempotency import IdempotencyRecord
 
 __all__ = [
     "Base",
@@ -38,4 +39,5 @@ __all__ = [
     "NotificationLog",
     "RevokedToken",
     "AuthAttempt",
+    "IdempotencyRecord",
 ]

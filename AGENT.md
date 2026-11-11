@@ -82,7 +82,7 @@
 ## 2. Технологічний стек
 - **Бекенд:** Python 3.11+ / 3.14+, FastAPI, SQLAlchemy 2.0 (asyncio), SQLite (`aiosqlite`) / PostgreSQL (`asyncpg`), Alembic, OpenPyXL, Pydantic v2, PyJWT, bcrypt, pywebpush, httpx, BeautifulSoup4 (WOG та OKKO парсери).
 - **Фронтенд:** Vanilla JavaScript (ES6+), HTML5, CSS3 (CSS Variables, Flexbox, CSS Grid, Safe Area Insets), Service Worker PWA (`sw.js`).
-- **Тестування:** `pytest`, `pytest-asyncio`, `httpx` (набір із 175 повністю пройдених автоматизованих тестів, 100% успіху).
+- **Тестування:** `pytest`, `pytest-asyncio`, `httpx` (набір із 178 повністю пройдених автоматизованих тестів, 100% успіху).
 
 ---
 
@@ -90,7 +90,7 @@
 ```
 SD-GEN016/
 ├── backend/
-│   ├── alembic/              # Міграції бази даних (001–011)
+│   ├── alembic/              # Міграції бази даних (001–012)
 │   ├── app/
 │   │   ├── api/v1/           # REST контролери (auth, facilities, generator, fuel, maintenance, reports, users, system тощо)
 │   │   ├── core/             # Безпека (JWT, bcrypt), часовий пояс Києва (timezone.py)
@@ -100,10 +100,10 @@ SD-GEN016/
 │   │   ├── config.py         # Налаштування pydantic-settings
 │   │   ├── database.py       # Асинхронний рушій БД та сесії
 │   │   └── main.py           # Точка входу FastAPI додатку
-│   └── tests/                # Асинхронні інтеграційні тести (175 тестів)
+│   └── tests/                # Асинхронні інтеграційні тести (178 тестів)
 ├── frontend/
 │   ├── index.html            # Головний односторінковий інтерфейс (PWA, політики та правила)
-│   ├── js/                   # Модульна клієнтська логіка (12 модулів: core, fuel, admin, yasno тощо)
+│   ├── js/                   # Модульна клієнтська логіка (13 модулів: core, offline-queue, fuel, admin, yasno тощо)
 │   ├── styles.css            # Мобільна та десктопна моделі стилів
 │   ├── manifest.json         # PWA Web App Manifest
 │   ├── sw.js                 # Service Worker (офлайн кеш, WebPush, pushsubscriptionchange)

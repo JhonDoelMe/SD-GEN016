@@ -21,6 +21,7 @@ from backend.app.models.maintenance import MaintenanceSchedule, MaintenanceRecor
 from backend.app.models.fault import Fault
 from backend.app.models.audit import AuditLog, SystemAdjustment
 from backend.app.models.user import User
+from backend.app.models.idempotency import IdempotencyRecord
 
 # Default WOG Ukraine retail fuel prices fallback (UAH per liter)
 DEFAULT_INTERNET_PRICES: Dict[str, float] = {
@@ -1019,6 +1020,7 @@ async def perform_system_reset(
         await db.execute(delete(Fault))
         await db.execute(delete(SystemAdjustment))
         await db.execute(delete(AuditLog))
+        await db.execute(delete(IdempotencyRecord))
 
         await db.execute(
             update(Generator)
@@ -1113,6 +1115,7 @@ async def perform_system_reset(
         await db.execute(delete(Generator))
         await db.execute(delete(FuelStock))
         await db.execute(delete(SystemSetting))
+        await db.execute(delete(IdempotencyRecord))
 
         # Remove non-superadmin users
         non_admins_res = await db.execute(select(User).where(User.is_superadmin == False))

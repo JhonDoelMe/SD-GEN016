@@ -4093,3 +4093,161 @@ button[disabled] {
   opacity: 0.42;
   cursor: not-allowed;
 }
+
+/* ==========================================
+   📴 Offline Queue, Banner & Conflict Resolution UI
+   ========================================== */
+.pill-offline-sync {
+  white-space: nowrap;
+}
+.pill-offline-sync.pill-sync-online {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #4ade80;
+}
+.pill-offline-sync.pill-sync-offline {
+  background: rgba(249, 115, 22, 0.16);
+  border-color: rgba(249, 115, 22, 0.45);
+  color: #fb923c;
+}
+.pill-offline-sync.pill-sync-pending {
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+}
+.pill-offline-sync.pill-sync-conflict {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.55);
+  color: #f87171;
+  animation: pulseBadge 1.8s infinite;
+}
+
+.offline-sync-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 1rem;
+  border-radius: 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.88rem;
+  border: 1px solid var(--border-color);
+  background: rgba(245, 158, 11, 0.1);
+}
+.offline-sync-banner.banner-offline {
+  border-color: rgba(249, 115, 22, 0.45);
+  background: rgba(249, 115, 22, 0.12);
+}
+.offline-sync-banner.banner-conflict {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.12);
+}
+.offline-sync-banner-text {
+  flex: 1 1 260px;
+  line-height: 1.4;
+}
+.offline-sync-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.offline-modal-summary {
+  display: flex;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.offline-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.offline-queue-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 0.65rem;
+  padding: 0.85rem 0.95rem;
+}
+.offline-queue-card.card-conflict {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.06);
+}
+.offline-queue-card.card-pending {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.oq-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+.oq-time {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.oq-fac-chip {
+  font-size: 0.76rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+.oq-summary {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  margin-bottom: 0.45rem;
+}
+.offline-error-box {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 0.45rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.82rem;
+  color: #fca5a5;
+  margin-bottom: 0.5rem;
+}
+[data-theme="light"] .offline-error-box {
+  color: #b91c1c;
+}
+.offline-server-snap {
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 0.45rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.81rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.45;
+}
+.offline-server-snap .snap-title {
+  font-weight: 600;
+  color: #38bdf8;
+  margin-bottom: 0.2rem;
+}
+.offline-edit-box {
+  border-top: 1px dashed var(--border-color);
+  padding-top: 0.65rem;
+  margin-top: 0.5rem;
+}
+.oq-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+.offline-empty-state {
+  text-align: center;
+  padding: 1.75rem 1rem;
+  color: var(--text-muted);
+}

@@ -22,6 +22,7 @@ from backend.app.api.deps import (
 from backend.app.services.maintenance_service import (
     get_maintenance_schedule_status, record_maintenance, recalculate_schedule
 )
+from backend.app.services.idempotency_service import run_idempotent_endpoint
 
 router = APIRouter(prefix="/maintenance", tags=["Технічне обслуговування"])
 
@@ -111,27 +112,38 @@ async def create_maintenance_record(
     await verify_generator_facility_access(db, current_user, data.generator_id)
     user_fac_id = verify_facility_access(current_user, None)
 
-    record = await record_maintenance(
-        db=db,
-        data=data,
-        user_id=current_user.id,
-        ip_address=get_client_ip(request),
-        facility_id=user_fac_id,
-    )
+    async def _exec():
+        record = await record_maintenance(
+            db=db,
+            data=data,
+            user_id=current_user.id,
+            ip_address=get_client_ip(request),
+            facility_id=user_fac_id,
+        )
 
-    return MaintenanceRecordOut(
-        id=record.id,
-        generator_id=record.generator_id,
-        user_id=record.user_id,
-        user_name=current_user.full_name,
-        maintenance_type=record.maintenance_type,
-        operating_hours=record.operating_hours,
-        work_description=record.work_description,
-        consumables_used=record.consumables_used,
-        cost=record.cost,
-        comment=record.comment,
-        photo_urls=record.photo_urls,
-        created_at=record.created_at
+        return MaintenanceRecordOut(
+            id=record.id,
+            generator_id=record.generator_id,
+            user_id=record.user_id,
+            user_name=current_user.full_name,
+            maintenance_type=record.maintenance_type,
+            operating_hours=record.operating_hours,
+            work_description=record.work_description,
+            consumables_used=record.consumables_used,
+            cost=record.cost,
+            comment=record.comment,
+            photo_urls=record.photo_urls,
+            created_at=record.created_at
+        )
+
+    return await run_idempotent_endpoint(
+        db=db,
+        request=request,
+        current_user=current_user,
+        endpoint="/maintenance/record",
+        body_data=data,
+        success_status=status.HTTP_201_CREATED,
+        action_fn=_exec,
     )
 
 

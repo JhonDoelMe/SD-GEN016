@@ -179,11 +179,13 @@ class CanisterPoolOut(BaseModel):
 class CanisterDispatchRequest(BaseModel):
     count: int = Field(..., ge=1, description="Кількість порожніх каністр для відправки на заправку")
     comment: Optional[str] = None
+    idempotency_key: Optional[str] = Field(None, max_length=64)
 
 
 class CanisterReturnEmptyRequest(BaseModel):
     count: int = Field(..., ge=1, description="Кількість каністр, повернених порожніми без заправки")
     comment: Optional[str] = None
+    idempotency_key: Optional[str] = Field(None, max_length=64)
 
 
 class CanisterReceiveRequest(BaseModel):

@@ -31,6 +31,7 @@ class MaintenanceRecordCreate(BaseModel):
     cost: float = Field(default=0.0, ge=0)
     comment: Optional[str] = None
     photo_urls: Optional[str] = None
+    idempotency_key: Optional[str] = Field(None, max_length=64)
 
 
 class MaintenanceRecordOut(BaseModel):

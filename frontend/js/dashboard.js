@@ -629,15 +629,26 @@ document.getElementById('mainActionBtn').addEventListener('click', async () => {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Запуск...';
 
     try {
-      await api('/generator/start', {
+      const startRes = await api('/generator/start', {
         method: 'POST',
         body: JSON.stringify({
           generator_id: currentGeneratorId,
           fuel_level_l: currentGenerator.fuel_tank_level_l,
           force_start: forceStart
-        })
+        }),
+        offlineMeta: {
+          action_type: 'gen_start',
+          title: 'Запуск генератора',
+          summary: `${currentGenerator.name || 'Генератор'} (бак ${Number(currentGenerator.fuel_tank_level_l || 0).toFixed(1)} л)`,
+          facility_id: currentFacilityId,
+          generator_id: currentGeneratorId,
+        }
       });
-      showToast('Генератор успішно запущено!', 'success');
+      if (startRes && startRes._queuedOffline) {
+        showToast('📥 Запуск генератора збережено в офлайн-чергу (буде надіслано при появі мережі)', 'warning');
+      } else {
+        showToast('Генератор успішно запущено!', 'success');
+      }
       await loadAllData();
     } catch (_) {
       btn.innerHTML = oldText;
@@ -771,12 +782,23 @@ document.getElementById('manualRunForm')?.addEventListener('submit', async (e) =
   try {
     const res = await api('/generator/manual-run', {
       method: 'POST',
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      offlineMeta: {
+        action_type: 'gen_manual_run',
+        title: 'Ручний запис роботи (журнал)',
+        summary: `${currentGenerator?.name || 'Генератор'}: ${startVal} → ${endVal}`,
+        facility_id: currentFacilityId,
+        generator_id: currentGeneratorId,
+      }
     });
     closeModal('modalManualRun');
-    const durText = res.duration_formatted || `${res.duration_hours} год`;
-    const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l.toFixed(1)} л` : '-';
-    showToast(`Сеанс роботи успішно внесено в журнал! Час: ${durText}, витрата: ${fuelText}`, 'success');
+    if (res && res._queuedOffline) {
+      showToast('📥 Ручний запис роботи збережено в офлайн-чергу', 'warning');
+    } else {
+      const durText = res.duration_formatted || `${res.duration_hours} год`;
+      const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l.toFixed(1)} л` : '-';
+      showToast(`Сеанс роботи успішно внесено в журнал! Час: ${durText}, витрата: ${fuelText}`, 'success');
+    }
     loadGeneratorData();
     loadAllData();
     loadRecentRuns();
@@ -839,14 +861,25 @@ document.getElementById('stopGenForm').addEventListener('submit', async (e) => {
         end_fuel_level_l: endFuel,
         note: note,
         force_confirm: forceConfirm
-      })
+      }),
+      offlineMeta: {
+        action_type: 'gen_stop',
+        title: 'Зупинка генератора',
+        summary: `${currentGenerator?.name || 'Генератор'}${endHours != null ? ` (мотогод: ${endHours})` : ''}`,
+        facility_id: currentFacilityId,
+        generator_id: currentGeneratorId,
+      }
     });
     closeModal('modalStopGen');
     stopRunStopwatch();
-    startCooldownTimer(60);
-    const durText = res.duration_formatted || formatDuration(res.duration_seconds) || `${res.duration_hours} год`;
-    const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l} л` : '-';
-    showToast(`Генератор зупинено! Відпрацьовано: ${durText}, розхід: ${fuelText}`, 'success');
+    if (res && res._queuedOffline) {
+      showToast('📥 Зупинку генератора збережено в офлайн-чергу', 'warning');
+    } else {
+      startCooldownTimer(60);
+      const durText = res.duration_formatted || formatDuration(res.duration_seconds) || `${res.duration_hours} год`;
+      const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l} л` : '-';
+      showToast(`Генератор зупинено! Відпрацьовано: ${durText}, розхід: ${fuelText}`, 'success');
+    }
     loadAllData();
   } catch (err) {
     showToast(err.message || 'Помилка при зупинці генератора', 'error');
