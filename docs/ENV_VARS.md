@@ -1,9 +1,9 @@
 # Змінні середовища та Конфігурація (Environment Variables)
 
-**Версія документа:** 5.0.0 (Air Raid Safety, Weather Intelligence, Cooldown & Security Hardening)  
-**Дата набрання чинності:** 4 листопада 2026 року
+**Версія документа:** 5.4.0 (Dual-Provider Alert Fusion, WebPush Alerts, Weather & Security Hardening)  
+**Дата набрання чинності:** 11 листопада 2026 року
 
-Конфігурація системи **SD-GEN016 v5.0.0** розділена на два чітких рівні:
+Конфігурація системи **SD-GEN016 v5.4.0** розділена на два чітких рівні:
 1. **Статичні інфраструктурні параметри** — зберігаються у файлі `.env` на сервері та зчитуються під час запуску бекенду (підключення до БД, секрети шифрування, базові системні шляхи).
 2. **Динамічні бізнес-налаштування (Runtime Settings)** — зберігаються в реляційній базі даних (таблиця `system_settings`), змінюються на льоту через веб-панель або REST API без потреби перезавантаження контейнерів або сервісів.
 
@@ -14,7 +14,7 @@
 | Змінна | Призначення | Значення за замовчуванням | Рекомендації для Production |
 |---|---|---|---|
 | `APP_ENV` | Режим оточення додатку (`production`, `development`) | `production` | Встановлювати `production` для блокування налагоджувальних деталей |
-| `PRIMARY_DOMAIN` | Основний робочий домен системи (підставляється в Nginx та PWA) | `generator-016.pp.ua` | Ваш реальний робочий FQDN домен |
+| `PRIMARY_DOMAIN` | Основний робочий домен системи (підставляється в Nginx та PWA) | `sdgen.pp.ua` | Ваш реальний робочий FQDN домен |
 | `APP_SECRET_KEY` | Секретний ключ для підпису JWT токенів та сесій (HMAC-SHA256) | `change_this_to_a_secure_random_secret_key...` | Випадковий криптографічний ключ довжиною від 32 до 64 символів |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Час дії JWT токена доступу у хвилинах | `1440` (24 години) | Рекомендовано від `480` (8 годин) до `1440` (доба) |
 | `INITIAL_ADMIN_LOGIN` | Логін первинного облікового запису SuperAdmin | `superadmin` | Змінити на унікальний логін організації |
@@ -30,8 +30,8 @@
 | `POSTGRES_USER` | Користувач бази даних PostgreSQL (для Docker Compose) | `sd_user` | Унікальне системне ім'я користувача СУБД |
 | `POSTGRES_PASSWORD` | Пароль користувача бази даних PostgreSQL | `sd_password` | Складний згенерований пароль СУБД |
 | `POSTGRES_DB` | Назва робочої бази даних PostgreSQL | `sd_gen016` | Найменування виробничої бази даних |
-| `OPENWEATHER_API_KEY` | Ключ доступу до OpenWeatherMap API | `""` (пустий) | Робочий API-ключ OpenWeather (при відсутності активується детермінована локальна модель) |
-| `WEATHER_CACHE_MINUTES` | Період кешування погодних даних у пам'яті | `15` | Інтервал від 10 до 30 хв для мінімізації запитів |
+| `OPENWEATHER_API_KEY` | Ключ доступу до OpenWeatherMap API | `""` (пустий) | Робочий API-ключ OpenWeather для поточної погоди та 5-денного прогнозу |
+| `WEATHER_CACHE_MINUTES` | Період кешування погодних даних у пам'яті | `20` | Інтервал від 10 до 30 хв для мінімізації запитів |
 | `ALERTS_IN_UA_TOKEN` | API-токен офіційного сервісу alerts.in.ua | `""` (пустий) | Провайдер №1 тривог (паралельна взаємна верифікація та типи ракетних/БПЛА загроз) |
 | `UKRAINE_ALARM_API_KEY` | API-ключ сервісу api.ukrainealarm.com (Stfalcon / Ajax) | `""` (пустий) | Провайдер №2 тривог (паралельна взаємна верифікація сирен ДСНС та страхування відбою) |
 | `ALERTS_CACHE_SECONDS` | Період кешування статусу тривог (та глобального кешу alerts.in.ua) | `15` | Від 15 до 30 секунд (з підтримкою HTTP 304 `If-Modified-Since`) |
@@ -58,7 +58,12 @@
 - **`auto_fetch_fuel_prices`**: Прапорець фонового оновлення роздрібних цін мереж WOG та OKKO.
 - **`default_maintenance_interval_hours`**: Стандартний інтервал регламентного ТО (за замовчуванням `300.0 год`).
 - **`backup_last_auto_run_date`**: Системна дата останнього успішного автобекапу за розкладом (`YYYY-MM-DD`), яка виключає повторні хибні спрацювання планувальника при перезавантаженні контейнера.
-- **`backup_auto_enabled`, `backup_schedule_time`, `backup_frequency`, `backup_retention_count`**: Параметри автоматичного резервного копіювання за розкладом.
+- **`backup_auto_enabled`, `backup_schedule_time`, `backup_frequency`, `backup_retention_count`, `backup_default_type`**: Параметри автоматичного резервного копіювання за розкладом.
+- **`default_facility_id`, `default_generator_id`, `default_fuel_stock_id`**: Стартовий ланцюжок за замовчуванням (`Об'єкт ➔ Генератор ➔ Склад ГСМ`).
+- **`max_continuous_run_hours`, `auto_stop_on_schedule_end`, `notify_running_heartbeat`, `heartbeat_interval_hours`**: Параметри операційних запобіжників (`12.0 год`, автостоп після зміни, пульс-нагадування кожні `4.0 год`).
+- **`fuel_receipt_max_liters_warning`, `fuel_receipt_min_price`, `fuel_receipt_max_price`**: Поріг контролю аномальних чеків (`1000.0 л`, `15.0–250.0 грн/л`).
+- **`notifications_enabled`, `notify_generator_start`, `notify_generator_stop`, `notify_low_fuel`, `low_fuel_threshold_l`, `notify_maintenance`, `max_maintenance_notifications_per_day`, `notify_critical_faults`, `notify_yasno_outages`, `notify_air_alerts`, `notify_air_alert_end`**: Правила Web Push сповіщень (включно з тривогами, відбоями та відключеннями YASNO).
+- **`smtp_enabled`, `smtp_primary_*`, `smtp_fallback_*`, `email_notify_*`, `email_weekly_*`, `last_weekly_digest_date`**: Конфігурація SMTP Failover (Gmail / Ukr.net) та щотижневої розсилки Excel-дайджесту.
 
 ---
 

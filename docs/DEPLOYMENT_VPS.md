@@ -1,7 +1,7 @@
 # Розгортання на VPS та налаштування PWA
 
-**Версія документа:** 5.0.0 (Docker Infrastructure Hardened)  
-**Дата набрання чинності:** 2 листопада 2026 року  
+**Версія документа:** 5.4.0 (Docker Infrastructure Hardened, Gzip & Static Caching, Alembic Commit Fix)  
+**Дата набрання чинності:** 11 листопада 2026 року  
 
 Цей документ описує покроковий процес розгортання **SD-GEN016** на окремому віртуальному сервері (VPS) під керуванням Ubuntu/Debian із власним доменом та сертифікатом HTTPS.
 
@@ -44,6 +44,7 @@ nano .env
 - `APP_SECRET_KEY`: згенеруйте надійний 64-символьний ключ (`python -c "import secrets; print(secrets.token_urlsafe(64))"`).
 - `INITIAL_ADMIN_PASSWORD`: надійний пароль первинного адміністратора (буде збережено у БД при першому старті).
 - `POSTGRES_PASSWORD`: надійний пароль для бази даних.
+- **Зовнішня телеметрія (рекомендовано):** `OPENWEATHER_API_KEY` (поточна погода та 5-денний прогноз), `ALERTS_IN_UA_TOKEN` та `UKRAINE_ALARM_API_KEY` (паралельний двоканальний моніторинг повітряних тривог зі «Страхуванням відбою»).
 
 ---
 
@@ -94,7 +95,7 @@ docker compose logs -f app
 1. Автоматично підніметься PostgreSQL 16 із перевіркою працездатності (healthcheck).
 2. Alembic автоматично застосує міграції схеми БД.
 3. Сервіс ініціалізації створить суперкористувача `superadmin`, стандартні ролі та матрицю прав.
-4. Nginx налаштує безпечні HTTP-заголовки (`HSTS`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, ліміт тіла `client_max_body_size 100M`).
+4. Nginx налаштує безпечні HTTP-заголовки (`HSTS`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, ліміт тіла `client_max_body_size 100M`), Gzip-стиснення (`gzip_comp_level 5`) та кешування версіонованої статики `/frontend/` (з негайним оновленням `/sw.js`).
 5. Застосунок стане доступним за захищеним протоколом `https://your-domain`.
 
 ---

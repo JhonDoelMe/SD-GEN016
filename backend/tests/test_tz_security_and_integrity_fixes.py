@@ -621,7 +621,7 @@ async def test_lifespan_aborts_if_audit_sanitization_fails_and_version_matches()
     from unittest.mock import AsyncMock
     from backend.app.main import app, lifespan
 
-    assert app.version == "5.0.0"
+    assert app.version == "5.4.0"
 
     with patch("backend.app.main.sanitize_historical_audit_logs", new=AsyncMock(side_effect=Exception("DB lock during sanitization"))):
         with pytest.raises(RuntimeError, match="CRITICAL SECURITY FAILURE: Historical audit log sanitization failed"):

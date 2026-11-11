@@ -1,7 +1,7 @@
 # Архітектура системи: Service Desk Генератора (SD-GEN016)
 
-**Версія архітектури:** 5.0.0 (Air Raid Safety, Weather Intelligence, Cooldown & Security Hardening)  
-**Дата оновлення:** 4 листопада 2026 року  
+**Версія архітектури:** 5.4.0 (Dual-Provider Alert Fusion, WebPush Live Watcher, 5-Day Forecast, Full-Stack Perf & Security Hardening)  
+**Дата оновлення:** 11 листопада 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 
 ---
@@ -21,14 +21,15 @@
 |                                    КЛІЄНТИ                                         |
 |  - ПК (Сучасні браузери Chrome, Edge, Firefox, Safari)                             |
 |  - Мобільні пристрої (iOS Safari, Android Chrome)                                  |
-|  - Встановлений автономний PWA додаток (Standalone PWA v4.2, Service Worker)        |
+|  - Встановлений автономний PWA додаток (Standalone PWA v5.4.0, Service Worker)      |
+|  - Live Browser Watcher + автосинхронізація підписок pushsubscriptionchange       |
 +------------------------------------------------------------------------------------+
                                           │
                                           ▼ HTTPS / TLS 1.3
 +------------------------------------------------------------------------------------+
 |                                NGINX REVERSE PROXY                                 |
 |  - Термінація SSL/TLS (користувацькі сертифікати або автогенерація fallback)       |
-|  - Кешування статичних ресурсів (CSS, JS, Web App Manifest)                       |
+|  - Gzip (level 5) + кешування версіонованої статики /frontend/ (max-age=604800)    |
 |  - Повна заборона кешування Service Worker (sw.js)                                 |
 |  - Заголовки безпеки (HSTS, CSP, X-Frame-Options: DENY, Referrer-Policy)           |
 |  - Обмеження тіла запитів (client_max_body_size 100M для безпечних бекапів)        |
@@ -41,21 +42,19 @@
 |                                                                                    |
 |  +-------------------------------------------------------------------------------+ |
 |  |                            API ROUTERS (/api/v1)                              | |
-|  |  /auth         - Автентифікація, зміна пароля, JWT (pwd_sig), Dual-Key lockout | |
-|  |  /users        - Керування обліковими записами, ролями та прив'язкою до філій  | |
-|  |  /facilities   - Керування об'єктами (Multi-site Scoping)                     | |
-|  |  /generator    - Параметри генераторів, пуск/стоп, ручний ввід, 404 валідація  | |
-|  |  /fuel         - Склади ГСМ, прибуткування, заправки в бак (ізольовано)        | |
+|  |  /auth         - Автентифікація, bcrypt у asyncio.to_thread, JWT (pwd_sig)    | |
+|  |  /users        - Список ролей/юзерів (users:manage), CRUD лише SuperAdmin     | |
+|  |  /facilities   - Об'єкти, YASNO, OpenWeather 5-day, Dual-Provider Alerts      | |
+|  |  /generator    - Генератори, архів, перенесення, reconcile, пакетний cooldown | |
+|  |  /fuel         - Склади (архівування), чеки (WOG/OKKO/інше), заправки         | |
 |  |  /maintenance  - Регламентне та проміжне ТО, графіки, перерахунок              | |
-|  |  /faults       - Журнал аварій та дефектів, захисне блокування обладнання     | |
-|  |  /notifications- Web Push (SSRF-захист, IDOR-захист, VAPID, власні тести)      | |
-|  |  /backups      - Бекап-центр (маскування секретів, Zip Slip/Bomb захист, 100MB)| |
-|  |  /system       - Динамічні налаштування, парсер цін WOG, безпечний Clean DB   | |
+|  |  /faults       - Журнал аварій та дефектів, автостоп при CRITICAL             | |
+|  |  /notifications- Web Push (VAPID, ttl=14400, High Urgency, YASNO & Air Alerts)| |
+|  |  /backups      - Бекап-центр (маскування секретів, Zip Slip/Bomb, SHA-256)    | |
+|  |  /system       - Динамічні налаштування, парсер WOG/OKKO, SMTP, Clean DB      | |
 |  |  /adjustments  - Офіційні системні коригування залишків (SuperAdmin)          | |
-|  |  /audit        - Незмінний журнал аудиту дій                                  | |
-|  |  /reports      - Зведення показників, експорт 5-сторінкового Excel (.xlsx)    |
-|  /weather      - Погода, OpenWeatherMap, зимові/літні рекомендації для ДВЗ     |
-|  /alerts       - Повітряна безпека, каскадний моніторинг (alerts.in.ua/alarm)  | |
+|  |  /audit        - Незмінний журнал аудиту дій + SuperAdmin Excel експорт       | |
+|  |  /reports      - Зведення показників, експорт 5-сторінкового Excel (.xlsx)    | |
 |  +-------------------------------------------------------------------------------+ |
 |                                         │                                          |
 |  +-------------------------------------------------------------------------------+ |
@@ -72,24 +71,26 @@
 |  |  - Web Push SSRF Allowlist: перевірка офіційних доменів FCM/Apple/Mozilla/WNS | |
 |  |  - Backup Security: _copy_env_redacted, _safe_extract_zip (Zip Slip/Bomb)     | |
 |  |  - Timing Attack Mitigation (verify_dummy_password)                           | |
-|  |  - Захист від SQLi (SQLAlchemy ORM), XSS (санітизація), Formula Injection     | |
+|  |  - Захист від SQLi (SQLAlchemy ORM), XSS (escapeHtml), Formula Injection      | |
 |  +-------------------------------------------------------------------------------+ |
 |                                         │                                          |
 |  +-------------------------------------------------------------------------------+ |
 |  |                                БІЗНЕС-СЕРВІСИ                                 | |
-|  |  - FacilityService     : баланси філій, прив'язка ресурсів, SuperAdmin delete  | |
-|  |  - GeneratorService    : життєвий цикл, мотогодини, офлайн-внесення, валідація | |
-|  |  - FuelService         : рух палива, автоціни WOG, блокування міжоб'єктних рухів| |
-|  |  - EmailService        : SMTP Failover (Gmail/Ukr.net), Fail-Closed TLS        | |
-|  |  - AuditService        : незмінний аудит, рекурсивне маскування секретів       | |
-|  |  - SettingsService     : доменна перевірка ланцюжка, транзакційна атомарність  | |
-|  |  - MaintenanceService  : регламентні інтервали, адмін-скидання лічильника      | |
-|  |  - FaultService        : обробка інцидентів, аварійний статус FAULTY          | |
-|  |  - NotificationService : VAPID Web Push, анти-спам обмеження ТО (<=2/добу)    | |
-|  |  - BackupService       : генерація/відновлення дампів, захист від атак архіву | |
-|  |  - SettingsService     : динамічні налаштування БД, синхронний кеш RUNTIME    | |
-|  |  - ReportService       : агрегації KPI, санітизація клітинок, OpenPyXL XLSX   | |
-|  |  - AuditService        : транзакційний лог подій + коригування залишків       | |
+|  |  - FacilityService        : баланси філій, прив'язка ресурсів, SuperAdmin del | |
+|  |  - GeneratorService       : життєвий цикл, 60с cooldown, архівування, sync    | |
+|  |  - FuelService            : Decimal рух палива, WOG/OKKO/універсальні склади  | |
+|  |  - OperationalGuardService: автостоп (12г/зміна), пульс 4г, живий low-fuel/ТО | |
+|  |  - EmailService           : SMTP Failover (Gmail/Ukr.net), Fail-Closed TLS    | |
+|  |  - WeatherService         : OpenWeather поточна + 5-денний прогноз, поради    | |
+|  |  - AlertService           : Dual-Provider Fusion, Worst-Case Hold, Push loop  | |
+|  |  - YasnoService           : графіки відключень, готовність палива, Push 30 хв | |
+|  |  - MaintenanceService     : регламентні інтервали, адмін-скидання лічильника  | |
+|  |  - FaultService           : інциденти, автостоп при CRITICAL, статус FAULTY   | |
+|  |  - NotificationService    : VAPID Web Push, анти-спам ТО, Air Alert & YASNO   | |
+|  |  - BackupService          : повні/часткові бекапи, .sha256, Zip Slip/Bomb     | |
+|  |  - SettingsService        : доменна валідація ланцюжка, транзакційний кеш     | |
+|  |  - ReportService          : мультигенераторна агрегація, безперервний календар| |
+|  |  - AuditService           : незмінний аудит, укр. описи, санітизація секретів | |
 |  +-------------------------------------------------------------------------------+ |
 |                                         │                                          |
 |  +-------------------------------------------------------------------------------+ |
@@ -121,18 +122,20 @@
 9. **MaintenanceSchedule (`maintenance_schedules`)**: регламентний інтервал ТО генератора та контрольні лічильники напрацювання.
 10. **MaintenanceRecord (`maintenance_records`)**: журнал проведеного обслуговування (регламентне або проміжне).
 11. **Fault (`faults`)**: інциденти та дефекти обладнання.
-12. **PushSubscription (`push_subscriptions`)**: зареєстровані Web Push підписки клієнтських браузерів з прив'язкою до `user_id` та валідацією endpoint.
-13. **AuditLog (`audit_logs`)** та **SystemAdjustment (`system_adjustments`)**: незмінні реєстри аудиту та офіційних інвентаризаційних коригувань.
-14. **Facility YASNO-поля** (розширення acilities, міграція Alembic `004_add_yasno_fields`): `yasno_enabled`, `yasno_region_id` (за замовчуванням 3), `yasno_dso_id` (за замовчуванням 301), `yasno_group` (`1.1`–`6.2`).
+12. **PushSubscription (`push_subscriptions`) та NotificationLog (`notification_logs`)**: зареєстровані Web Push підписки клієнтських браузерів із прив'язкою до `user_id`/`facility_id` та історія надісланих push/email сповіщень (включно з `AIR_ALERT_START`, `AIR_ALERT_END`, `YASNO_OUTAGE_ALERT`).
+13. **AuditLog (`audit_logs`)**, **SystemAdjustment (`system_adjustments`)** та **PasswordResetToken (`password_resets`)**: незмінні реєстри аудиту, інвентаризаційних коригувань і одноразових SHA-256 токенів відновлення пароля.
+14. **Міграції Alembic (`001`–`009`)**: розширення `facilities` (YASNO, `default_fuel_provider`, `city`), паливне зміцнення (`NUMERIC`, `idempotency_key`, `is_active`), м'яке архівування генераторів (`ARCHIVED`) та транзакційний `await connection.commit()` у `backend/alembic/env.py`.
 
-## 4. Фонові служби та інтеграція YASNO
+## 4. Фонові служби, інтеграції та оптимізації продуктивності (v5.4.0)
 
 - **`wog_service.py` та парсер АЗК OKKO**: асинхронні парсери роздрібних цін мереж WOG та OKKO з автоматичним фоновим кешуванням на сервері (TTL 12 годин), підтримкою ручної актуалізації через REST API та аварійним кешем (Fallback Cache) на випадок недоступності сайтів постачальників.
-- **`backup_service.py` та планувальник автобекапів**: фоновий сервіс резервного копіювання із 15-хвилинним вікном запуску (`0 <= diff_minutes <= 15`) та персистентною фіксацією дати останнього успішного запуску (`backup_last_auto_run_date`) в системних налаштуваннях БД. Унеможливлює створення паразитичних архівів під час перезавантаження сервера або Docker-контейнера. Автоматично розраховує контрольні суми SHA-256 для кожного архіву та записує їх у зовнішній файл `.sha256` поруч із `.zip` файлом. Перед кожним відновленням БД автоматично знімається аварійний snapshot.
-- **`yasno_service.py`**: асинхронний клієнт API YASNO (`planned-outages`) з обходом WAF, перетворенням хвилинних слотів (0–1440) у погодинну карту та серверним кешем із TTL 15 хв. Відповідь містить `checked_at` (час перевірки, `Europe/Kyiv`) та `yasno_updated_on` (час публікації графіка оператором).
-- **`run_yasno_checker_loop`**: фоновий цикл, що запускається у `lifespan` застосунку (`main.py`) і скасовується під час зупинки; за 25–35 хв до відключення (`DEFINITE` / `PROBABLE`) розсилає Web Push операторам об'єкта, дублювання у межах доби блокується (`notified_slots`).
-- **Ендпоінт** `GET /api/v1/facilities/{id}/outage-schedule` повертає `Cache-Control: no-cache, no-store, must-revalidate`.
-- **Експорт аудиту**: `GET /api/v1/audit/export-excel` (SuperAdmin) формує окрему книгу Excel з аркушами «Журнал дій аудиту» та «Системні коригування»; загальний звіт `GET /api/v1/reports/export-excel` більше не містить журналу аудиту.
+- **`backup_service.py` та планувальник автобекапів (`run_backup_scheduler`)**: фоновий сервіс резервного копіювання із 15-хвилинним вікном запуску (`0 <= diff_minutes <= 15`) та персистентною фіксацією дати останнього успішного запуску (`backup_last_auto_run_date`). Автоматично розраховує контрольні суми `.sha256` та створює pre-restore snapshot.
+- **`operational_guard_service.py` (`run_operational_guard_loop`)**: фоновий вартовий, що контролює 12-годинну безперервну роботу, автостоп наприкінці зміни, 4-годинне пульс-нагадування, а також живий моніторинг низького палива та наближення ТО під час активного циклу.
+- **`yasno_service.py` та `run_yasno_checker_loop`**: асинхронний клієнт API YASNO (`planned-outages`) із 15-хв кешем, `is_outage_now`, `current_outage`, `checked_at`/`yasno_updated_on` і проактивними Web Push за 20–35 хв до відключення.
+- **`alert_service.py` та `run_air_alert_checker_loop`**: паралельний dual-provider моніторинг (`alerts.in.ua` з HTTP 304 + `api.ukrainealarm.com` із 60s кешем) за правилом найгіршого сценарію («Страхування відбою»), відновленням історії станів із `NotificationLog` при рестарті та миттєвими Web Push при переході `GREEN ↔ YELLOW/RED` (кожні 45 с).
+- **`weather_service.py`**: паралельне завантаження поточної погоди та 5-денного прогнозу OpenWeatherMap (`WEATHER_CACHE_MINUTES=20`), авторезолв локації без дублювання міста/області та проактивні заморозкові підказки.
+- **Продуктивність (v5.2–v5.4)**: паралелізація фронтенд-водоспадів (`Promise.all`), пакетний підрахунок cooldown генераторів (`get_generators_cooldown_map`), винесення `bcrypt` у `asyncio.to_thread`, оптимізовані PNG-іконки PWA, Gzip + cache-control для `/frontend/` та клієнтська пагінація по 10 записів.
+- **Експорт аудиту**: `GET /api/v1/audit/export-excel` (SuperAdmin) формує окрему книгу Excel з аркушами «Журнал дій аудиту» та «Системні коригування»; загальний звіт `GET /api/v1/reports/export-excel` містить 5 аркушів без таблиці аудиту.
 
 ---
 

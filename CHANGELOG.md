@@ -5,6 +5,46 @@
 
 ---
 
+## [v5.4.0] — 2026-11-11
+
+### 🔔 Надійні WebPush сповіщення, Live Watcher та Повітряні тривоги (`177eac5`)
+- **Виправлення доставки WebPush (`notification_service.py`)**:
+  - Підтримка PEM-ключів VAPID (`Vapid.from_pem`), параметри `ttl=14400`, `timeout=8.0`, заголовок `Urgency: high`;
+  - Покращена фільтрація підписок за `facility_id` користувача/підписки та дедуплікація в `NotificationLog`.
+- **Автосинхронізація та Live Browser Watcher (`sw.js`, `app.js`)**:
+  - Обробка події `pushsubscriptionchange` у Service Worker для автоматичного оновлення підписки при ротації ключів;
+  - Трансляція `PUSH_NOTIFICATION_RECEIVED` у відкриті вкладки та живий клієнтський моніторинг `GET /api/v1/notifications/logs` із дедуплікацією за тегом `sd-log-{id}`;
+  - Підвищена вібрація та `requireInteraction: true` для критичних подій (`AIR_ALERT_START`, `CRITICAL_FAULT`, `LOW_FUEL`, `GENERATOR_SAFETY_STOP`).
+- **Миттєві сповіщення про Повітряні тривоги та Відбої (`alert_service.py`)**:
+  - Фоновий цикл `run_air_alert_checker_loop` (кожні 45 с) у `main.py` відстежує переходи `GREEN ↔ YELLOW/RED` із відновленням стану після рестарту сервера через `NotificationLog`;
+  - Окремі сповіщення `AIR_ALERT_START` (із вказівкою працюючих генераторів) та `AIR_ALERT_END` (із тривалістю тривоги);
+  - Нові перемикачі у вкладці сповіщень і API `/api/v1/notifications/settings`: `notify_yasno_outages`, `notify_air_alerts`, `notify_air_alert_end`.
+- **Живий контроль палива та ТО під час роботи (`operational_guard_service.py`, `generator_service.py`)**:
+  - Оцінка залишку палива в баку та наближення ТО під час активного робочого циклу та при автостопі.
+- **Повна синхронізація документації, політик та правил на сайті (`v5.4.0`)**:
+  - Оновлено всі 13 документів у `docs/`, `README.md`, `AGENT.md`, `RELEASE_NOTES_v5.4.0.md`, а також 4 модальні вікна політик і правил на сайті (`frontend/index.html`) та версію FastAPI/BackupManifest/тестів до `5.4.0`.
+
+## [v5.3.1] — 2026-11-10
+- **Стабільний блок готовності палива YASNO (`6724f9e`)**:
+  - Блок «Паливо в баку ↔ YASNO» тепер відображається в картці YASNO в усіх станах (`DEFINITE`, `PROBABLE`, `NOT_PLANNED` / без відключень);
+  - У відповідь `yasno_service.py` додано структуровані поля `is_outage_now` та `current_outage` (початок, кінець, залишок хвилин).
+
+## [v5.3.0] — 2026-11-10
+- **Alembic commit fix & Ops UX (`2ed685d`)**:
+  - Виправлено фіксацію транзакцій міграцій у `backend/alembic/env.py` (`await connection.commit()`);
+  - Додано розрахунок готовності палива до графіка YASNO, банер зимового ДП (`genDieselFrostBanner`, `< 0°C`), неблокуючий банер безпеки при червоній тривозі (`redAlertRunSafetyBanner`) та клієнтську пагінацію таблиць (10 записів на сторінку).
+
+## [v5.1.0 – v5.2.0] — 2026-11-05 — 2026-11-10
+- **Dual-Provider Alert Fusion та Worst-Case Insurance Hold (`377a56a`, `80a4852`)**:
+  - Паралельна взаємна звірка `alerts.in.ua` (HTTP 304 `If-Modified-Since`, 15 с) та `api.ukrainealarm.com` (60 с, backoff при 429) за правилом найгіршого сценарію («Страхування відбою»);
+  - Ієрархічне зіставлення громада/місто/район → область, синоніми міст (`CITY_SEARCH_ALIASES`), усунення дублювання міста й області (`8c10d35`), згортана легенда загроз.
+- **5-денний прогноз OpenWeatherMap (`a886717`, `ffa56e4`)**:
+  - Паралельне завантаження поточного прогнозу та `/data/2.5/forecast` на 5 днів, проактивні попередження про заморозки, виправлення `updated_at` у `Europe/Kyiv`.
+- **Повностекова оптимізація продуктивності (`0e69772`)**:
+  - Паралелізація API-водоспадів на фронтенді, пакетний запит `get_generators_cooldown_map`, винесення `bcrypt` у `asyncio.to_thread`, Gzip та кешування `/frontend/` у `docker/nginx.conf`, стиснення PNG-іконок PWA.
+
+---
+
 ## [v5.0.0] — 2026-11-04
 
 ### 🚨 Повітряна безпека та раннє сповіщення (`BR-ALERT-01`, `alerts.in.ua`, `ukrainealarm.com`)

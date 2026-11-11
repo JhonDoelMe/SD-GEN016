@@ -152,7 +152,7 @@ $$\text{Загальний запас пального об'єкта} = \sum \te
 
 ## 7. План наступного етапу впровадження (Next Phase Roadmap)
 
-1. **Alembic-міграція `008_fuel_canisters`:**
+1. **Alembic-міграція `010_fuel_canisters` (після поточних `001`–`009`):**
    * Створення таблиці `fuel_canisters`;
    * Додавання колонок `transfer_type`, `source_type`, `destination_type`, `source_canister_id`, `dest_canister_id` до `fuel_transfers`.
 2. **Сервісний шар (`canister_service.py` або розширення `fuel_service.py`):**
