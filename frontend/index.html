@@ -38,7 +38,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/frontend/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=5.5.0">
+  <link rel="stylesheet" href="/frontend/styles.css?v=5.5.1">
 </head>
 <body>
 
@@ -189,8 +189,8 @@
     <div id="offlineSyncBanner" class="offline-sync-banner" style="display: none;">
       <div id="offlineSyncBannerText" class="offline-sync-banner-text"></div>
       <div class="offline-sync-banner-actions">
-        <button type="button" id="btnOfflineBannerSync" class="btn-action" style="border-color: #38bdf8; color: #38bdf8;" onclick="OfflineQueue.syncOfflineQueue({ silent: false })">🔄 Синхронізувати</button>
-        <button type="button" class="btn-action" onclick="openOfflineQueueModal()">📋 Відкрити чергу</button>
+        <button type="button" id="btnOfflineBannerSync" class="btn-oq-chip btn-oq-chip-info" onclick="OfflineQueue.syncOfflineQueue({ silent: false })">🔄 Синхронізувати</button>
+        <button type="button" class="btn-oq-chip" onclick="openOfflineQueueModal()">📋 Відкрити чергу</button>
       </div>
     </div>
 
@@ -3447,15 +3447,15 @@
 
   <!-- Modal: Offline Queue & Conflict Resolution -->
   <div id="modalOfflineQueue" class="modal-overlay" style="display: none;">
-    <div class="modal-content modal-wide">
+    <div class="modal-content modal-wide modal-compact">
       <div class="modal-header">
-        <h3>🔄 Офлайн-черга та вирішення конфліктів</h3>
+        <h3>🔄 Офлайн-черга та конфлікти</h3>
         <button type="button" class="close-btn" onclick="closeModal('modalOfflineQueue')">&times;</button>
       </div>
       <div id="offlineModalSummary" class="offline-modal-summary"></div>
-      <div style="display: flex; gap: 0.5rem; margin-bottom: 0.9rem; flex-wrap: wrap;">
-        <button type="button" id="btnOfflineModalSyncAll" class="btn-primary" style="width: auto; margin: 0; padding: 0.5rem 1rem; font-size: 0.88rem;" onclick="OfflineQueue.syncOfflineQueue({ silent: false })">🔄 Синхронізувати очікувані</button>
-        <button type="button" class="btn-secondary" style="width: auto; margin: 0; padding: 0.5rem 1rem; font-size: 0.88rem;" onclick="OfflineQueue.renderQueueModal()">↻ Оновити стан із сервера</button>
+      <div class="offline-toolbar-actions">
+        <button type="button" id="btnOfflineModalSyncAll" class="btn-primary btn-oq-toolbar" onclick="OfflineQueue.syncOfflineQueue({ silent: false })">🔄 Синхронізувати</button>
+        <button type="button" class="btn-secondary btn-oq-toolbar" onclick="OfflineQueue.renderQueueModal()">↻ Оновити стан</button>
       </div>
       <div id="offlineQueueList" class="offline-queue-list"></div>
     </div>
@@ -3464,19 +3464,19 @@
     <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/js/core.js?v=5.5.0"></script>
-  <script src="/frontend/js/offline-queue.js?v=5.5.0"></script>
-  <script src="/frontend/js/theme-format.js?v=5.5.0"></script>
-  <script src="/frontend/js/auth-nav.js?v=5.5.0"></script>
-  <script src="/frontend/js/dashboard.js?v=5.5.0"></script>
-  <script src="/frontend/js/fuel.js?v=5.5.0"></script>
-  <script src="/frontend/js/operations.js?v=5.5.0"></script>
-  <script src="/frontend/js/audit-reports.js?v=5.5.0"></script>
-  <script src="/frontend/js/admin.js?v=5.5.0"></script>
-  <script src="/frontend/js/backups.js?v=5.5.0"></script>
-  <script src="/frontend/js/notifications.js?v=5.5.0"></script>
-  <script src="/frontend/js/yasno.js?v=5.5.0"></script>
-  <script src="/frontend/js/weather-alerts.js?v=5.5.0"></script>
+  <script src="/frontend/js/core.js?v=5.5.1"></script>
+  <script src="/frontend/js/offline-queue.js?v=5.5.1"></script>
+  <script src="/frontend/js/theme-format.js?v=5.5.1"></script>
+  <script src="/frontend/js/auth-nav.js?v=5.5.1"></script>
+  <script src="/frontend/js/dashboard.js?v=5.5.1"></script>
+  <script src="/frontend/js/fuel.js?v=5.5.1"></script>
+  <script src="/frontend/js/operations.js?v=5.5.1"></script>
+  <script src="/frontend/js/audit-reports.js?v=5.5.1"></script>
+  <script src="/frontend/js/admin.js?v=5.5.1"></script>
+  <script src="/frontend/js/backups.js?v=5.5.1"></script>
+  <script src="/frontend/js/notifications.js?v=5.5.1"></script>
+  <script src="/frontend/js/yasno.js?v=5.5.1"></script>
+  <script src="/frontend/js/weather-alerts.js?v=5.5.1"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

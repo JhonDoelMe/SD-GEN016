@@ -794,8 +794,8 @@
       <div class="offline-edit-box">
         ${fieldsHtml}
         <div style="display:flex; gap:0.5rem; margin-top:0.65rem; flex-wrap:wrap;">
-          <button type="button" class="btn-primary" style="width:auto; margin:0; padding:0.45rem 0.9rem; font-size:0.85rem;" onclick="OfflineQueue.saveAndRetry('${esc(item.id)}')">✅ Зберегти й надіслати</button>
-          <button type="button" class="btn-secondary" style="width:auto; margin:0; padding:0.45rem 0.9rem; font-size:0.85rem;" onclick="OfflineQueue.toggleEdit('${esc(item.id)}')">Скасувати</button>
+          <button type="button" class="btn-oq-chip btn-oq-chip-primary" onclick="OfflineQueue.saveAndRetry('${esc(item.id)}')">✓ Зберегти й надіслати</button>
+          <button type="button" class="btn-oq-chip" onclick="OfflineQueue.toggleEdit('${esc(item.id)}')">Скасувати</button>
         </div>
       </div>`;
   }
@@ -885,9 +885,18 @@
 
     if (summaryEl) {
       summaryEl.innerHTML = `
-        <span>Зв'язок: <b>${isOnline ? '🟢 Онлайн' : '🟠 Офлайн'}</b></span>
-        <span>• Очікують: <b style="color:#fbbf24;">${pendingCnt}</b></span>
-        <span>• Конфліктів: <b style="color:#f87171;">${conflictCnt}</b></span>
+        <div class="oq-stat-tile">
+          <span class="oq-stat-label">Зв'язок</span>
+          <span class="oq-stat-val" style="color:${isOnline ? '#4ade80' : '#fb923c'};">${isOnline ? '● Онлайн' : '● Офлайн'}</span>
+        </div>
+        <div class="oq-stat-tile">
+          <span class="oq-stat-label">Очікують</span>
+          <span class="oq-stat-val" style="color:${pendingCnt > 0 ? '#fbbf24' : 'var(--text-primary)'};">${pendingCnt}</span>
+        </div>
+        <div class="oq-stat-tile">
+          <span class="oq-stat-label">Конфліктів</span>
+          <span class="oq-stat-val" style="color:${conflictCnt > 0 ? '#f87171' : 'var(--text-primary)'};">${conflictCnt}</span>
+        </div>
       `;
     }
     if (btnSyncAll) {
@@ -897,9 +906,9 @@
     if (rows.length === 0) {
       listEl.innerHTML = `
         <div class="offline-empty-state">
-          <div style="font-size:2rem; margin-bottom:0.4rem;">✅</div>
-          <div><b>Черга синхронізації порожня</b></div>
-          <div style="font-size:0.84rem; color:var(--text-muted); margin-top:0.25rem;">Усі дії успішно передані на сервер.</div>
+          <div class="offline-empty-icon">✓</div>
+          <div class="offline-empty-title">Черга синхронізації порожня</div>
+          <div class="offline-empty-sub">Усі дії успішно передані на сервер.</div>
         </div>`;
       return;
     }
@@ -946,9 +955,9 @@
           ${isEditing ? _buildEditFormHtml(item) : ''}
           ${!isEditing ? `
             <div class="oq-actions">
-              <button type="button" class="btn-action" style="border-color:#38bdf8; color:#38bdf8;" ${!navigator.onLine ? 'disabled' : ''} onclick="OfflineQueue.retryItem('${escapeHtml(item.id)}')">🔄 ${isConflict ? 'Повторити як є' : 'Надіслати зараз'}</button>
-              <button type="button" class="btn-action" onclick="OfflineQueue.toggleEdit('${escapeHtml(item.id)}')">✏️ Змінити</button>
-              <button type="button" class="btn-action" style="border-color:#ef4444; color:#f87171;" onclick="OfflineQueue.removeItem('${escapeHtml(item.id)}')">🗑️ Видалити</button>
+              <button type="button" class="btn-oq-chip btn-oq-chip-info" ${!navigator.onLine ? 'disabled' : ''} onclick="OfflineQueue.retryItem('${escapeHtml(item.id)}')">🔄 ${isConflict ? 'Повторити як є' : 'Надіслати'}</button>
+              <button type="button" class="btn-oq-chip" onclick="OfflineQueue.toggleEdit('${escapeHtml(item.id)}')">✏️ Змінити</button>
+              <button type="button" class="btn-oq-chip btn-oq-chip-danger" onclick="OfflineQueue.removeItem('${escapeHtml(item.id)}')">🗑️ Видалити</button>
             </div>
           ` : ''}
         </div>
