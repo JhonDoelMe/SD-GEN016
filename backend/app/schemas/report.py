@@ -57,6 +57,19 @@ class ReportMaintenanceItem(BaseModel):
     operator_name: str
 
 
+class ReportMeasurementItem(BaseModel):
+    id: int
+    approved_at: str
+    statement_number: str
+    generator_name: str
+    total_fuel_consumed_l: float
+    total_hours_elapsed: float
+    old_consumption_l_per_h: float
+    new_consumption_l_per_h: float
+    commission_summary: str
+    approved_by_name: str
+
+
 class OperationalReportOut(BaseModel):
     start_date: str
     end_date: str
@@ -101,3 +114,4 @@ class OperationalReportOut(BaseModel):
     fuel_receipts: List[ReportFuelReceiptItem] = []
     fuel_transfers: List[ReportFuelTransferItem] = []
     maintenance_records: List[ReportMaintenanceItem] = []
+    measurements: List[ReportMeasurementItem] = []

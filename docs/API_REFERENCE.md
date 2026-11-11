@@ -587,3 +587,16 @@
 
 - **`GET /api/v1/users`** та **`GET /api/v1/users/roles`**: Отримання переліку користувачів і ролей з правами (`users:manage`).
 - **`POST /api/v1/users`**, **`PUT /api/v1/users/{user_id}`**, **`POST /api/v1/users/{user_id}/reset-password`**, **`DELETE /api/v1/users/{user_id}`**: Створення, редагування, скидання пароля та видалення/деактивація облікових записів — доступні **виключно SuperAdmin** (`get_current_superadmin`).
+
+---
+
+## 14. Режим вимірювання витрат палива та інвентаризація (`/api/v1/measurement`, v5.6.0)
+
+- **`GET /api/v1/measurement/status?facility_id={id}`**: Поточний статус вимірювання/блокування об'єкта, проміжний лічильник літрів (`measured_liters_total`), дозаправки, розрахункові `л/год` (доступно користувачам об'єкта).
+- **`GET /api/v1/measurement/history?facility_id={id}`** *(SuperAdmin Only)*: Історія завершених, погоджених та скасованих контрольних замірів.
+- **`POST /api/v1/measurement/start`** *(SuperAdmin Only)*: Запуск режиму вимірювання за умови зупиненого генератора і повного баку.
+- **`POST /api/v1/measurement/{id}/finish-empty`** *(SuperAdmin Only)*: Підтвердження порожнього баку (мінімум 100 л відпрацьовано, генератор зупинено); блокує операції на об'єкті (`HTTP 423`) до завершення інвентаризації.
+- **`POST /api/v1/measurement/{id}/inventory`** *(SuperAdmin Only)*: Фіксація фактичних залишків (бак, пули каністр, резерв, склади ГСМ) та складу комісії (мінімум 3 члени), присвоєння номера відомості `ІНВ-YYYYMMDD-NNN`.
+- **`GET /api/v1/measurement/{id}/statement-pdf`** *(SuperAdmin Only)*: Генерація та завантаження офіційної відомості інвентаризації у форматі **PDF (А4, альбомна орієнтація)** із фіксацією факту скачування.
+- **`POST /api/v1/measurement/{id}/approve`** *(SuperAdmin Only)*: Остаточне погодження після завантаження PDF — оновлення `nominal_consumption_l_per_h` та залишків, запис до аудиту й звітів, зняття блокування об'єкта.
+- **`POST /api/v1/measurement/{id}/cancel`** *(SuperAdmin Only)*: Аварійне скасування вимірювання із обов'язковою причиною без зміни норми витрати та залишків.

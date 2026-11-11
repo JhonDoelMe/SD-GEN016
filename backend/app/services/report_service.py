@@ -16,12 +16,14 @@ from backend.app.models.maintenance import MaintenanceRecord, MaintenanceSchedul
 from backend.app.models.fault import Fault
 from backend.app.models.audit import AuditLog, SystemAdjustment
 from backend.app.models.facility import Facility
+from backend.app.models.measurement import FuelMeasurement
 from backend.app.schemas.report import (
     OperationalReportOut,
     ReportRunItem,
     ReportFuelReceiptItem,
     ReportFuelTransferItem,
     ReportMaintenanceItem,
+    ReportMeasurementItem,
 )
 
 
@@ -291,12 +293,21 @@ AUDIT_ACTION_UA = {
     "FACILITY_CREATED": "Створення об'єкта",
     "FACILITY_UPDATED": "Оновлення об'єкта",
     "FACILITY_DELETED": "Видалення об'єкта",
+    # Measurement & Inventory
+    "MEASUREMENT_STARTED": "Увімкнення режиму вимірювання",
+    "MEASUREMENT_TANK_EMPTY": "Фіксація пустого баку (вимірювання)",
+    "MEASUREMENT_INVENTORY_SUBMITTED": "Внесення інвентаризації комісією",
+    "MEASUREMENT_STATEMENT_DOWNLOADED": "Скачування відомості інвентаризації (PDF)",
+    "MEASUREMENT_APPROVED": "Затвердження заміру та інвентаризації",
+    "MEASUREMENT_CANCELLED": "Аварійне скасування вимірювання",
 }
 
 AUDIT_ENTITY_UA = {
     "Generator": "Генератор",
     "Facility": "Об'єкт",
     "FuelStock": "Склад ГСМ",
+    "CanisterPool": "Пул каністр",
+    "FuelMeasurement": "Контрольний замір",
     "FuelReceipt": "Оприбуткування",
     "FuelTransfer": "Заправка",
     "MaintenanceRecord": "Запис ТО",
@@ -901,6 +912,48 @@ async def generate_operational_report(
         for m in m_rows
     ]
 
+    # 6e. Approved Fuel Measurements & Inventories
+    import json as _json
+    meas_q = (
+        select(FuelMeasurement)
+        .options(selectinload(FuelMeasurement.generator), selectinload(FuelMeasurement.approved_by))
+        .where(
+            FuelMeasurement.status == "APPROVED",
+            FuelMeasurement.approved_at >= start_date,
+            FuelMeasurement.approved_at <= end_date,
+        )
+    )
+    if generator_id or generator:
+        target_gid = generator.id if generator else generator_id
+        meas_q = meas_q.where(FuelMeasurement.generator_id == target_gid)
+    elif facility_id:
+        meas_q = meas_q.where(FuelMeasurement.facility_id == facility_id)
+    meas_q = meas_q.order_by(FuelMeasurement.approved_at.desc()).limit(100)
+    meas_rows = (await db.execute(meas_q)).scalars().all()
+    measurements_list = []
+    for fm in meas_rows:
+        comm_text = "-"
+        if fm.commission_members_json:
+            try:
+                cm_arr = _json.loads(fm.commission_members_json)
+                comm_text = ", ".join(f"{c.get('name', '-')} ({c.get('role', '-')})" for c in cm_arr)
+            except Exception:
+                comm_text = "-"
+        measurements_list.append(
+            ReportMeasurementItem(
+                id=fm.id,
+                approved_at=fmt_dt_ua(fm.approved_at),
+                statement_number=fm.statement_number or f"ІНВ-{fm.id:03d}",
+                generator_name=fm.generator.name if fm.generator else gen_name,
+                total_fuel_consumed_l=round(float(fm.total_fuel_consumed_l or 0.0), 2),
+                total_hours_elapsed=round(float(fm.total_hours_elapsed or 0.0), 2),
+                old_consumption_l_per_h=round(float(fm.old_nominal_consumption_l_per_h or 0.0), 3),
+                new_consumption_l_per_h=round(float(fm.calculated_consumption_l_per_h or 0.0), 3),
+                commission_summary=comm_text,
+                approved_by_name=(fm.approved_by.full_name or fm.approved_by.login) if fm.approved_by else "Суперадмін",
+            )
+        )
+
     # 7. Additional calculations
     total_costs = round((fuel_rec_cost or 0.0) + (m_cost or 0.0), 2)
     avg_cons = round(total_cons / total_hours, 2) if total_hours > 0 else 0.0
@@ -937,7 +990,8 @@ async def generate_operational_report(
         runs=runs_list,
         fuel_receipts=receipts_list,
         fuel_transfers=transfers_list,
-        maintenance_records=maintenance_list
+        maintenance_records=maintenance_list,
+        measurements=measurements_list,
     )
 
 
@@ -1843,6 +1897,69 @@ async def generate_excel_report(
         ws5.auto_filter.ref = f"A2:I{row_f - 1}"
 
     auto_adjust_column_widths(ws5, min_width=12)
+
+    # -------------------------------------------------------------
+    # ВКЛАДКА 6: ЗАМІРИ ТА ІНВЕНТАРИЗАЦІЯ (<= 31 символ)
+    # -------------------------------------------------------------
+    ws6 = wb.create_sheet(title="Заміри та інвентаризація")
+    ws6.views.sheetView[0].showGridLines = True
+    ws6.freeze_panes = "A3"
+
+    ws6.merge_cells("A1:J1")
+    m_title = ws6["A1"]
+    m_title.value = "Журнал контрольних замірів витрат палива та актів інвентаризації ГСМ"
+    m_title.font = SECTION_FONT
+    m_title.fill = PRIMARY_FILL
+    m_title.alignment = ALIGN_LEFT
+    ws6.row_dimensions[1].height = 24
+
+    headers6 = [
+        "№", "Дата погодження", "Номер відомості", "Генератор",
+        "Спалено за замір (л)", "Відпрацьовано (год)",
+        "Було (л/год)", "Стало (л/год)", "Склад комісії", "Погодив"
+    ]
+    ws6.row_dimensions[2].height = 24
+    for c_idx, h in enumerate(headers6, start=1):
+        cell = ws6.cell(row=2, column=c_idx, value=h)
+        cell.fill = SECONDARY_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = ALIGN_CENTER
+        cell.border = CELL_BORDER
+
+    row_m = 3
+    for idx, ms in enumerate(op_report.measurements, start=1):
+        vals = [
+            idx,
+            ms.approved_at,
+            sanitize_spreadsheet_cell(ms.statement_number),
+            sanitize_spreadsheet_cell(ms.generator_name),
+            ms.total_fuel_consumed_l,
+            ms.total_hours_elapsed,
+            ms.old_consumption_l_per_h,
+            ms.new_consumption_l_per_h,
+            sanitize_spreadsheet_cell(ms.commission_summary),
+            sanitize_spreadsheet_cell(ms.approved_by_name),
+        ]
+        ws6.row_dimensions[row_m].height = 20
+        fill = ZEBRA_FILL if idx % 2 == 0 else PatternFill(fill_type=None)
+        for c_idx, val in enumerate(vals, start=1):
+            cell = ws6.cell(row=row_m, column=c_idx, value=val)
+            cell.font = REGULAR_FONT
+            cell.border = CELL_BORDER
+            if fill.fill_type:
+                cell.fill = fill
+            if c_idx in [1, 2, 3]:
+                cell.alignment = ALIGN_CENTER
+            elif c_idx in [5, 6, 7, 8]:
+                cell.alignment = ALIGN_RIGHT
+                cell.number_format = "#,##0.000" if c_idx in [7, 8] else "#,##0.00"
+            else:
+                cell.alignment = ALIGN_LEFT
+        row_m += 1
+
+    if row_m > 3:
+        ws6.auto_filter.ref = f"A2:J{row_m - 1}"
+    auto_adjust_column_widths(ws6, min_width=12)
 
     # Save workbook to memory
     output = io.BytesIO()

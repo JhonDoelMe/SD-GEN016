@@ -11,6 +11,7 @@ from backend.app.models.settings import SystemSetting
 from backend.app.models.notification import PushSubscription, NotificationLog
 from backend.app.models.security import RevokedToken, AuthAttempt
 from backend.app.models.idempotency import IdempotencyRecord
+from backend.app.models.measurement import FuelMeasurement
 
 __all__ = [
     "Base",
@@ -40,4 +41,5 @@ __all__ = [
     "RevokedToken",
     "AuthAttempt",
     "IdempotencyRecord",
+    "FuelMeasurement",
 ]

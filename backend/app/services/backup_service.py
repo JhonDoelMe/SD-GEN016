@@ -28,6 +28,7 @@ from backend.app.models.audit import AuditLog, SystemAdjustment
 from backend.app.models.user import User, Role, Permission, user_roles, role_permissions
 from backend.app.models.settings import SystemSetting
 from backend.app.models.notification import PushSubscription, NotificationLog
+from backend.app.models.measurement import FuelMeasurement
 
 
 def get_backup_dir() -> Path:
@@ -145,6 +146,7 @@ TABLE_ORDER = [
     ("fuel_transfers", FuelTransfer),
     ("canister_pools", CanisterPool),
     ("canister_transactions", CanisterTransaction),
+    ("fuel_measurements", FuelMeasurement),
     ("maintenance_schedules", MaintenanceSchedule),
     ("maintenance_records", MaintenanceRecord),
     ("faults", Fault),

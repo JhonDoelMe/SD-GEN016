@@ -500,6 +500,9 @@ async def start_generator(
             detail="Доступ заборонено: генератор належить до іншого об'єкта."
         )
 
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, generator.facility_id, "generator_run")
+
     # 3. Check archived state (GEN-03 / T-25)
     if not getattr(generator, "is_active", True) or generator.status == "ARCHIVED":
         raise HTTPException(
@@ -823,7 +826,14 @@ async def stop_generator(
     # піднімається HTTPException і вся транзакція зупинки залишається незмінною!
     actual_end_fuel = stop_data.end_fuel_level_l if stop_data else None
     discrepancy_reason = stop_data.fuel_discrepancy_reason if stop_data else None
-    allow_clamp = (actor_type != "USER")
+
+    from backend.app.services.measurement_service import (
+        ensure_facility_not_locked_by_measurement,
+        is_generator_in_measurement_mode,
+    )
+    await ensure_facility_not_locked_by_measurement(db, generator.facility_id, "generator_run")
+    in_measurement = await is_generator_in_measurement_mode(db, generator.id)
+    allow_clamp = (actor_type != "USER") or in_measurement
 
     fuel_res = await consume_generator_fuel(
         db=db,
@@ -836,7 +846,7 @@ async def stop_generator(
         discrepancy_reason=discrepancy_reason,
         allow_system_clamp=allow_clamp
     )
-    fuel_shortage_l = fuel_res["fuel_shortage_l"]
+    fuel_shortage_l = 0.0 if in_measurement else fuel_res["fuel_shortage_l"]
 
     # Оновлюємо сеанс та генератор після успішного списання пального
     run.end_time = end_time
@@ -918,7 +928,8 @@ async def stop_generator(
                 user_name=u_name,
                 duration_str=duration_formatted,
                 consumption_l=calculated_consumption,
-                end_fuel=generator.fuel_tank_level_l
+                end_fuel=generator.fuel_tank_level_l,
+                suppress_low_fuel=in_measurement,
             )
         elif reason == "MAX_CONTINUOUS_RUN_EXCEEDED":
             from backend.app.services.notification_service import send_push_notification
@@ -1430,6 +1441,9 @@ async def update_generator(
             generator.rated_power_kw = data.rated_power_kw
 
     if data.tank_capacity_l is not None:
+        if data.tank_capacity_l != generator.tank_capacity_l:
+            from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+            await ensure_facility_not_locked_by_measurement(db, generator.facility_id, "fuel_adjustment")
         if data.tank_capacity_l <= 0:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Місткість бака має бути більшою за 0")
         if data.tank_capacity_l < generator.fuel_tank_level_l:
@@ -1451,6 +1465,9 @@ async def update_generator(
             generator.fuel_type = new_ft
 
     if data.nominal_consumption_l_per_h is not None:
+        if data.nominal_consumption_l_per_h != generator.nominal_consumption_l_per_h:
+            from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+            await ensure_facility_not_locked_by_measurement(db, generator.facility_id, "fuel_adjustment")
         if data.nominal_consumption_l_per_h <= 0:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Номінальна витрата пального має бути більшою за 0")
         if data.nominal_consumption_l_per_h != generator.nominal_consumption_l_per_h:
@@ -1540,6 +1557,13 @@ async def add_manual_run(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Генератор не налаштовано. Виконайте початкове налаштування перед внесенням сеансів."
         )
+
+    from backend.app.services.measurement_service import (
+        ensure_facility_not_locked_by_measurement,
+        is_generator_in_measurement_mode,
+    )
+    await ensure_facility_not_locked_by_measurement(db, generator.facility_id, "generator_run")
+    in_measurement_manual = await is_generator_in_measurement_mode(db, generator.id)
 
     # 2. Timezone normalization to naive UTC (GEN-09, T-19, T-20)
     start_dt = _normalize_to_utc_naive(data.start_time, generator.timezone)
@@ -1657,7 +1681,7 @@ async def add_manual_run(
         consumed_l=calculated_consumption,
         user_id=user_id,
         ip_address=ip_address,
-        allow_system_clamp=False
+        allow_system_clamp=in_measurement_manual
     )
 
     # 7. Create manual run record without mutating other historical runs

@@ -347,6 +347,9 @@ async def delete_fuel_stock(
 
     stock_name = stock.name
     fac_id = stock.facility_id
+
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, fac_id, "fuel_adjustment")
     stock_balance = to_liters(stock.current_balance_l)
 
     active_pools_count = await db.scalar(
@@ -485,6 +488,9 @@ async def add_fuel_receipt(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Невідповідність об'єкта: переданий facility_id ({receipt_data.facility_id}) не збігається з об'єктом складу ({effective_facility_id})."
         )
+
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, effective_facility_id, "fuel_receipt")
 
     # Валідація кількості літрів
     liters = to_liters(receipt_data.liters)
@@ -728,6 +734,12 @@ async def transfer_fuel_to_tank(
 
     facility_id = stock.facility_id
 
+    from backend.app.services.measurement_service import (
+        ensure_facility_not_locked_by_measurement,
+        increment_active_measurement_added_fuel,
+    )
+    await ensure_facility_not_locked_by_measurement(db, facility_id, "fuel_transfer")
+
     # FUEL-07: Перевірка сумісності типу пального
     st_family = normalize_fuel_family(stock.fuel_type)
     gen_family = normalize_fuel_family(generator.fuel_type)
@@ -798,6 +810,8 @@ async def transfer_fuel_to_tank(
         transfer_id=transfer.id,
         canister_pool_id=getattr(transfer_data, "canister_pool_id", None),
     )
+
+    await increment_active_measurement_added_fuel(db, generator.id, liters)
 
     audit_details = {
         "facility_id": facility_id,

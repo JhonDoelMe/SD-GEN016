@@ -226,6 +226,9 @@ async def create_canister_pool(
 
     vol_dec = to_decimal(data.canister_volume_l, 2)
     res_dec = to_liters(data.reserve_liters)
+
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, data.facility_id, "fuel_adjustment")
     total = _validate_pool_invariants(
         data.full_count, data.empty_count, data.away_refill_count, vol_dec, res_dec
     )
@@ -302,6 +305,9 @@ async def update_canister_pool(
     ).scalars().first()
     if not pool:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пул каністр не знайдено")
+
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, pool.facility_id, "fuel_adjustment")
 
     stock = (
         await db.execute(select(FuelStock).where(FuelStock.id == pool.stock_id).with_for_update())
@@ -388,6 +394,9 @@ async def delete_canister_pool(
     if not pool:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пул каністр не знайдено")
 
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, pool.facility_id, "fuel_adjustment")
+
     avail = _pool_available_dec(pool)
     if avail > Decimal("0.000"):
         raise HTTPException(
@@ -430,6 +439,9 @@ async def dispatch_canisters(
     ).scalars().first()
     if not pool or not pool.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Активний пул каністр не знайдено")
+
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, pool.facility_id, "canister_op")
 
     if data.count > int(pool.empty_count):
         raise HTTPException(
@@ -492,6 +504,9 @@ async def return_empty_canisters(
     ).scalars().first()
     if not pool or not pool.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Активний пул каністр не знайдено")
+
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, pool.facility_id, "canister_op")
 
     if data.count > int(pool.away_refill_count):
         raise HTTPException(
@@ -565,6 +580,9 @@ async def receive_canisters(
     ).scalars().first()
     if not stock or not stock.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пов'язаний склад ГСМ не знайдено або архівовано.")
+
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, pool.facility_id, "canister_op")
 
     if data.source == "auto":
         total_fillable = int(pool.away_refill_count) + int(pool.empty_count)
@@ -982,6 +1000,9 @@ async def adjust_canister_pool_field(
     ).scalars().first()
     if not pool:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пул каністр не знайдено")
+
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, pool.facility_id, "fuel_adjustment")
 
     stock = (
         await db.execute(select(FuelStock).where(FuelStock.id == pool.stock_id).with_for_update())

@@ -5,6 +5,16 @@
 
 ---
 
+## [Unreleased — Режим вимірювання витрат палива та комісійна інвентаризація (`Measurement Mode`)] — 2026-11-12
+- **Серверна логіка та міграція БД ([`models/measurement.py`](backend/app/models/measurement.py), [`alembic/versions/013_fuel_measurements.py`](backend/alembic/versions/013_fuel_measurements.py), [`services/measurement_service.py`](backend/app/services/measurement_service.py), [`api/v1/measurement.py`](backend/app/api/v1/measurement.py))**:
+  - Додано таблицю `fuel_measurements` (машина станів `MEASURING` → `PENDING_INVENTORY` → `PENDING_APPROVAL` → `APPROVED` / `CANCELLED`), інтегровану з бекапами (`backup_service.py`) та очищенням БД (`settings_service.py`).
+  - Запуск режиму вимірювання (`POST /api/v1/measurement/start`, **виключно SuperAdmin**) дозволений тільки при зупиненому генераторі і 100% повному баку.
+  - Під час `MEASURING` кожна заправка в бак (`POST /api/v1/fuel/transfer`) збільшує лічильник дозаправок, ігноруються сповіщення низького залишку та розбіжності пального (`LOW_FUEL`, `FUEL_DISCREPANCY`, `allow_system_clamp=True`), а будь-які корекції палива/каністр/норми витрат блокуються (`HTTP 423 Locked`). Вихід (`finish-empty`) дозволений лише після зупинки генератора й відпрацювання щонайменше **100 літрів**.
+  - Після фіксації порожнього баку (`PENDING_INVENTORY`) операції саме на цьому об'єкті блокуються (`HTTP 423`, з повною ізоляцією інших об'єктів) до подання інвентаризації комісією з мінімум **3 осіб** (`POST /api/v1/measurement/{id}/inventory`), формування й обов'язкового скачування незмінної **PDF-відомості формату А4 альбомної орієнтації** (`fpdf2` + `fonts-dejavu-core` у Docker/CI, `GET /api/v1/measurement/{id}/statement-pdf`) та фінального погодження Суперадміністратором (`POST /api/v1/measurement/{id}/approve`).
+  - Передбачено аварійне скасування виключно Суперадміністратором із обов'язковою причиною (`POST /api/v1/measurement/{id}/cancel`), оновлення норми `nominal_consumption_l_per_h`, корекцію пулів/складів із типом `INVENTORY_CORRECTION`, запис до аудиту й 6-й аркуш Excel-звіту «Заміри та інвентаризація».
+- **PWA-інтерфейс (`sd-gen016-v5.6.0`, [`frontend/js/measurement.js`](frontend/js/measurement.js), [`frontend/index.html`](frontend/index.html), [`core.js`](frontend/js/core.js), [`dashboard.js`](frontend/js/dashboard.js), [`audit-reports.js`](frontend/js/audit-reports.js), [`sw.js`](frontend/sw.js))**:
+  - Додано кнопку меню «📏 Режим вимірювання» (приховану для всіх ролей крім `SuperAdmin`), статус-пігулку `#headerMeasurementBadge` та банер `#measurementLockBanner` на головному екрані з модальним вікном проміжних результатів `#modalMeasurementStatus`, форму комісійної інвентаризації (мін. 3 члени), скачування PDF, погодження, журнал історії та підвкладку у «Звітах».
+
 ## [Unreleased — Етап 4: Справжній Offline-режим PWA (`IndexedDB` + Ідемпотентність + Ручні конфлікти)] — 2026-11-12
 - **Універсальна ідемпотентність операцій на бекенді ([`models/idempotency.py`](backend/app/models/idempotency.py), [`alembic/versions/012_offline_idempotency.py`](backend/alembic/versions/012_offline_idempotency.py), [`services/idempotency_service.py`](backend/app/services/idempotency_service.py))**:
   - Додано таблицю `idempotency_records` (ключ `idempotency_key` через тіло запиту або заголовок `Idempotency-Key` + SHA-256 хеш тіла запиту).

@@ -142,8 +142,14 @@ function applyRolePermissionsUI() {
     'tab-notifications': !viewer,
     'tab-audit': isAdmin(),
     'tab-reports': isAdmin(),
+    'tab-measurement': superadmin,
     'tab-admin': isAdmin()
   };
+
+  const measNavBtn = document.getElementById('navTabMeasurement');
+  if (measNavBtn) {
+    measNavBtn.style.display = superadmin ? '' : 'none';
+  }
 
   document.querySelectorAll('.nav-item').forEach((tab) => {
     const paneId = tab.getAttribute('data-tab');
@@ -552,6 +558,12 @@ window.openModal = function (id) {
   if (id === 'modalNewStock') setupNewStockModal();
   if (id === 'modalAdjustment') openAdjustmentModal();
   if (id === 'modalExportAudit') openAuditExportModal();
+  if (id === 'modalMeasurementCancel' && !isSuperAdmin()) {
+    showToast('Аварійне скасування доступне лише Суперадміністратору 🔒', 'warning');
+    modal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+    return;
+  }
   if (id === 'modalOfflineQueue' && typeof window.OfflineQueue === 'object') window.OfflineQueue.renderQueueModal();
   if (typeof window.updateOperationalSafetyBanners === 'function') {
     window.updateOperationalSafetyBanners();

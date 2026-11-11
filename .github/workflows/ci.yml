@@ -35,6 +35,9 @@ jobs:
       - name: Verify dependency compatibility
         run: pip check
 
+      - name: Install system fonts for PDF statement generation
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+
       - name: Run pytest suite
         env:
           APP_ENV: testing

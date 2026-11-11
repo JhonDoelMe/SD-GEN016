@@ -158,6 +158,10 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 
 // Responsive Tab Navigation & Mobile Drawer
 window.switchTab = function(paneId) {
+  if (paneId === 'tab-measurement' && !isSuperAdmin()) {
+    showToast('Розділ "Режим вимірювання" доступний лише Суперадміністратору 🔒', 'warning');
+    return false;
+  }
   const targetNav = document.querySelector(`.nav-item[data-tab="${paneId}"]`);
   if (targetNav && (targetNav.classList.contains('nav-item-disabled') || targetNav.getAttribute('aria-disabled') === 'true')) {
     const lockTitle = targetNav.getAttribute('title') || 'Розділ заблоковано для вашого рівня доступу 🔒';
@@ -179,7 +183,7 @@ window.switchTab = function(paneId) {
   });
 
   // If active tab is inside the "More" drawer, highlight "More" button
-  const moreTabs = ['tab-faults', 'tab-notifications', 'tab-audit', 'tab-reports', 'tab-admin'];
+  const moreTabs = ['tab-faults', 'tab-notifications', 'tab-audit', 'tab-reports', 'tab-measurement', 'tab-admin'];
   const moreBtn = document.getElementById('btnMobileMore');
   if (moreBtn) {
     if (moreTabs.includes(paneId)) {
@@ -215,6 +219,9 @@ window.switchTab = function(paneId) {
   }
   if (paneId === 'tab-audit') loadAuditData();
   if (paneId === 'tab-reports') loadReport();
+  if (paneId === 'tab-measurement' && typeof window.loadMeasurementTab === 'function') {
+    window.loadMeasurementTab();
+  }
   if (paneId === 'tab-admin') {
     loadUsersData();
     loadAdminSystemSettings();

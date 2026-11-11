@@ -14,6 +14,10 @@ async function loadAllData() {
     loadFacilityIndicators(currentFacilityId)
   ];
 
+  if (typeof window.loadMeasurementStatus === 'function') {
+    tasks.push(window.loadMeasurementStatus());
+  }
+
   if (!isViewerOnly() && hasPermission('fuel:view')) {
     tasks.push(loadFuelSummary());
   } else {
@@ -34,6 +38,9 @@ async function loadAllData() {
   }
 
   await Promise.allSettled(tasks);
+  if (typeof window.applyMeasurementTankDecor === 'function') {
+    window.applyMeasurementTankDecor();
+  }
   applyRolePermissionsUI();
 }
 
@@ -93,18 +100,29 @@ async function loadGeneratorData() {
 
     cardTank.innerText = fuelL.toFixed(1).replace('.', ',');
     const cap = currentGenerator.tank_capacity_l || 25.0;
+    const inMeas = !!(window._measurementState && window._measurementState.is_measuring);
     if (fuelL < 0) {
-      cardTank.style.color = '#ef4444';
-      if (tankProgress) tankProgress.style.width = '0%';
-      if (cardTankCapSub) {
-        cardTankCapSub.innerHTML = `<span style="color: #ef4444; font-weight: 600;">Дефіцит: ${formatLiters(Math.abs(fuelL))}</span>`;
+      if (inMeas) {
+        cardTank.style.color = '#38bdf8';
+        if (tankProgress) tankProgress.style.width = '0%';
+        if (cardTankCapSub) {
+          cardTankCapSub.innerHTML = `<span style="color: #38bdf8; font-weight: 600;">📏 Режим заміру (попередження вимкнено)</span>`;
+        }
+      } else {
+        cardTank.style.color = '#ef4444';
+        if (tankProgress) tankProgress.style.width = '0%';
+        if (cardTankCapSub) {
+          cardTankCapSub.innerHTML = `<span style="color: #ef4444; font-weight: 600;">Дефіцит: ${formatLiters(Math.abs(fuelL))}</span>`;
+        }
       }
     } else {
       cardTank.style.color = 'inherit';
       const pct = Math.min(100, Math.max(0, Math.round((fuelL / cap) * 100)));
       if (tankProgress) tankProgress.style.width = `${pct}%`;
       if (cardTankCapSub) {
-        cardTankCapSub.innerText = `з ${cap.toFixed(1).replace('.', ',')} л (${pct}%)`;
+        cardTankCapSub.innerText = (inMeas && fuelL <= 0)
+          ? `0,0 з ${cap.toFixed(1).replace('.', ',')} л • 📏 Режим заміру`
+          : `з ${cap.toFixed(1).replace('.', ',')} л (${pct}%)`;
       }
     }
 
@@ -114,7 +132,7 @@ async function loadGeneratorData() {
     const banner = document.getElementById('activeRunBanner');
     const btnTransfer = document.getElementById('btnQuickTransfer');
 
-    const isFuelDeficit = (fuelL <= 0);
+    const isFuelDeficit = (fuelL <= 0) && !inMeas;
 
     badge.className = 'badge';
     if (currentGenerator.status === 'RUNNING') {
@@ -323,16 +341,26 @@ function updateRunStopwatchDisplay() {
       cardTank.innerText = liveTank.toFixed(1).replace('.', ',');
       const btnTransfer = document.getElementById('btnQuickTransfer');
       const cap = currentGenerator.tank_capacity_l || 25.0;
+      const inMeas = !!(window._measurementState && window._measurementState.is_measuring);
       if (liveTank <= 0) {
-        cardTank.style.color = '#ef4444';
-        if (tankProgress) tankProgress.style.width = '0%';
-        if (cardTankCapSub) {
-          cardTankCapSub.innerHTML = liveTank < 0
-            ? `<span style="color: #ef4444; font-weight: 600;">Дефіцит: ${formatLiters(Math.abs(liveTank))}</span>`
-            : `<span style="color: var(--text-muted);">з ${cap.toFixed(1).replace('.', ',')} л (0%)</span>`;
-        }
-        if (btnTransfer && !isViewerOnly() && hasPermission('fuel:transfer')) {
-          btnTransfer.classList.add('btn-action-refuel-highlight');
+        if (inMeas) {
+          cardTank.style.color = '#38bdf8';
+          if (tankProgress) tankProgress.style.width = '0%';
+          if (cardTankCapSub) {
+            cardTankCapSub.innerHTML = `<span style="color: #38bdf8; font-weight: 600;">📏 Режим заміру (порожній бак ігнор.)</span>`;
+          }
+          if (btnTransfer) btnTransfer.classList.remove('btn-action-refuel-highlight');
+        } else {
+          cardTank.style.color = '#ef4444';
+          if (tankProgress) tankProgress.style.width = '0%';
+          if (cardTankCapSub) {
+            cardTankCapSub.innerHTML = liveTank < 0
+              ? `<span style="color: #ef4444; font-weight: 600;">Дефіцит: ${formatLiters(Math.abs(liveTank))}</span>`
+              : `<span style="color: var(--text-muted);">з ${cap.toFixed(1).replace('.', ',')} л (0%)</span>`;
+          }
+          if (btnTransfer && !isViewerOnly() && hasPermission('fuel:transfer')) {
+            btnTransfer.classList.add('btn-action-refuel-highlight');
+          }
         }
       } else {
         cardTank.style.color = 'inherit';
@@ -442,11 +470,16 @@ window.updateFuelAssessmentBlock = function (liveTankOverride = null) {
     rateEl.innerText = `${currentGenerator.fuel_type || 'А-95'} • розхід ${nominal.toFixed(1).replace('.', ',')} л/год`;
   }
 
+  const inMeas = !!(window._measurementState && window._measurementState.is_measuring);
+
   // 1. Tank autonomy sub-card
   const tHoursEl = document.getElementById('assessTankHours');
   const tSubEl = document.getElementById('assessTankSub');
   if (tHoursEl && tSubEl) {
-    if (fuelL < 0) {
+    if (inMeas && fuelL <= 0) {
+      tHoursEl.innerHTML = `<span style="color:#38bdf8;">📏 Режим заміру</span>`;
+      tSubEl.innerHTML = `<span style="color:#bae6fd;">Попередження порожнього баку вимкнено під час вимірювання</span>`;
+    } else if (fuelL < 0) {
       tHoursEl.innerHTML = `<span style="color:#ef4444;">⚠️ Дефіцит ${formatLiters(Math.abs(fuelL))}</span>`;
       tSubEl.innerHTML = `<span style="color:#fecaca;">Бак за обліком порожній — потрібна дозаправка</span>`;
     } else {
@@ -521,7 +554,10 @@ window.updateFuelAssessmentBlock = function (liveTankOverride = null) {
   if (!slot) {
     const stdHours = 4.0;
     const stdNeed = stdHours * nominal;
-    if (tankHours + 0.05 >= stdHours && fuelL > 0) {
+    if (inMeas && fuelL <= 0) {
+      yasnoEl.className = 'yasno-fuel-readiness';
+      yasnoEl.innerHTML = `<div>📏 Триває контрольний замір витрати палива — попередження порожнього баку призупинено.${planNote}</div>`;
+    } else if (tankHours + 0.05 >= stdHours && fuelL > 0) {
       yasnoEl.className = 'yasno-fuel-readiness readiness-ok';
       yasnoEl.innerHTML = `<div>✅ Запланованих відключень зараз немає. Палива в баку вистачить на стандартний 4-год слот.${planNote}</div>`;
     } else {
@@ -557,7 +593,10 @@ window.updateFuelAssessmentBlock = function (liveTankOverride = null) {
     ? `поточне відкл. до <b>${escapeHtml(slot.end)}</b> (${escapeHtml(formatHoursToHuman(slotHours))})`
     : `слот <b>${escapeHtml(slot.start)}–${escapeHtml(slot.end)}</b> (${escapeHtml(formatHoursToHuman(slotHours))})`;
 
-  if (tankHours + 0.05 >= slotHours && fuelL > 0) {
+  if (inMeas && fuelL <= 0) {
+    yasnoEl.className = 'yasno-fuel-readiness';
+    yasnoEl.innerHTML = `<div>📏 Триває контрольний замір (на ${slotDesc} потрібно ~${needSlotL.toFixed(1).replace('.', ',')} л).${planNote}</div>`;
+  } else if (tankHours + 0.05 >= slotHours && fuelL > 0) {
     yasnoEl.className = 'yasno-fuel-readiness readiness-ok';
     yasnoEl.innerHTML = `<div>✅ На ${slotDesc} палива в баку <b>вистачить</b> (потрібно ~${needSlotL.toFixed(1).replace('.', ',')} л).${planNote}</div>`;
   } else {
@@ -565,6 +604,32 @@ window.updateFuelAssessmentBlock = function (liveTankOverride = null) {
     yasnoEl.className = `yasno-fuel-readiness ${fuelL <= 0 ? 'readiness-crit' : 'readiness-warn'}`;
     yasnoEl.innerHTML = `<div>⚠️ На ${slotDesc} у баку <b>бракує ~${defL} л</b> — потрібна дозаправка.${planNote}</div>`;
   }
+};
+
+window.applyMeasurementTankDecor = function () {
+  if (!currentGenerator) return;
+  if (currentGenerator.status === 'RUNNING') {
+    updateRunStopwatchDisplay();
+    return;
+  }
+  const inMeas = !!(window._measurementState && window._measurementState.is_measuring);
+  const fuelL = currentGenerator.fuel_tank_level_l || 0;
+  const cap = currentGenerator.tank_capacity_l || 25.0;
+  const cardTank = document.getElementById('cardTank');
+  const cardTankCapSub = document.getElementById('cardTankCapSub');
+  if (cardTank && fuelL < 0 && inMeas) {
+    cardTank.style.color = '#38bdf8';
+    if (cardTankCapSub) {
+      cardTankCapSub.innerHTML = `<span style="color: #38bdf8; font-weight: 600;">📏 Режим заміру (попередження вимкнено)</span>`;
+    }
+  } else if (cardTankCapSub && inMeas && fuelL <= 0) {
+    cardTankCapSub.innerText = `0,0 з ${cap.toFixed(1).replace('.', ',')} л • 📏 Режим заміру`;
+  }
+  const btn = document.getElementById('mainActionBtn');
+  if (btn && inMeas && currentGenerator.status !== 'FAULTY' && currentGenerator.status !== 'BLOCKED') {
+    btn.classList.remove('btn-fuel-warning');
+  }
+  updateFuelAssessmentBlock();
 };
 
 function startRunStopwatch() {

@@ -99,6 +99,14 @@ const AUDIT_ACTION_MAP_UA = {
   'USER_PASSWORD_RESET': 'Скидання пароля користувача',
   'USER_TOGGLE_ACTIVE': 'Зміна активності користувача',
 
+  // Measurement Mode
+  'MEASUREMENT_STARTED': 'Запуск режиму вимірювання витрати палива',
+  'MEASUREMENT_TANK_EMPTY': 'Фіксація порожнього баку та блокування об\'єкта',
+  'MEASUREMENT_INVENTORY_SUBMITTED': 'Подання комісійної інвентаризації',
+  'MEASUREMENT_STATEMENT_DOWNLOADED': 'Завантаження PDF-відомості інвентаризації',
+  'MEASUREMENT_APPROVED': 'Погодження інвентаризації та оновлення норми витрати',
+  'MEASUREMENT_CANCELLED': 'Аварійне скасування вимірювання',
+
   // Facility
   'FACILITY_CREATE': 'Створення об\'єкта',
   'FACILITY_CREATED': 'Створення об\'єкта',
@@ -124,6 +132,7 @@ const AUDIT_ENTITY_MAP_UA = {
   'SystemSettings': 'Системні налаштування',
   'SystemSetting': 'Системні налаштування',
   'SystemAdjustment': 'Коригування',
+  'FuelMeasurement': 'Контрольний замір',
   'System': 'Система'
 };
 
@@ -860,18 +869,20 @@ window.onReportCustomDateChange = function() {
 };
 
 window.switchReportSubtab = function(tabKey) {
-  const tabs = ['runs', 'transfers', 'receipts', 'maint'];
+  const tabs = ['runs', 'transfers', 'receipts', 'maint', 'measurements'];
   const tabBtnMap = {
     runs: 'btnRepTabRuns',
     transfers: 'btnRepTabTransfers',
     receipts: 'btnRepTabReceipts',
-    maint: 'btnRepTabMaint'
+    maint: 'btnRepTabMaint',
+    measurements: 'btnRepTabMeasurements'
   };
   const paneMap = {
     runs: 'repPaneRuns',
     transfers: 'repPaneTransfers',
     receipts: 'repPaneReceipts',
-    maint: 'repPaneMaint'
+    maint: 'repPaneMaint',
+    measurements: 'repPaneMeasurements'
   };
 
   tabs.forEach(key => {
@@ -1007,16 +1018,19 @@ async function loadReport(isUserTriggered = false) {
       const transfers = r.fuel_transfers || [];
       const receipts = r.fuel_receipts || [];
       const maint = r.maintenance_records || [];
+      const measurements = r.measurements || [];
 
       // Badges
       const bRuns = document.getElementById('repBadgeRuns');
       const bTr = document.getElementById('repBadgeTransfers');
       const bRec = document.getElementById('repBadgeReceipts');
       const bMaint = document.getElementById('repBadgeMaint');
+      const bMeas = document.getElementById('repBadgeMeasurements');
       if (bRuns) bRuns.textContent = runs.length;
       if (bTr) bTr.textContent = transfers.length;
       if (bRec) bRec.textContent = receipts.length;
       if (bMaint) bMaint.textContent = maint.length;
+      if (bMeas) bMeas.textContent = measurements.length;
 
       // Table 1: Runs (Paginated: 10 per page)
       window.renderPaginatedTable('repRunsTable', runs, row => `
@@ -1066,6 +1080,23 @@ async function loadReport(isUserTriggered = false) {
           <td>${escapeHtml(row.operator_name || '-')}</td>
         </tr>
       `, 7, 'Немає записів обслуговування за обраний період', 10);
+
+      // Table 5: Measurements & Inventory (Paginated: 10 per page)
+      window.renderPaginatedTable('repMeasurementsTable', measurements, row => {
+        const pdfLink = isSuperAdmin()
+          ? ` <button type="button" class="btn-oq-chip btn-oq-chip-info" style="margin-left:0.35rem;" onclick="downloadMeasurementPdf(${Number(row.id)})">📥 PDF</button>`
+          : '';
+        return `
+          <tr>
+            <td><b>${escapeHtml(row.approved_at)}</b></td>
+            <td><b>${escapeHtml(row.statement_number)}</b>${pdfLink}</td>
+            <td>${escapeHtml(row.generator_name || '-')}</td>
+            <td><b>${Number(row.total_fuel_consumed_l || 0).toFixed(1)} л</b> / ${Number(row.total_hours_elapsed || 0).toFixed(2)} год</td>
+            <td>${Number(row.old_consumption_l_per_h || 0).toFixed(2)} ➔ <b style="color:#4ade80;">${Number(row.new_consumption_l_per_h || 0).toFixed(3)}</b></td>
+            <td style="font-size:0.8rem;">${escapeHtml(row.commission_summary || '-')}</td>
+            <td>${escapeHtml(row.approved_by_name || '-')}</td>
+          </tr>`;
+      }, 7, 'Немає проведених замірів та інвентаризацій за обраний період', 10);
     }
 
     if (isUserTriggered) {

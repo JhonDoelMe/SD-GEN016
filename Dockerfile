@@ -35,10 +35,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install only essential runtime dependencies (curl for healthcheck, libpq5 for PostgreSQL client)
+# Install only essential runtime dependencies (curl for healthcheck, libpq5 for PostgreSQL client, fonts-dejavu-core for Cyrillic PDF)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libpq5 \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy pre-built virtual environment from builder stage

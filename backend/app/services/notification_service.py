@@ -543,7 +543,8 @@ async def notify_generator_stop(
     user_name: str,
     duration_str: str,
     consumption_l: Optional[float],
-    end_fuel: Optional[float]
+    end_fuel: Optional[float],
+    suppress_low_fuel: bool = False,
 ):
     cons_str = f"{consumption_l:.2f} л" if consumption_l is not None else "розраховується"
     fuel_str = f"{end_fuel:.1f} л" if end_fuel is not None else "-"
@@ -559,8 +560,8 @@ async def notify_generator_stop(
         url="/?tab=tab-dashboard"
     )
 
-    # Check fuel level after stop
-    if end_fuel is not None:
+    # Check fuel level after stop (suppressed during FuelMeasurement MEASURING phase)
+    if not suppress_low_fuel and end_fuel is not None:
         await check_and_notify_low_fuel(db, generator, end_fuel)
 
     # Check maintenance after stop

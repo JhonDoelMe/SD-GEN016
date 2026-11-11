@@ -121,6 +121,8 @@ async def perform_adjustment(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
         target_facility_id = gen.facility_id or target_facility_id
         target_name = f"{gen.name} ({gen.model or 'Генератор'})"
+        from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+        await ensure_facility_not_locked_by_measurement(db, target_facility_id, "system_adjustment")
 
         if data.field_name == "current_operating_hours":
             old_val_str = str(gen.current_operating_hours)
@@ -129,6 +131,8 @@ async def perform_adjustment(
             if gen.status not in ("RUNNING", "ARCHIVED"):
                 gen.status = await _evaluate_generator_resting_status(db, gen)
         elif data.field_name == "fuel_tank_level_l":
+            from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+            await ensure_facility_not_locked_by_measurement(db, target_facility_id, "fuel_adjustment")
             old_val_str = str(float(gen.fuel_tank_level_l))
             new_tank_val = _parse_float(data.new_value, data.field_name)
             cap = float(gen.tank_capacity_l or 0.0)
@@ -158,6 +162,8 @@ async def perform_adjustment(
             old_val_str = str(gen.status)
             gen.status = new_status
         elif data.field_name == "nominal_consumption_l_per_h":
+            from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+            await ensure_facility_not_locked_by_measurement(db, target_facility_id, "fuel_adjustment")
             new_cons = _parse_non_negative_float(data.new_value, data.field_name)
             if new_cons <= 0:
                 raise HTTPException(
@@ -174,6 +180,8 @@ async def perform_adjustment(
         if not stock:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
         target_facility_id = stock.facility_id or target_facility_id
+        from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+        await ensure_facility_not_locked_by_measurement(db, target_facility_id, "fuel_adjustment")
         target_name = f"{stock.name} ({stock.fuel_type})"
 
         if data.field_name == "current_balance_l":

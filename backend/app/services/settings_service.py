@@ -22,6 +22,7 @@ from backend.app.models.fault import Fault
 from backend.app.models.audit import AuditLog, SystemAdjustment
 from backend.app.models.user import User
 from backend.app.models.idempotency import IdempotencyRecord
+from backend.app.models.measurement import FuelMeasurement
 
 # Default WOG Ukraine retail fuel prices fallback (UAH per liter)
 DEFAULT_INTERNET_PRICES: Dict[str, float] = {
@@ -984,6 +985,7 @@ async def perform_system_reset(
                 ms.next_due_hours = ms.interval_hours
 
         await db.execute(delete(CanisterTransaction).where(CanisterTransaction.facility_id == facility_id))
+        await db.execute(delete(FuelMeasurement).where(FuelMeasurement.facility_id == facility_id))
         pools_res = await db.execute(select(CanisterPool).where(CanisterPool.facility_id == facility_id))
         for cp in pools_res.scalars().all():
             cp.full_count = 0
@@ -1013,6 +1015,7 @@ async def perform_system_reset(
 
     elif mode == "reports_clean":
         await db.execute(delete(CanisterTransaction))
+        await db.execute(delete(FuelMeasurement))
         await db.execute(delete(GeneratorRun))
         await db.execute(delete(FuelTransfer))
         await db.execute(delete(FuelReceipt))
@@ -1111,6 +1114,7 @@ async def perform_system_reset(
         await db.execute(delete(SystemAdjustment))
         await db.execute(delete(AuditLog))
         await db.execute(delete(CanisterTransaction))
+        await db.execute(delete(FuelMeasurement))
         await db.execute(delete(CanisterPool))
         await db.execute(delete(Generator))
         await db.execute(delete(FuelStock))

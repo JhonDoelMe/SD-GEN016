@@ -38,7 +38,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/frontend/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=5.5.1">
+  <link rel="stylesheet" href="/frontend/styles.css?v=5.6.0">
 </head>
 <body>
 
@@ -121,6 +121,11 @@
           <span class="pill-text" id="alertPillText">Відбій</span>
           <span class="pill-subtext" id="alertPillRegion">--</span>
         </button>
+        <!-- Measurement Mode Badge (Shown only when facility is in measurement / inventory lock) -->
+        <button type="button" id="headerMeasurementBadge" class="header-pill pill-measurement" style="display: none;" title="Режим вимірювання витрат палива (натисніть для проміжних результатів)" onclick="openMeasurementStatusModal()">
+          <span class="pill-icon" id="measurementPillIcon">📏</span>
+          <span class="pill-text" id="measurementPillText">Замір</span>
+        </button>
         <!-- Offline Sync & Queue Badge -->
         <button type="button" id="headerOfflineSyncBadge" class="header-pill pill-offline-sync pill-sync-online" title="Стан з'єднання та офлайн-черга PWA" onclick="openOfflineQueueModal()">
           <span class="pill-icon" id="offlinePillIcon">🟢</span>
@@ -179,6 +184,7 @@
     <div class="nav-item" data-tab="tab-notifications">🔔 Сповіщення</div>
     <div class="nav-item" data-tab="tab-audit">🔍 Аудит</div>
     <div class="nav-item" data-tab="tab-reports">📊 Звіти</div>
+    <div class="nav-item" id="navTabMeasurement" data-tab="tab-measurement" style="display: none;">📏 Режим вимірювання</div>
     <div class="nav-item" data-tab="tab-admin">⚙️ Адміністрування</div>
   </nav>
 
@@ -191,6 +197,15 @@
       <div class="offline-sync-banner-actions">
         <button type="button" id="btnOfflineBannerSync" class="btn-oq-chip btn-oq-chip-info" onclick="OfflineQueue.syncOfflineQueue({ silent: false })">🔄 Синхронізувати</button>
         <button type="button" class="btn-oq-chip" onclick="openOfflineQueueModal()">📋 Відкрити чергу</button>
+      </div>
+    </div>
+
+    <!-- Measurement Mode / Inventory Lock Banner -->
+    <div id="measurementLockBanner" class="offline-sync-banner banner-measurement" style="display: none;">
+      <div id="measurementLockBannerText" class="offline-sync-banner-text"></div>
+      <div class="offline-sync-banner-actions">
+        <button type="button" class="btn-oq-chip btn-oq-chip-info" onclick="openMeasurementStatusModal()">📏 Результати</button>
+        <button type="button" id="btnMeasurementBannerOpen" class="btn-oq-chip" style="display: none;" onclick="switchTab('tab-measurement')">⚙️ Керувати</button>
       </div>
     </div>
 
@@ -897,6 +912,9 @@
               <button type="button" class="report-subtab-btn" id="btnRepTabMaint" onclick="switchReportSubtab('maint')">
                 <span>🔧 Обслуговування (ТО)</span> <span class="report-badge" id="repBadgeMaint">0</span>
               </button>
+              <button type="button" class="report-subtab-btn" id="btnRepTabMeasurements" onclick="switchReportSubtab('measurements')">
+                <span>📏 Заміри та інвентаризація</span> <span class="report-badge" id="repBadgeMeasurements">0</span>
+              </button>
             </div>
           </div>
 
@@ -976,6 +994,70 @@
               </table>
             </div>
           </div>
+
+          <!-- Subtab 5: Measurements & Inventory -->
+          <div id="repPaneMeasurements" class="rep-subtab-pane" style="display: none;">
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+              <table id="repMeasurementsTable">
+                <thead>
+                  <tr>
+                    <th>Погоджено</th>
+                    <th>№ Відомості</th>
+                    <th>Генератор</th>
+                    <th>Відпрацьовано</th>
+                    <th>Норма (л/год)</th>
+                    <th>Склад комісії</th>
+                    <th>Погодив</th>
+                  </tr>
+                </thead>
+                <tbody id="repMeasurementsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 7B: FUEL MEASUREMENT MODE (SUPERADMIN ONLY) -->
+    <section id="tab-measurement" class="tab-pane" style="display: none;">
+      <div class="panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header" style="align-items: flex-start; gap: 0.75rem;">
+          <div>
+            <h3 style="margin-bottom: 0.25rem;">📏 Режим вимірювання витрат палива та інвентаризація</h3>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0;">
+              Контрольний замір фактичного споживання (від повного баку, мінімум 100 л), блокування корекцій та комісійна інвентаризація залишків з формуванням PDF-відомості А4 (доступно лише Суперадміністратору).
+            </p>
+          </div>
+          <button type="button" class="btn-secondary" style="width: auto; padding: 0.45rem 0.9rem; font-size: 0.82rem;" onclick="loadMeasurementTab()">🔄 Оновити</button>
+        </div>
+        <div id="measurementWorkspace">
+          <div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Завантаження стану режиму вимірювання...</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h3 style="margin-bottom: 0.2rem;">📋 Історія контрольних замірів об'єкта</h3>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">Завершені, погоджені та скасовані вимірювання витрат палива</p>
+          </div>
+        </div>
+        <div class="table-container" style="max-height: 440px; overflow-y: auto;">
+          <table id="measurementHistoryTable">
+            <thead>
+              <tr>
+                <th>№ Відомості</th>
+                <th>Статус</th>
+                <th>Генератор</th>
+                <th>Старт</th>
+                <th>Відпрацьовано</th>
+                <th>Норма (було → факт)</th>
+                <th>Склад комісії</th>
+                <th>Дія / PDF</th>
+              </tr>
+            </thead>
+            <tbody id="measurementHistoryTableBody"></tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -3318,6 +3400,10 @@
         <span class="more-icon">📊</span>
         <span class="more-label">Звіти</span>
       </button>
+      <button type="button" class="mobile-more-item" id="mobileMoreMeasurement" data-tab="tab-measurement" style="display: none;" onclick="switchTab('tab-measurement')">
+        <span class="more-icon">📏</span>
+        <span class="more-label">Вимірювання</span>
+      </button>
       <button type="button" class="mobile-more-item" data-tab="tab-admin" onclick="switchTab('tab-admin')">
         <span class="more-icon">⚙️</span>
         <span class="more-label">Адмін</span>
@@ -3445,6 +3531,45 @@
     </div>
   </div>
 
+  <!-- Modal: Measurement Intermediate Status -->
+  <div id="modalMeasurementStatus" class="modal-overlay" style="display: none;">
+    <div class="modal-content modal-wide modal-compact">
+      <div class="modal-header">
+        <h3>📏 Стан контрольного вимірювання</h3>
+        <button type="button" class="close-btn" onclick="closeModal('modalMeasurementStatus')">&times;</button>
+      </div>
+      <div id="measurementStatusModalBody"></div>
+      <div style="display:flex; gap:0.6rem; justify-content:flex-end; margin-top:1rem; flex-wrap:wrap;">
+        <button type="button" id="btnModalMeasGoAdmin" class="btn-oq-chip btn-oq-chip-info" style="display:none;" onclick="closeModal('modalMeasurementStatus'); switchTab('tab-measurement')">⚙️ Керувати вимірюванням</button>
+        <button type="button" class="btn-secondary" style="width:auto; padding:0.5rem 1rem;" onclick="closeModal('modalMeasurementStatus')">Закрити</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Emergency Cancel Measurement (SuperAdmin Only) -->
+  <div id="modalMeasurementCancel" class="modal-overlay" style="display: none;">
+    <div class="modal-content modal-compact">
+      <div class="modal-header">
+        <h3>✖️ Аварійне скасування вимірювання</h3>
+        <button type="button" class="close-btn" onclick="closeModal('modalMeasurementCancel')">&times;</button>
+      </div>
+      <p style="font-size:0.86rem; color:var(--text-muted); margin-bottom:0.85rem;">
+        Запис контрольного вимірювання буде позначено як скасований, номінальна норма витрат та залишки на складі/в баку залишаться без змін, а блокування операцій об'єкта буде знято. Дія фіксується у журналі аудиту.
+      </p>
+      <form id="measurementCancelForm">
+        <input type="hidden" id="cancelMeasurementId">
+        <div class="form-group">
+          <label for="cancelMeasurementReason">Причина аварійного скасування (мін. 5 символів) *</label>
+          <textarea id="cancelMeasurementReason" rows="3" minlength="5" required placeholder="Наприклад: хибний старт, заміна датчика рівня, перебої електропостачання..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalMeasurementCancel')">Назад</button>
+          <button type="submit" class="btn-danger">Підтвердити скасування</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal: Offline Queue & Conflict Resolution -->
   <div id="modalOfflineQueue" class="modal-overlay" style="display: none;">
     <div class="modal-content modal-wide modal-compact">
@@ -3464,19 +3589,20 @@
     <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/js/core.js?v=5.5.1"></script>
-  <script src="/frontend/js/offline-queue.js?v=5.5.1"></script>
-  <script src="/frontend/js/theme-format.js?v=5.5.1"></script>
-  <script src="/frontend/js/auth-nav.js?v=5.5.1"></script>
-  <script src="/frontend/js/dashboard.js?v=5.5.1"></script>
-  <script src="/frontend/js/fuel.js?v=5.5.1"></script>
-  <script src="/frontend/js/operations.js?v=5.5.1"></script>
-  <script src="/frontend/js/audit-reports.js?v=5.5.1"></script>
-  <script src="/frontend/js/admin.js?v=5.5.1"></script>
-  <script src="/frontend/js/backups.js?v=5.5.1"></script>
-  <script src="/frontend/js/notifications.js?v=5.5.1"></script>
-  <script src="/frontend/js/yasno.js?v=5.5.1"></script>
-  <script src="/frontend/js/weather-alerts.js?v=5.5.1"></script>
+  <script src="/frontend/js/core.js?v=5.6.0"></script>
+  <script src="/frontend/js/offline-queue.js?v=5.6.0"></script>
+  <script src="/frontend/js/theme-format.js?v=5.6.0"></script>
+  <script src="/frontend/js/auth-nav.js?v=5.6.0"></script>
+  <script src="/frontend/js/dashboard.js?v=5.6.0"></script>
+  <script src="/frontend/js/fuel.js?v=5.6.0"></script>
+  <script src="/frontend/js/operations.js?v=5.6.0"></script>
+  <script src="/frontend/js/audit-reports.js?v=5.6.0"></script>
+  <script src="/frontend/js/measurement.js?v=5.6.0"></script>
+  <script src="/frontend/js/admin.js?v=5.6.0"></script>
+  <script src="/frontend/js/backups.js?v=5.6.0"></script>
+  <script src="/frontend/js/notifications.js?v=5.6.0"></script>
+  <script src="/frontend/js/yasno.js?v=5.6.0"></script>
+  <script src="/frontend/js/weather-alerts.js?v=5.6.0"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>
