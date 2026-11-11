@@ -59,6 +59,7 @@ const AUDIT_ACTION_MAP_UA = {
   'CANISTER_DISPATCHED': 'Відправка каністр на заправку',
   'CANISTER_RECEIVED': 'Прийом заправлених каністр',
   'CANISTER_RETURNED_EMPTY': 'Повернення порожніх каністр без заправки',
+  'POOL_ADJUSTMENT': 'Системне коригування каністр',
 
   // Maintenance
   'MAINTENANCE_RECORD': 'Технічне обслуговування',
@@ -132,6 +133,10 @@ const ADJUSTMENT_FIELD_MAP_UA = {
   'status': 'Статус генератора',
   'nominal_consumption_l_per_h': 'Нормативний розхід (л/год)',
   'current_balance_l': 'Залишок на складі (л)',
+  'full_count': 'Повні каністри (шт.)',
+  'empty_count': 'Порожні каністри (шт.)',
+  'away_refill_count': 'Каністри на АЗС (шт.)',
+  'reserve_liters': 'Резервна ємність (л)',
   'interval_hours': 'Інтервал ТО (год)',
   'next_due_hours': 'Наступне ТО (мотогодини)',
   'last_performed_hours': 'Останнє ТО (мотогодини)',
@@ -551,6 +556,13 @@ window.openAdjustmentModal = async function() {
         <option value="current_balance_l">Залишок на складі (л)</option>
         <option value="name">Назва складу</option>
       `;
+    } else if (entity === 'CanisterPool') {
+      fieldSelect.innerHTML = `
+        <option value="full_count">Повні каністри (шт.)</option>
+        <option value="empty_count">Порожні каністри (шт.)</option>
+        <option value="away_refill_count">На заправці / АЗС (шт.)</option>
+        <option value="reserve_liters">Залишок у резерві (л)</option>
+      `;
     } else if (entity === 'Generator') {
       fieldSelect.innerHTML = `
         <option value="current_operating_hours">Мотогодини</option>
@@ -623,6 +635,30 @@ window.onAdjFacilityOrEntityChange = async function() {
       }
     } catch (_) {
       targetSel.innerHTML = `<option value="1" data-balance="0.0">Основний склад ГСМ (за замовчуванням)</option>`;
+    }
+  } else if (entity === 'CanisterPool') {
+    if (targetLabel) targetLabel.innerText = 'Цільовий пул каністр';
+    fieldSelect.innerHTML = `
+      <option value="full_count">Повні каністри (шт.)</option>
+      <option value="empty_count">Порожні каністри (шт.)</option>
+      <option value="away_refill_count">На заправці / АЗС (шт.)</option>
+      <option value="reserve_liters">Залишок у резерві (л)</option>
+    `;
+    targetSel.innerHTML = '<option value="" disabled selected>Завантаження пулів каністр...</option>';
+    try {
+      const q = facilityId ? `?facility_id=${encodeURIComponent(facilityId)}` : '';
+      const pools = await api(`/fuel/canisters${q}`);
+      if (pools && pools.length > 0) {
+        targetSel.innerHTML = pools.map((p) => `
+          <option value="${p.id}" data-type="CanisterPool" data-full="${p.full_count}" data-empty="${p.empty_count}" data-away="${p.away_refill_count}" data-reserve="${p.reserve_liters}">
+            ${escapeHtml(p.name)} (${escapeHtml(p.fuel_type)}, ${Number(p.canister_volume_l).toFixed(0)} л) — повних: ${p.full_count}, пустих: ${p.empty_count}, АЗС: ${p.away_refill_count}, рез: ${Number(p.reserve_liters).toFixed(1)} л
+          </option>
+        `).join('');
+      } else {
+        targetSel.innerHTML = `<option value="" disabled selected>Немає пулів каністр на цьому об'єкті</option>`;
+      }
+    } catch (_) {
+      targetSel.innerHTML = `<option value="" disabled selected>Помилка завантаження пулів</option>`;
     }
   } else if (entity === 'Generator') {
     if (targetLabel) targetLabel.innerText = 'Цільовий генератор';
@@ -707,6 +743,10 @@ window.onAdjFieldChange = function() {
 
   let val = '';
   if (field === 'current_balance_l') val = opt.getAttribute('data-balance') || '';
+  else if (field === 'full_count') val = opt.getAttribute('data-full') || '';
+  else if (field === 'empty_count') val = opt.getAttribute('data-empty') || '';
+  else if (field === 'away_refill_count') val = opt.getAttribute('data-away') || '';
+  else if (field === 'reserve_liters') val = opt.getAttribute('data-reserve') || '';
   else if (field === 'current_operating_hours') val = opt.getAttribute('data-hours') || '';
   else if (field === 'fuel_tank_level_l') val = opt.getAttribute('data-fuel') || '';
   else if (field === 'status') val = opt.getAttribute('data-status') || '';

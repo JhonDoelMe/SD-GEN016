@@ -566,7 +566,17 @@ async def receive_canisters(
     if not stock or not stock.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пов'язаний склад ГСМ не знайдено або архівовано.")
 
-    if data.source == "away":
+    if data.source == "auto":
+        total_fillable = int(pool.away_refill_count) + int(pool.empty_count)
+        if data.count > total_fillable:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Доступно лише {total_fillable} незаповнених каністр для прийому "
+                    f"(на АЗС: {pool.away_refill_count}, порожніх: {pool.empty_count}; запитано {data.count})."
+                )
+            )
+    elif data.source == "away":
         if data.count > int(pool.away_refill_count):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -613,7 +623,12 @@ async def receive_canisters(
         receipt_id = receipt.id
 
     before_snap = _snapshot_pool(pool)
-    if data.source == "away":
+    if data.source == "auto":
+        from_away = min(data.count, int(pool.away_refill_count))
+        from_empty = data.count - from_away
+        pool.away_refill_count -= from_away
+        pool.empty_count -= from_empty
+    elif data.source == "away":
         pool.away_refill_count -= data.count
     else:
         pool.empty_count -= data.count
@@ -872,3 +887,164 @@ async def list_canister_transactions(
     if pool_id is not None:
         q = q.where(CanisterTransaction.pool_id == pool_id)
     return list((await db.execute(q)).scalars().all())
+
+
+async def adjust_stock_canisters_to_balance(
+    db: AsyncSession,
+    stock: FuelStock,
+    target_balance: Decimal,
+    user_id: int,
+    reason: str,
+) -> None:
+    """
+    Synchronize canister pool(s) when SuperAdmin adjusts FuelStock.current_balance_l via SystemAdjustment.
+    Caps maximum adjustable fuel at total_count * canister_volume_l (no stationary tank).
+    """
+    pools = list(
+        (
+            await db.execute(
+                select(CanisterPool)
+                .where(CanisterPool.stock_id == stock.id, CanisterPool.is_active == True)  # noqa: E712
+                .order_by(CanisterPool.id.asc())
+                .with_for_update()
+            )
+        ).scalars().all()
+    )
+    if not pools:
+        return
+
+    max_capacity = sum(
+        (Decimal(int(p.total_count)) * to_decimal(p.canister_volume_l, 2) for p in pools),
+        Decimal("0.000"),
+    )
+    if target_balance > max_capacity:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Залишок ({float(target_balance):.1f} л) перевищує фізичну місткість закріплених каністр "
+                f"({float(max_capacity):.1f} л). Для зміни кількості каністр відкоригуйте сутність «Пул каністр»."
+            ),
+        )
+
+    remaining = to_liters(target_balance)
+    for pool in pools:
+        before_snap = _snapshot_pool(pool)
+        old_avail = _pool_available_dec(pool)
+        vol = to_decimal(pool.canister_volume_l, 2)
+        total = int(pool.total_count)
+        pool_max = Decimal(total) * vol
+
+        alloc = min(remaining, pool_max)
+        remaining = to_liters(remaining - alloc)
+
+        new_full = int(alloc // vol) if vol > Decimal("0") else 0
+        if new_full > total:
+            new_full = total
+        new_reserve = to_liters(alloc - (Decimal(new_full) * vol))
+        free_slots = total - new_full
+        new_away = min(int(pool.away_refill_count), free_slots)
+        new_empty = max(0, free_slots - new_away)
+
+        pool.full_count = new_full
+        pool.empty_count = new_empty
+        pool.away_refill_count = new_away
+        pool.reserve_liters = new_reserve
+        pool.updated_at = utc_now()
+        await db.flush()
+
+        new_avail = _pool_available_dec(pool)
+        _record_canister_tx(
+            db=db,
+            pool=pool,
+            user_id=user_id,
+            operation="POOL_ADJUSTMENT",
+            count=abs(new_full - before_snap[0]),
+            liters_delta=new_avail - old_avail,
+            used_from_reserve=Decimal("0.000"),
+            before_snap=before_snap,
+            comment=f"Системне коригування складу ({float(old_avail):.1f} → {float(new_avail):.1f} л): {reason.strip()}",
+        )
+
+    await sync_stock_balance_from_pools(db, stock)
+
+
+async def adjust_canister_pool_field(
+    db: AsyncSession,
+    pool_id: int,
+    field_name: str,
+    raw_new_value: str,
+    user_id: int,
+    reason: str,
+) -> Tuple[CanisterPool, str, str]:
+    """Adjust an explicit field on CanisterPool via SuperAdmin SystemAdjustment and resync FuelStock."""
+    pool = (
+        await db.execute(select(CanisterPool).where(CanisterPool.id == pool_id).with_for_update())
+    ).scalars().first()
+    if not pool:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пул каністр не знайдено")
+
+    stock = (
+        await db.execute(select(FuelStock).where(FuelStock.id == pool.stock_id).with_for_update())
+    ).scalars().first()
+
+    before_snap = _snapshot_pool(pool)
+    old_avail = _pool_available_dec(pool)
+    vol_dec = to_decimal(pool.canister_volume_l, 2)
+
+    if field_name in ("full_count", "empty_count", "away_refill_count"):
+        try:
+            new_int = int(str(raw_new_value).strip())
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Поле '{field_name}' повинно бути цілим невід'ємним числом"
+            )
+        if new_int < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Поле '{field_name}' не може бути від'ємним"
+            )
+        old_val_str = str(getattr(pool, field_name))
+        setattr(pool, field_name, new_int)
+        new_val_str = str(new_int)
+    elif field_name == "reserve_liters":
+        try:
+            new_dec = to_liters(float(str(raw_new_value).replace(",", ".").strip()))
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Поле 'reserve_liters' повинно бути числом"
+            )
+        old_val_str = str(float(pool.reserve_liters))
+        pool.reserve_liters = new_dec
+        new_val_str = str(float(new_dec))
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Непідтримуване поле пулу каністр: {field_name}")
+
+    pool.total_count = _validate_pool_invariants(
+        int(pool.full_count),
+        int(pool.empty_count),
+        int(pool.away_refill_count),
+        vol_dec,
+        to_liters(pool.reserve_liters),
+    )
+    pool.updated_at = utc_now()
+    await db.flush()
+
+    new_avail = _pool_available_dec(pool)
+    _record_canister_tx(
+        db=db,
+        pool=pool,
+        user_id=user_id,
+        operation="POOL_ADJUSTMENT",
+        count=int(pool.total_count),
+        liters_delta=new_avail - old_avail,
+        used_from_reserve=Decimal("0.000"),
+        before_snap=before_snap,
+        comment=f"Коригування '{field_name}' ({old_val_str} → {new_val_str}): {reason.strip()}",
+    )
+
+    if stock:
+        await sync_stock_balance_from_pools(db, stock)
+
+    return pool, old_val_str, new_val_str

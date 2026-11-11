@@ -38,7 +38,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/frontend/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=5.4.3">
+  <link rel="stylesheet" href="/frontend/styles.css?v=5.4.4">
 </head>
 <body>
 
@@ -377,10 +377,10 @@
         <div class="panel-header">
           <h3>Управління паливом (Склади ГСМ ↔ Баки генераторів)</h3>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button type="button" id="btnFuelReceipt" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalReceipt')">+ Оприбуткувати (Бензовоз)</button>
+            <button type="button" id="btnFuelReceipt" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalReceipt')">📥 + Прийняти паливо</button>
             <button type="button" id="btnFuelTransfer" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalTransfer')">⛽ Заправити бак</button>
             <button type="button" id="btnFuelNewCanisterPool" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openCreateCanisterPoolModal()">🛢️ + Пул каністр</button>
-            <button type="button" id="btnFuelNewStock" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalNewStock')">📦 + Додати склад ГСМ</button>
+            <button type="button" id="btnFuelNewStock" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalNewStock')">📦 + Новий склад</button>
           </div>
         </div>
 
@@ -1502,65 +1502,100 @@
     </div>
   </div>
 
-  <!-- Modal: Add Fuel Receipt (Warehouse) -->
+  <!-- Modal: Add Fuel Receipt (Unified Canister / Warehouse) -->
   <div id="modalReceipt" class="modal-overlay">
-    <div class="modal-content">
+    <div class="modal-content modal-compact">
       <div class="modal-header">
-        <h3>Оприбуткування палива на склад ГСМ</h3>
+        <h3 id="recModalTitle">📥 Прийом палива на склад</h3>
         <button class="close-btn" onclick="closeModal('modalReceipt')">&times;</button>
       </div>
       <form id="receiptForm">
-        <div class="form-group">
-          <label>Об'єкт (локація)</label>
-          <select id="recFacility" required></select>
-        </div>
-        <div class="form-group">
-          <label>Склад ГСМ</label>
-          <select id="recStock" required></select>
-        </div>
-        <div class="form-group">
-          <label>Мережа АЗС / Постачальник</label>
-          <select id="recFuelProvider" onchange="onReceiptFuelProviderChange()">
-            <option value="wog" selected>АЗК WOG (wog.ua)</option>
-            <option value="okko">АЗК OKKO (okko.ua)</option>
-            <option value="other">Інша АЗС / Власний постачальник</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Тип палива</label>
-          <select id="recFuelType" onchange="updateReceiptPriceEstimate()">
-            <option value="А-95" selected>А-95 (WOG 95 Євро5-Е10)</option>
-            <option value="А-95 Mustang">А-95 Mustang (WOG 95 Mustang)</option>
-            <option value="ДП">ДП (WOG ДП Євро5)</option>
-            <option value="ДП Mustang+">ДП Mustang+ (WOG ДП Mustang+)</option>
-            <option value="ГАЗ">ГАЗ (WOG LPG)</option>
-            <option value="А-92">А-92</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Кількість літрів</label>
-          <input type="number" step="0.1" id="recLiters" required placeholder="напр. 100.0" oninput="updateReceiptPriceEstimate()">
-        </div>
-        <div class="form-group">
-          <label>Сума за чеком (грн) — <span style="color: #38bdf8; font-weight: 400;">необов'язково (авторозрахунок)</span></label>
-          <input type="number" step="0.01" id="recCostTotal" placeholder="Залиште порожнім для авторозрахунку за ціною з налаштувань/WOG" oninput="updateReceiptPriceEstimate()">
-          <div id="recAutoPriceHint" style="margin-top: 0.4rem; padding: 0.5rem 0.65rem; border-radius: 0.45rem; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 0.82rem; color: #cbd5e1;">
-            💡 Введіть кількість літрів — якщо суму не вказано, її буде розраховано автоматично за ціною з налаштувань або табло АЗК WOG.
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Об'єкт</label>
+            <select id="recFacility" required></select>
+          </div>
+          <div class="form-group">
+            <label>Склад ГСМ</label>
+            <select id="recStock" required onchange="onReceiptStockChange()"></select>
           </div>
         </div>
-        <div class="form-group">
-          <label>ПІБ водія бензовоза / постачальник</label>
-          <input type="text" id="recDriver" required placeholder="напр. Іваненко І.І.">
+
+        <div id="recCanisterModeBox" style="display: none;">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>Пул каністр</label>
+              <select id="recCanisterPool" onchange="updateReceiptPriceEstimate()"></select>
+            </div>
+            <div class="form-group">
+              <label id="recCanisterCountLabel">Привезено каністр (шт.)</label>
+              <input type="number" step="1" min="1" id="recCanisterCount" value="1" oninput="updateReceiptPriceEstimate()">
+            </div>
+          </div>
         </div>
-        <div class="form-group">
-          <label>Номер чека або накладної</label>
-          <input type="text" id="recNumber" required placeholder="напр. ЧЕК-4589">
+
+        <div id="recLitersModeBox">
+          <div id="recNoPoolHint" style="display: none; margin-bottom: 0.6rem; padding: 0.45rem 0.65rem; border-radius: 0.45rem; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); font-size: 0.78rem; color: #fbbf24;">
+            ℹ️ Для цього складу пул каністр не налаштовано — доступний ввід у літрах.
+          </div>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>Тип палива</label>
+              <select id="recFuelType" onchange="updateReceiptPriceEstimate()">
+                <option value="А-95" selected>А-95 (WOG 95 Євро5-Е10)</option>
+                <option value="А-95 Mustang">А-95 Mustang (WOG 95 Mustang)</option>
+                <option value="ДП">ДП (WOG ДП Євро5)</option>
+                <option value="ДП Mustang+">ДП Mustang+ (WOG ДП Mustang+)</option>
+                <option value="ГАЗ">ГАЗ (WOG LPG)</option>
+                <option value="А-92">А-92</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Кількість літрів</label>
+              <input type="number" step="0.1" id="recLiters" placeholder="напр. 60.0" oninput="updateReceiptPriceEstimate()">
+            </div>
+          </div>
         </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Мережа АЗС</label>
+            <select id="recFuelProvider" onchange="onReceiptFuelProviderChange()">
+              <option value="wog" selected>АЗК WOG</option>
+              <option value="okko">АЗК OKKO</option>
+              <option value="other">Інша АЗС</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Сума чека (грн, опц.)</label>
+            <input type="number" step="0.01" min="0" id="recCostTotal" placeholder="Авторозрахунок" oninput="updateReceiptPriceEstimate()">
+          </div>
+        </div>
+
+        <div id="recAutoPriceHint" style="margin-bottom: 0.72rem; padding: 0.5rem 0.65rem; border-radius: 0.45rem; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 0.8rem; line-height: 1.4;">
+          💡 Оберіть кількість каністр для розрахунку літрів та суми.
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Хто доставив (ПІБ) *</label>
+            <input type="text" id="recDriver" required placeholder="напр. Іваненко І.І.">
+          </div>
+          <div class="form-group">
+            <label>Номер чека *</label>
+            <input type="text" id="recNumber" required placeholder="напр. ЧЕК-4589">
+          </div>
+        </div>
+
         <div class="form-group">
           <label>Коментар</label>
-          <textarea id="recComment" rows="2" placeholder="Додаткова інформація"></textarea>
+          <input type="text" id="recComment" placeholder="Додаткова інформація (необов'язково)">
         </div>
-        <button type="submit" class="btn-primary">Зберегти надходження</button>
+
+        <div style="display: flex; gap: 0.75rem; margin-top: 0.5rem;">
+          <button type="submit" class="btn-primary" style="flex: 1;">Зберегти надходження</button>
+          <button type="button" class="btn-action" style="min-height: 42px; padding: 0.5rem 1rem;" onclick="closeModal('modalReceipt')">Скасувати</button>
+        </div>
       </form>
     </div>
   </div>
@@ -1631,32 +1666,34 @@
 
   <!-- Modal: Create / Edit Canister Pool -->
   <div id="modalCanisterPool" class="modal-overlay">
-    <div class="modal-content" style="max-width: 520px;">
+    <div class="modal-content modal-compact">
       <div class="modal-header">
         <h3 id="canPoolModalTitle">🛢️ Налаштувати пул каністр об'єкта</h3>
         <button class="close-btn" onclick="closeModal('modalCanisterPool')">&times;</button>
       </div>
       <form id="canisterPoolForm">
         <input type="hidden" id="canPoolId">
-        <div class="form-group">
-          <label>Об'єкт (локація)</label>
-          <select id="canPoolFacility" required onchange="onCanisterPoolFacilityChange()"></select>
-        </div>
-        <div class="form-group">
-          <label>Склад ГСМ (до якого прив'язані каністри)</label>
-          <select id="canPoolStock" required onchange="updateCanisterPoolFormPreview()"></select>
-        </div>
-        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.75rem;">
+        <div class="form-row-2">
           <div class="form-group">
-            <label>Назва пулу каністр</label>
-            <input type="text" id="canPoolName" required placeholder="напр. Каністри 20л (А-95)">
+            <label>Об'єкт</label>
+            <select id="canPoolFacility" required onchange="onCanisterPoolFacilityChange()"></select>
+          </div>
+          <div class="form-group">
+            <label>Склад ГСМ</label>
+            <select id="canPoolStock" required onchange="onCanisterPoolStockChange()"></select>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Назва пулу</label>
+            <input type="text" id="canPoolName" required placeholder="напр. Каністри 20л">
           </div>
           <div class="form-group">
             <label>Номінал 1 каністри (л)</label>
             <input type="number" step="0.5" min="1" max="200" id="canPoolVolume" value="20" required oninput="updateCanisterPoolFormPreview()">
           </div>
         </div>
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem;">
+        <div class="form-row-3">
           <div class="form-group">
             <label>Повні (шт)</label>
             <input type="number" step="1" min="0" id="canPoolFull" value="5" required oninput="updateCanisterPoolFormPreview()">
@@ -1666,29 +1703,26 @@
             <input type="number" step="1" min="0" id="canPoolEmpty" value="0" required oninput="updateCanisterPoolFormPreview()">
           </div>
           <div class="form-group">
-            <label>На заправці (шт)</label>
+            <label>На АЗС (шт)</label>
             <input type="number" step="1" min="0" id="canPoolAway" value="0" required oninput="updateCanisterPoolFormPreview()">
           </div>
         </div>
         <div class="form-group">
-          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;">
-            <label style="margin-bottom: 0;">Залишок у резервній ємності (л)</label>
-            <button type="button" id="btnCanPoolAutoFromStock" onclick="autoFillCanisterCountsFromStock()" style="background: rgba(56, 189, 248, 0.14); color: var(--accent-cyan); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 6px; padding: 0.18rem 0.55rem; font-size: 0.75rem; font-weight: 600; cursor: pointer;">🪄 Із залишку складу</button>
-          </div>
+          <label>Резервна ємність (л)</label>
           <input type="number" step="0.1" min="0" id="canPoolReserve" value="0.0" required oninput="updateCanisterPoolFormPreview()">
         </div>
-        <div id="canPoolLiveHint" style="margin-bottom: 1rem; padding: 0.6rem 0.75rem; border-radius: 0.5rem; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 0.82rem; color: var(--text-primary); line-height: 1.45;"></div>
+        <div id="canPoolLiveHint" style="margin-bottom: 0.75rem; padding: 0.5rem 0.7rem; border-radius: 0.5rem; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 0.8rem; color: var(--text-primary); line-height: 1.4;"></div>
         <div style="display: flex; gap: 0.75rem;">
-          <button type="submit" class="btn-primary" style="flex: 1;">Зберегти пул каністр</button>
-          <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalCanisterPool')">Скасувати</button>
+          <button type="submit" class="btn-primary" style="flex: 1;">Зберегти пул</button>
+          <button type="button" class="btn-action" style="min-height: 42px; padding: 0.5rem 1rem;" onclick="closeModal('modalCanisterPool')">Скасувати</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- Modal: Canister Operation (Dispatch / Receive / Return Empty) -->
+  <!-- Modal: Canister Operation (Dispatch / Return Empty) -->
   <div id="modalCanisterAction" class="modal-overlay">
-    <div class="modal-content" style="max-width: 500px;">
+    <div class="modal-content modal-compact" style="max-width: 460px;">
       <div class="modal-header">
         <h3 id="canActionTitle">🛢️ Операція з каністрами</h3>
         <button class="close-btn" onclick="closeModal('modalCanisterAction')">&times;</button>
@@ -1696,49 +1730,10 @@
       <form id="canisterActionForm">
         <input type="hidden" id="canActionPoolId">
         <input type="hidden" id="canActionMode">
-        <div id="canActionPoolInfo" style="margin-bottom: 1rem; padding: 0.65rem 0.8rem; border-radius: 0.5rem; background: rgba(148, 163, 184, 0.1); border: 1px solid rgba(148, 163, 184, 0.2); font-size: 0.84rem; line-height: 1.45;"></div>
-        <div id="canActionSourceGroup" class="form-group" style="display: none;">
-          <label>Які каністри заправлено?</label>
-          <select id="canActionSource" onchange="updateCanisterActionPreview()">
-            <option value="away" selected>Повертаються з АЗС (із відправлених на заправку)</option>
-            <option value="empty">Порожні на об'єкті (пряма заправка без відправки)</option>
-          </select>
-        </div>
+        <div id="canActionPoolInfo" style="margin-bottom: 0.85rem; padding: 0.6rem 0.75rem; border-radius: 0.5rem; background: rgba(148, 163, 184, 0.1); border: 1px solid rgba(148, 163, 184, 0.2); font-size: 0.83rem; line-height: 1.4;"></div>
         <div class="form-group">
-          <label id="canActionCountLabel">Кількість каністр (шт)</label>
-          <input type="number" step="1" min="1" id="canActionCount" value="1" required oninput="updateCanisterActionPreview()">
-        </div>
-        <div id="canActionReceiveFields" style="display: none;">
-          <label class="settings-toggle-label" style="margin-bottom: 0.75rem; cursor: pointer;">
-            <input type="checkbox" id="canActionCreateReceipt" checked onchange="toggleCanisterReceiptInputs()">
-            <span>Автоматично оформити прибутковий чек у журналі ГСМ</span>
-          </label>
-          <div id="canActionReceiptInputs">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem;">
-              <div class="form-group">
-                <label>Мережа АЗС</label>
-                <select id="canActionProvider" onchange="updateCanisterActionPreview()">
-                  <option value="wog" selected>АЗК WOG</option>
-                  <option value="okko">АЗК OKKO</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Сума чека (грн) — авто, якщо порожньо</label>
-                <input type="number" step="0.01" min="0" id="canActionCostTotal" placeholder="Авторозрахунок" oninput="updateCanisterActionPreview()">
-              </div>
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem;">
-              <div class="form-group">
-                <label>Хто доставив</label>
-                <input type="text" id="canActionDriver" value="Доставка каністр" required>
-              </div>
-              <div class="form-group">
-                <label>Номер чека (необов'язково)</label>
-                <input type="text" id="canActionReceiptNo" placeholder="Авто-номер">
-              </div>
-            </div>
-            <div id="canActionAutoPriceHint" style="margin-bottom: 0.75rem; padding: 0.5rem 0.65rem; border-radius: 0.45rem; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.25); font-size: 0.81rem;"></div>
-          </div>
+          <label id="canActionCountLabel">Кількість каністр (шт.)</label>
+          <input type="number" step="1" min="1" id="canActionCount" value="1" required>
         </div>
         <div class="form-group">
           <label>Коментар</label>
@@ -1746,7 +1741,7 @@
         </div>
         <div style="display: flex; gap: 0.75rem;">
           <button type="submit" id="canActionSubmitBtn" class="btn-primary" style="flex: 1;">Підтвердити</button>
-          <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalCanisterAction')">Скасувати</button>
+          <button type="button" class="btn-action" style="min-height: 42px; padding: 0.5rem 1rem;" onclick="closeModal('modalCanisterAction')">Скасувати</button>
         </div>
       </form>
     </div>
@@ -2051,6 +2046,7 @@
           <label>Категорія сутності</label>
           <select id="adjEntity" onchange="onAdjFacilityOrEntityChange()">
             <option value="FuelStock" selected>Склад ГСМ</option>
+            <option value="CanisterPool">Пул каністр</option>
             <option value="Generator">Генератор</option>
             <option value="MaintenanceSchedule">Графік ТО</option>
             <option value="Facility">Параметри об'єкта</option>
@@ -3438,18 +3434,18 @@
     <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/js/core.js?v=5.4.3"></script>
-  <script src="/frontend/js/theme-format.js?v=5.4.3"></script>
-  <script src="/frontend/js/auth-nav.js?v=5.4.3"></script>
-  <script src="/frontend/js/dashboard.js?v=5.4.3"></script>
-  <script src="/frontend/js/fuel.js?v=5.4.3"></script>
-  <script src="/frontend/js/operations.js?v=5.4.3"></script>
-  <script src="/frontend/js/audit-reports.js?v=5.4.3"></script>
-  <script src="/frontend/js/admin.js?v=5.4.3"></script>
-  <script src="/frontend/js/backups.js?v=5.4.3"></script>
-  <script src="/frontend/js/notifications.js?v=5.4.3"></script>
-  <script src="/frontend/js/yasno.js?v=5.4.3"></script>
-  <script src="/frontend/js/weather-alerts.js?v=5.4.3"></script>
+  <script src="/frontend/js/core.js?v=5.4.4"></script>
+  <script src="/frontend/js/theme-format.js?v=5.4.4"></script>
+  <script src="/frontend/js/auth-nav.js?v=5.4.4"></script>
+  <script src="/frontend/js/dashboard.js?v=5.4.4"></script>
+  <script src="/frontend/js/fuel.js?v=5.4.4"></script>
+  <script src="/frontend/js/operations.js?v=5.4.4"></script>
+  <script src="/frontend/js/audit-reports.js?v=5.4.4"></script>
+  <script src="/frontend/js/admin.js?v=5.4.4"></script>
+  <script src="/frontend/js/backups.js?v=5.4.4"></script>
+  <script src="/frontend/js/notifications.js?v=5.4.4"></script>
+  <script src="/frontend/js/yasno.js?v=5.4.4"></script>
+  <script src="/frontend/js/weather-alerts.js?v=5.4.4"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

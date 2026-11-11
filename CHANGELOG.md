@@ -5,6 +5,16 @@
 
 ---
 
+## [Unreleased — Уніфікація прийому палива в каністрах, коригування аудиту та виправлення UI форм] — 2026-11-11
+- **Єдина логіка оприбуткування палива ([`schemas/fuel.py`](backend/app/schemas/fuel.py), [`canister_service.py`](backend/app/services/canister_service.py), [`frontend/index.html`](frontend/index.html), [`frontend/js/fuel.js`](frontend/js/fuel.js))**:
+  - Усунено дублювання «+ Оприбуткувати (Бензовоз)» vs «Привезли каністри»: усі кнопки прийому палива (Дашборд, вкладка «Паливо», рядок пулу каністр) відкривають єдину уніфіковану форму прийому каністр (`POST /api/v1/fuel/canisters/{id}/receive`, `source="auto"`).
+  - Списання вільної тари при прийомі виконується автоматично: спершу каністри зі статусу «На АЗС», далі з «Порожніх»; система сама обчислює літри (`N × номінал`) та вартість (авторозрахунок WOG/OKKO або сума чека), залишаючи обов'язковими поля «Хто доставив» і «Номер чека» для звітності; при створенні нового пулу лічильники каністр автоматично попередньо заповнюються із поточного залишку складу.
+- **Системні коригування аудиту для каністр ([`api/v1/adjustments.py`](backend/app/api/v1/adjustments.py), [`canister_service.py`](backend/app/services/canister_service.py), [`frontend/js/audit-reports.js`](frontend/js/audit-reports.js))**:
+  - Коригування `FuelStock.current_balance_l` суперадміністратором автоматично розкладає новий залишок на повні каністри (`full_count`) та резерв (`reserve_liters`) з жорстким обмеженням фізичної місткості закріплених каністр і журналюванням операції `POOL_ADJUSTMENT`.
+  - Додано сутність `CanisterPool` («Пул каністр») безпосередньо в `POST /api/v1/adjustments` та інтерфейс аудиту (`full_count`, `empty_count`, `away_refill_count`, `reserve_liters`) з автоматичною синхронізацією `FuelStock.current_balance_l`.
+- **Виправлення верстки модальних вікон ([`frontend/styles.css`](frontend/styles.css), [`frontend/index.html`](frontend/index.html), [`frontend/sw.js`](frontend/sw.js))**:
+  - Додано `.modal-compact`, вирівнювання `.form-row-2` / `.form-row-3` (`align-items: end`, колапс у 1 колонку на вузьких екранах), фіксований `.modal-header` при прокрутці, стилі `.checkbox-row` та оновлено Service Worker кеш до `sd-gen016-v5.4.4`.
+
 ## [Unreleased — Етап 3: Єдиний блок оцінки та запасу палива на Дашборді] — 2026-11-11
 - **Виділений блок «⛽ Оцінка та запас палива» (`#fuelAssessmentPanel`, [`index.html`](frontend/index.html), [`dashboard.js`](frontend/js/dashboard.js), [`styles.css`](frontend/styles.css))**:
   - Відображає в одному місці автономність у баку генератора (`~год`), сукупний запас об'єкта (бак + повні каністри + резервна ємність / склад ГСМ) та готовність до поточного/найближчого відключення і сумарного добового навантаження YASNO (залишок сьогодні + завтра).

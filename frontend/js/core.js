@@ -287,9 +287,9 @@ function applyRolePermissionsUI() {
 
   // Fuel stock creation button (Admin/Superadmin only)
   const canConfigFuel = hasPermission('fuel:configure');
-  setBtnState('btnFuelNewStock', canConfigFuel, 'Створення складу ГСМ доступне лише Адміністратору 🔒', '📦 + Додати склад ГСМ 🔒');
+  setBtnState('btnFuelNewStock', canConfigFuel, 'Створення складу ГСМ доступне лише Адміністратору 🔒', '📦 + Новий склад 🔒');
   setBtnState('btnFuelNewCanisterPool', canConfigFuel, 'Налаштування пулів каністр доступне лише Адміністратору 🔒', '🛢️ + Пул каністр 🔒');
-  setBtnState('btnFuelReceipt', hasPermission('fuel:receipt'), 'Оприбуткування палива недоступне для вашої ролі 🔒', '+ Оприбуткувати 🔒');
+  setBtnState('btnFuelReceipt', hasPermission('fuel:receipt'), 'Оприбуткування палива недоступне для вашої ролі 🔒', '📥 + Прийняти паливо 🔒');
   setBtnState('btnFuelTransfer', hasPermission('fuel:transfer'), 'Заправка бака недоступна для вашої ролі 🔒', '⛽ Заправити бак 🔒');
 
   // Maintenance buttons

@@ -188,9 +188,9 @@ class CanisterReturnEmptyRequest(BaseModel):
 
 class CanisterReceiveRequest(BaseModel):
     count: int = Field(..., ge=1, description="Кількість заправлених каністр, що привезли")
-    source: Literal["away", "empty"] = Field(
-        default="away",
-        description="'away' — повернення відправлених на заправку; 'empty' — заправка порожніх напряму"
+    source: Literal["auto", "away", "empty"] = Field(
+        default="auto",
+        description="'auto' — спершу закриває каністри на АЗС, далі порожні; 'away' — тільки з АЗС; 'empty' — тільки з порожніх"
     )
     create_receipt: bool = Field(default=True, description="Створити прибутковий чек у журналі надходжень")
     fuel_provider: Optional[str] = None

@@ -43,6 +43,7 @@ $$\text{Загальний залишок (л)} = \text{full\_count} \times \tex
 | Видалення порожнього пулу | `DELETE /api/v1/fuel/canisters/{id}` | Лише при нульовому паливному залишку | `fuel:configure` |
 | Віддали на заправку (`DISPATCH_REFILL`) | `POST /api/v1/fuel/canisters/{id}/dispatch` | `empty_count -= N`, `away_refill_count += N` | `fuel:transfer` |
 | Повернули порожніми (`RETURN_EMPTY`) | `POST /api/v1/fuel/canisters/{id}/return-empty` | `away_refill_count -= N`, `empty_count += N` | `fuel:transfer` |
-| Привезли заправлені (`RECEIVE_REFILL`) | `POST /api/v1/fuel/canisters/{id}/receive` | `away_refill_count` (або `empty_count`) `→ full_count += N`, `+N*V` л на склад, авто-чек `FuelReceipt` | `fuel:receipt` |
+| Привезли заправлені (`RECEIVE_REFILL`) | `POST /api/v1/fuel/canisters/{id}/receive` | `source="auto"` (спершу `away_refill_count`, далі `empty_count`) `→ full_count += N`, `+N*V` л на склад, авто-чек `FuelReceipt` | `fuel:receipt` |
 | Заправка генератора (`CONSUME_TRANSFER`) | `POST /api/v1/fuel/transfer` | Резерв першим + відкриття повних каністр + перелив залишку в резерв | `fuel:transfer` |
 | Прямий чек на каністровий склад | `POST /api/v1/fuel/receipt` | Контроль кратності `canister_volume_l` та наявності вільних/відправлених каністр | `fuel:receipt` |
+| Системні коригування (`POOL_ADJUSTMENT`) | `POST /api/v1/adjustments` | Пряме редагування полів `CanisterPool` (`full_count`, `empty_count`, `away_refill_count`, `reserve_liters`) або авто-декомпозиція `FuelStock.current_balance_l` (в межах місткості пулу) | `audit:adjust` (`SUPERADMIN`) |

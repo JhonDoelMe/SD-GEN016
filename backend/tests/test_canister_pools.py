@@ -329,3 +329,179 @@ async def test_canister_pool_backup_restore_and_facility_clean(client, superadmi
     assert after_clean["empty_count"] == 5
     assert after_clean["reserve_liters"] == pytest.approx(0.0)
 
+
+@pytest.mark.asyncio
+async def test_canister_receive_auto_source_order(client, superadmin_auth, operator_auth):
+    fac_id = (await client.get("/api/v1/facilities", headers=superadmin_auth)).json()[0]["id"]
+    stock_id = (await client.get(f"/api/v1/fuel/stocks?facility_id={fac_id}", headers=superadmin_auth)).json()[0]["id"]
+
+    # Pool: 5 x 20L -> 1 full, 2 empty, 2 away at gas station
+    pool_res = await client.post(
+        "/api/v1/fuel/canisters",
+        headers=superadmin_auth,
+        json={
+            "facility_id": fac_id,
+            "stock_id": stock_id,
+            "name": "Каністри Авто-Прийом",
+            "canister_volume_l": 20.0,
+            "full_count": 1,
+            "empty_count": 2,
+            "away_refill_count": 2,
+            "reserve_liters": 0.0,
+        },
+    )
+    assert pool_res.status_code == 201, pool_res.text
+    pool_id = pool_res.json()["id"]
+
+    # Default receive (source="auto") for 3 canisters drains away (2) first, then empty (1)
+    rec = await client.post(
+        f"/api/v1/fuel/canisters/{pool_id}/receive",
+        headers=operator_auth,
+        json={
+            "count": 3,
+            "create_receipt": True,
+            "gas_station_name": "АЗК WOG",
+            "driver_name": "Водій Іван",
+            "receipt_number": "CHK-AUTO-001",
+            "comment": "Прийом 3 каністр",
+        },
+    )
+    assert rec.status_code == 200, rec.text
+    data = rec.json()
+    assert data["away_refill_count"] == 0
+    assert data["empty_count"] == 1
+    assert data["full_count"] == 4
+    assert data["total_count"] == 5
+    assert data["available_liters"] == pytest.approx(80.0)
+
+    # Stock balance auto-synced to 80L + automatic receipt created for 60L
+    summary = (await client.get(f"/api/v1/fuel/summary?facility_id={fac_id}", headers=superadmin_auth)).json()
+    assert summary["warehouse_balance_l"] == pytest.approx(80.0)
+
+    receipts = (await client.get(f"/api/v1/fuel/receipts?facility_id={fac_id}", headers=superadmin_auth)).json()
+    assert len(receipts) >= 1
+    latest = receipts[0]
+    assert latest["liters"] == pytest.approx(60.0)
+    assert latest["receipt_number"] == "CHK-AUTO-001"
+
+    # Requesting 2 more when only 1 free canister (empty=1, away=0) exists fails with 400
+    over = await client.post(
+        f"/api/v1/fuel/canisters/{pool_id}/receive",
+        headers=operator_auth,
+        json={
+            "count": 2,
+            "create_receipt": False,
+            "driver_name": "Водій Іван",
+            "receipt_number": "CHK-AUTO-002",
+        },
+    )
+    assert over.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_system_adjustments_sync_fuel_stock_and_canister_pool(client, superadmin_auth):
+    fac_id = (await client.get("/api/v1/facilities", headers=superadmin_auth)).json()[0]["id"]
+    stock_id = (await client.get(f"/api/v1/fuel/stocks?facility_id={fac_id}", headers=superadmin_auth)).json()[0]["id"]
+
+    pool_res = await client.post(
+        "/api/v1/fuel/canisters",
+        headers=superadmin_auth,
+        json={
+            "facility_id": fac_id,
+            "stock_id": stock_id,
+            "name": "Каністри Аудит",
+            "canister_volume_l": 20.0,
+            "full_count": 3,
+            "empty_count": 1,
+            "away_refill_count": 1,
+            "reserve_liters": 0.0,
+        },
+    )
+    assert pool_res.status_code == 201, pool_res.text
+    pool_id = pool_res.json()["id"]
+
+    # 1. Adjusting FuelStock.current_balance_l above pool capacity (5 * 20 = 100L) must be rejected
+    too_big = await client.post(
+        "/api/v1/adjustments",
+        headers=superadmin_auth,
+        json={
+            "entity_type": "FuelStock",
+            "entity_id": stock_id,
+            "facility_id": fac_id,
+            "field_name": "current_balance_l",
+            "new_value": "120.0",
+            "reason": "Спроба перевищити місткість закріплених каністр",
+        },
+    )
+    assert too_big.status_code == 400
+
+    # 2. Valid FuelStock adjustment (45.0L) decomposes into 2 full (40L) + 5.0L reserve, keeping away=1
+    adj_stock = await client.post(
+        "/api/v1/adjustments",
+        headers=superadmin_auth,
+        json={
+            "entity_type": "FuelStock",
+            "entity_id": stock_id,
+            "facility_id": fac_id,
+            "field_name": "current_balance_l",
+            "new_value": "45.0",
+            "reason": "Інвентаризація ГСМ: 2 повні каністри та 5 л в резерві",
+        },
+    )
+    assert adj_stock.status_code == 201, adj_stock.text
+
+    pools_after_stock = (await client.get(f"/api/v1/fuel/canisters?facility_id={fac_id}", headers=superadmin_auth)).json()
+    assert pools_after_stock[0]["full_count"] == 2
+    assert pools_after_stock[0]["reserve_liters"] == pytest.approx(5.0)
+    assert pools_after_stock[0]["away_refill_count"] == 1
+    assert pools_after_stock[0]["empty_count"] == 2
+    assert pools_after_stock[0]["total_count"] == 5
+
+    # 3. Direct CanisterPool field adjustments (full_count -> 3, reserve_liters -> 0) resync FuelStock
+    adj_full = await client.post(
+        "/api/v1/adjustments",
+        headers=superadmin_auth,
+        json={
+            "entity_type": "CanisterPool",
+            "entity_id": pool_id,
+            "facility_id": fac_id,
+            "field_name": "full_count",
+            "new_value": "3",
+            "reason": "Фізичний перерахунок повних каністр на об'єкті",
+        },
+    )
+    assert adj_full.status_code == 201, adj_full.text
+    assert adj_full.json()["entity_type"] == "CanisterPool"
+
+    adj_res = await client.post(
+        "/api/v1/adjustments",
+        headers=superadmin_auth,
+        json={
+            "entity_type": "CanisterPool",
+            "entity_id": pool_id,
+            "facility_id": fac_id,
+            "field_name": "reserve_liters",
+            "new_value": "0",
+            "reason": "Звірка нульового залишку в резервній ємності",
+        },
+    )
+    assert adj_res.status_code == 201, adj_res.text
+
+    pool_final = (await client.get(f"/api/v1/fuel/canisters?facility_id={fac_id}", headers=superadmin_auth)).json()[0]
+    assert pool_final["full_count"] == 3
+    assert pool_final["empty_count"] == 2
+    assert pool_final["away_refill_count"] == 1
+    assert pool_final["total_count"] == 6
+    assert pool_final["reserve_liters"] == pytest.approx(0.0)
+    assert pool_final["available_liters"] == pytest.approx(60.0)
+
+    stock_final = (await client.get(f"/api/v1/fuel/stocks?facility_id={fac_id}", headers=superadmin_auth)).json()[0]
+    assert stock_final["current_balance_l"] == pytest.approx(60.0)
+
+    txs = (await client.get(f"/api/v1/fuel/canisters/transactions?pool_id={pool_id}", headers=superadmin_auth)).json()
+    assert any(t["operation"] == "POOL_ADJUSTMENT" for t in txs)
+
+    adjs = (await client.get(f"/api/v1/adjustments?facility_id={fac_id}", headers=superadmin_auth)).json()
+    assert any(a["entity_type"] == "CanisterPool" and a["field_name"] == "full_count" for a in adjs)
+
+

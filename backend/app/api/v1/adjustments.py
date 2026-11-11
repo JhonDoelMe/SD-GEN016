@@ -15,6 +15,10 @@ from backend.app.models.audit import SystemAdjustment
 from backend.app.schemas.audit import SystemAdjustmentCreate, SystemAdjustmentOut
 from backend.app.api.deps import get_current_superadmin, require_permission, get_client_ip
 from backend.app.services.audit_service import record_system_adjustment
+from backend.app.services.canister_service import (
+    adjust_canister_pool_field,
+    adjust_stock_canisters_to_balance,
+)
 from backend.app.services.fuel_service import to_liters
 from backend.app.services.generator_service import _evaluate_generator_resting_status
 
@@ -174,12 +178,32 @@ async def perform_adjustment(
 
         if data.field_name == "current_balance_l":
             old_val_str = str(float(stock.current_balance_l))
-            stock.current_balance_l = to_liters(_parse_non_negative_float(data.new_value, data.field_name))
+            new_bal = to_liters(_parse_non_negative_float(data.new_value, data.field_name))
+            stock.current_balance_l = new_bal
+            await adjust_stock_canisters_to_balance(
+                db=db,
+                stock=stock,
+                target_balance=new_bal,
+                user_id=current_user.id,
+                reason=data.reason,
+            )
         elif data.field_name == "name":
             old_val_str = str(stock.name)
             stock.name = str(data.new_value).strip()
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Непідтримуване поле: {data.field_name}")
+
+    elif target_entity_type == "CanisterPool":
+        pool, old_val_str, _ = await adjust_canister_pool_field(
+            db=db,
+            pool_id=data.entity_id,
+            field_name=data.field_name,
+            raw_new_value=data.new_value,
+            user_id=current_user.id,
+            reason=data.reason,
+        )
+        target_facility_id = pool.facility_id or target_facility_id
+        target_name = f"{pool.name} ({pool.fuel_type})"
 
     elif target_entity_type == "MaintenanceSchedule":
         sched = await db.get(MaintenanceSchedule, data.entity_id)

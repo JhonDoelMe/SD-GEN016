@@ -9,90 +9,167 @@ async function fetchFuelPricesCache() {
 }
 
 let cachedReceiptFacilities = [];
+let _receiptModalPools = [];
+window._pendingReceiptTarget = null;
+
+window.openUnifiedCanisterReceiveModal = function (poolId) {
+  const pool = (window._cachedCanisterPools || []).find(p => Number(p.id) === Number(poolId));
+  if (pool) {
+    window._pendingReceiptTarget = {
+      facilityId: Number(pool.facility_id),
+      stockId: Number(pool.stock_id),
+      poolId: Number(pool.id),
+    };
+  }
+  openModal('modalReceipt');
+};
 
 window.onReceiptFuelProviderChange = function () {
   const provider = (document.getElementById('recFuelProvider')?.value || 'wog').toLowerCase();
   const typeSel = document.getElementById('recFuelType');
-  if (!typeSel) return;
-  const curVal = typeSel.value;
-
-  if (provider === 'okko') {
-    typeSel.innerHTML = `
-      <option value="А-95" selected>А-95 (OKKO А-95 Євро)</option>
-      <option value="А-95 Pulls">А-95 Pulls (OKKO Pulls 95)</option>
-      <option value="ДП">ДП (OKKO ДП Євро)</option>
-      <option value="ДП Pulls">ДП Pulls (OKKO Pulls Дизель)</option>
-      <option value="А-100 Pulls">А-100 Pulls (OKKO Pulls 100)</option>
-      <option value="ГАЗ">ГАЗ (OKKO СПБТ)</option>
-      <option value="А-92">А-92</option>
-    `;
-  } else if (provider === 'other') {
-    typeSel.innerHTML = `
-      <option value="А-95" selected>А-95</option>
-      <option value="ДП">ДП</option>
-      <option value="А-92">А-92</option>
-      <option value="ГАЗ">ГАЗ</option>
-    `;
-  } else {
-    // WOG
-    typeSel.innerHTML = `
-      <option value="А-95" selected>А-95 (WOG 95 Євро5-Е10)</option>
-      <option value="А-95 Mustang">А-95 Mustang (WOG 95 Mustang)</option>
-      <option value="ДП">ДП (WOG ДП Євро5)</option>
-      <option value="ДП Mustang+">ДП Mustang+ (WOG ДП Mustang+)</option>
-      <option value="ГАЗ">ГАЗ (WOG LPG)</option>
-      <option value="А-92">А-92</option>
-    `;
-  }
-  if ([...typeSel.options].some((o) => o.value === curVal)) {
-    typeSel.value = curVal;
+  if (typeSel) {
+    const curVal = typeSel.value;
+    if (provider === 'okko') {
+      typeSel.innerHTML = `
+        <option value="А-95" selected>А-95 (OKKO А-95 Євро)</option>
+        <option value="А-95 Pulls">А-95 Pulls (OKKO Pulls 95)</option>
+        <option value="ДП">ДП (OKKO ДП Євро)</option>
+        <option value="ДП Pulls">ДП Pulls (OKKO Pulls Дизель)</option>
+        <option value="А-100 Pulls">А-100 Pulls (OKKO Pulls 100)</option>
+        <option value="ГАЗ">ГАЗ (OKKO СПБТ)</option>
+        <option value="А-92">А-92</option>
+      `;
+    } else if (provider === 'other') {
+      typeSel.innerHTML = `
+        <option value="А-95" selected>А-95</option>
+        <option value="ДП">ДП</option>
+        <option value="А-92">А-92</option>
+        <option value="ГАЗ">ГАЗ</option>
+      `;
+    } else {
+      typeSel.innerHTML = `
+        <option value="А-95" selected>А-95 (WOG 95 Євро5-Е10)</option>
+        <option value="А-95 Mustang">А-95 Mustang (WOG 95 Mustang)</option>
+        <option value="ДП">ДП (WOG ДП Євро5)</option>
+        <option value="ДП Mustang+">ДП Mustang+ (WOG ДП Mustang+)</option>
+        <option value="ГАЗ">ГАЗ (WOG LPG)</option>
+        <option value="А-92">А-92</option>
+      `;
+    }
+    if ([...typeSel.options].some((o) => o.value === curVal)) {
+      typeSel.value = curVal;
+    }
   }
   updateReceiptPriceEstimate();
 };
+
+function _getSelectedReceiptPool() {
+  const poolId = parseInt(document.getElementById('recCanisterPool')?.value || '0', 10);
+  if (!poolId) return null;
+  return _receiptModalPools.find(p => Number(p.id) === poolId && p.is_active) || null;
+}
 
 window.updateReceiptPriceEstimate = function () {
   const hintEl = document.getElementById('recAutoPriceHint');
   if (!hintEl) return;
   const provider = (document.getElementById('recFuelProvider')?.value || 'wog').toLowerCase();
-  const fuelType = document.getElementById('recFuelType')?.value || 'А-95';
-  const litersVal = parseFloat(document.getElementById('recLiters')?.value || '0');
+  const selPool = _getSelectedReceiptPool();
+  const inCanisterMode = document.getElementById('recCanisterModeBox')?.style.display !== 'none' && !!selPool;
+
+  const fuelType = inCanisterMode ? (selPool.fuel_type || 'А-95') : (document.getElementById('recFuelType')?.value || 'А-95');
+  const cnt = inCanisterMode ? Math.max(0, parseInt(document.getElementById('recCanisterCount')?.value || '0', 10) || 0) : 0;
+  const vol = inCanisterMode ? Number(selPool.canister_volume_l || 20) : 0;
+  const litersVal = inCanisterMode ? (cnt * vol) : (parseFloat(document.getElementById('recLiters')?.value || '0') || 0);
+
   const rawCost = document.getElementById('recCostTotal')?.value?.trim() || '';
   const costVal = rawCost ? parseFloat(rawCost) : 0;
 
   const isOkko = provider === 'okko';
   const fallbacks = isOkko ? {
-    'А-95': 92.90,
-    'А-95 Pulls': 95.90,
-    'А-100 Pulls': 102.90,
-    'ДП': 106.90,
-    'ДП Pulls': 109.90,
-    'ГАЗ': 59.90,
-    'А-92': 92.90
+    'А-95': 92.90, 'А-95 Pulls': 95.90, 'А-100 Pulls': 102.90,
+    'ДП': 106.90, 'ДП Pulls': 109.90, 'ГАЗ': 59.90, 'А-92': 92.90
   } : {
-    'А-95': 92.90,
-    'А-95 Mustang': 95.90,
-    'А-100 Mustang': 102.90,
-    'ДП': 103.50,
-    'ДП Mustang+': 106.50,
-    'ГАЗ': 52.50,
-    'А-92': 89.90
+    'А-95': 92.90, 'А-95 Mustang': 95.90, 'А-100 Mustang': 102.90,
+    'ДП': 103.50, 'ДП Mustang+': 106.50, 'ГАЗ': 52.50, 'А-92': 89.90
   };
 
   const fuelsMap = isOkko ? cachedFuelPrices?.okko_fuels : cachedFuelPrices?.fuels;
   const fuelEntry = fuelsMap?.[fuelType] || cachedFuelPrices?.fuels?.[fuelType];
   const unitPrice = fuelEntry ? Number(fuelEntry.effective_price) : (fallbacks[fuelType] || 92.90);
-  const defaultSrc = isOkko ? 'АЗК OKKO (okko.ua/fuels)' : 'АЗК WOG (wog.ua/ua/fuels/)';
-  const srcName = fuelEntry ? fuelEntry.source_name : defaultSrc;
+  const provLabel = isOkko ? 'АЗК OKKO' : (provider === 'other' ? 'Власна ціна' : 'АЗК WOG');
+
+  if (inCanisterMode) {
+    const freeSlots = Number(selPool.away_refill_count || 0) + Number(selPool.empty_count || 0);
+    if (cnt > freeSlots) {
+      hintEl.innerHTML = `<span style="color:#ef4444; font-weight:600;">⚠️ Доступно лише ${freeSlots} незаповнених каністр (на АЗС: ${Number(selPool.away_refill_count)}, порожніх: ${Number(selPool.empty_count)}).</span>`;
+      return;
+    }
+    const prefix = `🛢️ <b>${cnt} шт. × ${vol.toFixed(0)} л = ${litersVal.toFixed(1)} л</b> (${escapeHtml(fuelType)})`;
+    if (costVal > 0 && litersVal > 0) {
+      hintEl.innerHTML = `${prefix} • Сума за чеком: <b style="color:#4ade80;">${costVal.toFixed(2)} грн</b> (${(costVal / litersVal).toFixed(2)} грн/л)`;
+    } else if (litersVal > 0) {
+      hintEl.innerHTML = `${prefix} • ${provLabel}: ~<b style="color:#4ade80;">${(litersVal * unitPrice).toFixed(2)} грн</b> (${unitPrice.toFixed(2)} грн/л) • На АЗС: ${Number(selPool.away_refill_count)}, порожніх: ${Number(selPool.empty_count)}`;
+    } else {
+      hintEl.innerHTML = `💡 Введіть кількість привезених каністр (доступно: <b>${freeSlots} шт.</b>).`;
+    }
+    return;
+  }
 
   if (costVal > 0 && litersVal > 0) {
     const manualPerL = (costVal / litersVal).toFixed(2);
-    hintEl.innerHTML = `✅ Сума вказана за чеком: <b style="color:#4ade80;">${costVal.toFixed(2)} грн</b> (виходить <b>${manualPerL} грн/л</b>)`;
+    hintEl.innerHTML = `✅ Сума за чеком: <b style="color:#4ade80;">${costVal.toFixed(2)} грн</b> (<b>${manualPerL} грн/л</b>)`;
   } else if (litersVal > 0) {
     const autoSum = (litersVal * unitPrice).toFixed(2);
-    hintEl.innerHTML = `💡 Авторозрахунок <b>${escapeHtml(fuelType)}</b> (${isOkko ? 'АЗК OKKO' : 'АЗК WOG'}): <b>${unitPrice.toFixed(2)} грн/л</b> <span style="color:var(--text-muted);">(${escapeHtml(srcName)})</span> → буде нараховано: <b style="color:#4ade80;">${autoSum} грн</b>`;
+    hintEl.innerHTML = `💡 Авторозрахунок <b>${escapeHtml(fuelType)}</b> (${provLabel}): <b>${unitPrice.toFixed(2)} грн/л</b> → <b style="color:#4ade80;">${autoSum} грн</b>`;
   } else {
-    hintEl.innerHTML = `💡 Діюча ціна <b>${escapeHtml(fuelType)}</b> (${isOkko ? 'АЗК OKKO' : 'АЗК WOG'}): <b>${unitPrice.toFixed(2)} грн/л</b> <span style="color:var(--text-muted);">(${escapeHtml(srcName)})</span>. Введіть літри для авторозрахунку суми.`;
+    hintEl.innerHTML = `💡 Діюча ціна <b>${escapeHtml(fuelType)}</b> (${provLabel}): <b>${unitPrice.toFixed(2)} грн/л</b>.`;
   }
+};
+
+window.onReceiptStockChange = function () {
+  const stockId = parseInt(document.getElementById('recStock')?.value || '0', 10);
+  const canBox = document.getElementById('recCanisterModeBox');
+  const litBox = document.getElementById('recLitersModeBox');
+  const noPoolHint = document.getElementById('recNoPoolHint');
+  const poolSel = document.getElementById('recCanisterPool');
+  const cntInput = document.getElementById('recCanisterCount');
+  const litInput = document.getElementById('recLiters');
+  const modalTitle = document.getElementById('recModalTitle');
+
+  const poolsForStock = _receiptModalPools.filter(p => Number(p.stock_id) === stockId && p.is_active);
+  if (poolsForStock.length > 0 && poolSel) {
+    if (canBox) canBox.style.display = 'block';
+    if (litBox) litBox.style.display = 'none';
+    if (noPoolHint) noPoolHint.style.display = 'none';
+    if (cntInput) cntInput.required = true;
+    if (litInput) litInput.required = false;
+    if (modalTitle) modalTitle.innerText = '📥 Прийом палива (у каністрах)';
+
+    poolSel.innerHTML = poolsForStock.map(p => {
+      const free = Number(p.away_refill_count || 0) + Number(p.empty_count || 0);
+      return `<option value="${Number(p.id)}">${escapeHtml(p.name)} (${Number(p.canister_volume_l).toFixed(0)}л • вільно ${free}/${Number(p.total_count)} шт.)</option>`;
+    }).join('');
+
+    const pending = window._pendingReceiptTarget;
+    if (pending && pending.poolId && poolsForStock.some(p => Number(p.id) === pending.poolId)) {
+      poolSel.value = String(pending.poolId);
+    }
+    const selPool = _getSelectedReceiptPool() || poolsForStock[0];
+    if (cntInput && selPool) {
+      const away = Number(selPool.away_refill_count || 0);
+      const free = away + Number(selPool.empty_count || 0);
+      cntInput.max = String(Math.max(1, free));
+      cntInput.value = String(away > 0 ? away : (free > 0 ? 1 : 0));
+    }
+  } else {
+    if (canBox) canBox.style.display = 'none';
+    if (litBox) litBox.style.display = 'block';
+    if (noPoolHint) noPoolHint.style.display = 'block';
+    if (cntInput) cntInput.required = false;
+    if (litInput) litInput.required = true;
+    if (modalTitle) modalTitle.innerText = '📥 Прийом палива на склад';
+  }
+  updateReceiptPriceEstimate();
 };
 
 async function setupReceiptModal() {
@@ -103,14 +180,16 @@ async function setupReceiptModal() {
     ]);
     cachedReceiptFacilities = facilities || [];
     const facSel = document.getElementById('recFacility');
+    const pending = window._pendingReceiptTarget;
     if (facSel && facilities && facilities.length > 0) {
       facSel.innerHTML = facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
-      if (currentFacilityId && facilities.some(f => f.id === currentFacilityId)) {
-        facSel.value = currentFacilityId;
+      const targetFac = pending?.facilityId || currentFacilityId;
+      if (targetFac && facilities.some(f => Number(f.id) === Number(targetFac))) {
+        facSel.value = String(targetFac);
       }
     }
     await updateReceiptStocks();
-    updateReceiptPriceEstimate();
+    window._pendingReceiptTarget = null;
   } catch (err) {
     console.warn('setupReceiptModal error:', err);
   }
@@ -131,12 +210,21 @@ async function updateReceiptStocks() {
     }
   }
   try {
-    const stocks = await api(`/fuel/stocks?facility_id=${encodeURIComponent(facId)}`);
+    const [stocks, pools] = await Promise.all([
+      api(`/fuel/stocks?facility_id=${encodeURIComponent(facId)}`),
+      api(`/fuel/canisters?facility_id=${encodeURIComponent(facId)}`).catch(() => [])
+    ]);
+    _receiptModalPools = Array.isArray(pools) ? pools : [];
     if (!stocks || stocks.length === 0) {
       stockSel.innerHTML = '<option value="">(Немає складів — створіть новий склад)</option>';
     } else {
-      stockSel.innerHTML = stocks.map(s => `<option value="${Number(s.id)}">${escapeHtml(s.name)} (залишок: ${s.current_balance_l.toFixed(1)} л)</option>`).join('');
+      stockSel.innerHTML = stocks.map(s => `<option value="${Number(s.id)}">${escapeHtml(s.name)} (${Number(s.current_balance_l).toFixed(1)} л)</option>`).join('');
+      const pending = window._pendingReceiptTarget;
+      if (pending && pending.stockId && stocks.some(s => Number(s.id) === pending.stockId)) {
+        stockSel.value = String(pending.stockId);
+      }
     }
+    window.onReceiptStockChange();
   } catch (_) {
     stockSel.innerHTML = '<option value="">(Помилка завантаження)</option>';
   }
@@ -232,7 +320,8 @@ const CANISTER_OP_UA = {
   'RECEIVE_REFILL': { label: 'Привезено з АЗС', color: '#4ade80' },
   'RETURN_EMPTY': { label: 'Повернуто пусті', color: '#94a3b8' },
   'CONSUME_TRANSFER': { label: 'Заправка бака', color: '#60a5fa' },
-  'DIRECT_RECEIPT': { label: 'Пряме оприбутк.', color: '#4ade80' }
+  'DIRECT_RECEIPT': { label: 'Пряме оприбутк.', color: '#4ade80' },
+  'POOL_ADJUSTMENT': { label: 'Коригування (Аудит)', color: '#c084fc' }
 };
 
 async function loadFuelData() {
@@ -328,7 +417,7 @@ async function loadFuelData() {
   } catch (_) {}
 }
 
-// Receipt Form Submit with Volume and Price Safeguards
+// Unified Receipt Form Submit (Canister mode when pool exists, or fallback liters)
 document.getElementById('receiptForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const submitBtn = e.target.querySelector('button[type="submit"]');
@@ -339,69 +428,114 @@ document.getElementById('receiptForm').addEventListener('submit', async (e) => {
     showToast('Будь ласка, оберіть склад ГСМ або створіть його', 'error');
     return;
   }
+
+  const selPool = _getSelectedReceiptPool();
+  const inCanisterMode = document.getElementById('recCanisterModeBox')?.style.display !== 'none' && !!selPool;
+
   const rawCost = document.getElementById('recCostTotal').value.trim();
   const parsedCost = rawCost ? parseFloat(rawCost) : null;
-  const liters = parseFloat(document.getElementById('recLiters').value);
+  const driverName = document.getElementById('recDriver').value.trim();
+  const receiptNumber = document.getElementById('recNumber').value.trim();
+  const providerVal = document.getElementById('recFuelProvider')?.value || 'wog';
+  const commentVal = document.getElementById('recComment').value.trim() || null;
+
+  let canCount = 0;
+  let liters = 0;
+  if (inCanisterMode) {
+    canCount = parseInt(document.getElementById('recCanisterCount').value, 10) || 0;
+    const freeSlots = Number(selPool.away_refill_count || 0) + Number(selPool.empty_count || 0);
+    if (canCount <= 0) {
+      showToast('Вкажіть кількість привезених каністр (>= 1)', 'error');
+      return;
+    }
+    if (canCount > freeSlots) {
+      showToast(`У пулі «${selPool.name}» вільно лише ${freeSlots} каністр (на АЗС: ${Number(selPool.away_refill_count)}, порожніх: ${Number(selPool.empty_count)})`, 'error');
+      return;
+    }
+    liters = canCount * Number(selPool.canister_volume_l || 20);
+  } else {
+    liters = parseFloat(document.getElementById('recLiters').value);
+    if (!liters || liters <= 0) {
+      showToast('Вкажіть коректну кількість літрів (> 0)', 'error');
+      return;
+    }
+  }
 
   let forceConfirm = false;
-
-  // Safeguard: Fuel Volume & Price Sanity Check
   if (liters > 1000.0) {
     const confirmed = confirm(
-      `⚠️ Запобіжник об'єму палива!\n\n` +
-      `Вказано ${liters.toFixed(1)} л палива (більше 1000 л).\n` +
-      `Перевірте, чи немає опечатки в кількості літрів.\n\nПродовжити збереження?`
+      `⚠️ Запобіжник об'єму палива!\n\nВказано ${liters.toFixed(1)} л палива (більше 1000 л).\nПродовжити збереження?`
     );
     if (!confirmed) return;
     forceConfirm = true;
   }
-
   if (parsedCost && parsedCost > 0 && liters > 0) {
     const pricePerL = parsedCost / liters;
     if (pricePerL < 15.0 || pricePerL > 250.0) {
       const confirmed = confirm(
-        `⚠️ Запобіжник вартості палива!\n\n` +
-        `Розрахункова ціна становить ${pricePerL.toFixed(2)} грн/л (незвичний діапазон).\n` +
-        `Перевірте загальну суму чека (${parsedCost.toFixed(2)} грн) та літри (${liters.toFixed(1)} л).\n\n` +
-        `Зберегти чек з цією сумою?`
+        `⚠️ Запобіжник вартості палива!\n\nРозрахункова ціна: ${pricePerL.toFixed(2)} грн/л.\nЗберегти чек з цією сумою (${parsedCost.toFixed(2)} грн)?`
       );
       if (!confirmed) return;
       forceConfirm = true;
     }
   }
 
-  const body = {
-    facility_id: parseInt(document.getElementById('recFacility').value),
-    stock_id: parseInt(stockVal),
-    fuel_provider: document.getElementById('recFuelProvider')?.value || 'wog',
-    liters: liters,
-    cost_total: parsedCost && parsedCost > 0 ? parsedCost : null,
-    driver_name: document.getElementById('recDriver').value,
-    receipt_number: document.getElementById('recNumber').value,
-    fuel_type: document.getElementById('recFuelType').value,
-    comment: document.getElementById('recComment').value,
-    force_confirm: forceConfirm
-  };
-
   if (submitBtn) {
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Збереження...';
+    submitBtn.innerHTML = 'Збереження...';
   }
 
   try {
-    const saved = await api('/fuel/receipt', { method: 'POST', body: JSON.stringify(body) });
-    closeModal('modalReceipt');
-    document.getElementById('recLiters').value = '';
+    if (inCanisterMode) {
+      const updatedPool = await api(`/fuel/canisters/${encodeURIComponent(selPool.id)}/receive`, {
+        method: 'POST',
+        body: JSON.stringify({
+          count: canCount,
+          source: 'auto',
+          create_receipt: true,
+          fuel_provider: providerVal,
+          cost_total: parsedCost && parsedCost > 0 ? parsedCost : null,
+          driver_name: driverName,
+          receipt_number: receiptNumber,
+          comment: commentVal,
+          force_confirm: forceConfirm
+        })
+      });
+      closeModal('modalReceipt');
+      showToast(
+        `Прийнято ${canCount} каністр (+${liters.toFixed(1)} л) на склад «${updatedPool.stock_name || updatedPool.name}»!`,
+        'success'
+      );
+    } else {
+      const saved = await api('/fuel/receipt', {
+        method: 'POST',
+        body: JSON.stringify({
+          facility_id: parseInt(document.getElementById('recFacility').value, 10),
+          stock_id: parseInt(stockVal, 10),
+          fuel_provider: providerVal,
+          liters: liters,
+          cost_total: parsedCost && parsedCost > 0 ? parsedCost : null,
+          driver_name: driverName,
+          receipt_number: receiptNumber,
+          fuel_type: document.getElementById('recFuelType').value,
+          comment: commentVal,
+          force_confirm: forceConfirm
+        })
+      });
+      closeModal('modalReceipt');
+      showToast(
+        `Паливо оприбутковано: +${Number(saved.liters).toFixed(1)} л (${Number(saved.cost_total).toFixed(2)} грн)!`,
+        'success'
+      );
+    }
+
     document.getElementById('recCostTotal').value = '';
+    document.getElementById('recNumber').value = '';
     document.getElementById('recComment').value = '';
-    showToast(
-      `Паливо оприбутковано: +${Number(saved.liters).toFixed(1)} л на суму ${Number(saved.cost_total).toFixed(2)} грн (${Number(saved.price_per_liter).toFixed(2)} грн/л)!`,
-      'success'
-    );
-    loadFuelData();
-    loadFuelSummary();
+    if (document.getElementById('recLiters')) document.getElementById('recLiters').value = '';
+    await Promise.allSettled([loadFuelData(), loadAllData()]);
   } catch (err) {
-    showToast(err.message || 'Помилка оприбуткування палива', 'error');
+    showToast(err.message || 'Помилка прийому палива', 'error');
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
@@ -708,7 +842,7 @@ function renderCanisterPoolsSection(pools, txs) {
           <td><b>${formatLiters(p.available_liters)}</b></td>
           <td style="white-space: nowrap; text-align: center;">
             <button type="button" class="btn-action" style="padding: 0.25rem 0.5rem; min-height: auto; font-size: 0.78rem; display: inline-flex;" ${(!canTransfer || Number(p.empty_count) === 0) ? 'disabled' : ''} onclick="openCanisterActionModal(${Number(p.id)}, 'dispatch')" title="Віддати порожні каністри на заправку">📤 На АЗС</button>
-            <button type="button" class="btn-action" style="padding: 0.25rem 0.5rem; min-height: auto; font-size: 0.78rem; display: inline-flex; border-color: #4ade80; color: #4ade80;" ${(!canReceipt || (Number(p.away_refill_count) === 0 && Number(p.empty_count) === 0)) ? 'disabled' : ''} onclick="openCanisterActionModal(${Number(p.id)}, 'receive')" title="Привезли заправлені каністри з АЗС">📥 Привезли</button>
+            <button type="button" class="btn-action" style="padding: 0.25rem 0.5rem; min-height: auto; font-size: 0.78rem; display: inline-flex; border-color: #4ade80; color: #4ade80;" ${(!canReceipt || (Number(p.away_refill_count) === 0 && Number(p.empty_count) === 0)) ? 'disabled' : ''} onclick="openUnifiedCanisterReceiveModal(${Number(p.id)})" title="Привезли заправлені каністри на склад">📥 Привезли</button>
             ${Number(p.away_refill_count) > 0 && canTransfer ? `<button type="button" class="btn-action" style="padding: 0.25rem 0.5rem; min-height: auto; font-size: 0.78rem; display: inline-flex;" onclick="openCanisterActionModal(${Number(p.id)}, 'return')" title="Повернути каністри порожніми без заправки">↩️</button>` : ''}
             ${canConfigure ? `
               <button type="button" class="btn-action" style="padding: 0.25rem 0.45rem; min-height: auto; font-size: 0.78rem; display: inline-flex;" onclick="openEditCanisterPoolModal(${Number(p.id)})" title="Редагувати пул">✏️</button>
@@ -792,15 +926,26 @@ window.onCanisterPoolFacilityChange = async function () {
     } else {
       stockSel.innerHTML = stocks.map(s => `<option value="${Number(s.id)}">${escapeHtml(s.name)} (${escapeHtml(s.fuel_type)}, зараз ${Number(s.current_balance_l).toFixed(1)} л)</option>`).join('');
     }
-    window.updateCanisterPoolFormPreview();
+    window.onCanisterPoolStockChange();
   } catch (_) {}
+};
+
+window.onCanisterPoolStockChange = function () {
+  if (!document.getElementById('canPoolId').value) {
+    window.autoFillCanisterCountsFromStock();
+  } else {
+    window.updateCanisterPoolFormPreview();
+  }
 };
 
 window.autoFillCanisterCountsFromStock = function () {
   const stockId = parseInt(document.getElementById('canPoolStock')?.value || '0', 10);
   const vol = parseFloat(document.getElementById('canPoolVolume')?.value || '20') || 20;
   const st = (window._canisterModalStocks || []).find(s => Number(s.id) === stockId);
-  if (!st) return;
+  if (!st) {
+    window.updateCanisterPoolFormPreview();
+    return;
+  }
   const bal = Math.max(0, Number(st.current_balance_l || 0));
   const full = Math.floor((bal + 1e-6) / vol);
   const res = Math.max(0, Number((bal - full * vol).toFixed(2)));
@@ -900,93 +1045,37 @@ window.deleteCanisterPool = async function (poolId, name, avail) {
   }
 };
 
-window.openCanisterActionModal = async function (poolId, mode) {
+window.openCanisterActionModal = function (poolId, mode) {
   const pool = (window._cachedCanisterPools || []).find(p => Number(p.id) === Number(poolId));
   if (!pool) return;
-  if (!cachedFuelPrices) await fetchFuelPricesCache();
 
   document.getElementById('canActionPoolId').value = String(pool.id);
   document.getElementById('canActionMode').value = mode;
   document.getElementById('canActionComment').value = '';
-  document.getElementById('canActionCostTotal').value = '';
-  document.getElementById('canActionReceiptNo').value = '';
 
-  const titleEl = document.getElementById('canActionTitle');
-  const srcGroup = document.getElementById('canActionSourceGroup');
-  const recFields = document.getElementById('canActionReceiveFields');
-  const countEl = document.getElementById('canActionCount');
-  const submitBtn = document.getElementById('canActionSubmitBtn');
-
-  if (mode === 'dispatch') {
-    titleEl.innerText = '📤 Віддати порожні каністри на заправку';
-    srcGroup.style.display = 'none';
-    recFields.style.display = 'none';
-    countEl.value = '1';
-    countEl.max = String(pool.empty_count);
-    submitBtn.innerText = '📤 Відправити на заправку';
-  } else if (mode === 'return') {
-    titleEl.innerText = '↩️ Повернути каністри порожніми';
-    srcGroup.style.display = 'none';
-    recFields.style.display = 'none';
-    countEl.value = '1';
-    countEl.max = String(pool.away_refill_count);
-    submitBtn.innerText = '↩️ Повернути на об\'єкт';
-  } else {
-    titleEl.innerText = '📥 Привезли заправлені каністри';
-    srcGroup.style.display = 'block';
-    recFields.style.display = 'block';
-    document.getElementById('canActionCreateReceipt').checked = true;
-    const srcSel = document.getElementById('canActionSource');
-    srcSel.value = Number(pool.away_refill_count) > 0 ? 'away' : 'empty';
-    countEl.value = String(Math.max(1, Number(pool.away_refill_count) || 1));
-    window.toggleCanisterReceiptInputs();
-    submitBtn.innerText = '📥 Зарахувати каністри';
-  }
-
-  openModal('modalCanisterAction');
-  window.updateCanisterActionPreview();
-};
-
-window.toggleCanisterReceiptInputs = function () {
-  const checked = document.getElementById('canActionCreateReceipt')?.checked;
-  const box = document.getElementById('canActionReceiptInputs');
-  if (box) box.style.display = checked ? 'block' : 'none';
-};
-
-window.updateCanisterActionPreview = function () {
-  const poolId = parseInt(document.getElementById('canActionPoolId')?.value || '0', 10);
-  const mode = document.getElementById('canActionMode')?.value;
-  const pool = (window._cachedCanisterPools || []).find(p => Number(p.id) === poolId);
-  if (!pool) return;
-
-  const cnt = Math.max(1, parseInt(document.getElementById('canActionCount')?.value || '1', 10) || 1);
   const vol = Number(pool.canister_volume_l || 20);
   const infoEl = document.getElementById('canActionPoolInfo');
   if (infoEl) {
     infoEl.innerHTML = `Пул: <b>${escapeHtml(pool.name)}</b> (${escapeHtml(pool.fuel_type)}, ${vol.toFixed(0)} л) • Повні: <b style="color:#4ade80;">${Number(pool.full_count)}</b> • Порожні: <b>${Number(pool.empty_count)}</b> • На АЗС: <b style="color:#fbbf24;">${Number(pool.away_refill_count)}</b>`;
   }
 
-  if (mode === 'receive') {
-    const src = document.getElementById('canActionSource')?.value || 'away';
-    const maxCnt = src === 'away' ? Number(pool.away_refill_count) : Number(pool.empty_count);
-    const countEl = document.getElementById('canActionCount');
-    if (countEl) countEl.max = String(Math.max(1, maxCnt));
-    const liters = cnt * vol;
-    const prov = document.getElementById('canActionProvider')?.value || 'wog';
-    const fuelsMap = prov === 'okko' ? cachedFuelPrices?.okko_fuels : cachedFuelPrices?.fuels;
-    const fEntry = fuelsMap?.[pool.fuel_type] || cachedFuelPrices?.fuels?.[pool.fuel_type];
-    const unitP = fEntry ? Number(fEntry.effective_price) : 92.90;
-    const rawCost = document.getElementById('canActionCostTotal')?.value?.trim();
-    const costNum = rawCost ? parseFloat(rawCost) : 0;
-    const hintEl = document.getElementById('canActionAutoPriceHint');
-    if (hintEl) {
-      if (costNum > 0) {
-        hintEl.innerHTML = `✅ Повернення <b>${cnt} шт. (+${liters.toFixed(1)} л)</b> • Сума: <b>${costNum.toFixed(2)} грн</b> (${(costNum / liters).toFixed(2)} грн/л)`;
-      } else {
-        hintEl.innerHTML = `💡 Повернення <b>${cnt} шт. (+${liters.toFixed(1)} л)</b> • Авторозрахунок: ~<b>${(liters * unitP).toFixed(2)} грн</b> (${unitP.toFixed(2)} грн/л)`;
-      }
-    }
+  const titleEl = document.getElementById('canActionTitle');
+  const countEl = document.getElementById('canActionCount');
+  const submitBtn = document.getElementById('canActionSubmitBtn');
+
+  if (mode === 'dispatch') {
+    titleEl.innerText = '📤 Віддати порожні каністри на заправку';
+    countEl.value = '1';
+    countEl.max = String(Math.max(1, Number(pool.empty_count || 0)));
+    submitBtn.innerText = '📤 Відправити на заправку';
+  } else {
+    titleEl.innerText = '↩️ Повернути каністри порожніми';
+    countEl.value = '1';
+    countEl.max = String(Math.max(1, Number(pool.away_refill_count || 0)));
+    submitBtn.innerText = '↩️ Повернути на об\'єкт';
   }
+
+  openModal('modalCanisterAction');
 };
 
 document.getElementById('canisterActionForm')?.addEventListener('submit', async (e) => {
@@ -1003,35 +1092,15 @@ document.getElementById('canisterActionForm')?.addEventListener('submit', async 
         body: JSON.stringify({ count, comment })
       });
       showToast(`Відправлено на заправку: ${count} каністр`, 'success');
-    } else if (mode === 'return') {
+    } else {
       await api(`/fuel/canisters/${encodeURIComponent(poolId)}/return-empty`, {
         method: 'POST',
         body: JSON.stringify({ count, comment })
       });
       showToast(`Повернуто порожніми: ${count} каністр`, 'success');
-    } else {
-      const source = document.getElementById('canActionSource').value;
-      const createReceipt = document.getElementById('canActionCreateReceipt').checked;
-      const rawCost = document.getElementById('canActionCostTotal').value.trim();
-      const body = {
-        count,
-        source,
-        create_receipt: createReceipt,
-        fuel_provider: document.getElementById('canActionProvider').value,
-        cost_total: rawCost ? parseFloat(rawCost) : null,
-        driver_name: document.getElementById('canActionDriver').value.trim() || 'Доставка каністр',
-        receipt_number: document.getElementById('canActionReceiptNo').value.trim() || null,
-        comment
-      };
-      await api(`/fuel/canisters/${encodeURIComponent(poolId)}/receive`, {
-        method: 'POST',
-        body: JSON.stringify(body)
-      });
-      showToast(`Прийнято заправлених каністр: ${count} шт.`, 'success');
     }
     closeModal('modalCanisterAction');
-    await loadFuelData();
-    loadAllData();
+    await Promise.allSettled([loadFuelData(), loadAllData()]);
   } catch (err) {
     showToast(err.message || 'Помилка операції з каністрами', 'error');
   }
