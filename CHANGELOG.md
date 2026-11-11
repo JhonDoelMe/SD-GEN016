@@ -5,6 +5,16 @@
 
 ---
 
+## [Unreleased — Етап 2: Облік каністр та резервної ємності] — 2026-11-11
+- **Модель пулів каністр та журнал руху ([`models/canister.py`](backend/app/models/canister.py), [`alembic/versions/011_canister_pools.py`](backend/alembic/versions/011_canister_pools.py))**:
+  - Додано таблиці `canister_pools` (`total_count`, `full_count`, `empty_count`, `away_refill_count`, `reserve_liters < canister_volume_l`) та `canister_transactions` (історія кожної операції зі знімком до/після).
+- **Бізнес-логіка резервування першим ([`services/canister_service.py`](backend/app/services/canister_service.py), [`services/fuel_service.py`](backend/app/services/fuel_service.py))**:
+  - Залишок відкритої каністри переливається в наземну резервну ємність (`reserve_liters`), тож каністра одразу переходить у `empty_count` для відправки на АЗС.
+  - При заправці бака генератора паливо з резерву списується першим (`min(reserve, liters)`), далі відкриваються повні каністри; `FuelStock.current_balance_l` автоматично синхронізується із пулами каністр.
+  - Додано API-ендпоінти `/api/v1/fuel/canisters*` (`dispatch`, `receive` з опційним авто-чеком WOG/OKKO, `return-empty`, CRUD пулів, журнал транзакцій), підтримку в бекапах та очищенні БД.
+- **PWA-інтерфейс каністр ([`frontend/index.html`](frontend/index.html), [`frontend/js/fuel.js`](frontend/js/fuel.js), [`frontend/sw.js`](frontend/sw.js))**:
+  - У вкладці «Паливо» додано панель керування пулами каністр, кнопки швидких операцій (`📤 На АЗС`, `📥 Привезли`, `↩️ Повернути`), живий передперегляд списання резерву й каністр у модалці заправки бака та журнал руху каністр (`sd-gen016-v5.4.2`).
+
 ## [Unreleased — Етап 1 технічного фундаменту] — 2026-11-11
 - **Персистентний захист сесій та brute-force у БД (`models/security.py`, `alembic/versions/010_security_persistence.py`, `auth_security_service.py`)**:
   - Відкликані JWT-токени (`/logout`, таблиця `revoked_tokens`) та лічильники невдалих спроб входу / відновлення пароля (таблиця `auth_attempts`) тепер зберігаються в PostgreSQL/SQLite, не скидаються при рестарті контейнера та перевіряються також на захищеному роуті `/uploads/{file_path:path}`.

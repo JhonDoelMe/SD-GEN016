@@ -196,7 +196,8 @@ def ensure_schema_updates(sync_conn):
     if sync_conn.dialect.name == "postgresql":
         serial_tables = (
             "facilities", "generators", "fuel_stocks", "fuel_receipts",
-            "fuel_transfers", "users", "roles", "permissions",
+            "fuel_transfers", "canister_pools", "canister_transactions",
+            "users", "roles", "permissions",
             "maintenance_schedules", "maintenance_records",
             "generator_runs", "faults", "audit_logs", "system_adjustments",
             "push_subscriptions", "notification_logs", "password_resets"

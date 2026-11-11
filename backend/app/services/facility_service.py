@@ -1,7 +1,7 @@
 import datetime
 from typing import List, Optional
 from fastapi import HTTPException, status
-from sqlalchemy import select, func, update
+from sqlalchemy import delete as sql_delete, select, func, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -258,6 +258,7 @@ async def delete_facility(
 
     from backend.app.models.audit import SystemAdjustment
     from backend.app.models.fuel import FuelReceipt, FuelTransfer
+    from backend.app.models.canister import CanisterPool, CanisterTransaction
     from backend.app.models.notification import PushSubscription, NotificationLog
     from backend.app.models.user import User
 
@@ -273,7 +274,6 @@ async def delete_facility(
 
     # 3. Cascade delete associated generators if requested
     if cascade:
-        from sqlalchemy import delete as sql_delete
         from backend.app.models.generator import GeneratorRun, GeneratorSchedule
         from backend.app.models.maintenance import MaintenanceRecord, MaintenanceSchedule
         from backend.app.models.fault import Fault
@@ -286,7 +286,9 @@ async def delete_facility(
             await db.execute(sql_delete(FuelTransfer).where(FuelTransfer.generator_id == gen.id))
             await db.delete(gen)
 
-    # 4. Delete associated fuel stocks
+    # 4. Delete associated canister transactions/pools and fuel stocks
+    await db.execute(sql_delete(CanisterTransaction).where(CanisterTransaction.facility_id == facility_id))
+    await db.execute(sql_delete(CanisterPool).where(CanisterPool.facility_id == facility_id))
     for stock in list(facility.fuel_stocks):
         await db.delete(stock)
 

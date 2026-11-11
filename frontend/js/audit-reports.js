@@ -53,6 +53,12 @@ const AUDIT_ACTION_MAP_UA = {
   'FUEL_STOCK_UPDATED': 'Оновлення складу ГСМ',
   'FUEL_STOCK_DELETED': 'Видалення складу ГСМ',
   'FUEL_PRICES_REFRESHED': 'Оновлення цін АЗК WOG',
+  'CANISTER_POOL_CREATED': 'Створення пулу каністр',
+  'CANISTER_POOL_UPDATED': 'Оновлення пулу каністр',
+  'CANISTER_POOL_DELETED': 'Видалення пулу каністр',
+  'CANISTER_DISPATCHED': 'Відправка каністр на заправку',
+  'CANISTER_RECEIVED': 'Прийом заправлених каністр',
+  'CANISTER_RETURNED_EMPTY': 'Повернення порожніх каністр без заправки',
 
   // Maintenance
   'MAINTENANCE_RECORD': 'Технічне обслуговування',
@@ -105,6 +111,7 @@ const AUDIT_ENTITY_MAP_UA = {
   'Facility': 'Об\'єкт',
   'Generator': 'Генератор',
   'FuelStock': 'Склад палива',
+  'CanisterPool': 'Пул каністр',
   'FuelReceipt': 'Оприбуткування палива',
   'FuelTransaction': 'Заправка палива',
   'FuelTransfer': 'Заправка палива',

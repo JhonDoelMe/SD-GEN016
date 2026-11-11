@@ -7,11 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.database import get_db
 from backend.app.models.user import User
 from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer
+from backend.app.models.canister import CanisterTransaction
 from backend.app.models.generator import Generator
 from backend.app.models.facility import Facility
 from backend.app.schemas.fuel import (
     FuelStockCreate, FuelStockUpdate, FuelStockOut, FuelReceiptCreate, FuelReceiptOut,
-    FuelTransferCreate, FuelTransferOut, FuelBalancesSummary
+    FuelTransferCreate, FuelTransferOut, FuelBalancesSummary,
+    CanisterPoolCreate, CanisterPoolUpdate, CanisterPoolOut,
+    CanisterDispatchRequest, CanisterReceiveRequest, CanisterReturnEmptyRequest,
+    CanisterTransactionOut,
 )
 from backend.app.api.deps import (
     get_current_user,
@@ -26,8 +30,40 @@ from backend.app.services.fuel_service import (
     update_fuel_stock, delete_fuel_stock,
     add_fuel_receipt, transfer_fuel_to_tank, get_fuel_balances_summary
 )
+from backend.app.services.canister_service import (
+    get_stock_canister_aggregates,
+    list_canister_pools,
+    create_canister_pool,
+    update_canister_pool,
+    delete_canister_pool,
+    dispatch_canisters,
+    return_empty_canisters,
+    receive_canisters,
+    list_canister_transactions,
+    to_pool_out,
+)
 
 router = APIRouter(prefix="/fuel", tags=["Паливо"])
+
+
+def _build_stock_out(stock: FuelStock, agg_map: dict) -> FuelStockOut:
+    info = agg_map.get(int(stock.id), {})
+    return FuelStockOut(
+        id=stock.id,
+        facility_id=stock.facility_id,
+        facility_name=stock.facility.name if stock.facility else None,
+        name=stock.name,
+        fuel_type=stock.fuel_type,
+        current_balance_l=float(stock.current_balance_l),
+        is_active=stock.is_active,
+        updated_at=stock.updated_at,
+        has_canister_pools=bool(info.get("has_canister_pools", False)),
+        canisters_total=int(info.get("canisters_total", 0)),
+        canisters_full=int(info.get("canisters_full", 0)),
+        canisters_empty=int(info.get("canisters_empty", 0)),
+        canisters_away=int(info.get("canisters_away", 0)),
+        canister_reserve_l=float(info.get("canister_reserve_l", 0.0)),
+    )
 
 
 @router.get("/summary", response_model=FuelBalancesSummary)
@@ -52,19 +88,8 @@ async def get_stocks_list(
     """Список усіх складів ГСМ (за об'єктом або загальний)"""
     eff_facility_id = verify_facility_access(current_user, facility_id)
     stocks = await list_fuel_stocks(db, facility_id=eff_facility_id, include_archived=include_archived)
-    return [
-        FuelStockOut(
-            id=s.id,
-            facility_id=s.facility_id,
-            facility_name=s.facility.name if s.facility else None,
-            name=s.name,
-            fuel_type=s.fuel_type,
-            current_balance_l=float(s.current_balance_l),
-            is_active=s.is_active,
-            updated_at=s.updated_at
-        )
-        for s in stocks
-    ]
+    agg_map = await get_stock_canister_aggregates(db, [s.id for s in stocks])
+    return [_build_stock_out(s, agg_map) for s in stocks]
 
 
 @router.post("/stocks", response_model=FuelStockOut, status_code=status.HTTP_201_CREATED)
@@ -79,16 +104,7 @@ async def create_stock_api(
     verify_facility_access(current_user, data.facility_id)
     client_ip = get_client_ip(request)
     stock = await create_fuel_stock(db, data, current_user.id, client_ip)
-    return FuelStockOut(
-        id=stock.id,
-        facility_id=stock.facility_id,
-        facility_name=stock.facility.name if stock.facility else None,
-        name=stock.name,
-        fuel_type=stock.fuel_type,
-        current_balance_l=float(stock.current_balance_l),
-        is_active=stock.is_active,
-        updated_at=stock.updated_at
-    )
+    return _build_stock_out(stock, {})
 
 
 @router.put("/stocks/{stock_id}", response_model=FuelStockOut)
@@ -107,16 +123,8 @@ async def update_stock_api(
         verify_facility_access(current_user, data.facility_id)
     client_ip = get_client_ip(request)
     stock = await update_fuel_stock(db, stock_id, data, current_user.id, client_ip)
-    return FuelStockOut(
-        id=stock.id,
-        facility_id=stock.facility_id,
-        facility_name=stock.facility.name if stock.facility else None,
-        name=stock.name,
-        fuel_type=stock.fuel_type,
-        current_balance_l=float(stock.current_balance_l),
-        is_active=stock.is_active,
-        updated_at=stock.updated_at
-    )
+    agg_map = await get_stock_canister_aggregates(db, [stock.id])
+    return _build_stock_out(stock, agg_map)
 
 
 @router.delete("/stocks/{stock_id}")
@@ -142,16 +150,8 @@ async def get_stock(
 ):
     eff_facility_id = verify_facility_access(current_user, facility_id)
     stock = await get_or_create_default_stock(db, facility_id=eff_facility_id)
-    return FuelStockOut(
-        id=stock.id,
-        facility_id=stock.facility_id,
-        facility_name=stock.facility.name if stock.facility else None,
-        name=stock.name,
-        fuel_type=stock.fuel_type,
-        current_balance_l=float(stock.current_balance_l),
-        is_active=stock.is_active,
-        updated_at=stock.updated_at
-    )
+    agg_map = await get_stock_canister_aggregates(db, [stock.id])
+    return _build_stock_out(stock, agg_map)
 
 
 @router.post("/receipt", response_model=FuelReceiptOut, status_code=status.HTTP_201_CREATED)
@@ -326,6 +326,9 @@ async def create_transfer(
         source_balance_after=float(transfer.source_balance_after),
         tank_balance_before=float(transfer.tank_balance_before),
         tank_balance_after=float(transfer.tank_balance_after),
+        used_from_reserve_l=getattr(transfer, "_used_from_reserve_l", None),
+        opened_canisters_count=getattr(transfer, "_opened_canisters_count", None),
+        canister_reserve_after_l=getattr(transfer, "_canister_reserve_after_l", None),
         comment=transfer.comment,
         idempotency_key=transfer.idempotency_key,
         created_at=transfer.created_at
@@ -356,25 +359,192 @@ async def list_transfers(
 
     res = await db.execute(q)
     transfers = res.scalars().all()
-    return [
-        FuelTransferOut(
-            id=t.id,
-            facility_id=t.facility_id,
-            facility_name=t.stock.facility.name if t.stock and t.stock.facility else None,
-            stock_id=t.stock_id,
-            stock_name=t.stock.name if t.stock else "Склад ГСМ",
-            generator_id=t.generator_id,
-            generator_name=t.generator.name if t.generator else "Генератор",
-            user_id=t.user_id,
-            user_name=(t.user.full_name or t.user.login) if t.user else None,
-            liters=float(t.liters),
-            source_balance_before=float(t.source_balance_before),
-            source_balance_after=float(t.source_balance_after),
-            tank_balance_before=float(t.tank_balance_before),
-            tank_balance_after=float(t.tank_balance_after),
-            comment=t.comment,
-            idempotency_key=t.idempotency_key,
-            created_at=t.created_at
+
+    ctx_by_transfer = {}
+    t_ids = [t.id for t in transfers]
+    if t_ids:
+        ctx_res = await db.execute(
+            select(CanisterTransaction).where(CanisterTransaction.related_transfer_id.in_(t_ids))
         )
-        for t in transfers
+        for ctx in ctx_res.scalars().all():
+            if ctx.related_transfer_id is not None:
+                ctx_by_transfer[int(ctx.related_transfer_id)] = ctx
+
+    out = []
+    for t in transfers:
+        ctx = ctx_by_transfer.get(int(t.id))
+        out.append(
+            FuelTransferOut(
+                id=t.id,
+                facility_id=t.facility_id,
+                facility_name=t.stock.facility.name if t.stock and t.stock.facility else None,
+                stock_id=t.stock_id,
+                stock_name=t.stock.name if t.stock else "Склад ГСМ",
+                generator_id=t.generator_id,
+                generator_name=t.generator.name if t.generator else "Генератор",
+                user_id=t.user_id,
+                user_name=(t.user.full_name or t.user.login) if t.user else None,
+                liters=float(t.liters),
+                source_balance_before=float(t.source_balance_before),
+                source_balance_after=float(t.source_balance_after),
+                tank_balance_before=float(t.tank_balance_before),
+                tank_balance_after=float(t.tank_balance_after),
+                used_from_reserve_l=float(ctx.used_from_reserve_l) if ctx else None,
+                opened_canisters_count=int(ctx.count) if ctx else None,
+                canister_reserve_after_l=float(ctx.reserve_after) if ctx else None,
+                comment=t.comment,
+                idempotency_key=t.idempotency_key,
+                created_at=t.created_at
+            )
+        )
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Canister Pools & Reserve Buffer API (Stage 2)
+# ---------------------------------------------------------------------------
+
+@router.get("/canisters", response_model=List[CanisterPoolOut])
+async def get_canisters_list(
+    facility_id: Optional[int] = None,
+    include_inactive: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("fuel:view")),
+):
+    eff_facility_id = verify_facility_access(current_user, facility_id)
+    pools = await list_canister_pools(db, facility_id=eff_facility_id, include_inactive=include_inactive)
+    return [to_pool_out(p) for p in pools]
+
+
+@router.post("/canisters", response_model=CanisterPoolOut, status_code=status.HTTP_201_CREATED)
+async def create_canister_pool_api(
+    data: CanisterPoolCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("fuel:configure")),
+):
+    verify_facility_access(current_user, data.facility_id)
+    pool = await create_canister_pool(db, data, current_user.id, get_client_ip(request))
+    return to_pool_out(pool)
+
+
+@router.put("/canisters/{pool_id}", response_model=CanisterPoolOut)
+async def update_canister_pool_api(
+    pool_id: int,
+    data: CanisterPoolUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("fuel:configure")),
+):
+    from backend.app.models.canister import CanisterPool
+    existing = await db.get(CanisterPool, pool_id)
+    if existing:
+        verify_facility_access(current_user, existing.facility_id)
+    pool = await update_canister_pool(db, pool_id, data, current_user.id, get_client_ip(request))
+    return to_pool_out(pool)
+
+
+@router.delete("/canisters/{pool_id}")
+async def delete_canister_pool_api(
+    pool_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("fuel:configure")),
+):
+    from backend.app.models.canister import CanisterPool
+    existing = await db.get(CanisterPool, pool_id)
+    if existing:
+        verify_facility_access(current_user, existing.facility_id)
+    return await delete_canister_pool(db, pool_id, current_user.id, get_client_ip(request))
+
+
+@router.post("/canisters/{pool_id}/dispatch", response_model=CanisterPoolOut)
+async def dispatch_canisters_api(
+    pool_id: int,
+    data: CanisterDispatchRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("fuel:transfer")),
+):
+    from backend.app.models.canister import CanisterPool
+    existing = await db.get(CanisterPool, pool_id)
+    if existing:
+        verify_facility_access(current_user, existing.facility_id)
+    pool = await dispatch_canisters(db, pool_id, data, current_user.id, get_client_ip(request))
+    return to_pool_out(pool)
+
+
+@router.post("/canisters/{pool_id}/return-empty", response_model=CanisterPoolOut)
+async def return_empty_canisters_api(
+    pool_id: int,
+    data: CanisterReturnEmptyRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("fuel:transfer")),
+):
+    from backend.app.models.canister import CanisterPool
+    existing = await db.get(CanisterPool, pool_id)
+    if existing:
+        verify_facility_access(current_user, existing.facility_id)
+    pool = await return_empty_canisters(db, pool_id, data, current_user.id, get_client_ip(request))
+    return to_pool_out(pool)
+
+
+@router.post("/canisters/{pool_id}/receive", response_model=CanisterPoolOut)
+async def receive_canisters_api(
+    pool_id: int,
+    data: CanisterReceiveRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("fuel:receipt")),
+):
+    from backend.app.models.canister import CanisterPool
+    existing = await db.get(CanisterPool, pool_id)
+    if existing:
+        verify_facility_access(current_user, existing.facility_id)
+    user_perms = [perm.code for role in (current_user.roles or []) for perm in (role.permissions or [])]
+    is_admin = is_user_admin_or_super(current_user)
+    pool = await receive_canisters(
+        db, pool_id, data, current_user.id, get_client_ip(request),
+        user_permissions=user_perms, is_admin=is_admin,
+    )
+    return to_pool_out(pool)
+
+
+@router.get("/canisters/transactions", response_model=List[CanisterTransactionOut])
+async def list_canister_transactions_api(
+    facility_id: Optional[int] = None,
+    pool_id: Optional[int] = None,
+    limit: int = Query(50, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_permission("fuel:view")),
+):
+    eff_facility_id = verify_facility_access(current_user, facility_id)
+    txs = await list_canister_transactions(db, facility_id=eff_facility_id, pool_id=pool_id, limit=limit)
+    return [
+        CanisterTransactionOut(
+            id=tx.id,
+            facility_id=tx.facility_id,
+            pool_id=tx.pool_id,
+            pool_name=tx.pool.name if tx.pool else None,
+            user_id=tx.user_id,
+            user_name=(tx.user.full_name or tx.user.login) if tx.user else None,
+            operation=tx.operation,
+            count=int(tx.count),
+            liters_delta=float(tx.liters_delta),
+            used_from_reserve_l=float(tx.used_from_reserve_l),
+            full_before=int(tx.full_before),
+            full_after=int(tx.full_after),
+            empty_before=int(tx.empty_before),
+            empty_after=int(tx.empty_after),
+            away_before=int(tx.away_before),
+            away_after=int(tx.away_after),
+            reserve_before=float(tx.reserve_before),
+            reserve_after=float(tx.reserve_after),
+            related_transfer_id=tx.related_transfer_id,
+            related_receipt_id=tx.related_receipt_id,
+            comment=tx.comment,
+            created_at=tx.created_at,
+        )
+        for tx in txs
     ]

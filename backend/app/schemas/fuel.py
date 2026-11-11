@@ -1,5 +1,5 @@
 import datetime
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -26,6 +26,12 @@ class FuelStockOut(BaseModel):
     current_balance_l: float
     is_active: bool = True
     updated_at: datetime.datetime
+    has_canister_pools: bool = False
+    canisters_total: int = 0
+    canisters_full: int = 0
+    canisters_empty: int = 0
+    canisters_away: int = 0
+    canister_reserve_l: float = 0.0
 
     model_config = {"from_attributes": True}
 
@@ -33,6 +39,7 @@ class FuelStockOut(BaseModel):
 class FuelReceiptCreate(BaseModel):
     facility_id: Optional[int] = None
     stock_id: Optional[int] = None
+    canister_pool_id: Optional[int] = None
     fuel_provider: Optional[str] = Field(default=None, description="Мережа АЗС / Постачальник (wog, okko, other)")
     fuel_type: Optional[str] = Field(default=None, description="Тип палива (за замовчуванням зі складу)")
     liters: float = Field(..., gt=0, description="Кількість літрів за чеком")
@@ -79,6 +86,7 @@ class FuelReceiptOut(BaseModel):
 class FuelTransferCreate(BaseModel):
     facility_id: Optional[int] = None
     stock_id: Optional[int] = None
+    canister_pool_id: Optional[int] = None
     generator_id: Optional[int] = None
     liters: float = Field(..., gt=0, description="Кількість літрів для заправки бака")
     comment: Optional[str] = None
@@ -100,6 +108,9 @@ class FuelTransferOut(BaseModel):
     source_balance_after: float
     tank_balance_before: float
     tank_balance_after: float
+    used_from_reserve_l: Optional[float] = None
+    opened_canisters_count: Optional[int] = None
+    canister_reserve_after_l: Optional[float] = None
     comment: Optional[str] = None
     idempotency_key: Optional[str] = None
     created_at: datetime.datetime
@@ -116,3 +127,104 @@ class FuelBalancesSummary(BaseModel):
     avg_price_per_liter: float
     total_transferred_l: float
     total_calculated_consumed_l: float
+    canisters_total: int = 0
+    canisters_full: int = 0
+    canisters_empty: int = 0
+    canisters_away: int = 0
+    canister_reserve_l: float = 0.0
+
+
+class CanisterPoolCreate(BaseModel):
+    facility_id: int
+    stock_id: int
+    name: str = Field(..., min_length=2, max_length=120)
+    canister_volume_l: float = Field(default=20.0, gt=0, le=200)
+    full_count: int = Field(default=0, ge=0)
+    empty_count: int = Field(default=0, ge=0)
+    away_refill_count: int = Field(default=0, ge=0)
+    reserve_liters: float = Field(default=0.0, ge=0)
+
+
+class CanisterPoolUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=120)
+    canister_volume_l: Optional[float] = Field(None, gt=0, le=200)
+    full_count: Optional[int] = Field(None, ge=0)
+    empty_count: Optional[int] = Field(None, ge=0)
+    away_refill_count: Optional[int] = Field(None, ge=0)
+    reserve_liters: Optional[float] = Field(None, ge=0)
+    is_active: Optional[bool] = None
+
+
+class CanisterPoolOut(BaseModel):
+    id: int
+    facility_id: int
+    facility_name: Optional[str] = None
+    stock_id: int
+    stock_name: Optional[str] = None
+    name: str
+    fuel_type: str
+    canister_volume_l: float
+    total_count: int
+    full_count: int
+    empty_count: int
+    away_refill_count: int
+    reserve_liters: float
+    available_liters: float
+    is_active: bool = True
+    updated_at: datetime.datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CanisterDispatchRequest(BaseModel):
+    count: int = Field(..., ge=1, description="Кількість порожніх каністр для відправки на заправку")
+    comment: Optional[str] = None
+
+
+class CanisterReturnEmptyRequest(BaseModel):
+    count: int = Field(..., ge=1, description="Кількість каністр, повернених порожніми без заправки")
+    comment: Optional[str] = None
+
+
+class CanisterReceiveRequest(BaseModel):
+    count: int = Field(..., ge=1, description="Кількість заправлених каністр, що привезли")
+    source: Literal["away", "empty"] = Field(
+        default="away",
+        description="'away' — повернення відправлених на заправку; 'empty' — заправка порожніх напряму"
+    )
+    create_receipt: bool = Field(default=True, description="Створити прибутковий чек у журналі надходжень")
+    fuel_provider: Optional[str] = None
+    cost_total: Optional[float] = Field(default=None, ge=0)
+    price_per_liter: Optional[float] = Field(default=None, ge=0)
+    driver_name: str = Field(default="Доставка каністр", min_length=2)
+    receipt_number: Optional[str] = None
+    comment: Optional[str] = None
+    force_confirm: bool = False
+    idempotency_key: Optional[str] = Field(None, max_length=64)
+
+
+class CanisterTransactionOut(BaseModel):
+    id: int
+    facility_id: int
+    pool_id: int
+    pool_name: Optional[str] = None
+    user_id: Optional[int] = None
+    user_name: Optional[str] = None
+    operation: str
+    count: int
+    liters_delta: float
+    used_from_reserve_l: float
+    full_before: int
+    full_after: int
+    empty_before: int
+    empty_after: int
+    away_before: int
+    away_after: int
+    reserve_before: float
+    reserve_after: float
+    related_transfer_id: Optional[int] = None
+    related_receipt_id: Optional[int] = None
+    comment: Optional[str] = None
+    created_at: datetime.datetime
+
+    model_config = {"from_attributes": True}

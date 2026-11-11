@@ -21,6 +21,7 @@ from backend.app.services.settings_service import get_runtime_setting, load_syst
 from backend.app.models.facility import Facility
 from backend.app.models.generator import Generator, GeneratorSchedule, GeneratorRun
 from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer
+from backend.app.models.canister import CanisterPool, CanisterTransaction
 from backend.app.models.maintenance import MaintenanceSchedule, MaintenanceRecord
 from backend.app.models.fault import Fault
 from backend.app.models.audit import AuditLog, SystemAdjustment
@@ -142,6 +143,8 @@ TABLE_ORDER = [
     ("fuel_stocks", FuelStock),
     ("fuel_receipts", FuelReceipt),
     ("fuel_transfers", FuelTransfer),
+    ("canister_pools", CanisterPool),
+    ("canister_transactions", CanisterTransaction),
     ("maintenance_schedules", MaintenanceSchedule),
     ("maintenance_records", MaintenanceRecord),
     ("faults", Fault),
@@ -634,7 +637,8 @@ async def restore_backup(
             raise ValueError("Файл 'database_export.json' повинен містити кореневий об'єкт таблиць!")
 
         # BAK-01: Verify all required tables are present in export BEFORE modifying current DB
-        required_tables = [t[0] for t in TABLE_ORDER]
+        optional_restore_tables = {"canister_pools", "canister_transactions"}
+        required_tables = [t[0] for t in TABLE_ORDER if t[0] not in optional_restore_tables]
         missing_tables = [t for t in required_tables if t not in tables_data]
         if missing_tables:
             raise ValueError(

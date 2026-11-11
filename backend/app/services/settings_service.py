@@ -16,6 +16,7 @@ from backend.app.models.settings import SystemSetting
 from backend.app.models.facility import Facility
 from backend.app.models.generator import Generator, GeneratorSchedule, GeneratorRun
 from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer
+from backend.app.models.canister import CanisterPool, CanisterTransaction
 from backend.app.models.maintenance import MaintenanceSchedule, MaintenanceRecord
 from backend.app.models.fault import Fault
 from backend.app.models.audit import AuditLog, SystemAdjustment
@@ -981,6 +982,14 @@ async def perform_system_reset(
                 ms.last_performed_hours = 0.0
                 ms.next_due_hours = ms.interval_hours
 
+        await db.execute(delete(CanisterTransaction).where(CanisterTransaction.facility_id == facility_id))
+        pools_res = await db.execute(select(CanisterPool).where(CanisterPool.facility_id == facility_id))
+        for cp in pools_res.scalars().all():
+            cp.full_count = 0
+            cp.away_refill_count = 0
+            cp.empty_count = int(cp.total_count)
+            cp.reserve_liters = 0.0
+            cp.updated_at = now
         await db.execute(delete(FuelTransfer).where(FuelTransfer.facility_id == facility_id))
         await db.execute(delete(FuelReceipt).where(FuelReceipt.facility_id == facility_id))
         if stock_ids:
@@ -1002,6 +1011,7 @@ async def perform_system_reset(
         return {"status": "ok", "mode": mode, "message": f"Журнали та лічильники об'єкта #{facility_id} успішно очищено для чистих звітів."}
 
     elif mode == "reports_clean":
+        await db.execute(delete(CanisterTransaction))
         await db.execute(delete(GeneratorRun))
         await db.execute(delete(FuelTransfer))
         await db.execute(delete(FuelReceipt))
@@ -1034,6 +1044,13 @@ async def perform_system_reset(
             current_balance_l=0.0,
             updated_at=now
         ))
+        pools_all = (await db.execute(select(CanisterPool))).scalars().all()
+        for cp in pools_all:
+            cp.full_count = 0
+            cp.away_refill_count = 0
+            cp.empty_count = int(cp.total_count)
+            cp.reserve_liters = 0.0
+            cp.updated_at = now
         m_res = await db.execute(select(MaintenanceSchedule))
         for ms in m_res.scalars().all():
             ms.last_performed_hours = 0.0
@@ -1091,6 +1108,8 @@ async def perform_system_reset(
         await db.execute(delete(GeneratorSchedule))
         await db.execute(delete(SystemAdjustment))
         await db.execute(delete(AuditLog))
+        await db.execute(delete(CanisterTransaction))
+        await db.execute(delete(CanisterPool))
         await db.execute(delete(Generator))
         await db.execute(delete(FuelStock))
         await db.execute(delete(SystemSetting))

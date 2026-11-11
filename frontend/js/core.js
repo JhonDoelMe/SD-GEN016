@@ -288,6 +288,7 @@ function applyRolePermissionsUI() {
   // Fuel stock creation button (Admin/Superadmin only)
   const canConfigFuel = hasPermission('fuel:configure');
   setBtnState('btnFuelNewStock', canConfigFuel, 'Створення складу ГСМ доступне лише Адміністратору 🔒', '📦 + Додати склад ГСМ 🔒');
+  setBtnState('btnFuelNewCanisterPool', canConfigFuel, 'Налаштування пулів каністр доступне лише Адміністратору 🔒', '🛢️ + Пул каністр 🔒');
   setBtnState('btnFuelReceipt', hasPermission('fuel:receipt'), 'Оприбуткування палива недоступне для вашої ролі 🔒', '+ Оприбуткувати 🔒');
   setBtnState('btnFuelTransfer', hasPermission('fuel:transfer'), 'Заправка бака недоступна для вашої ролі 🔒', '⛽ Заправити бак 🔒');
 
@@ -444,8 +445,8 @@ window.openModal = function (id) {
     showToast('Керування генераторами доступне лише Адміністратору', 'warning');
     return;
   }
-  if ((id === 'modalNewStock' || id === 'modalEditStock') && !hasPermission('fuel:configure')) {
-    showToast('Керування складами ГСМ доступне лише Адміністратору', 'warning');
+  if ((id === 'modalNewStock' || id === 'modalEditStock' || id === 'modalCanisterPool') && !hasPermission('fuel:configure')) {
+    showToast('Керування складами ГСМ та каністрами доступне лише Адміністратору', 'warning');
     return;
   }
   if (id === 'modalUserCreate' && !hasPermission('users:manage')) {

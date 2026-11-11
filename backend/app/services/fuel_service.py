@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer, utc_now
+from backend.app.models.canister import CanisterPool, CanisterTransaction
 from backend.app.models.generator import Generator, GeneratorRun
 from backend.app.models.facility import Facility
 from backend.app.schemas.fuel import (
@@ -243,6 +244,11 @@ async def update_fuel_stock(
                 detail=f"Неможливо змінити тип палива складу з '{stock.fuel_type}' на '{data.fuel_type.strip()}', оскільки на складі є залишок {float(stock.current_balance_l):.1f} л."
             )
         stock.fuel_type = data.fuel_type.strip()
+        await db.execute(
+            update(CanisterPool)
+            .where(CanisterPool.stock_id == stock.id)
+            .values(fuel_type=stock.fuel_type)
+        )
 
     if data.facility_id is not None and data.facility_id != stock.facility_id:
         fac = await db.get(Facility, data.facility_id)
@@ -343,6 +349,18 @@ async def delete_fuel_stock(
     fac_id = stock.facility_id
     stock_balance = to_liters(stock.current_balance_l)
 
+    active_pools_count = await db.scalar(
+        select(func.count(CanisterPool.id)).where(
+            CanisterPool.stock_id == stock_id,
+            CanisterPool.is_active == True,  # noqa: E712
+        )
+    )
+    if (active_pools_count or 0) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Спочатку видаліть або перенесіть активні пули каністр, прив'язані до цього складу ГСМ."
+        )
+
     # Перевіряємо наявність історичних операцій
     receipts_count = await db.scalar(
         select(func.count(FuelReceipt.id)).where(FuelReceipt.stock_id == stock_id)
@@ -420,7 +438,9 @@ async def add_fuel_receipt(
     user_id: int,
     ip_address: Optional[str] = None,
     user_permissions: Optional[List[str]] = None,
-    is_admin: bool = False
+    is_admin: bool = False,
+    _skip_canister_sync: bool = False,
+    _auto_commit: bool = True,
 ) -> FuelReceipt:
     """
     FUEL-02, FUEL-04, FUEL-05, FUEL-06, FUEL-07, FUEL-08:
@@ -591,6 +611,18 @@ async def add_fuel_receipt(
 
     await db.flush()
 
+    if not _skip_canister_sync:
+        from backend.app.services.canister_service import apply_direct_receipt_to_canister_pool
+        await apply_direct_receipt_to_canister_pool(
+            db=db,
+            stock=stock,
+            liters=liters,
+            user_id=user_id,
+            receipt_id=receipt.id,
+            canister_pool_id=getattr(receipt_data, "canister_pool_id", None),
+        )
+        stock_after = to_liters(stock.current_balance_l)
+
     await log_audit(
         db=db,
         action="FUEL_RECEIPT",
@@ -616,7 +648,8 @@ async def add_fuel_receipt(
         },
         ip_address=ip_address
     )
-    await db.commit()
+    if _auto_commit:
+        await db.commit()
     return receipt
 
 
@@ -756,23 +789,49 @@ async def transfer_fuel_to_tank(
     db.add(transfer)
     await db.flush()
 
+    from backend.app.services.canister_service import consume_from_canister_pool_for_transfer
+    canister_breakdown = await consume_from_canister_pool_for_transfer(
+        db=db,
+        stock=stock,
+        liters=liters,
+        user_id=user_id,
+        transfer_id=transfer.id,
+        canister_pool_id=getattr(transfer_data, "canister_pool_id", None),
+    )
+
+    audit_details = {
+        "facility_id": facility_id,
+        "stock_id": stock.id,
+        "generator_id": generator.id,
+        "liters": float(transfer.liters),
+        "stock_before": float(src_before),
+        "stock_after": float(stock.current_balance_l),
+        "tank_before": float(tank_before),
+        "tank_after": float(tank_after),
+        "idempotency_key": transfer_data.idempotency_key,
+    }
+    if canister_breakdown is not None:
+        used_res, opened_cnt, res_after = canister_breakdown
+        transfer._used_from_reserve_l = float(used_res)
+        transfer._opened_canisters_count = int(opened_cnt)
+        transfer._canister_reserve_after_l = float(res_after)
+        audit_details.update({
+            "used_from_reserve_l": float(used_res),
+            "opened_canisters_count": int(opened_cnt),
+            "canister_reserve_after_l": float(res_after),
+        })
+    else:
+        transfer._used_from_reserve_l = None
+        transfer._opened_canisters_count = None
+        transfer._canister_reserve_after_l = None
+
     await log_audit(
         db=db,
         action="FUEL_TRANSFER_TO_TANK",
         entity_type="FuelTransfer",
         entity_id=str(transfer.id),
         user_id=user_id,
-        details={
-            "facility_id": facility_id,
-            "stock_id": stock.id,
-            "generator_id": generator.id,
-            "liters": float(transfer.liters),
-            "stock_before": float(src_before),
-            "stock_after": float(src_after),
-            "tank_before": float(tank_before),
-            "tank_after": float(tank_after),
-            "idempotency_key": transfer_data.idempotency_key
-        },
+        details=audit_details,
         ip_address=ip_address
     )
     await db.commit()
@@ -876,6 +935,17 @@ async def get_fuel_balances_summary(
 
     avg_price = round(float(total_spent_uah) / float(total_received_l), 2) if float(total_received_l) > 0 else 0.0
 
+    canister_q = select(
+        func.coalesce(func.sum(CanisterPool.total_count), 0),
+        func.coalesce(func.sum(CanisterPool.full_count), 0),
+        func.coalesce(func.sum(CanisterPool.empty_count), 0),
+        func.coalesce(func.sum(CanisterPool.away_refill_count), 0),
+        func.coalesce(func.sum(CanisterPool.reserve_liters), 0.0),
+    ).where(CanisterPool.is_active == True)  # noqa: E712
+    if facility_id is not None:
+        canister_q = canister_q.where(CanisterPool.facility_id == facility_id)
+    c_total, c_full, c_empty, c_away, c_reserve = (await db.execute(canister_q)).first()
+
     return FuelBalancesSummary(
         warehouse_balance_l=to_float(warehouse_balance, 3),
         tank_balance_l=to_float(tank_balance, 3),
@@ -884,7 +954,12 @@ async def get_fuel_balances_summary(
         total_spent_uah=to_float(total_spent_uah, 2),
         avg_price_per_liter=avg_price,
         total_transferred_l=to_float(total_transferred_l, 3),
-        total_calculated_consumed_l=to_float(total_consumed_l, 3)
+        total_calculated_consumed_l=to_float(total_consumed_l, 3),
+        canisters_total=int(c_total or 0),
+        canisters_full=int(c_full or 0),
+        canisters_empty=int(c_empty or 0),
+        canisters_away=int(c_away or 0),
+        canister_reserve_l=to_float(c_reserve, 3),
     )
 
 
