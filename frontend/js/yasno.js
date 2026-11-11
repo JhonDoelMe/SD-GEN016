@@ -16,7 +16,11 @@ window.loadFacilityOutageSchedule = async function(facilityId = null, forceRefre
     const url = `/facilities/${facId}/outage-schedule?_t=${tsBuster}${forceRefresh ? '&force_refresh=true' : ''}`;
     const data = await api(url);
     if (!data || !data.enabled || !data.configured) {
+      window._yasnoLastData = data || null;
       card.style.display = 'none';
+      if (typeof window.updateFuelAssessmentBlock === 'function') {
+        window.updateFuelAssessmentBlock();
+      }
       return;
     }
 
@@ -57,8 +61,8 @@ window.loadFacilityOutageSchedule = async function(facilityId = null, forceRefre
     const hasTomorrowOutages = Array.isArray(data.timeline_tomorrow) && data.timeline_tomorrow.some(h => h.status === 'DEFINITE' || h.status === 'PROBABLE');
     const defaultDay = data.timeline_day || ((data.next_outage && data.next_outage.day === 'tomorrow' && hasTomorrowOutages) ? 'tomorrow' : 'today');
     window.renderYasnoTimeline(defaultDay);
-    if (typeof window.updateYasnoFuelReadiness === 'function') {
-      window.updateYasnoFuelReadiness();
+    if (typeof window.updateFuelAssessmentBlock === 'function') {
+      window.updateFuelAssessmentBlock();
     }
 
     // Indicator of current hour
@@ -124,126 +128,8 @@ window._parseHhMmToMinutes = function(str) {
 };
 
 window.updateYasnoFuelReadiness = function(liveTankOverride = null) {
-  const el = document.getElementById('yasnoFuelReadiness');
-  if (!el) return;
-  const data = window._yasnoLastData;
-  if (!data || !data.enabled || !data.configured || !currentGenerator) {
-    el.style.display = 'none';
-    return;
-  }
-
-  let fuelL = Number(currentGenerator.fuel_tank_level_l || 0);
-  if (typeof liveTankOverride === 'number' && !Number.isNaN(liveTankOverride)) {
-    fuelL = liveTankOverride;
-  } else if (currentGenerator.status === 'RUNNING' && activeRun && activeRun.start_time) {
-    const startDt = parseUTCDate(activeRun.start_time);
-    if (startDt) {
-      const elapsedH = Math.max(0, (Date.now() - startDt.getTime()) / 3600000);
-      const nom = Number(currentGenerator.nominal_consumption_l_per_h || 2.2);
-      const startFuel = activeRun.start_fuel_level_l ?? activeRun.start_fuel ?? fuelL;
-      fuelL = startFuel - elapsedH * nom;
-    }
-  }
-
-  const nominal = Number(currentGenerator.nominal_consumption_l_per_h || 2.2);
-  const effectiveFuelL = Math.max(0, fuelL);
-  const tankHours = nominal > 0 ? (effectiveFuelL / nominal) : 0;
-  const tankHoursStr = formatHoursToHuman(tankHours);
-  const fuelStr = `${effectiveFuelL.toFixed(1).replace('.', ',')} л`;
-
-  // 1. Determine active or next outage slot
-  let slot = null;
-  let isCurrentOutage = false;
-  if (data.current_outage && data.current_outage.start && data.current_outage.end) {
-    slot = data.current_outage;
-    isCurrentOutage = true;
-  } else if ((data.status === 'DEFINITE' || data.status === 'PROBABLE') && Array.isArray(data.slots_today)) {
-    const now = new Date();
-    const curMin = now.getHours() * 60 + now.getMinutes();
-    const matchSlot = data.slots_today.find(s => Number(s.start) <= curMin && curMin < Number(s.end));
-    if (matchSlot) {
-      const fmtMin = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-      slot = { start: fmtMin(Number(matchSlot.start)), end: fmtMin(Number(matchSlot.end)) };
-      isCurrentOutage = true;
-    }
-  }
-  if (!slot && data.next_outage && data.next_outage.start && data.next_outage.end) {
-    slot = data.next_outage;
-  }
-
-  // 2. If no active or upcoming outage is scheduled right now, show general tank readiness inside YASNO card
-  if (!slot) {
-    const stdSlotHours = 4.0;
-    const stdNeededL = stdSlotHours * nominal;
-    const sig = `${currentGenerator.id}|no-slot|${effectiveFuelL.toFixed(1)}|${nominal.toFixed(2)}`;
-    if (el.dataset.renderSig === sig) return;
-    el.dataset.renderSig = sig;
-
-    el.style.display = 'flex';
-    if (tankHours + 0.05 >= stdSlotHours && fuelL > 0) {
-      el.className = 'yasno-fuel-readiness readiness-ok';
-      el.innerHTML = `
-        <div>✅ <b>Паливо в баку ↔ YASNO:</b> у баку <b>${fuelStr}</b> (автономність <b>~${escapeHtml(tankHoursStr)}</b> при ${nominal.toFixed(1).replace('.', ',')} л/год) — запас готовий до можливих відключень.</div>
-      `;
-    } else {
-      const deficitL = Math.max(0.1, stdNeededL - effectiveFuelL);
-      const deficitStr = `${deficitL.toFixed(1).replace('.', ',')} л`;
-      el.className = `yasno-fuel-readiness ${fuelL <= 0 ? 'readiness-crit' : 'readiness-warn'}`;
-      el.innerHTML = `
-        <div>⚠️ <b>Паливо в баку ↔ YASNO:</b> у баку <b>${fuelStr}</b> (автономність <b>~${escapeHtml(tankHoursStr)}</b>) — для типового 4-годинного слоту знеструмлення бракує <b>~${deficitStr}</b>, рекомендується дозаправити.</div>
-      `;
-    }
-    return;
-  }
-
-  // 3. Compare tank autonomy against active or next scheduled outage slot
-  const startMin = window._parseHhMmToMinutes(slot.start);
-  let endMin = window._parseHhMmToMinutes(slot.end);
-  if (startMin === null || endMin === null) {
-    el.style.display = 'none';
-    return;
-  }
-  if (endMin <= startMin) endMin += 1440;
-
-  let slotMinutes = endMin - startMin;
-  if (isCurrentOutage) {
-    const now = new Date();
-    let nowMin = now.getHours() * 60 + now.getMinutes();
-    if (nowMin < startMin && endMin > 1440) nowMin += 1440;
-    if (nowMin >= startMin && nowMin < endMin) {
-      slotMinutes = Math.max(5, endMin - nowMin);
-    }
-  }
-  const slotHours = slotMinutes / 60.0;
-  if (slotHours <= 0) {
-    el.style.display = 'none';
-    return;
-  }
-
-  const neededLiters = slotHours * nominal;
-  const sig = `${currentGenerator.id}|${isCurrentOutage ? 'cur' : 'next'}|${slot.start}-${slot.end}|${Math.round(slotMinutes)}|${effectiveFuelL.toFixed(1)}|${nominal.toFixed(2)}`;
-  if (el.dataset.renderSig === sig) return;
-  el.dataset.renderSig = sig;
-
-  const slotHoursStr = formatHoursToHuman(slotHours);
-  const neededStr = `${neededLiters.toFixed(1).replace('.', ',')} л`;
-  const slotContext = isCurrentOutage
-    ? `поточне відключення до <b>${escapeHtml(slot.end)}</b> (залишилось ${escapeHtml(slotHoursStr)})`
-    : `відключення <b>${escapeHtml(slot.start)}–${escapeHtml(slot.end)}</b> (${escapeHtml(slotHoursStr)})`;
-
-  el.style.display = 'flex';
-  if (tankHours + 0.05 >= slotHours && fuelL > 0) {
-    el.className = 'yasno-fuel-readiness readiness-ok';
-    el.innerHTML = `
-      <div>✅ <b>Паливо в баку ↔ YASNO:</b> на ${slotContext} палива <b>вистачить</b> (у баку <b>${fuelStr}</b> ≈ ${escapeHtml(tankHoursStr)}, потрібно ~${neededStr}).</div>
-    `;
-  } else {
-    const deficitL = Math.max(0.1, neededLiters - effectiveFuelL);
-    const deficitStr = `${deficitL.toFixed(1).replace('.', ',')} л`;
-    el.className = `yasno-fuel-readiness ${fuelL <= 0 ? 'readiness-crit' : 'readiness-warn'}`;
-    el.innerHTML = `
-      <div>⚠️ <b>Паливо в баку ↔ YASNO:</b> на ${slotContext} у баку є <b>${fuelStr}</b> (~${escapeHtml(tankHoursStr)}), <b>бракує ~${deficitStr}</b> — рекомендується дозаправити.</div>
-    `;
+  if (typeof window.updateFuelAssessmentBlock === 'function') {
+    window.updateFuelAssessmentBlock(liveTankOverride);
   }
 };
 

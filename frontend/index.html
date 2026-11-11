@@ -38,7 +38,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/frontend/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=5.4.0">
+  <link rel="stylesheet" href="/frontend/styles.css?v=5.4.3">
 </head>
 <body>
 
@@ -234,12 +234,12 @@
               <div class="progress-bar">
                 <div id="tankProgress" class="progress-fill" style="width: 0%;"></div>
               </div>
-              <div class="metric-sub" id="cardTankHoursRem" style="margin-top: 0.35rem; font-size: 0.78rem;">вистачить на ~0.0 год</div>
+              <div class="metric-sub" id="cardTankCapSub" style="margin-top: 0.35rem; font-size: 0.78rem;">з 25,0 л (0%)</div>
             </div>
             <div class="metric-card">
               <div class="metric-label">Склад ГСМ</div>
               <div class="metric-value"><span id="cardStock">0.0</span> <small style="font-size: 0.9rem;">л</small></div>
-              <div class="metric-sub">залишок палива</div>
+              <div class="metric-sub" id="cardStockSub">залишок палива</div>
             </div>
             <div class="metric-card">
               <div class="metric-label">До наступного ТО</div>
@@ -273,6 +273,32 @@
         </div>
       </div>
 
+      <!-- Dedicated Unified Fuel Assessment & Reserve Block (Stage 3) -->
+      <div id="fuelAssessmentPanel" class="panel fuel-assessment-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.85rem;">
+          <h3 style="font-size: 1.05rem; margin: 0; font-weight: 700;">⛽ Оцінка та запас палива</h3>
+          <span id="fuelAssessRateBadge" class="badge badge-stopped" style="font-size: 0.78rem;">Витрата: —</span>
+        </div>
+        <div class="fuel-assess-grid">
+          <div class="fuel-assess-card" id="assessTankBox">
+            <div class="fuel-assess-label">Автономність у баку</div>
+            <div class="fuel-assess-val" id="assessTankHours">~0,0 год</div>
+            <div class="fuel-assess-sub" id="assessTankSub">0,0 з 25,0 л</div>
+          </div>
+          <div class="fuel-assess-card" id="assessTotalBox">
+            <div class="fuel-assess-label">Загальний запас об'єкта</div>
+            <div class="fuel-assess-val" id="assessTotalHours" style="color: var(--accent-cyan);">~0,0 год</div>
+            <div class="fuel-assess-sub" id="assessTotalSub">Бак + склад ГСМ: 0,0 л</div>
+          </div>
+          <div class="fuel-assess-card fuel-assess-yasno-card" id="assessYasnoBox">
+            <div class="fuel-assess-label">Готовність до відключень YASNO</div>
+            <div id="assessYasnoStatus" class="yasno-fuel-readiness" style="margin-bottom: 0; margin-top: 0.35rem; font-size: 0.82rem;">
+              Очікування даних графіка та залишків...
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- YASNO Blackout Outages Card Tile -->
       <div id="yasnoScheduleCard" class="panel yasno-schedule-panel" style="display: none; margin-bottom: 1.5rem;">
         <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
@@ -297,9 +323,6 @@
             Наступне відключення: --:--
           </div>
         </div>
-
-        <!-- Smart Readiness Comparison: Tank Fuel vs YASNO Outage Slot -->
-        <div id="yasnoFuelReadiness" class="yasno-fuel-readiness" style="display: none;"></div>
 
         <!-- 24-hour visual timeline -->
         <div class="yasno-timeline-container">
@@ -3415,18 +3438,18 @@
     <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/js/core.js?v=5.4.2"></script>
-  <script src="/frontend/js/theme-format.js?v=5.4.2"></script>
-  <script src="/frontend/js/auth-nav.js?v=5.4.2"></script>
-  <script src="/frontend/js/dashboard.js?v=5.4.2"></script>
-  <script src="/frontend/js/fuel.js?v=5.4.2"></script>
-  <script src="/frontend/js/operations.js?v=5.4.2"></script>
-  <script src="/frontend/js/audit-reports.js?v=5.4.2"></script>
-  <script src="/frontend/js/admin.js?v=5.4.2"></script>
-  <script src="/frontend/js/backups.js?v=5.4.2"></script>
-  <script src="/frontend/js/notifications.js?v=5.4.2"></script>
-  <script src="/frontend/js/yasno.js?v=5.4.2"></script>
-  <script src="/frontend/js/weather-alerts.js?v=5.4.2"></script>
+  <script src="/frontend/js/core.js?v=5.4.3"></script>
+  <script src="/frontend/js/theme-format.js?v=5.4.3"></script>
+  <script src="/frontend/js/auth-nav.js?v=5.4.3"></script>
+  <script src="/frontend/js/dashboard.js?v=5.4.3"></script>
+  <script src="/frontend/js/fuel.js?v=5.4.3"></script>
+  <script src="/frontend/js/operations.js?v=5.4.3"></script>
+  <script src="/frontend/js/audit-reports.js?v=5.4.3"></script>
+  <script src="/frontend/js/admin.js?v=5.4.3"></script>
+  <script src="/frontend/js/backups.js?v=5.4.3"></script>
+  <script src="/frontend/js/notifications.js?v=5.4.3"></script>
+  <script src="/frontend/js/yasno.js?v=5.4.3"></script>
+  <script src="/frontend/js/weather-alerts.js?v=5.4.3"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

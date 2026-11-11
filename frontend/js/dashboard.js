@@ -17,8 +17,11 @@ async function loadAllData() {
   if (!isViewerOnly() && hasPermission('fuel:view')) {
     tasks.push(loadFuelSummary());
   } else {
+    window._lastFuelSummary = null;
     const cardStock = document.getElementById('cardStock');
     if (cardStock) cardStock.innerText = '-';
+    const cardStockSub = document.getElementById('cardStockSub');
+    if (cardStockSub) cardStockSub.innerText = 'обмежений доступ';
   }
 
   if (!isViewerOnly() && hasPermission('maintenance:view')) {
@@ -46,6 +49,11 @@ async function loadGeneratorData() {
     if (cardHours) cardHours.innerText = "0,0";
     const cardTank = document.getElementById('cardTank');
     if (cardTank) cardTank.innerText = "0,0";
+    const cardTankCapSub = document.getElementById('cardTankCapSub');
+    if (cardTankCapSub) cardTankCapSub.innerText = "немає генератора";
+    if (typeof window.updateFuelAssessmentBlock === 'function') {
+      window.updateFuelAssessmentBlock();
+    }
     const badge = document.getElementById('genStatusBadge');
     if (badge) {
       badge.className = 'badge';
@@ -81,28 +89,22 @@ async function loadGeneratorData() {
     const fuelL = currentGenerator.fuel_tank_level_l;
     const cardTank = document.getElementById('cardTank');
     const tankProgress = document.getElementById('tankProgress');
-    const cardTankHoursRem = document.getElementById('cardTankHoursRem');
+    const cardTankCapSub = document.getElementById('cardTankCapSub');
 
     cardTank.innerText = fuelL.toFixed(1).replace('.', ',');
+    const cap = currentGenerator.tank_capacity_l || 25.0;
     if (fuelL < 0) {
       cardTank.style.color = '#ef4444';
       if (tankProgress) tankProgress.style.width = '0%';
-      if (cardTankHoursRem) {
-        cardTankHoursRem.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ Дефіцит: ${formatLiters(Math.abs(fuelL))} (потрібна заправка!)</span>`;
+      if (cardTankCapSub) {
+        cardTankCapSub.innerHTML = `<span style="color: #ef4444; font-weight: 600;">Дефіцит: ${formatLiters(Math.abs(fuelL))}</span>`;
       }
     } else {
       cardTank.style.color = 'inherit';
-      const cap = currentGenerator.tank_capacity_l || 25.0;
       const pct = Math.min(100, Math.max(0, Math.round((fuelL / cap) * 100)));
       if (tankProgress) tankProgress.style.width = `${pct}%`;
-      const nominal = currentGenerator.nominal_consumption_l_per_h || 2.2;
-      const hoursLeft = nominal > 0 ? (fuelL / nominal) : 0;
-      if (cardTankHoursRem) {
-        if (fuelL === 0) {
-          cardTankHoursRem.innerHTML = `<span style="color: var(--text-muted);">вистачить на 0 год (бак порожній)</span>`;
-        } else {
-          cardTankHoursRem.innerHTML = `вистачить на ~<b>${hoursLeft.toFixed(1).replace('.', ',')}</b> год (при ${nominal} л/год)`;
-        }
+      if (cardTankCapSub) {
+        cardTankCapSub.innerText = `з ${cap.toFixed(1).replace('.', ',')} л (${pct}%)`;
       }
     }
 
@@ -204,8 +206,8 @@ async function loadGeneratorData() {
     if (typeof window.updateOperationalSafetyBanners === 'function') {
       window.updateOperationalSafetyBanners();
     }
-    if (typeof window.updateYasnoFuelReadiness === 'function') {
-      window.updateYasnoFuelReadiness();
+    if (typeof window.updateFuelAssessmentBlock === 'function') {
+      window.updateFuelAssessmentBlock();
     }
     applyRolePermissionsUI();
   } catch (_) {}
@@ -310,37 +312,34 @@ function updateRunStopwatchDisplay() {
     const cardHours = document.getElementById('cardHours');
     if (cardHours) cardHours.innerText = liveHours.toFixed(1).replace('.', ',');
 
-    // 2. Live Tank Level & 'вистачить на ... год' (can go negative into deficit!)
+    // 2. Live Tank Level (factual % in KPI card; autonomy estimate renders in #fuelAssessmentPanel)
     const startFuel = activeRun.start_fuel_level_l ?? activeRun.start_fuel ?? currentGenerator.fuel_tank_level_l;
     const liveTank = startFuel - estConsumed;
     const cardTank = document.getElementById('cardTank');
     const tankProgress = document.getElementById('tankProgress');
-    const cardTankHoursRem = document.getElementById('cardTankHoursRem');
+    const cardTankCapSub = document.getElementById('cardTankCapSub');
 
     if (cardTank) {
       cardTank.innerText = liveTank.toFixed(1).replace('.', ',');
       const btnTransfer = document.getElementById('btnQuickTransfer');
+      const cap = currentGenerator.tank_capacity_l || 25.0;
       if (liveTank <= 0) {
         cardTank.style.color = '#ef4444';
         if (tankProgress) tankProgress.style.width = '0%';
-        if (cardTankHoursRem) {
-          cardTankHoursRem.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ Дефіцит: ${formatLiters(Math.abs(liveTank))} (потрібна заправка!)</span>`;
+        if (cardTankCapSub) {
+          cardTankCapSub.innerHTML = liveTank < 0
+            ? `<span style="color: #ef4444; font-weight: 600;">Дефіцит: ${formatLiters(Math.abs(liveTank))}</span>`
+            : `<span style="color: var(--text-muted);">з ${cap.toFixed(1).replace('.', ',')} л (0%)</span>`;
         }
         if (btnTransfer && !isViewerOnly() && hasPermission('fuel:transfer')) {
           btnTransfer.classList.add('btn-action-refuel-highlight');
         }
       } else {
         cardTank.style.color = 'inherit';
-        const cap = currentGenerator.tank_capacity_l || 25.0;
         const pct = Math.min(100, Math.max(0, Math.round((liveTank / cap) * 100)));
         if (tankProgress) tankProgress.style.width = `${pct}%`;
-        const remHours = nominal > 0 ? (liveTank / nominal) : 0;
-        if (cardTankHoursRem) {
-          if (liveTank === 0) {
-            cardTankHoursRem.innerHTML = `<span style="color: var(--text-muted);">вистачить на 0 год (бак порожній)</span>`;
-          } else {
-            cardTankHoursRem.innerHTML = `вистачить на ~<b>${remHours.toFixed(1).replace('.', ',')}</b> год (при ${nominal} л/год)`;
-          }
+        if (cardTankCapSub) {
+          cardTankCapSub.innerText = `з ${cap.toFixed(1).replace('.', ',')} л (${pct}%)`;
         }
         if (btnTransfer) {
           btnTransfer.classList.remove('btn-action-refuel-highlight');
@@ -364,12 +363,209 @@ function updateRunStopwatchDisplay() {
       }
     }
 
-    // 4. Periodically refresh YASNO fuel readiness during active run (every 30s)
-    if (elapsedSeconds % 30 === 0 && typeof window.updateYasnoFuelReadiness === 'function') {
-      window.updateYasnoFuelReadiness(liveTank);
+    // 4. Periodically refresh unified Fuel Assessment Block during active run (every 10s)
+    if (elapsedSeconds % 10 === 0 && typeof window.updateFuelAssessmentBlock === 'function') {
+      window.updateFuelAssessmentBlock(liveTank);
     }
   }
 }
+
+function _sumYasnoTodayRemMinutes(data) {
+  if (!data) return 0;
+  const now = new Date();
+  const curMin = now.getHours() * 60 + now.getMinutes();
+  if (Array.isArray(data.slots_today) && data.slots_today.length > 0) {
+    return data.slots_today.reduce((acc, s) => {
+      const end = Number(s.end);
+      const start = Number(s.start);
+      if (end > curMin) return acc + Math.max(0, end - Math.max(start, curMin));
+      return acc;
+    }, 0);
+  }
+  if (Array.isArray(data.timeline_today)) {
+    const curHour = now.getHours();
+    return data.timeline_today.reduce((acc, h) => {
+      if (Number(h.hour) >= curHour && h.status === 'DEFINITE') return acc + 60;
+      return acc;
+    }, 0);
+  }
+  return 0;
+}
+
+function _sumYasnoTomorrowMinutes(data) {
+  if (!data) return 0;
+  if (Array.isArray(data.slots_tomorrow) && data.slots_tomorrow.length > 0) {
+    return data.slots_tomorrow.reduce((acc, s) => acc + Math.max(0, Number(s.end) - Number(s.start)), 0);
+  }
+  if (Array.isArray(data.timeline_tomorrow)) {
+    return data.timeline_tomorrow.reduce((acc, h) => acc + (h.status === 'DEFINITE' ? 60 : 0), 0);
+  }
+  return 0;
+}
+
+window.updateFuelAssessmentBlock = function (liveTankOverride = null) {
+  const panel = document.getElementById('fuelAssessmentPanel');
+  if (!panel) return;
+
+  if (!currentGenerator) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+
+  let fuelL = Number(currentGenerator.fuel_tank_level_l || 0);
+  if (typeof liveTankOverride === 'number' && !Number.isNaN(liveTankOverride)) {
+    fuelL = liveTankOverride;
+  } else if (currentGenerator.status === 'RUNNING' && activeRun && activeRun.start_time) {
+    const startDt = parseUTCDate(activeRun.start_time);
+    if (startDt) {
+      const elapsedH = Math.max(0, (Date.now() - startDt.getTime()) / 3600000);
+      const nom = Number(currentGenerator.nominal_consumption_l_per_h || 2.2);
+      const startFuel = activeRun.start_fuel_level_l ?? activeRun.start_fuel ?? fuelL;
+      fuelL = startFuel - elapsedH * nom;
+    }
+  }
+
+  const nominal = Number(currentGenerator.nominal_consumption_l_per_h || 2.2);
+  const cap = Number(currentGenerator.tank_capacity_l || 25.0);
+  const effTankL = Math.max(0, fuelL);
+  const tankHours = nominal > 0 ? (effTankL / nominal) : 0;
+
+  const summary = window._lastFuelSummary || null;
+  const canSeeFuel = !isViewerOnly() && hasPermission('fuel:view') && summary;
+  const stockL = canSeeFuel ? Math.max(0, Number(summary.warehouse_balance_l || 0)) : 0;
+  const totalFuelL = effTankL + stockL;
+  const totalHours = nominal > 0 ? (totalFuelL / nominal) : 0;
+
+  const rateEl = document.getElementById('fuelAssessRateBadge');
+  if (rateEl) {
+    rateEl.innerText = `${currentGenerator.fuel_type || 'А-95'} • розхід ${nominal.toFixed(1).replace('.', ',')} л/год`;
+  }
+
+  // 1. Tank autonomy sub-card
+  const tHoursEl = document.getElementById('assessTankHours');
+  const tSubEl = document.getElementById('assessTankSub');
+  if (tHoursEl && tSubEl) {
+    if (fuelL < 0) {
+      tHoursEl.innerHTML = `<span style="color:#ef4444;">⚠️ Дефіцит ${formatLiters(Math.abs(fuelL))}</span>`;
+      tSubEl.innerHTML = `<span style="color:#fecaca;">Бак за обліком порожній — потрібна дозаправка</span>`;
+    } else {
+      tHoursEl.innerText = `~${formatHoursToHuman(tankHours)}`;
+      tSubEl.innerText = `${effTankL.toFixed(1).replace('.', ',')} з ${cap.toFixed(1).replace('.', ',')} л у баку`;
+    }
+  }
+
+  // 2. Total facility fuel autonomy sub-card (Tank + Canisters/Reserve or Warehouse)
+  const totHoursEl = document.getElementById('assessTotalHours');
+  const totSubEl = document.getElementById('assessTotalSub');
+  if (totHoursEl && totSubEl) {
+    if (!canSeeFuel) {
+      totHoursEl.innerText = `~${formatHoursToHuman(tankHours)}`;
+      totSubEl.innerText = 'Склад та каністри приховані для поточної ролі';
+    } else {
+      totHoursEl.innerText = `~${formatHoursToHuman(totalHours)}`;
+      if (Number(summary.canisters_total || 0) > 0) {
+        const resL = Number(summary.canister_reserve_l || 0);
+        const awayNote = Number(summary.canisters_away || 0) > 0 ? ` • ${Number(summary.canisters_away)} на АЗС` : '';
+        totSubEl.innerHTML = `<b>${totalFuelL.toFixed(1).replace('.', ',')} л</b>: бак (${effTankL.toFixed(1)}) + ${Number(summary.canisters_full)} повн. каністр + ${resL.toFixed(1)} л рез.${awayNote}`;
+      } else {
+        totSubEl.innerHTML = `<b>${totalFuelL.toFixed(1).replace('.', ',')} л</b>: бак (${effTankL.toFixed(1)} л) + склад (${stockL.toFixed(1)} л)`;
+      }
+    }
+  }
+
+  // 3. YASNO outage readiness sub-card
+  const yasnoEl = document.getElementById('assessYasnoStatus');
+  if (!yasnoEl) return;
+  const data = window._yasnoLastData;
+  if (!data || !data.enabled || !data.configured) {
+    yasnoEl.className = 'yasno-fuel-readiness';
+    yasnoEl.style.background = 'rgba(148, 163, 184, 0.08)';
+    yasnoEl.style.border = '1px solid var(--border-color)';
+    yasnoEl.style.color = 'var(--text-muted)';
+    yasnoEl.innerHTML = 'Моніторинг графіка YASNO для цього об\'єкта не активний.';
+    return;
+  }
+
+  yasnoEl.style.background = '';
+  yasnoEl.style.border = '';
+  yasnoEl.style.color = '';
+
+  let slot = null;
+  let isCurrentOutage = false;
+  if (data.current_outage && data.current_outage.start && data.current_outage.end) {
+    slot = data.current_outage;
+    isCurrentOutage = true;
+  } else if ((data.status === 'DEFINITE' || data.status === 'PROBABLE') && Array.isArray(data.slots_today)) {
+    const now = new Date();
+    const curMin = now.getHours() * 60 + now.getMinutes();
+    const matchSlot = data.slots_today.find(s => Number(s.start) <= curMin && curMin < Number(s.end));
+    if (matchSlot) {
+      const fmtMin = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+      slot = { start: fmtMin(Number(matchSlot.start)), end: fmtMin(Number(matchSlot.end)) };
+      isCurrentOutage = true;
+    }
+  }
+  if (!slot && data.next_outage && data.next_outage.start && data.next_outage.end) {
+    slot = data.next_outage;
+  }
+
+  const todayRemMin = _sumYasnoTodayRemMinutes(data);
+  const tomorrowMin = _sumYasnoTomorrowMinutes(data);
+  const plannedRemHours = (todayRemMin + tomorrowMin) / 60.0;
+  const plannedNeedL = plannedRemHours * nominal;
+  const planNote = plannedRemHours > 0
+    ? `<br><span style="font-size:0.78rem; opacity:0.9;">Добовий план (залишок сьогодні + завтра): <b>~${escapeHtml(formatHoursToHuman(plannedRemHours))}</b> (~${plannedNeedL.toFixed(1).replace('.', ',')} л)${canSeeFuel ? (totalFuelL + 0.1 >= plannedNeedL ? ' — загального запасу <b>достатньо</b>' : ` — бракує <b>~${(plannedNeedL - totalFuelL).toFixed(1).replace('.', ',')} л</b> на об'єкті`) : ''}.</span>`
+    : '';
+
+  if (!slot) {
+    const stdHours = 4.0;
+    const stdNeed = stdHours * nominal;
+    if (tankHours + 0.05 >= stdHours && fuelL > 0) {
+      yasnoEl.className = 'yasno-fuel-readiness readiness-ok';
+      yasnoEl.innerHTML = `<div>✅ Запланованих відключень зараз немає. Палива в баку вистачить на стандартний 4-год слот.${planNote}</div>`;
+    } else {
+      const defL = Math.max(0.1, stdNeed - effTankL).toFixed(1).replace('.', ',');
+      yasnoEl.className = `yasno-fuel-readiness ${fuelL <= 0 ? 'readiness-crit' : 'readiness-warn'}`;
+      yasnoEl.innerHTML = `<div>⚠️ Планових відключень немає, але в баку мало палива для 4-год резерву (бракує ~<b>${defL} л</b>).${planNote}</div>`;
+    }
+    return;
+  }
+
+  const parseM = typeof window._parseHhMmToMinutes === 'function'
+    ? window._parseHhMmToMinutes
+    : (str) => {
+        if (!str || !str.includes(':')) return null;
+        const [hh, mm] = str.split(':').map(Number);
+        return (Number.isNaN(hh) || Number.isNaN(mm)) ? null : hh * 60 + mm;
+      };
+  const startMin = parseM(slot.start);
+  let endMin = parseM(slot.end);
+  if (startMin === null || endMin === null) return;
+  if (endMin <= startMin) endMin += 1440;
+
+  let slotMin = endMin - startMin;
+  if (isCurrentOutage) {
+    const now = new Date();
+    let nowMin = now.getHours() * 60 + now.getMinutes();
+    if (nowMin < startMin && endMin > 1440) nowMin += 1440;
+    if (nowMin >= startMin && nowMin < endMin) slotMin = Math.max(5, endMin - nowMin);
+  }
+  const slotHours = slotMin / 60.0;
+  const needSlotL = slotHours * nominal;
+  const slotDesc = isCurrentOutage
+    ? `поточне відкл. до <b>${escapeHtml(slot.end)}</b> (${escapeHtml(formatHoursToHuman(slotHours))})`
+    : `слот <b>${escapeHtml(slot.start)}–${escapeHtml(slot.end)}</b> (${escapeHtml(formatHoursToHuman(slotHours))})`;
+
+  if (tankHours + 0.05 >= slotHours && fuelL > 0) {
+    yasnoEl.className = 'yasno-fuel-readiness readiness-ok';
+    yasnoEl.innerHTML = `<div>✅ На ${slotDesc} палива в баку <b>вистачить</b> (потрібно ~${needSlotL.toFixed(1).replace('.', ',')} л).${planNote}</div>`;
+  } else {
+    const defL = Math.max(0.1, needSlotL - effTankL).toFixed(1).replace('.', ',');
+    yasnoEl.className = `yasno-fuel-readiness ${fuelL <= 0 ? 'readiness-crit' : 'readiness-warn'}`;
+    yasnoEl.innerHTML = `<div>⚠️ На ${slotDesc} у баку <b>бракує ~${defL} л</b> — потрібна дозаправка.${planNote}</div>`;
+  }
+};
 
 function startRunStopwatch() {
   if (runTimerInterval) clearInterval(runTimerInterval);

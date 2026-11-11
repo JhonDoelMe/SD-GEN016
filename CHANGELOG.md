@@ -5,6 +5,13 @@
 
 ---
 
+## [Unreleased — Етап 3: Єдиний блок оцінки та запасу палива на Дашборді] — 2026-11-11
+- **Виділений блок «⛽ Оцінка та запас палива» (`#fuelAssessmentPanel`, [`index.html`](frontend/index.html), [`dashboard.js`](frontend/js/dashboard.js), [`styles.css`](frontend/styles.css))**:
+  - Відображає в одному місці автономність у баку генератора (`~год`), сукупний запас об'єкта (бак + повні каністри + резервна ємність / склад ГСМ) та готовність до поточного/найближчого відключення і сумарного добового навантаження YASNO (залишок сьогодні + завтра).
+- **Усунення дублювання в інших картках ([`dashboard.js`](frontend/js/dashboard.js), [`yasno.js`](frontend/js/yasno.js), [`fuel.js`](frontend/js/fuel.js), [`sw.js`](frontend/sw.js))**:
+  - У картці «Бак генератора» залишено лише фактичний рівень і відсоток заповнення (`#cardTankCapSub`) без повтору прогнозних годин;
+  - З картки «Графік відключень YASNO» винесено банер оцінки палива до єдиного блоку `#fuelAssessmentPanel` (`sd-gen016-v5.4.3`).
+
 ## [Unreleased — Етап 2: Облік каністр та резервної ємності] — 2026-11-11
 - **Модель пулів каністр та журнал руху ([`models/canister.py`](backend/app/models/canister.py), [`alembic/versions/011_canister_pools.py`](backend/alembic/versions/011_canister_pools.py))**:
   - Додано таблиці `canister_pools` (`total_count`, `full_count`, `empty_count`, `away_refill_count`, `reserve_liters < canister_volume_l`) та `canister_transactions` (історія кожної операції зі знімком до/після).

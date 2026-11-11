@@ -3937,6 +3937,51 @@ button[disabled] {
   color: #991b1b;
 }
 
+.fuel-assess-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+.fuel-assess-card {
+  background: rgba(15, 23, 42, 0.42);
+  border: 1px solid var(--border-color);
+  border-radius: 0.65rem;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.fuel-assess-yasno-card {
+  grid-column: span 1;
+}
+@media (min-width: 960px) {
+  .fuel-assess-grid {
+    grid-template-columns: 1fr 1.15fr 1.65fr;
+  }
+}
+.fuel-assess-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.3rem;
+}
+.fuel-assess-val {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+.fuel-assess-sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.35rem;
+  line-height: 1.35;
+}
+[data-theme="light"] .fuel-assess-card {
+  background: rgba(248, 250, 252, 0.85);
+}
+
 .pagination-bar {
   display: flex;
   justify-content: space-between;

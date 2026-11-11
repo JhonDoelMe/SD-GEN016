@@ -204,12 +204,22 @@ async function loadFuelSummary() {
     const q = params.length ? '?' + params.join('&') : '';
 
     const s = await api(`/fuel/summary${q}`);
+    window._lastFuelSummary = s;
     document.getElementById('cardStock').innerText = s.warehouse_balance_l.toFixed(1).replace('.', ',');
+    const stockSub = document.getElementById('cardStockSub');
+    if (stockSub) {
+      stockSub.innerText = Number(s.canisters_total || 0) > 0
+        ? `${Number(s.canisters_full)}/${Number(s.canisters_total)} повн. каністр`
+        : 'залишок палива';
+    }
     document.getElementById('fuelStockBal').innerText = formatLiters(s.warehouse_balance_l);
     document.getElementById('fuelTankBal').innerText = formatLiters(s.tank_balance_l);
     document.getElementById('fuelTotalBought').innerText = formatLiters(s.total_received_l);
     document.getElementById('fuelTotalSpent').innerText = formatMoney(s.total_spent_uah);
     document.getElementById('fuelAvgPrice').innerText = formatPricePerLiter(s.avg_price_per_liter);
+    if (typeof window.updateFuelAssessmentBlock === 'function') {
+      window.updateFuelAssessmentBlock();
+    }
   } catch (_) {}
 }
 
