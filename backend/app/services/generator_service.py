@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.timezone import now_utc, is_within_work_schedule, get_facility_tz
+from backend.app.core.timezone import now_utc, utc_now, is_within_work_schedule, get_facility_tz
 from backend.app.models.generator import Generator, GeneratorSchedule, GeneratorRun
 from backend.app.models.maintenance import MaintenanceSchedule, MaintenanceRecord
 from backend.app.models.fault import Fault
@@ -22,10 +22,6 @@ from backend.app.services.fuel_service import (
     validate_and_reconcile_generator_tank_level,
     consume_generator_fuel
 )
-
-
-def utc_now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
 
 def _normalize_to_utc_naive(dt: datetime.datetime, tz_name: Optional[str] = None) -> datetime.datetime:

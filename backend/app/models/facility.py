@@ -2,7 +2,7 @@ import datetime
 from typing import Optional, List
 from sqlalchemy import String, DateTime, Integer, Boolean, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from backend.app.database import Base
+from backend.app.database import Base, utc_now
 
 
 class Facility(Base):
@@ -14,8 +14,8 @@ class Facility(Base):
     city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     timezone: Mapped[str] = mapped_column(String(50), default="Europe/Kyiv")
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
     # YASNO blackout schedules integration
     yasno_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default=false())

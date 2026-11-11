@@ -2,7 +2,7 @@ import math
 import datetime
 import pytest
 from zoneinfo import ZoneInfo
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -233,8 +233,8 @@ async def test_settings_fuel_prices_protection_on_fetch_failure(db_session: Asyn
         False
     )
 
-    with patch("backend.app.services.settings_service.fetch_wog_fuel_prices_online", return_value=mock_wog_fail), \
-         patch("backend.app.services.settings_service.fetch_okko_fuel_prices_online", return_value=mock_okko_fail):
+    with patch("backend.app.services.settings_service.fetch_wog_fuel_prices_online", new_callable=AsyncMock, return_value=mock_wog_fail), \
+         patch("backend.app.services.settings_service.fetch_okko_fuel_prices_online", new_callable=AsyncMock, return_value=mock_okko_fail):
 
         res = await refresh_internet_fuel_prices(db_session, provider="all")
 

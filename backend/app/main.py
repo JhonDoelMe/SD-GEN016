@@ -2,17 +2,22 @@ import os
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.config import settings
-from backend.app.database import engine, Base, AsyncSessionLocal
+from backend.app.database import engine, Base, AsyncSessionLocal, get_db
 from backend.app.models import *  # noqa: F401, F403 Ensure all models loaded
 from backend.app.services.init_service import seed_initial_data
 from backend.app.services.audit_service import sanitize_historical_audit_logs
+from backend.app.services.auth_security_service import (
+    cleanup_expired_security_state_db,
+    is_token_revoked_db,
+)
 from backend.app.services.backup_service import run_backup_scheduler
 from backend.app.services.operational_guard_service import run_operational_guard_loop
 from backend.app.services.yasno_service import run_yasno_checker_loop
@@ -248,6 +253,13 @@ async def lifespan(app: FastAPI):
             "Application startup aborted to prevent unredacted secret exposure."
         ) from e
 
+    # 2.2. Prune expired auth lockouts / revoked tokens and preload active revocations
+    try:
+        async with AsyncSessionLocal() as session:
+            await cleanup_expired_security_state_db(session)
+    except Exception as e:
+        print(f"[AUTH] Security persistence cleanup notice: {e}", flush=True)
+
     # 3. Ensure uploads and backups directories exist
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     os.makedirs(settings.BACKUP_DIR, exist_ok=True)
@@ -389,7 +401,11 @@ if FRONTEND_DIR.exists():
 
     # INF-07: Secure authorized uploads endpoint
     @app.get("/uploads/{file_path:path}")
-    async def get_uploaded_media(file_path: str, request: Request):
+    async def get_uploaded_media(
+        file_path: str,
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+    ):
         token = request.cookies.get("access_token")
         if not token:
             auth_header = request.headers.get("Authorization")
@@ -401,7 +417,7 @@ if FRONTEND_DIR.exists():
 
         from backend.app.core.security import decode_access_token
         payload = decode_access_token(token)
-        if not payload:
+        if not payload or await is_token_revoked_db(db, token):
             return JSONResponse({"error": "Недійсний або прострочений токен"}, status_code=401)
 
         uploads_base = Path(settings.UPLOAD_DIR).resolve()

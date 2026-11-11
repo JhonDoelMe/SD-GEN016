@@ -5,6 +5,20 @@
 
 ---
 
+## [Unreleased — Етап 1 технічного фундаменту] — 2026-11-11
+- **Персистентний захист сесій та brute-force у БД (`models/security.py`, `alembic/versions/010_security_persistence.py`, `auth_security_service.py`)**:
+  - Відкликані JWT-токени (`/logout`, таблиця `revoked_tokens`) та лічильники невдалих спроб входу / відновлення пароля (таблиця `auth_attempts`) тепер зберігаються в PostgreSQL/SQLite, не скидаються при рестарті контейнера та перевіряються також на захищеному роуті `/uploads/{file_path:path}`.
+- **Неблокуючий async I/O та усунення deprecation-попереджень Python 3.14**:
+  - Переведено перевірку пароля при скиданні системи (`/system/reset`) у `asyncio.to_thread`;
+  - Парсери цін АЗК WOG і OKKO (`settings_service.py`) переведено на асинхронний `httpx.AsyncClient` з єдиними парсерами `_parse_wog_fuel_html` / `_parse_okko_fuel_html`;
+  - Уніфіковано `utc_now()` у `database.py` та замінено застарілий `datetime.datetime.utcnow` у `SystemSetting`, що усунуло ~12 705 `DeprecationWarning` під Python 3.14.
+- **Прискорення тестів, CI/CD та UX-узгодження**:
+  - Адаптивна вартість `bcrypt` (`rounds=4` у `APP_ENV=testing`, `rounds=12` у проді) скоротила час виконання `pytest` у ~3 рази;
+  - Додано GitHub Actions workflow `.github/workflows/ci.yml` (Python 3.12 / 3.14 `pytest`, перевірка HTML/JS синтаксису та гігієни секретів);
+  - Вирівняно ліміт UI нагадувань ТО (`#notifMaxMaintPerDay` `max="2"` згідно правил).
+- **Модуляризація клієнтської логіки (`frontend/js/*.js`)**:
+  - Монолітний `frontend/app.js` (7 530 рядків) розділено на 12 логічних модулів (`core.js`, `theme-format.js`, `auth-nav.js`, `dashboard.js`, `fuel.js`, `operations.js`, `audit-reports.js`, `admin.js`, `backups.js`, `notifications.js`, `yasno.js`, `weather-alerts.js`) із синхронізацією кешу Service Worker (`sd-gen016-v5.4.1`).
+
 ## [v5.4.0] — 2026-11-11
 
 ### 🔔 Надійні WebPush сповіщення, Live Watcher та Повітряні тривоги (`177eac5`)

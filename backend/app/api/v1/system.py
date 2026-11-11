@@ -1,5 +1,6 @@
 import time
 import sys
+import asyncio
 import platform
 import datetime
 from typing import Dict, Any, Optional
@@ -415,7 +416,7 @@ async def reset_system_or_clean_db(
             detail="Невірне кодове слово підтвердження. Введіть 'ОЧИСТИТИ' або 'RESET'."
         )
 
-    if not verify_password(payload.admin_password, current_user.password_hash):
+    if not await asyncio.to_thread(verify_password, payload.admin_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Невірний пароль адміністратора. Операцію скасовано."

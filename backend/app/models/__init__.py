@@ -8,6 +8,7 @@ from backend.app.models.fault import Fault
 from backend.app.models.audit import AuditLog, SystemAdjustment
 from backend.app.models.settings import SystemSetting
 from backend.app.models.notification import PushSubscription, NotificationLog
+from backend.app.models.security import RevokedToken, AuthAttempt
 
 __all__ = [
     "Base",
@@ -32,4 +33,6 @@ __all__ = [
     "SystemSetting",
     "PushSubscription",
     "NotificationLog",
+    "RevokedToken",
+    "AuthAttempt",
 ]

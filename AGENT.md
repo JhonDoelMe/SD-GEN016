@@ -100,10 +100,10 @@ SD-GEN016/
 │   │   ├── config.py         # Налаштування pydantic-settings
 │   │   ├── database.py       # Асинхронний рушій БД та сесії
 │   │   └── main.py           # Точка входу FastAPI додатку
-│   └── tests/                # Асинхронні інтеграційні тести (169 тестів)
+│   └── tests/                # Асинхронні інтеграційні тести (170 тестів)
 ├── frontend/
 │   ├── index.html            # Головний односторінковий інтерфейс (PWA, політики та правила)
-│   ├── app.js                # Клієнтська логіка, Live Watcher та взаємодія з API
+│   ├── js/                   # Модульна клієнтська логіка (12 модулів: core, fuel, admin, yasno тощо)
 │   ├── styles.css            # Мобільна та десктопна моделі стилів
 │   ├── manifest.json         # PWA Web App Manifest
 │   ├── sw.js                 # Service Worker (офлайн кеш, WebPush, pushsubscriptionchange)

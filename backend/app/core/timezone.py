@@ -5,6 +5,7 @@ from typing import Optional, List, Tuple
 from zoneinfo import ZoneInfo
 
 from backend.app.config import settings
+from backend.app.database import utc_now
 from backend.app.services.settings_service import get_runtime_timezone, get_runtime_setting
 
 logger = logging.getLogger(__name__)
@@ -25,8 +26,9 @@ def get_facility_tz(tz_name: Optional[str] = None) -> ZoneInfo:
 
 
 def now_utc(naive: bool = True) -> datetime.datetime:
-    now = datetime.datetime.now(datetime.timezone.utc)
-    return now.replace(tzinfo=None) if naive else now
+    if naive:
+        return utc_now()
+    return datetime.datetime.now(datetime.timezone.utc)
 
 
 def now_facility(tz_name: Optional[str] = None) -> datetime.datetime:

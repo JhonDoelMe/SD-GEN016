@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    name: Backend Pytest (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-dev.txt
+
+      - name: Verify dependency compatibility
+        run: pip check
+
+      - name: Run pytest suite
+        env:
+          APP_ENV: testing
+        run: python -m pytest backend/tests -v --tb=short
+
+  frontend-and-hygiene:
+    name: Frontend Syntax & Secret Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate HTML structure
+        run: |
+          python -c "from html.parser import HTMLParser; HTMLParser().feed(open('frontend/index.html', encoding='utf-8').read()); print('HTML OK')"
+
+      - name: Validate JS syntax
+        run: |
+          for f in frontend/sw.js frontend/js/*.js; do
+            echo "Checking $f"
+            node --check "$f"
+          done
+
+      - name: Check for accidental committed secrets or .env
+        run: |
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "ERROR: .env file is tracked in git!"
+            exit 1
+          fi
+          echo "Tracked files hygiene OK"

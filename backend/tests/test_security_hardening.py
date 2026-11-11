@@ -245,3 +245,42 @@ def test_env_redaction_and_zip_slip_protection(tmp_path: Path):
     with zipfile.ZipFile(malicious_zip, "r") as zf:
         with pytest.raises(ValueError, match="Path Traversal|межі"):
             _safe_extract_zip(zf, extract_dir)
+
+
+@pytest.mark.asyncio
+async def test_revoked_token_and_lockout_persist_after_memory_clear(client, operator_auth):
+    """Simulates a container restart by clearing in-memory caches and verifying DB persistence."""
+    from backend.app.core.security import clear_all_login_attempts
+
+    # 1. Logout revokes token in DB + memory
+    logout_res = await client.post("/api/v1/auth/logout", headers=operator_auth)
+    assert logout_res.status_code == 200
+
+    # Simulate container restart (wipe RAM caches completely)
+    clear_all_login_attempts()
+
+    # Token must STILL be rejected on API routes and protected /uploads route
+    me_after_restart = await client.get("/api/v1/auth/me", headers=operator_auth)
+    assert me_after_restart.status_code == 401
+    upload_after_restart = await client.get("/uploads/nonexistent.png", headers=operator_auth)
+    assert upload_after_restart.status_code == 401
+
+    # 2. Trigger brute-force lockout for operator1 (5 failed attempts)
+    for _ in range(5):
+        r = await client.post(
+            "/api/v1/auth/login",
+            json={"login": "operator1", "password": "WrongPassword123"}
+        )
+        assert r.status_code == 401
+
+    # Simulate container restart again (wipe RAM lockout dict)
+    clear_all_login_attempts()
+
+    # 6th attempt even with valid password must STILL return 429 from DB auth_attempts
+    locked_after_restart = await client.post(
+        "/api/v1/auth/login",
+        json={"login": "operator1", "password": "OperatorPass123!"}
+    )
+    assert locked_after_restart.status_code == 429
+    assert "Retry-After" in locked_after_restart.headers
+

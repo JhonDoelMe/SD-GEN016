@@ -3,6 +3,7 @@ import datetime
 from typing import Optional, Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from backend.app.database import utc_now
 from backend.app.models.audit import AuditLog, SystemAdjustment
 
 SENSITIVE_KEY_MARKERS = (
@@ -51,10 +52,6 @@ def sanitize_audit_details(data: Any) -> Any:
     elif isinstance(data, (list, tuple, set)):
         return [sanitize_audit_details(item) for item in data]
     return data
-
-
-def utc_now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
 
 async def log_audit(

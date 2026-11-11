@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 @pytest.mark.asyncio
 async def test_okko_scraper_and_fallback():
-    prices, lineup, source, is_live = fetch_okko_fuel_prices_online(timeout=3.0)
+    prices, lineup, source, is_live = await fetch_okko_fuel_prices_online(timeout=3.0)
     assert len(lineup) >= 5
     assert "ДП" in prices
     assert "А-95" in prices

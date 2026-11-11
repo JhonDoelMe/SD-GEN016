@@ -18,12 +18,14 @@ from backend.app.core.security import (
     verify_password,
     verify_dummy_password,
     create_access_token,
-    revoke_access_token,
-    check_login_rate_limit,
-    record_failed_login,
-    reset_login_attempts,
-    check_password_reset_rate_limit,
-    record_password_reset_attempt,
+)
+from backend.app.services.auth_security_service import (
+    revoke_access_token_db,
+    check_login_rate_limit_db,
+    record_failed_login_db,
+    reset_login_attempts_db,
+    check_password_reset_rate_limit_db,
+    record_password_reset_attempt_db,
 )
 from backend.app.models.user import User, PasswordResetToken
 from backend.app.schemas.auth import (
@@ -54,7 +56,7 @@ async def login(
     login_clean = login_data.login.strip()
 
     # Check brute-force rate limit before querying or hashing
-    retry_after = check_login_rate_limit(ip, login_clean)
+    retry_after = await check_login_rate_limit_db(db, ip, login_clean)
     if retry_after:
         await log_audit(
             db=db,
@@ -77,7 +79,7 @@ async def login(
     if not user:
         # Constant-time dummy bcrypt check to prevent username enumeration via timing
         await asyncio.to_thread(verify_dummy_password, login_data.password)
-        record_failed_login(ip, login_clean)
+        await record_failed_login_db(db, ip, login_clean)
         await log_audit(
             db=db,
             action="AUTH_LOGIN_FAILED",
@@ -94,7 +96,7 @@ async def login(
 
     is_pwd_valid = await asyncio.to_thread(verify_password, login_data.password, user.password_hash)
     if not is_pwd_valid:
-        record_failed_login(ip, login_clean)
+        await record_failed_login_db(db, ip, login_clean)
         await log_audit(
             db=db,
             action="AUTH_LOGIN_FAILED",
@@ -111,7 +113,7 @@ async def login(
         )
 
     if not user.is_active:
-        record_failed_login(ip, login_clean)
+        await record_failed_login_db(db, ip, login_clean)
         await log_audit(
             db=db,
             action="AUTH_LOGIN_BLOCKED",
@@ -127,7 +129,7 @@ async def login(
             detail="Обліковий запис заблокований адміністратором"
         )
 
-    reset_login_attempts(ip, login_clean)
+    await reset_login_attempts_db(db, ip, login_clean)
 
     # Gather user roles and permissions
     role_names = [r.name for r in user.roles]
@@ -291,10 +293,10 @@ async def logout(
 ):
     # Revoke active JWT token (from Authorization header or cookie)
     if credentials and credentials.credentials:
-        revoke_access_token(credentials.credentials)
+        await revoke_access_token_db(db, credentials.credentials)
     cookie_token = request.cookies.get("access_token")
     if cookie_token:
-        revoke_access_token(cookie_token)
+        await revoke_access_token_db(db, cookie_token)
 
     response.delete_cookie(key="access_token", path="/")
     await log_audit(
@@ -322,7 +324,7 @@ async def forgot_password(
     ip = get_client_ip(request)
     ident = payload.login_or_email.strip()
 
-    retry_after = check_password_reset_rate_limit(ip, ident)
+    retry_after = await check_password_reset_rate_limit_db(db, ip, ident)
     if retry_after:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -330,7 +332,8 @@ async def forgot_password(
             headers={"Retry-After": str(retry_after)}
         )
 
-    record_password_reset_attempt(ip, ident)
+    await record_password_reset_attempt_db(db, ip, ident)
+    await db.commit()
 
     res = await db.execute(
         select(User).where(

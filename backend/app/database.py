@@ -1,8 +1,14 @@
 import asyncio
+import datetime
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 from backend.app.config import settings
+
+
+def utc_now() -> datetime.datetime:
+    """Return current UTC timestamp as naive datetime (matches DB DateTime columns)."""
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
 engine_kwargs = {
     "echo": (settings.APP_ENV == "development"),

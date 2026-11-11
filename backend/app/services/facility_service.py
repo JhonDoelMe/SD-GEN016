@@ -5,15 +5,12 @@ from sqlalchemy import select, func, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.database import utc_now
 from backend.app.models.facility import Facility
 from backend.app.models.generator import Generator
 from backend.app.models.fuel import FuelStock
 from backend.app.schemas.facility import FacilityCreate, FacilityUpdate, FacilityOut
 from backend.app.services.audit_service import log_audit
-
-
-def utc_now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
 
 async def get_all_facilities(db: AsyncSession) -> List[FacilityOut]:

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
 from backend.app.core.security import decode_access_token, compute_password_signature
+from backend.app.services.auth_security_service import is_token_revoked_db
 from backend.app.models.user import User
 from backend.app.models.generator import Generator
 
@@ -131,7 +132,7 @@ async def get_current_user(
         )
 
     payload = decode_access_token(token)
-    if not payload:
+    if not payload or await is_token_revoked_db(db, token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Недійсний або прострочений токен авторизації",

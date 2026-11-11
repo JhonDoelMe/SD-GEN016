@@ -9,8 +9,21 @@ from backend.app.config import settings
 
 ALGORITHM = "HS256"
 
+import os as _os
+
+
+def _get_bcrypt_rounds() -> int:
+    """Use cost=4 under automated tests for fast suites, and cost=12 in runtime/production."""
+    if getattr(settings, "APP_ENV", "").strip().lower() == "testing" or _os.getenv("PYTEST_CURRENT_TEST"):
+        return 4
+    return 12
+
+
 # Precomputed bcrypt hash used for constant-time comparison when user does not exist (Timing Attack defense)
-DUMMY_PASSWORD_HASH = bcrypt.hashpw(b"dummy_constant_time_defense_password", bcrypt.gensalt(rounds=12)).decode("utf-8")
+DUMMY_PASSWORD_HASH = bcrypt.hashpw(
+    b"dummy_constant_time_defense_password",
+    bcrypt.gensalt(rounds=_get_bcrypt_rounds()),
+).decode("utf-8")
 
 # Brute-force protection store: key -> (failed_count, first_attempt_ts, locked_until_ts)
 _LOGIN_ATTEMPTS: Dict[str, Tuple[int, float, float]] = {}
@@ -38,7 +51,7 @@ def _cleanup_revoked_tokens(now_ts: float) -> None:
 
 def get_password_hash(password: str) -> str:
     pw_bytes = password.encode("utf-8")[:72]
-    salt = bcrypt.gensalt(rounds=12)
+    salt = bcrypt.gensalt(rounds=_get_bcrypt_rounds())
     return bcrypt.hashpw(pw_bytes, salt).decode("utf-8")
 
 
@@ -68,7 +81,7 @@ def check_login_rate_limit(ip: Optional[str], login: str) -> Optional[int]:
     """
     Returns remaining lockout seconds if blocked (by IP+login or global login), or None if allowed.
     """
-    now = time.monotonic()
+    now = time.time()
     _cleanup_login_attempts(now)
     login_norm = login.lower().strip()
     keys_to_check = [
@@ -115,7 +128,7 @@ def record_failed_login(ip: Optional[str], login: str) -> Optional[int]:
     Records a failed login attempt for both IP+login and global account login.
     Prevents brute-force via X-Forwarded-For IP rotation.
     """
-    now = time.monotonic()
+    now = time.time()
     login_norm = login.lower().strip()
     ip_key = f"ip:{ip or 'unknown'}:{login_norm}"
     acct_key = f"acct:{login_norm}"
@@ -139,7 +152,7 @@ def check_password_reset_rate_limit(ip: Optional[str], identifier: str) -> Optio
     Checks rate limiting for password reset requests (max 3 requests per 15 minutes).
     Returns remaining lockout/cooldown seconds if blocked, else None.
     """
-    now = time.monotonic()
+    now = time.time()
     ident_norm = identifier.lower().strip()
     keys = [f"reset:ip:{ip or 'unknown'}", f"reset:id:{ident_norm}"]
     for k in keys:
@@ -157,7 +170,7 @@ def record_password_reset_attempt(ip: Optional[str], identifier: str, max_attemp
     """
     Records a password reset attempt. If exceeded max_attempts in window_sec, locks for window_sec.
     """
-    now = time.monotonic()
+    now = time.time()
     ident_norm = identifier.lower().strip()
     keys = [f"reset:ip:{ip or 'unknown'}", f"reset:id:{ident_norm}"]
     blocked_sec = None
@@ -180,12 +193,11 @@ def clear_all_login_attempts() -> None:
     _REVOKED_TOKENS.clear()
 
 
-def revoke_access_token(token: str) -> None:
-    """Revokes a JWT token until its natural expiration."""
+def extract_token_revocation_info(token: str) -> Optional[Tuple[str, float]]:
+    """Return (sha256_token_hash, exp_unix_ts) for a JWT string."""
     if not token:
-        return
+        return None
     now_ts = datetime.datetime.now(datetime.timezone.utc).timestamp()
-    _cleanup_revoked_tokens(now_ts)
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     try:
         payload = jwt.decode(
@@ -197,6 +209,17 @@ def revoke_access_token(token: str) -> None:
         exp_ts = float(payload.get("exp") or (now_ts + 86400))
     except Exception:
         exp_ts = now_ts + 86400
+    return token_hash, exp_ts
+
+
+def revoke_access_token(token: str) -> None:
+    """Revokes a JWT token until its natural expiration."""
+    info = extract_token_revocation_info(token)
+    if not info:
+        return
+    token_hash, exp_ts = info
+    now_ts = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    _cleanup_revoked_tokens(now_ts)
     _REVOKED_TOKENS[token_hash] = exp_ts
 
 

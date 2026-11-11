@@ -1,11 +1,6 @@
-import datetime
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
-from backend.app.database import Base
-
-
-def utc_now():
-    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+from backend.app.database import Base, utc_now
 
 
 class Fault(Base):

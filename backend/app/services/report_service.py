@@ -9,7 +9,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from backend.app.core.timezone import to_facility_time, now_facility, get_facility_tz
+from backend.app.core.timezone import to_facility_time, now_facility, get_facility_tz, utc_now
 from backend.app.models.generator import Generator, GeneratorRun
 from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer
 from backend.app.models.maintenance import MaintenanceRecord, MaintenanceSchedule
@@ -23,10 +23,6 @@ from backend.app.schemas.report import (
     ReportFuelTransferItem,
     ReportMaintenanceItem,
 )
-
-
-def utc_now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
 
 def parse_report_dt(dt_str: Optional[str], is_end: bool = False) -> Optional[datetime.datetime]:
