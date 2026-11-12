@@ -1,6 +1,6 @@
 {
   "name": "sd-gen016",
-  "version": "5.6.3",
+  "version": "5.6.4",
   "description": "<p align=\"center\">\r   <img src=\"frontend/icons/logo.png\" alt=\"SD-GEN016 Official Logo\" width=\"160\">\r </p>",
   "main": "index.js",
   "directories": {
