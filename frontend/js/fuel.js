@@ -728,9 +728,11 @@ window.updateTransferCapacityHint = function() {
 
   const cap = Number(gen.tank_capacity_l || 25.0);
   const inTank = Number(gen.fuel_tank_level_l || 0);
+  const inMeas = !!(window._measurementState?.is_measuring && Number(window._measurementState.active?.generator_id) === Number(gen.id));
   const freeInTank = Math.max(0, Number((cap - inTank).toFixed(1)));
+  const effTankSpace = inMeas ? cap : freeInTank;
   const stockBal = stock ? Math.max(0, Number(Number(stock.current_balance_l || 0).toFixed(1))) : 0;
-  const maxAllowed = stock ? Math.max(0, Number(Math.min(freeInTank, stockBal).toFixed(1))) : freeInTank;
+  const maxAllowed = stock ? Math.max(0, Number(Math.min(effTankSpace, stockBal).toFixed(1))) : effTankSpace;
 
   inputEl.max = String(maxAllowed > 0 ? maxAllowed : 0);
   inputEl.placeholder = maxAllowed > 0 ? `макс. ${maxAllowed.toFixed(1)} л` : 'бак повний (0.0 л)';
@@ -738,7 +740,9 @@ window.updateTransferCapacityHint = function() {
   if (fillBtn) {
     if (maxAllowed > 0) {
       fillBtn.style.display = 'inline-block';
-      fillBtn.innerText = `⚡ До повного (+${maxAllowed.toFixed(1)} л)`;
+      fillBtn.innerText = inMeas && freeInTank <= 0
+        ? `⚡ До повної ємності (${maxAllowed.toFixed(1)} л)`
+        : `⚡ До повного (+${maxAllowed.toFixed(1)} л)`;
     } else {
       fillBtn.style.display = 'none';
     }
@@ -753,9 +757,11 @@ window.fillTransferTankMax = function() {
   if (!gen || !inputEl) return;
   const cap = Number(gen.tank_capacity_l || 25.0);
   const inTank = Number(gen.fuel_tank_level_l || 0);
+  const inMeas = !!(window._measurementState?.is_measuring && Number(window._measurementState.active?.generator_id) === Number(gen.id));
   const freeInTank = Math.max(0, Number((cap - inTank).toFixed(1)));
-  const stockBal = stock ? Math.max(0, Number(Number(stock.current_balance_l || 0).toFixed(1))) : freeInTank;
-  const maxAllowed = Math.max(0, Number(Math.min(freeInTank, stockBal).toFixed(1)));
+  const effTankSpace = inMeas ? (freeInTank > 0 ? freeInTank : cap) : freeInTank;
+  const stockBal = stock ? Math.max(0, Number(Number(stock.current_balance_l || 0).toFixed(1))) : effTankSpace;
+  const maxAllowed = Math.max(0, Number(Math.min(effTankSpace, stockBal).toFixed(1)));
   if (maxAllowed > 0) {
     inputEl.value = maxAllowed.toFixed(1);
     window.validateTransferLitersInput();
@@ -771,13 +777,15 @@ window.validateTransferLitersInput = function() {
 
   const cap = Number(gen.tank_capacity_l || 25.0);
   const inTank = Number(gen.fuel_tank_level_l || 0);
+  const inMeas = !!(window._measurementState?.is_measuring && Number(window._measurementState.active?.generator_id) === Number(gen.id));
   const freeInTank = Math.max(0, Number((cap - inTank).toFixed(1)));
+  const effTankSpace = inMeas ? cap : freeInTank;
   const stockBal = stock ? Math.max(0, Number(Number(stock.current_balance_l || 0).toFixed(1))) : 0;
-  const maxAllowed = stock ? Math.max(0, Number(Math.min(freeInTank, stockBal).toFixed(1))) : freeInTank;
+  const maxAllowed = stock ? Math.max(0, Number(Math.min(effTankSpace, stockBal).toFixed(1))) : effTankSpace;
   const rawVal = inputEl.value.trim();
   const val = rawVal !== '' ? parseFloat(rawVal) : null;
 
-  if (freeInTank <= 0) {
+  if (!inMeas && freeInTank <= 0) {
     hintEl.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⛔ Бак генератора вже повний (${inTank.toFixed(1)} з ${cap.toFixed(1)} л). Заправка неможлива.</span>`;
     if (submitBtn) submitBtn.disabled = true;
     return false;
@@ -790,8 +798,10 @@ window.validateTransferLitersInput = function() {
   }
 
   if (val !== null && !Number.isNaN(val)) {
-    if (val > freeInTank + 0.001) {
-      hintEl.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⚠️ Перевищення ємності бака! Місткість: ${cap.toFixed(1)} л, в баку: ${inTank.toFixed(1)} л. Влізе максимум: <b>${freeInTank.toFixed(1)} л</b>.</span>`;
+    if (val > effTankSpace + 0.001) {
+      hintEl.innerHTML = inMeas
+        ? `<span style="color: #ef4444; font-weight: 600;">⚠️ Об'єм заправки не може перевищувати фізичну місткість баку (${cap.toFixed(1)} л).</span>`
+        : `<span style="color: #ef4444; font-weight: 600;">⚠️ Перевищення ємності бака! Місткість: ${cap.toFixed(1)} л, в баку: ${inTank.toFixed(1)} л. Влізе максимум: <b>${freeInTank.toFixed(1)} л</b>.</span>`;
       if (submitBtn) submitBtn.disabled = true;
       return false;
     }
@@ -805,7 +815,10 @@ window.validateTransferLitersInput = function() {
   if (submitBtn) submitBtn.disabled = false;
   const afterTank = (val !== null && !Number.isNaN(val) && val > 0) ? Math.min(cap, inTank + val) : null;
   const afterText = afterTank !== null ? ` • Після заправки буде: <b style="color: #4ade80;">${afterTank.toFixed(1)} / ${cap.toFixed(1)} л</b>` : '';
-  hintEl.innerHTML = `Місткість бака: <b>${cap.toFixed(1)} л</b> • Зараз у баку: <b>${inTank.toFixed(1)} л</b> • Вільно в баку: <b style="color: var(--accent-cyan);">${freeInTank.toFixed(1)} л</b> (макс. до заправки: <b>${maxAllowed.toFixed(1)} л</b>)${afterText}`;
+  const measNote = inMeas
+    ? `<div style="color:#38bdf8; margin-top:0.2rem;">📏 Режим вимірювання: дозволено долив до фізичної ємності баку (${cap.toFixed(1)} л) незалежно від розрахункового залишку.</div>`
+    : '';
+  hintEl.innerHTML = `Місткість бака: <b>${cap.toFixed(1)} л</b> • Зараз у баку: <b>${inTank.toFixed(1)} л</b> • Вільно за обліком: <b style="color: var(--accent-cyan);">${freeInTank.toFixed(1)} л</b> (макс. до заправки: <b>${maxAllowed.toFixed(1)} л</b>)${afterText}${measNote}`;
 
   const canHintEl = document.getElementById('transCanisterBreakdownHint');
   if (canHintEl) {
@@ -1162,15 +1175,22 @@ window.checkTransferClientBounds = function() {
   const val = parseFloat(inputEl.value);
   const cap = Number(gen.tank_capacity_l || 25.0);
   const inTank = Number(gen.fuel_tank_level_l || 0);
+  const inMeas = !!(window._measurementState?.is_measuring && Number(window._measurementState.active?.generator_id) === Number(gen.id));
   const freeInTank = Math.max(0, Number((cap - inTank).toFixed(1)));
+  const effTankSpace = inMeas ? cap : freeInTank;
   const stockBal = stock ? Math.max(0, Number(Number(stock.current_balance_l || 0).toFixed(1))) : 0;
 
   if (Number.isNaN(val) || val <= 0) {
     showToast('Вкажіть коректну кількість літрів (> 0)', 'error');
     return false;
   }
-  if (val > freeInTank + 0.001) {
-    showToast(`Перевищення місткості бака (${cap.toFixed(1)} л)! У баку вже ${inTank.toFixed(1)} л, можна додати максимум ${freeInTank.toFixed(1)} л`, 'error');
+  if (val > effTankSpace + 0.001) {
+    showToast(
+      inMeas
+        ? `Перевищення повної ємності баку (${cap.toFixed(1)} л)!`
+        : `Перевищення місткості бака (${cap.toFixed(1)} л)! У баку вже ${inTank.toFixed(1)} л, можна додати максимум ${freeInTank.toFixed(1)} л`,
+      'error'
+    );
     return false;
   }
   if (stock && val > stockBal + 0.001) {

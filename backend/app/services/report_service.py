@@ -295,7 +295,8 @@ AUDIT_ACTION_UA = {
     "FACILITY_DELETED": "Видалення об'єкта",
     # Measurement & Inventory
     "MEASUREMENT_STARTED": "Увімкнення режиму вимірювання",
-    "MEASUREMENT_TANK_EMPTY": "Фіксація пустого баку (вимірювання)",
+    "MEASUREMENT_TANK_FULL": "Підтвердження повного баку (фініш вимірювання)",
+    "MEASUREMENT_TANK_EMPTY": "Фіксація баку на фініші вимірювання",
     "MEASUREMENT_INVENTORY_SUBMITTED": "Внесення інвентаризації комісією",
     "MEASUREMENT_STATEMENT_DOWNLOADED": "Скачування відомості інвентаризації (PDF)",
     "MEASUREMENT_APPROVED": "Затвердження заміру та інвентаризації",

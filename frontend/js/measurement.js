@@ -66,11 +66,11 @@ function updateMeasurementHeaderUI() {
       lockBanner.className = 'offline-sync-banner banner-conflict';
       const stageTxt = m.status === 'PENDING_APPROVAL'
         ? `PDF-відомість <b>${escapeHtml(m.statement_number || '')}</b> сформована — скачайте та натисніть «Погоджено» (Суперадмін).`
-        : 'Проведіть інвентаризацію комісією (мін. 3 особи) для розблокування об\'єкта.';
-      lockBannerText.innerHTML = `🔒 <b>Операції на об'єкті призупинено (замір завершено):</b> витрачено <b>${measured.toFixed(1)} л</b> (${Number(m.total_hours_elapsed || 0).toFixed(2)} год → <b>${Number(m.calculated_consumption_l_per_h || 0).toFixed(3)} л/год</b>). ${stageTxt}`;
+        : 'Внесіть залишок складу комісією (мін. 3 особи) для розблокування ГСМ.';
+      lockBannerText.innerHTML = `🔒 <b>Склад ГСМ опечатано для інвентаризації (замір завершено):</b> залито <b>${measured.toFixed(1)} л</b> (${Number(m.total_hours_elapsed || 0).toFixed(2)} год → <b>${Number(m.calculated_consumption_l_per_h || 0).toFixed(3)} л/год</b>). Запуск і зупинка генератора працюють штатно. ${stageTxt}`;
     } else {
       lockBanner.className = 'offline-sync-banner banner-measurement';
-      lockBannerText.innerHTML = `📏 <b>Режим вимірювання (контрольний замір):</b> пролито <b>${measured.toFixed(1)} / ${minThresh.toFixed(0)} л</b> • корекції палива заборонені • попередження пустого баку ігноруються.`;
+      lockBannerText.innerHTML = `📏 <b>Режим вимірювання («від повного до повного»):</b> заправлено в бак <b>${measured.toFixed(1)} / ${minThresh.toFixed(0)} л</b> • обмеження на долив та попередження баку ігноруються • корекції заборонені.`;
     }
     if (lockBannerBtn) {
       lockBannerBtn.style.display = isSuperAdmin() ? 'inline-flex' : 'none';
@@ -131,7 +131,7 @@ window.openMeasurementStatusModal = async function () {
 
     <div class="meas-progress-wrap">
       <div style="display:flex; justify-content:space-between; font-size:0.84rem; margin-bottom:0.35rem;">
-        <span>Проміжний лічильник (від повного баку)</span>
+        <span>Лічильник по заправках у бак (від повного до повного)</span>
         <b>${Number(m.measured_liters_total).toFixed(1)} / ${Number(m.min_liters_threshold).toFixed(0)} л (${pct.toFixed(0)}%)</b>
       </div>
       <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${pct}%; background:${pct >= 100 ? '#22c55e' : '#38bdf8'};"></div></div>
@@ -139,11 +139,11 @@ window.openMeasurementStatusModal = async function () {
 
     <div class="meas-tiles-grid">
       <div class="oq-stat-tile">
-        <span class="oq-stat-label">Повний бак старт</span>
+        <span class="oq-stat-label">Стартовий бак (100%)</span>
         <span class="oq-stat-val">${Number(m.start_tank_level_l).toFixed(1)} л</span>
       </div>
       <div class="oq-stat-tile">
-        <span class="oq-stat-label">Дозаправки</span>
+        <span class="oq-stat-label">Заправлено в бак</span>
         <span class="oq-stat-val" style="color:#38bdf8;">+${Number(m.added_during_measurement_l).toFixed(1)} л</span>
       </div>
       <div class="oq-stat-tile">
@@ -191,7 +191,7 @@ window.loadMeasurementTab = async function () {
           <div>
             <h3>📏 Запуск контрольного режиму вимірювання</h3>
             <p style="font-size:0.84rem; color:var(--text-muted); margin:0.25rem 0 0;">
-              Точний розрахунок фактичних витрат (л/год) методом «повний бак → порожній бак» (мін. 100 л) з обов'язковою комісійною інвентаризацією та PDF-відомістю.
+              Точний розрахунок фактичних витрат (л/год) методом «від повного до повного» (мін. 100 л по заправках у бак) без блокування запуску генератора під час інвентаризації.
             </p>
           </div>
         </div>
@@ -233,15 +233,15 @@ window.loadMeasurementTab = async function () {
 
           <div class="meas-progress-wrap" style="margin:0.85rem 0;">
             <div style="display:flex; justify-content:space-between; font-size:0.88rem; margin-bottom:0.35rem;">
-              <span>Мінімальний поріг виходу (100.0 л)</span>
+              <span>Лічильник по заправках у бак («у вихлопну трубу», мін. 100.0 л)</span>
               <b>${Number(m.measured_liters_total).toFixed(1)} / ${Number(m.min_liters_threshold).toFixed(0)} л (${pct.toFixed(1)}%)</b>
             </div>
             <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${pct}%; background:${pct >= 100 ? '#22c55e' : '#38bdf8'};"></div></div>
           </div>
 
           <div class="meas-tiles-grid">
-            <div class="oq-stat-tile"><span class="oq-stat-label">Повний бак старт</span><span class="oq-stat-val">${Number(m.start_tank_level_l).toFixed(1)} л</span></div>
-            <div class="oq-stat-tile"><span class="oq-stat-label">Дозаправки в бак</span><span class="oq-stat-val" style="color:#38bdf8;">+${Number(m.added_during_measurement_l).toFixed(1)} л</span></div>
+            <div class="oq-stat-tile"><span class="oq-stat-label">Стартовий бак (100%)</span><span class="oq-stat-val">${Number(m.start_tank_level_l).toFixed(1)} л</span></div>
+            <div class="oq-stat-tile"><span class="oq-stat-label">Заправлено в бак</span><span class="oq-stat-val" style="color:#38bdf8;">+${Number(m.added_during_measurement_l).toFixed(1)} л</span></div>
             <div class="oq-stat-tile"><span class="oq-stat-label">Відпрацьовано</span><span class="oq-stat-val">${Number(m.elapsed_hours).toFixed(2)} год</span></div>
             <div class="oq-stat-tile"><span class="oq-stat-label">Оцінка л/год</span><span class="oq-stat-val" style="color:#4ade80;">${m.est_consumption_l_per_h != null ? Number(m.est_consumption_l_per_h).toFixed(3) : '—'}</span></div>
           </div>
@@ -252,15 +252,15 @@ window.loadMeasurementTab = async function () {
               <input type="number" step="0.1" min="${Number(m.current_operating_hours)}" id="measFinishEndHours" value="${Number(m.current_operating_hours).toFixed(1)}">
             </div>
             <div class="form-group">
-              <label>Завершення заміру</label>
-              <button type="button" class="btn-primary" style="margin:0; width:100%;" ${!m.can_finish_empty ? 'disabled' : ''} onclick="finishMeasurementEmpty(${Number(m.id)})">
-                🛑 Бак пустий — завершити замір
+              <label>Завершення після фінальної заправки</label>
+              <button type="button" class="btn-primary" style="margin:0; width:100%;" ${!m.can_finish_full ? 'disabled' : ''} onclick="finishMeasurementFull(${Number(m.id)})">
+                ✅ Бак повний — завершити замір
               </button>
             </div>
           </div>
-          ${!m.can_finish_empty ? `
+          ${!m.can_finish_full ? `
             <div style="font-size:0.82rem; color:#fbbf24; margin-top:0.4rem;">
-              ${m.is_generator_running ? '⚠️ Генератор зараз працює — спочатку зупиніть його на Головній із фіксацією мотогодин.' : `⚠️ Потрібно відпрацювати щонайменше 100 л (залишилось ще ${Number(m.liters_remaining_to_min).toFixed(1)} л).`}
+              ${m.is_generator_running ? '⚠️ Генератор зараз працює — зупиніть його на Головній, долийте бак під кришку та підтвердьте «Бак повний».' : `⚠️ За заправками в бак потрібно набрати щонайменше 100 л (залишилось ще ${Number(m.liters_remaining_to_min).toFixed(1)} л).`}
             </div>
           ` : ''}
 
@@ -278,12 +278,18 @@ window.loadMeasurementTab = async function () {
     } else {
       // PENDING_INVENTORY or PENDING_APPROVAL
       const pools = Array.isArray(m.current_pools) ? m.current_pools : [];
-      const stocks = (Array.isArray(m.current_stocks) ? m.current_stocks : []).filter((s) => !s.has_canister_pools);
+      const stocks = Array.isArray(m.current_stocks) ? m.current_stocks : [];
       const factData = m.inventory_fact || {};
-      const factPoolMap = {};
-      (factData.pools || []).forEach((fp) => { factPoolMap[Number(fp.pool_id)] = fp; });
       const factStockMap = {};
       (factData.stocks || []).forEach((fs) => { factStockMap[Number(fs.stock_id)] = fs; });
+
+      const poolsByStock = {};
+      pools.forEach((p) => {
+        const sid = Number(p.stock_id);
+        if (!poolsByStock[sid]) poolsByStock[sid] = [];
+        poolsByStock[sid].push(p);
+      });
+      window._measStockPoolsMap = poolsByStock;
 
       const existingMembers = (Array.isArray(m.commission_members) && m.commission_members.length >= 3)
         ? m.commission_members
@@ -295,15 +301,19 @@ window.loadMeasurementTab = async function () {
 
       const isApproval = m.status === 'PENDING_APPROVAL';
       const pdfDownloaded = !!m.document_downloaded_at;
+      const tankCapVal = Number(m.tank_capacity_l || m.start_tank_level_l || 0);
 
       container.innerHTML = `
-        <div class="panel" style="border-color: rgba(239, 68, 68, 0.5);">
+        <div class="panel" style="border-color: rgba(245, 158, 11, 0.5);">
           <div class="panel-header" style="flex-wrap:wrap; gap:0.65rem;">
             <div>
-              <h3>🔒 Інвентаризація та відомість — ${escapeHtml(m.generator_name || 'Генератор')}</h3>
+              <h3>🔒 Склад ГСМ опечатано для інвентаризації — ${escapeHtml(m.generator_name || 'Генератор')}</h3>
               <p style="font-size:0.83rem; color:var(--text-muted); margin:0.2rem 0 0;">
-                Відомість: <b>${escapeHtml(m.statement_number || 'Буде присвоєно')}</b> • Спалено: <b>${Number(m.total_fuel_consumed_l || 0).toFixed(1)} л</b> за <b>${Number(m.total_hours_elapsed || 0).toFixed(2)} год</b> → Новий розхід: <b style="color:#4ade80;">${Number(m.calculated_consumption_l_per_h || 0).toFixed(3)} л/год</b> (було ${Number(m.old_nominal_consumption_l_per_h).toFixed(3)})
+                Відомість: <b>${escapeHtml(m.statement_number || 'Буде присвоєно')}</b> • Залито в бак: <b>${Number(m.total_fuel_consumed_l || 0).toFixed(1)} л</b> за <b>${Number(m.total_hours_elapsed || 0).toFixed(2)} год</b> → Новий розхід: <b style="color:#4ade80;">${Number(m.calculated_consumption_l_per_h || 0).toFixed(3)} л/год</b> (було ${Number(m.old_nominal_consumption_l_per_h).toFixed(3)})
               </p>
+              <div style="font-size:0.8rem; color:#4ade80; margin-top:0.25rem;">
+                ⚡ Запуск та зупинка генератора працюють без обмежень (об'єкт готовий до роботи під час знеструмлення).
+              </div>
             </div>
             <button type="button" class="btn-oq-chip btn-oq-chip-danger" onclick="openCancelMeasurementModal(${Number(m.id)})">✖️ Аварійне скасування</button>
           </div>
@@ -311,8 +321,10 @@ window.loadMeasurementTab = async function () {
           <form id="measInventoryForm" onsubmit="submitMeasurementInventoryForm(event, ${Number(m.id)})">
             <div class="form-row-2" style="margin-top:0.75rem;">
               <div class="form-group">
-                <label>Фактичний залишок у баку генератора (л)</label>
-                <input type="number" step="0.1" min="0" max="${Number(m.tank_capacity_l)}" id="invTankFact" value="${Number(factData.generator_tank_fact_l ?? 0).toFixed(1)}" required>
+                <label>Стан баку генератора</label>
+                <div style="padding:0.65rem 0.85rem; border-radius:0.55rem; border:1px solid rgba(34,197,94,0.45); background:rgba(34,197,94,0.1); font-size:0.88rem;">
+                  ✅ <b>Бак повний (100% = ${tankCapVal.toFixed(1)} л)</b> — зафіксовано при завершенні заміру
+                </div>
               </div>
               <div class="form-group">
                 <label>Примітка комісії (необов'язково)</label>
@@ -320,49 +332,30 @@ window.loadMeasurementTab = async function () {
               </div>
             </div>
 
-            ${pools.length > 0 ? `
-              <h4 style="margin:0.85rem 0 0.45rem; font-size:0.95rem;">🛢️ Фактичні залишки по пулах каністр (шт. / резерв л)</h4>
+            ${stocks.length > 0 ? `
+              <h4 style="margin:0.85rem 0 0.45rem; font-size:0.95rem;">📦 Фактичні залишки на складах ГСМ (система автоматично рахує каністри й резерв)</h4>
               <div class="table-container">
-                <table id="invPoolsTable">
-                  <thead><tr><th>Пул</th><th>Повні</th><th>Порожні</th><th>На АЗС</th><th>Резерв (л)</th><th>Облік → Факт</th></tr></thead>
+                <table id="invStocksTable">
+                  <thead><tr><th>Склад ГСМ</th><th>За обліком (л)</th><th>Факт склад (л) *</th><th>Авто-розклад по каністрах та резерву</th></tr></thead>
                   <tbody>
-                    ${pools.map((p) => {
-                      const fp = factPoolMap[Number(p.pool_id)];
-                      const ff = fp ? Number(fp.fact_full) : Number(p.book_full);
-                      const fe = fp ? Number(fp.fact_empty) : Number(p.book_empty);
-                      const fa = fp ? Number(fp.fact_away) : Number(p.book_away);
-                      const fr = fp ? Number(fp.fact_reserve_l) : Number(p.book_reserve_l);
-                      const vol = Number(p.canister_volume_l || 20);
+                    ${stocks.map((s) => {
+                      const sid = Number(s.stock_id);
+                      const fs = factStockMap[sid];
+                      const fv = fs ? Number(fs.fact_balance_l) : Number(s.book_balance_l);
+                      const sPools = poolsByStock[sid] || [];
+                      const previewHtml = _computeStockBreakdownPreview(sPools, fv, Number(s.book_balance_l));
                       return `
-                        <tr data-pool-id="${Number(p.pool_id)}" data-vol="${vol}" data-book="${Number(p.book_total_l)}">
-                          <td><b>${escapeHtml(p.pool_name)}</b><div style="font-size:0.74rem; color:var(--text-muted);">${vol.toFixed(0)} л • ${escapeHtml(p.fuel_type)}</div></td>
-                          <td><input type="number" min="0" step="1" class="inv-pool-full" style="width:68px;" value="${ff}" oninput="recalcInvRow(this)"></td>
-                          <td><input type="number" min="0" step="1" class="inv-pool-empty" style="width:68px;" value="${fe}" oninput="recalcInvRow(this)"></td>
-                          <td><input type="number" min="0" step="1" class="inv-pool-away" style="width:68px;" value="${fa}" oninput="recalcInvRow(this)"></td>
-                          <td><input type="number" min="0" max="${(vol - 0.01).toFixed(2)}" step="0.1" class="inv-pool-res" style="width:76px;" value="${fr.toFixed(1)}" oninput="recalcInvRow(this)"></td>
-                          <td class="inv-row-diff">${Number(p.book_total_l).toFixed(1)} л → <b>${(ff * vol + fr).toFixed(1)} л</b></td>
+                        <tr data-stock-id="${sid}" data-book="${Number(s.book_balance_l)}">
+                          <td><b>${escapeHtml(s.stock_name)}</b><div style="font-size:0.75rem; color:var(--text-muted);">${escapeHtml(s.fuel_type)}</div></td>
+                          <td>${Number(s.book_balance_l).toFixed(1)} л</td>
+                          <td><input type="number" min="0" step="0.1" class="inv-stock-fact" style="width:115px;" value="${fv.toFixed(1)}" oninput="recalcInvStockRow(this)" required></td>
+                          <td class="inv-stock-breakdown">${previewHtml}</td>
                         </tr>`;
                     }).join('')}
                   </tbody>
                 </table>
               </div>
-            ` : ''}
-
-            ${stocks.length > 0 ? `
-              <h4 style="margin:0.85rem 0 0.45rem; font-size:0.95rem;">📦 Склади без пулів каністр (л)</h4>
-              <div class="table-container">
-                <table id="invStocksTable">
-                  <thead><tr><th>Склад</th><th>За обліком (л)</th><th>Фактично (л)</th></tr></thead>
-                  <tbody>
-                    ${stocks.map((s) => {
-                      const fs = factStockMap[Number(s.stock_id)];
-                      const fv = fs ? Number(fs.fact_balance_l) : Number(s.book_balance_l);
-                      return `<tr data-stock-id="${Number(s.stock_id)}"><td><b>${escapeHtml(s.stock_name)}</b></td><td>${Number(s.book_balance_l).toFixed(1)} л</td><td><input type="number" min="0" step="0.1" class="inv-stock-fact" style="width:110px;" value="${fv.toFixed(1)}"></td></tr>`;
-                    }).join('')}
-                  </tbody>
-                </table>
-              </div>
-            ` : ''}
+            ` : '<div style="font-size:0.84rem; color:var(--text-muted); margin:0.65rem 0;">Активних складів ГСМ не знайдено.</div>'}
 
             <div style="display:flex; justify-content:space-between; align-items:center; margin:1rem 0 0.5rem;">
               <h4 style="margin:0; font-size:0.95rem;">👥 Склад комісії (мінімум 3 особи)</h4>
@@ -459,19 +452,51 @@ window.removeCommissionMemberRow = function (btn) {
   btn.closest('.inv-commission-row')?.remove();
 };
 
-window.recalcInvRow = function (el) {
+function _computeStockBreakdownPreview(pools, targetVal, bookVal) {
+  const val = Math.max(0, Number.isNaN(targetVal) ? 0 : Number(targetVal));
+  const diff = val - Number(bookVal || 0);
+  const dClr = Math.abs(diff) < 0.01 ? 'var(--text-muted)' : (diff > 0 ? '#4ade80' : '#f87171');
+  const diffBadge = `<span style="color:${dClr}; font-size:0.78rem; margin-left:0.3rem;">(${diff >= 0 ? '+' : ''}${diff.toFixed(1)} л)</span>`;
+
+  if (!Array.isArray(pools) || !pools.length) {
+    return `<b>${val.toFixed(1)} л</b> (без пулу каністр)${diffBadge}`;
+  }
+
+  let maxCap = 0;
+  pools.forEach((p) => { maxCap += Number(p.total_count || 0) * Number(p.canister_volume_l || 20); });
+  if (val > maxCap + 0.001) {
+    return `<span style="color:#f87171; font-weight:600;">⚠️ Перевищує місткість каністр (${maxCap.toFixed(0)} л)</span>`;
+  }
+
+  let rem = val;
+  const parts = [];
+  pools.forEach((p) => {
+    const vol = Number(p.canister_volume_l || 20) || 20;
+    const total = Number(p.total_count || 0);
+    const pMax = total * vol;
+    const alloc = Math.min(rem, pMax);
+    rem = Math.max(0, rem - alloc);
+    const nFull = Math.min(total, Math.floor((alloc + 1e-6) / vol));
+    const nRes = Math.max(0, alloc - nFull * vol);
+    const freeSlots = total - nFull;
+    const nAway = Math.min(Number(p.book_away || 0), freeSlots);
+    const nEmpty = Math.max(0, freeSlots - nAway);
+    const awayTxt = nAway > 0 ? ` • ${nAway} на АЗС` : '';
+    parts.push(`<b>${nFull} повн.</b> × ${vol.toFixed(0)} л + <b style="color:#38bdf8;">${nRes.toFixed(1)} л резерв</b> • ${nEmpty} пор.${awayTxt}`);
+  });
+  return `${parts.join('; ')}${diffBadge}`;
+}
+
+window.recalcInvStockRow = function (el) {
   const tr = el.closest('tr');
   if (!tr) return;
-  const vol = parseFloat(tr.getAttribute('data-vol') || '20') || 20;
-  const book = parseFloat(tr.getAttribute('data-book') || '0') || 0;
-  const full = Math.max(0, parseInt(tr.querySelector('.inv-pool-full')?.value || '0', 10) || 0);
-  const res = Math.max(0, parseFloat(tr.querySelector('.inv-pool-res')?.value || '0') || 0);
-  const fact = full * vol + res;
-  const diff = fact - book;
-  const diffEl = tr.querySelector('.inv-row-diff');
-  if (diffEl) {
-    const dClr = Math.abs(diff) < 0.01 ? 'var(--text-muted)' : (diff > 0 ? '#4ade80' : '#f87171');
-    diffEl.innerHTML = `${book.toFixed(1)} л → <b>${fact.toFixed(1)} л</b> <span style="color:${dClr}; font-size:0.78rem;">(${diff >= 0 ? '+' : ''}${diff.toFixed(1)})</span>`;
+  const sid = Number(tr.getAttribute('data-stock-id'));
+  const bookVal = parseFloat(tr.getAttribute('data-book') || '0') || 0;
+  const val = parseFloat(el.value || '0');
+  const pools = (window._measStockPoolsMap && window._measStockPoolsMap[sid]) || [];
+  const cell = tr.querySelector('.inv-stock-breakdown');
+  if (cell) {
+    cell.innerHTML = _computeStockBreakdownPreview(pools, val, bookVal);
   }
 };
 
@@ -506,34 +531,22 @@ window.startMeasurementMode = async function () {
   } catch (_) {}
 };
 
-window.finishMeasurementEmpty = async function (measurementId) {
+window.finishMeasurementFull = async function (measurementId) {
   const endH = parseFloat(document.getElementById('measFinishEndHours')?.value || '0');
-  if (!confirm('Підтверджуєте, що бак генератора фізично порожній і контрольний замір завершено?\nПісля цього операції на об\'єкті будуть заблоковані до інвентаризації.')) return;
+  if (!confirm('Підтверджуєте, що після фінальної заправки бак генератора 100% ПОВНИЙ і контрольний замір завершено?\nЗапуск/зупинка генератора залишаться доступними, а склад ГСМ буде зафіксовано до підписання PDF комісією.')) return;
   try {
-    await api(`/measurement/${encodeURIComponent(measurementId)}/finish-empty`, {
+    await api(`/measurement/${encodeURIComponent(measurementId)}/finish-full`, {
       method: 'POST',
       body: JSON.stringify({ end_operating_hours: Number.isNaN(endH) ? null : endH }),
     });
-    showToast('🛑 Бак зафіксовано порожнім! Заповніть акт інвентаризації комісією.', 'warning');
+    showToast('✅ Бак підтверджено повним! Заповніть залишок складу комісією (мін. 3 особи).', 'warning');
     await Promise.allSettled([loadMeasurementTab(), loadAllData()]);
   } catch (_) {}
 };
 
 window.submitMeasurementInventoryForm = async function (e, measurementId) {
   e.preventDefault();
-  const tankFact = parseFloat(document.getElementById('invTankFact')?.value || '0') || 0;
   const notes = document.getElementById('invNotes')?.value.trim() || null;
-
-  const pools = [];
-  document.querySelectorAll('#invPoolsTable tbody tr').forEach((tr) => {
-    pools.push({
-      pool_id: parseInt(tr.getAttribute('data-pool-id'), 10),
-      full_count: parseInt(tr.querySelector('.inv-pool-full')?.value || '0', 10) || 0,
-      empty_count: parseInt(tr.querySelector('.inv-pool-empty')?.value || '0', 10) || 0,
-      away_refill_count: parseInt(tr.querySelector('.inv-pool-away')?.value || '0', 10) || 0,
-      reserve_liters: parseFloat(tr.querySelector('.inv-pool-res')?.value || '0') || 0.0,
-    });
-  });
 
   const stocks = [];
   document.querySelectorAll('#invStocksTable tbody tr').forEach((tr) => {
@@ -559,8 +572,7 @@ window.submitMeasurementInventoryForm = async function (e, measurementId) {
     await api(`/measurement/${encodeURIComponent(measurementId)}/inventory`, {
       method: 'POST',
       body: JSON.stringify({
-        generator_tank_fact_l: tankFact,
-        pools,
+        tank_full_confirmed: true,
         stocks,
         commission_members,
         notes,
@@ -605,7 +617,7 @@ window.downloadMeasurementPdf = async function (measurementId) {
 };
 
 window.approveMeasurementMode = async function (measurementId) {
-  if (!confirm('Підтверджуєте погодження підписаної відомості, оновлення норми витрат (л/год) та фіксацію фактичних залишків на складах і в баку?')) return;
+  if (!confirm('Підтверджуєте погодження підписаної відомості, оновлення норми витрат (л/год) та фіксацію фактичних залишків складу (каністри та резерв перераховуються автоматично)?')) return;
   try {
     await api(`/measurement/${encodeURIComponent(measurementId)}/approve`, { method: 'POST' });
     showToast('✅ Погоджено! Фактичний розхід і залишки зафіксовано, система у звичайному режимі.', 'success');

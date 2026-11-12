@@ -907,47 +907,31 @@ async def list_canister_transactions(
     return list((await db.execute(q)).scalars().all())
 
 
-async def adjust_stock_canisters_to_balance(
-    db: AsyncSession,
-    stock: FuelStock,
+def compute_stock_canister_breakdown(
+    pools: list[CanisterPool],
     target_balance: Decimal,
-    user_id: int,
-    reason: str,
-) -> None:
+) -> tuple[list[dict], Decimal]:
     """
-    Synchronize canister pool(s) when SuperAdmin adjusts FuelStock.current_balance_l via SystemAdjustment.
-    Caps maximum adjustable fuel at total_count * canister_volume_l (no stationary tank).
+    Pure decomposition of a target fuel stock balance (e.g. 53 L) across active canister pools
+    (e.g. 2 full canisters x 20 L + 13.0 L reserve), preserving away_refill_count within free slots.
+    Raises HTTP 400 if target_balance exceeds total canister physical capacity.
     """
-    pools = list(
-        (
-            await db.execute(
-                select(CanisterPool)
-                .where(CanisterPool.stock_id == stock.id, CanisterPool.is_active == True)  # noqa: E712
-                .order_by(CanisterPool.id.asc())
-                .with_for_update()
-            )
-        ).scalars().all()
-    )
-    if not pools:
-        return
-
     max_capacity = sum(
         (Decimal(int(p.total_count)) * to_decimal(p.canister_volume_l, 2) for p in pools),
         Decimal("0.000"),
     )
-    if target_balance > max_capacity:
+    if target_balance > max_capacity + Decimal("0.001"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 f"Залишок ({float(target_balance):.1f} л) перевищує фізичну місткість закріплених каністр "
-                f"({float(max_capacity):.1f} л). Для зміни кількості каністр відкоригуйте сутність «Пул каністр»."
+                f"({float(max_capacity):.1f} л). Для зміни кількості каністр відкоригуйте пул каністр."
             ),
         )
 
     remaining = to_liters(target_balance)
+    breakdown: list[dict] = []
     for pool in pools:
-        before_snap = _snapshot_pool(pool)
-        old_avail = _pool_available_dec(pool)
         vol = to_decimal(pool.canister_volume_l, 2)
         total = int(pool.total_count)
         pool_max = Decimal(total) * vol
@@ -963,10 +947,55 @@ async def adjust_stock_canisters_to_balance(
         new_away = min(int(pool.away_refill_count), free_slots)
         new_empty = max(0, free_slots - new_away)
 
-        pool.full_count = new_full
-        pool.empty_count = new_empty
-        pool.away_refill_count = new_away
-        pool.reserve_liters = new_reserve
+        breakdown.append(
+            {
+                "pool": pool,
+                "new_full": new_full,
+                "new_empty": new_empty,
+                "new_away": new_away,
+                "new_reserve": new_reserve,
+                "alloc_l": to_liters(Decimal(new_full) * vol + new_reserve),
+            }
+        )
+    return breakdown, max_capacity
+
+
+async def adjust_stock_canisters_to_balance(
+    db: AsyncSession,
+    stock: FuelStock,
+    target_balance: Decimal,
+    user_id: int,
+    reason: str,
+    operation: str = "POOL_ADJUSTMENT",
+    comment_prefix: str = "Системне коригування складу",
+) -> None:
+    """
+    Synchronize canister pool(s) when FuelStock.current_balance_l is updated via adjustment or inventory.
+    Caps maximum adjustable fuel at total_count * canister_volume_l (no stationary tank).
+    """
+    pools = list(
+        (
+            await db.execute(
+                select(CanisterPool)
+                .where(CanisterPool.stock_id == stock.id, CanisterPool.is_active == True)  # noqa: E712
+                .order_by(CanisterPool.id.asc())
+                .with_for_update()
+            )
+        ).scalars().all()
+    )
+    if not pools:
+        return
+
+    breakdown, _ = compute_stock_canister_breakdown(pools, to_liters(target_balance))
+    for item in breakdown:
+        pool = item["pool"]
+        before_snap = _snapshot_pool(pool)
+        old_avail = _pool_available_dec(pool)
+
+        pool.full_count = item["new_full"]
+        pool.empty_count = item["new_empty"]
+        pool.away_refill_count = item["new_away"]
+        pool.reserve_liters = item["new_reserve"]
         pool.updated_at = utc_now()
         await db.flush()
 
@@ -975,12 +1004,12 @@ async def adjust_stock_canisters_to_balance(
             db=db,
             pool=pool,
             user_id=user_id,
-            operation="POOL_ADJUSTMENT",
-            count=abs(new_full - before_snap[0]),
+            operation=operation,
+            count=abs(item["new_full"] - before_snap[0]),
             liters_delta=new_avail - old_avail,
             used_from_reserve=Decimal("0.000"),
             before_snap=before_snap,
-            comment=f"Системне коригування складу ({float(old_avail):.1f} → {float(new_avail):.1f} л): {reason.strip()}",
+            comment=f"{comment_prefix} ({float(old_avail):.1f} → {float(new_avail):.1f} л): {reason.strip()}",
         )
 
     await sync_stock_balance_from_pools(db, stock)

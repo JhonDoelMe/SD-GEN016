@@ -8,7 +8,7 @@ class MeasurementStartRequest(BaseModel):
     generator_id: int
 
 
-class MeasurementFinishEmptyRequest(BaseModel):
+class MeasurementFinishFullRequest(BaseModel):
     end_operating_hours: Optional[float] = Field(default=None, ge=0)
 
 
@@ -31,9 +31,10 @@ class InventoryStockFactIn(BaseModel):
 
 
 class MeasurementInventoryRequest(BaseModel):
-    generator_tank_fact_l: float = Field(default=0.0, ge=0)
-    pools: List[InventoryPoolFactIn] = Field(default_factory=list)
+    tank_full_confirmed: bool = Field(default=True, description="Підтвердження повного баку (100% місткості)")
+    generator_tank_fact_l: Optional[float] = Field(default=None, ge=0)
     stocks: List[InventoryStockFactIn] = Field(default_factory=list)
+    pools: List[InventoryPoolFactIn] = Field(default_factory=list)
     commission_members: List[CommissionMemberIn] = Field(..., min_length=3)
     notes: Optional[str] = Field(default=None, max_length=500)
 
@@ -72,7 +73,7 @@ class MeasurementSummaryOut(BaseModel):
     min_liters_threshold: float
     liters_remaining_to_min: float
     progress_pct: float
-    can_finish_empty: bool
+    can_finish_full: bool
     is_generator_running: bool = False
 
     elapsed_hours: float = 0.0

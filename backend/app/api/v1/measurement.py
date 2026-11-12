@@ -8,7 +8,7 @@ from backend.app.database import get_db
 from backend.app.models.user import User
 from backend.app.schemas.measurement import (
     MeasurementCancelRequest,
-    MeasurementFinishEmptyRequest,
+    MeasurementFinishFullRequest,
     MeasurementInventoryRequest,
     MeasurementStartRequest,
     MeasurementStatusEnvelope,
@@ -23,7 +23,7 @@ from backend.app.api.deps import (
 from backend.app.services.measurement_service import (
     approve_measurement,
     cancel_measurement,
-    finish_measurement_tank_empty,
+    finish_measurement_tank_full,
     generate_measurement_statement_pdf,
     get_measurement_status_envelope,
     list_measurements_history,
@@ -66,15 +66,15 @@ async def start_measurement_api(
     return await start_measurement(db, data, current_user.id, get_client_ip(request))
 
 
-@router.post("/{measurement_id}/finish-empty", response_model=MeasurementSummaryOut)
-async def finish_measurement_empty_api(
+@router.post("/{measurement_id}/finish-full", response_model=MeasurementSummaryOut)
+async def finish_measurement_full_api(
     measurement_id: int,
-    data: MeasurementFinishEmptyRequest,
+    data: MeasurementFinishFullRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superadmin),
 ):
-    return await finish_measurement_tank_empty(db, measurement_id, data, current_user.id, get_client_ip(request))
+    return await finish_measurement_tank_full(db, measurement_id, data, current_user.id, get_client_ip(request))
 
 
 @router.post("/{measurement_id}/inventory", response_model=MeasurementSummaryOut)

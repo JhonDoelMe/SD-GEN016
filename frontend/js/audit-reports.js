@@ -101,7 +101,8 @@ const AUDIT_ACTION_MAP_UA = {
 
   // Measurement Mode
   'MEASUREMENT_STARTED': 'Запуск режиму вимірювання витрати палива',
-  'MEASUREMENT_TANK_EMPTY': 'Фіксація порожнього баку та блокування об\'єкта',
+  'MEASUREMENT_TANK_FULL': 'Підтвердження повного баку та завершення заміру',
+  'MEASUREMENT_TANK_EMPTY': 'Завершення контрольного заміру баку',
   'MEASUREMENT_INVENTORY_SUBMITTED': 'Подання комісійної інвентаризації',
   'MEASUREMENT_STATEMENT_DOWNLOADED': 'Завантаження PDF-відомості інвентаризації',
   'MEASUREMENT_APPROVED': 'Погодження інвентаризації та оновлення норми витрати',

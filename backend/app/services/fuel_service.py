@@ -181,6 +181,9 @@ async def create_fuel_stock(
     if not fac:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Об'єкт з ID {data.facility_id} не знайдено")
 
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, data.facility_id, "fuel_adjustment")
+
     initial_bal = to_liters(data.initial_balance_l)
     stock = FuelStock(
         facility_id=data.facility_id,
@@ -225,6 +228,9 @@ async def update_fuel_stock(
     stock = await db.get(FuelStock, stock_id)
     if not stock:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, stock.facility_id, "fuel_adjustment")
 
     old_details = {
         "name": stock.name,
@@ -330,6 +336,9 @@ async def delete_fuel_stock(
     if not stock:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
 
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, stock.facility_id, "fuel_adjustment")
+
     # Знаходимо альтернативний активний склад цього ж об'єкта
     alt_stock = await db.scalar(
         select(FuelStock).where(
@@ -347,9 +356,6 @@ async def delete_fuel_stock(
 
     stock_name = stock.name
     fac_id = stock.facility_id
-
-    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
-    await ensure_facility_not_locked_by_measurement(db, fac_id, "fuel_adjustment")
     stock_balance = to_liters(stock.current_balance_l)
 
     active_pools_count = await db.scalar(
@@ -737,8 +743,10 @@ async def transfer_fuel_to_tank(
     from backend.app.services.measurement_service import (
         ensure_facility_not_locked_by_measurement,
         increment_active_measurement_added_fuel,
+        is_generator_in_measurement_mode,
     )
     await ensure_facility_not_locked_by_measurement(db, facility_id, "fuel_transfer")
+    in_meas = await is_generator_in_measurement_mode(db, generator.id)
 
     # FUEL-07: Перевірка сумісності типу пального
     st_family = normalize_fuel_family(stock.fuel_type)
@@ -764,19 +772,22 @@ async def transfer_fuel_to_tank(
             detail=f"Недостатньо палива на складі ГСМ! Доступно: {float(src_before):.1f} л, запитано: {float(liters):.1f} л"
         )
 
-    # FUEL-02: Захист від переливу бака генератора
+    # FUEL-02: Захист від переливу бака генератора (в режимі вимірювання допускаємо долив до фізичної ємності бака)
     tank_before = to_liters(generator.fuel_tank_level_l)
     tank_cap = to_liters(generator.tank_capacity_l)
     tank_after = tank_before + liters
     if tank_after > tank_cap:
-        max_possible = tank_cap - tank_before
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Перевищення місткості бака! Місткість: {float(tank_cap):.1f} л, поточний рівень: {float(tank_before):.1f} л. "
-                f"Можна додати максимум: {float(max_possible):.1f} л"
+        if in_meas and liters <= tank_cap:
+            tank_after = tank_cap
+        else:
+            max_possible = tank_cap if in_meas else max(Decimal("0.000"), tank_cap - tank_before)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Перевищення місткості бака! Місткість: {float(tank_cap):.1f} л, поточний рівень: {float(tank_before):.1f} л. "
+                    f"Можна додати максимум: {float(max_possible):.1f} л"
+                )
             )
-        )
 
     src_after = src_before - liters
     stock.current_balance_l = src_after

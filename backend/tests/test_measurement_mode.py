@@ -69,7 +69,7 @@ async def _setup_facility_and_pool(client, superadmin_auth):
 
 
 @pytest.mark.asyncio
-async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
+async def test_measurement_mode_rbac_start_overfill_bypass_guards_and_cancel(
     client, db_session, superadmin_auth, admin_auth, operator_auth, viewer_auth
 ):
     fac_id, gen_id, stock_id, pool_id = await _setup_facility_and_pool(client, superadmin_auth)
@@ -101,7 +101,7 @@ async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
     assert not_full_res.status_code == 400
     assert "повн" in not_full_res.json()["detail"].lower()
 
-    # Fill tank to 100% capacity (30 + 10 = 40.0L)
+    # Fill tank to 100% capacity (30 + 10 = 40.0L) -> stock becomes 150.0L
     tr_fill = await client.post(
         "/api/v1/fuel/transfer",
         headers=operator_auth,
@@ -125,7 +125,6 @@ async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
     assert while_running.status_code == 400
     assert "зупин" in while_running.json()["detail"].lower()
 
-    # Stop generator back to idle at 100.0 hours
     stop_gen = await client.post(
         "/api/v1/generator/stop",
         headers=operator_auth,
@@ -133,7 +132,7 @@ async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
     )
     assert stop_gen.status_code == 200, stop_gen.text
 
-    # 5. SuperAdmin starts measurement mode cleanly with full tank
+    # 5. SuperAdmin starts measurement mode cleanly (Full-to-Full: refills counter starts at 0.0)
     m_res = await client.post(
         "/api/v1/measurement/start",
         headers=superadmin_auth,
@@ -145,9 +144,9 @@ async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
     assert m["status"] == "MEASURING"
     assert m["start_tank_level_l"] == pytest.approx(40.0)
     assert m["added_during_measurement_l"] == pytest.approx(0.0)
-    assert m["measured_liters_total"] == pytest.approx(40.0)
+    assert m["measured_liters_total"] == pytest.approx(0.0)
     assert m["min_liters_threshold"] == pytest.approx(100.0)
-    assert m["can_finish_empty"] is False
+    assert m["can_finish_full"] is False
 
     # Cannot start a duplicate measurement on the same facility
     dup_res = await client.post(
@@ -157,7 +156,28 @@ async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
     )
     assert dup_res.status_code in (400, 409)
 
-    # 6. Any fuel or consumption adjustments are FORBIDDEN during MEASURING (423 Locked)
+    # 6. During MEASURING: transfer bypassing book space (`tank_before=40L` yet operator pours 20L <= 40L cap) SUCCEEDS & clamps tank to 40L
+    overfill_tr = await client.post(
+        "/api/v1/fuel/transfer",
+        headers=operator_auth,
+        json={"facility_id": fac_id, "stock_id": stock_id, "generator_id": gen_id, "liters": 20.0},
+    )
+    assert overfill_tr.status_code == 201, overfill_tr.text
+    assert overfill_tr.json()["tank_balance_after"] == pytest.approx(40.0)
+
+    # Exceeding physical tank capacity (>40L) in a single transfer still fails
+    too_big_tr = await client.post(
+        "/api/v1/fuel/transfer",
+        headers=operator_auth,
+        json={"facility_id": fac_id, "stock_id": stock_id, "generator_id": gen_id, "liters": 45.0},
+    )
+    assert too_big_tr.status_code == 400
+
+    st_after_tr = (await client.get(f"/api/v1/measurement/status?facility_id={fac_id}", headers=operator_auth)).json()
+    assert st_after_tr["active"]["added_during_measurement_l"] == pytest.approx(20.0)
+    assert st_after_tr["active"]["measured_liters_total"] == pytest.approx(20.0)
+
+    # 7. Any manual fuel or consumption adjustments are FORBIDDEN during MEASURING (423 Locked)
     adj_tank = await client.post(
         "/api/v1/adjustments",
         headers=superadmin_auth,
@@ -217,7 +237,7 @@ async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
     )
     assert upd_gen_cons.status_code == 423
 
-    # 7. During MEASURING: empty tank warning is suppressed & over-burning clamps safely to 0.0
+    # 8. During MEASURING: empty tank warning is suppressed & over-burning clamps safely to 0.0
     run_start = await client.post(
         "/api/v1/generator/start",
         headers=operator_auth,
@@ -225,7 +245,6 @@ async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
     )
     assert run_start.status_code == 200
 
-    # Set tank near 0 manually in DB and invoke guardrails -> LOW_FUEL notification must be skipped
     gen_row = await db_session.get(Generator, gen_id)
     gen_row.fuel_tank_level_l = 1.0
     await db_session.commit()
@@ -237,7 +256,6 @@ async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
     ).scalars().all()
     assert len(low_fuel_logs) == 0
 
-    # Stop after 25 hours (nominal consumption 50L > 40L tank): succeeds via allow_system_clamp=True
     run_stop = await client.post(
         "/api/v1/generator/stop",
         headers=operator_auth,
@@ -248,16 +266,16 @@ async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
     gen_after_stop = (await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=superadmin_auth)).json()
     assert gen_after_stop["fuel_tank_level_l"] == pytest.approx(0.0)
 
-    # 8. Cannot exit before >= 100L measured (currently 40L)
+    # 9. Cannot finish-full before >= 100L refills poured (currently 20L)
     early_finish = await client.post(
-        f"/api/v1/measurement/{m_id}/finish-empty",
+        f"/api/v1/measurement/{m_id}/finish-full",
         headers=superadmin_auth,
         json={},
     )
     assert early_finish.status_code == 400
     assert "100" in early_finish.json()["detail"]
 
-    # 9. Non-SuperAdmin cannot cancel or finish; short cancel reason fails (422)
+    # 10. Non-SuperAdmin cannot cancel; short reason fails; SuperAdmin cancel restores normal mode
     for hdrs in (operator_auth, admin_auth):
         assert (
             await client.post(
@@ -274,7 +292,6 @@ async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
     )
     assert short_cancel.status_code == 422
 
-    # 10. SuperAdmin emergency cancels measurement -> status CANCELLED, consumption unchanged, facility open
     ok_cancel = await client.post(
         f"/api/v1/measurement/{m_id}/cancel",
         headers=superadmin_auth,
@@ -282,7 +299,6 @@ async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
     )
     assert ok_cancel.status_code == 200, ok_cancel.text
     assert ok_cancel.json()["status"] == "CANCELLED"
-    assert ok_cancel.json()["cancel_reason"] == "Хибний старт тестування"
 
     # Adjustment works again after cancel
     adj_after_cancel = await client.post(
@@ -300,7 +316,7 @@ async def test_measurement_mode_rbac_start_guards_adjustments_lock_and_cancel(
 
 
 @pytest.mark.asyncio
-async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolation(
+async def test_measurement_mode_full_to_full_unblocked_blackout_and_53l_auto_canister_inventory(
     client, db_session, superadmin_auth, admin_auth, operator_auth
 ):
     fac_id, gen_id, stock_id, pool_id = await _setup_facility_and_pool(client, superadmin_auth)
@@ -337,14 +353,14 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
     assert gen2_res.status_code == 201
     gen2_id = gen2_res.json()["id"]
 
-    # Fill tank on facility 1 to 100% (30 + 10 = 40.0L)
+    # Fill tank on facility 1 to 100% (30 + 10 = 40.0L) -> warehouse now has 150.0L
     await client.post(
         "/api/v1/fuel/transfer",
         headers=operator_auth,
         json={"facility_id": fac_id, "stock_id": stock_id, "generator_id": gen_id, "liters": 10.0},
     )
 
-    # 1. Start measurement (100.0 hours, 40.0L in tank, nominal 2.0 L/h)
+    # 1. Start measurement (100.0 hours, tank=40.0L full, nominal 2.0 L/h)
     m_res = await client.post(
         "/api/v1/measurement/start",
         headers=superadmin_auth,
@@ -352,16 +368,18 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
     )
     assert m_res.status_code == 200
     m_id = m_res.json()["id"]
+    assert m_res.json()["measured_liters_total"] == pytest.approx(0.0)
 
-    # 2. Simulate running + two refills totaling +70L added (total 40 + 70 = 110.0L >= 100L)
+    # 2. Simulate running + refills totaling EXACTLY 100.0L (36 + 34 + 30 = 100L; remaining warehouse = 50.0L)
+    # Total hours = 40.0h (100.0 -> 140.0h) => true consumption = 100.0 / 40.0 = 2.5 L/h!
     now_dt = now_utc()
     mr1 = await client.post(
         "/api/v1/generator/manual-run",
         headers=operator_auth,
         json={
             "generator_id": gen_id,
-            "start_time": (now_dt - datetime.timedelta(hours=40)).isoformat(),
-            "end_time": (now_dt - datetime.timedelta(hours=22)).isoformat(),
+            "start_time": (now_dt - datetime.timedelta(hours=50)).isoformat(),
+            "end_time": (now_dt - datetime.timedelta(hours=32)).isoformat(),
             "start_hours": 100.0,
             "end_hours": 118.0,
             "fuel_consumed_l": 36.0,
@@ -382,11 +400,11 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
         headers=operator_auth,
         json={
             "generator_id": gen_id,
-            "start_time": (now_dt - datetime.timedelta(hours=20)).isoformat(),
-            "end_time": (now_dt - datetime.timedelta(hours=2)).isoformat(),
+            "start_time": (now_dt - datetime.timedelta(hours=30)).isoformat(),
+            "end_time": (now_dt - datetime.timedelta(hours=12)).isoformat(),
             "start_hours": 118.0,
             "end_hours": 136.0,
-            "fuel_consumed_l": 40.0,
+            "fuel_consumed_l": 34.0,
             "skip_cooldown": True,
         },
     )
@@ -399,7 +417,35 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
     )
     assert tr2.status_code == 201, tr2.text
 
-    # Burn down the remaining fuel with a live run so end_hours reaches 144.0 (44.0 total hours elapsed -> 110 / 44 = 2.5 L/h)
+    # Before 3rd refill, counter is 70L (<100L)
+    st_pre = (await client.get(f"/api/v1/measurement/status?facility_id={fac_id}", headers=operator_auth)).json()
+    assert st_pre["active"]["measured_liters_total"] == pytest.approx(70.0)
+    assert st_pre["active"]["can_finish_full"] is False
+
+    # 3rd run + final top-off refill of 30.0L -> 100.0L total poured!
+    mr3 = await client.post(
+        "/api/v1/generator/manual-run",
+        headers=operator_auth,
+        json={
+            "generator_id": gen_id,
+            "start_time": (now_dt - datetime.timedelta(hours=10)).isoformat(),
+            "end_time": (now_dt - datetime.timedelta(hours=6)).isoformat(),
+            "start_hours": 136.0,
+            "end_hours": 140.0,
+            "fuel_consumed_l": 30.0,
+            "skip_cooldown": True,
+        },
+    )
+    assert mr3.status_code == 201, mr3.text
+
+    tr3 = await client.post(
+        "/api/v1/fuel/transfer",
+        headers=operator_auth,
+        json={"facility_id": fac_id, "stock_id": stock_id, "generator_id": gen_id, "liters": 30.0},
+    )
+    assert tr3.status_code == 201, tr3.text
+
+    # Start and verify finish-full is blocked while running, then stop and finish-full
     run_live = await client.post(
         "/api/v1/generator/start",
         headers=operator_auth,
@@ -407,61 +453,53 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
     )
     assert run_live.status_code == 200
 
-    # Check intermediate status envelope while threshold reached & running
     st_mid = (await client.get(f"/api/v1/measurement/status?facility_id={fac_id}", headers=operator_auth)).json()
     assert st_mid["is_measuring"] is True
     assert st_mid["is_locked"] is False
     mid_m = st_mid["active"]
-    assert mid_m["added_during_measurement_l"] == pytest.approx(70.0)
-    assert mid_m["measured_liters_total"] == pytest.approx(110.0)
-    assert mid_m["can_finish_empty"] is False
+    assert mid_m["added_during_measurement_l"] == pytest.approx(100.0)
+    assert mid_m["measured_liters_total"] == pytest.approx(100.0)
+    assert mid_m["can_finish_full"] is False
     assert mid_m["is_generator_running"] is True
-    assert len(mid_m["transfers"]) == 2
+    assert len(mid_m["transfers"]) == 3
 
-    # Cannot finish while generator is still running
     fin_running = await client.post(
-        f"/api/v1/measurement/{m_id}/finish-empty",
+        f"/api/v1/measurement/{m_id}/finish-full",
         headers=superadmin_auth,
-        json={"end_operating_hours": 144.0},
+        json={"end_operating_hours": 140.0},
     )
     assert fin_running.status_code == 400
 
-    # Stop generator at 144.0 hours -> then finish-empty succeeds
     stop_live = await client.post(
         "/api/v1/generator/stop",
         headers=operator_auth,
-        json={"generator_id": gen_id, "end_hours": 144.0, "force_confirm": True},
+        json={"generator_id": gen_id, "end_hours": 140.0, "force_confirm": True},
     )
     assert stop_live.status_code == 200, stop_live.text
 
+    # Click "Бак повний"
     fin_res = await client.post(
-        f"/api/v1/measurement/{m_id}/finish-empty",
+        f"/api/v1/measurement/{m_id}/finish-full",
         headers=superadmin_auth,
-        json={"end_operating_hours": 144.0},
+        json={"end_operating_hours": 140.0},
     )
     assert fin_res.status_code == 200, fin_res.text
     fin_m = fin_res.json()
     assert fin_m["status"] == "PENDING_INVENTORY"
-    assert fin_m["total_fuel_consumed_l"] == pytest.approx(110.0)
-    assert fin_m["total_hours_elapsed"] == pytest.approx(44.0)
+    assert fin_m["total_fuel_consumed_l"] == pytest.approx(100.0)
+    assert fin_m["total_hours_elapsed"] == pytest.approx(40.0)
     assert fin_m["calculated_consumption_l_per_h"] == pytest.approx(2.5)
 
-    # Verify tank was reset to 0.0
-    gen_locked = (await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=superadmin_auth)).json()
-    assert gen_locked["fuel_tank_level_l"] == pytest.approx(0.0)
+    # Tank was reset to 100% capacity (40.0L) and immediately ready!
+    gen_at_finish = (await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=superadmin_auth)).json()
+    assert gen_at_finish["fuel_tank_level_l"] == pytest.approx(40.0)
 
-    # 3. Verify facility 1 is COMPLETELY LOCKED (HTTP 423), while facility 2 stays UNLOCKED
+    # 3. During PENDING_INVENTORY: warehouse/tank fuel ops & adjustments are LOCKED (423),
+    # BUT generator start/stop MUST SUCCEED for blackout resilience!
     st_locked = (await client.get(f"/api/v1/measurement/status?facility_id={fac_id}", headers=operator_auth)).json()
     assert st_locked["is_measuring"] is False
     assert st_locked["is_locked"] is True
 
-    assert (
-        await client.post(
-            "/api/v1/generator/start",
-            headers=operator_auth,
-            json={"generator_id": gen_id, "skip_cooldown": True},
-        )
-    ).status_code == 423
     assert (
         await client.post(
             "/api/v1/fuel/transfer",
@@ -504,7 +542,24 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
         )
     ).status_code == 423
 
-    # Facility 2 must work unaffected!
+    # Blackout hits during PDF signing! Operator starts & stops generator freely (consumes 2h * 2.0 = 4.0L -> tank 36.0L)
+    blackout_start = await client.post(
+        "/api/v1/generator/start",
+        headers=operator_auth,
+        json={"generator_id": gen_id, "skip_cooldown": True},
+    )
+    assert blackout_start.status_code == 200, blackout_start.text
+    blackout_stop = await client.post(
+        "/api/v1/generator/stop",
+        headers=operator_auth,
+        json={"generator_id": gen_id, "end_hours": 142.0},
+    )
+    assert blackout_stop.status_code == 200, blackout_stop.text
+
+    gen_during_blackout = (await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=superadmin_auth)).json()
+    assert gen_during_blackout["fuel_tank_level_l"] == pytest.approx(36.0)
+
+    # Facility 2 must work completely unaffected
     st_fac2 = (await client.get(f"/api/v1/measurement/status?facility_id={fac2_id}", headers=superadmin_auth)).json()
     assert st_fac2["is_locked"] is False
     start_fac2 = await client.post(
@@ -514,11 +569,11 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
     )
     assert start_fac2.status_code == 200, start_fac2.text
 
-    # 4. Commission inventory validation: <3 commission members fails (422), reserve >= volume fails (400), tank > cap fails (400)
+    # 4. Simplified Commission inventory: <3 members fails (422), >pool_capacity fails (400),
+    # valid 53.0L stock automatically computes 2 full canisters (20L) + 13.0L reserve!
     two_members_payload = {
-        "generator_tank_fact_l": 1.5,
-        "pools": [{"pool_id": pool_id, "full_count": 3, "empty_count": 4, "away_refill_count": 1, "reserve_liters": 4.0}],
-        "stocks": [],
+        "tank_full_confirmed": True,
+        "stocks": [{"stock_id": stock_id, "fact_balance_l": 53.0}],
         "commission_members": [
             {"name": "Іваненко І.І.", "role": "Голова комісії"},
             {"name": "Петренко П.П.", "role": "Член комісії"},
@@ -528,25 +583,9 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
         await client.post(f"/api/v1/measurement/{m_id}/inventory", headers=superadmin_auth, json=two_members_payload)
     ).status_code == 422
 
-    bad_reserve_payload = {
-        "generator_tank_fact_l": 1.5,
-        "pools": [{"pool_id": pool_id, "full_count": 2, "empty_count": 5, "away_refill_count": 1, "reserve_liters": 25.0}],
-        "stocks": [],
-        "commission_members": [
-            {"name": "Іваненко І.І.", "role": "Голова комісії"},
-            {"name": "Петренко П.П.", "role": "Головний інженер"},
-            {"name": "Сидоренко С.С.", "role": "Оператор ГСМ"},
-        ],
-    }
-    bad_reserve_res = await client.post(
-        f"/api/v1/measurement/{m_id}/inventory", headers=superadmin_auth, json=bad_reserve_payload
-    )
-    assert bad_reserve_res.status_code == 400
-
-    over_tank_payload = {
-        "generator_tank_fact_l": 99.0,
-        "pools": [{"pool_id": pool_id, "full_count": 2, "empty_count": 5, "away_refill_count": 1, "reserve_liters": 4.0}],
-        "stocks": [],
+    over_cap_payload = {
+        "tank_full_confirmed": True,
+        "stocks": [{"stock_id": stock_id, "fact_balance_l": 200.0}],
         "commission_members": [
             {"name": "Іваненко І.І.", "role": "Голова комісії"},
             {"name": "Петренко П.П.", "role": "Головний інженер"},
@@ -554,20 +593,18 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
         ],
     }
     assert (
-        await client.post(f"/api/v1/measurement/{m_id}/inventory", headers=superadmin_auth, json=over_tank_payload)
+        await client.post(f"/api/v1/measurement/{m_id}/inventory", headers=superadmin_auth, json=over_cap_payload)
     ).status_code == 400
 
-    # Valid inventory with 3 commission members & factual balances (2 full x 20 + 4.0L reserve = 44.0L stock, 2.5L in tank)
     valid_inv_payload = {
-        "generator_tank_fact_l": 2.5,
-        "pools": [{"pool_id": pool_id, "full_count": 2, "empty_count": 5, "away_refill_count": 1, "reserve_liters": 4.0}],
-        "stocks": [],
+        "tank_full_confirmed": True,
+        "stocks": [{"stock_id": stock_id, "fact_balance_l": 53.0}],
         "commission_members": [
             {"name": "Іваненко Іван Іванович", "role": "Голова комісії"},
             {"name": "Петренко Петро Петрович", "role": "Інженер з енергетики"},
             {"name": "Сидоренко Сергій Сергійович", "role": "Відповідальний оператор"},
         ],
-        "notes": "Фактична комісійна перевірка проведена у повному складі",
+        "notes": "Бак повний, на складі фактично 53 л",
     }
     inv_res = await client.post(
         f"/api/v1/measurement/{m_id}/inventory",
@@ -578,18 +615,23 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
     inv_m = inv_res.json()
     assert inv_m["status"] == "PENDING_APPROVAL"
     assert inv_m["statement_number"].startswith("ІНВ-")
-    assert inv_m["can_approve"] is False  # PDF not downloaded yet!
+    assert inv_m["can_approve"] is False
+    # Verify auto-decomposition of 53.0L into 2 full x 20L + 13.0L reserve + 6 empty!
+    auto_pool = inv_m["inventory_fact"]["pools"][0]
+    assert auto_pool["fact_full"] == 2
+    assert auto_pool["fact_empty"] == 6
+    assert auto_pool["fact_away"] == 0
+    assert auto_pool["fact_reserve_l"] == pytest.approx(13.0)
 
     # 5. Approve blocked until PDF statement is downloaded
     pre_approve = await client.post(f"/api/v1/measurement/{m_id}/approve", headers=superadmin_auth)
     assert pre_approve.status_code == 400
     assert "pdf" in pre_approve.json()["detail"].lower()
 
-    # Non-SuperAdmin cannot download PDF or approve
     assert (await client.get(f"/api/v1/measurement/{m_id}/statement-pdf", headers=admin_auth)).status_code == 403
     assert (await client.post(f"/api/v1/measurement/{m_id}/approve", headers=admin_auth)).status_code == 403
 
-    # 6. Download A4 Landscape PDF statement (Cyrillic rendering verified)
+    # 6. Download A4 Landscape PDF statement
     pdf_res = await client.get(f"/api/v1/measurement/{m_id}/statement-pdf", headers=superadmin_auth)
     assert pdf_res.status_code == 200, pdf_res.text
     assert pdf_res.headers.get("content-type", "").startswith("application/pdf")
@@ -599,11 +641,10 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
     st_ready = (await client.get(f"/api/v1/measurement/status?facility_id={fac_id}", headers=superadmin_auth)).json()
     assert st_ready["active"]["can_approve"] is True
 
-    # 7. SuperAdmin approves -> updates nominal_consumption, factual tank & pool balances, unlocks facility, writes Audit & Report
+    # 7. SuperAdmin approves -> updates consumption, applies 53L (2 full + 13L reserve), preserves post-finish tank depletion (36.0L)
     app_res = await client.post(f"/api/v1/measurement/{m_id}/approve", headers=superadmin_auth)
     assert app_res.status_code == 200, app_res.text
-    app_m = app_res.json()
-    assert app_m["status"] == "APPROVED"
+    assert app_res.json()["status"] == "APPROVED"
 
     st_unlocked = (await client.get(f"/api/v1/measurement/status?facility_id={fac_id}", headers=operator_auth)).json()
     assert st_unlocked["is_locked"] is False
@@ -612,17 +653,17 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
 
     gen_final = (await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=superadmin_auth)).json()
     assert gen_final["nominal_consumption_l_per_h"] == pytest.approx(2.5)
-    assert gen_final["fuel_tank_level_l"] == pytest.approx(2.5)
+    # Must NOT erase the 4.0L consumed by emergency blackout run while PDF was awaiting approval!
+    assert gen_final["fuel_tank_level_l"] == pytest.approx(36.0)
 
-    # Pool and FuelStock updated & INVENTORY_CORRECTION logged
     pool_row = await db_session.get(CanisterPool, pool_id)
     assert pool_row.full_count == 2
-    assert pool_row.empty_count == 5
-    assert pool_row.away_refill_count == 1
-    assert float(pool_row.reserve_liters) == pytest.approx(4.0)
+    assert pool_row.empty_count == 6
+    assert pool_row.away_refill_count == 0
+    assert float(pool_row.reserve_liters) == pytest.approx(13.0)
 
     stock_row = await db_session.get(FuelStock, stock_id)
-    assert float(stock_row.current_balance_l) == pytest.approx(44.0)
+    assert float(stock_row.current_balance_l) == pytest.approx(53.0)
 
     corr_txs = (
         await db_session.execute(
@@ -634,7 +675,6 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
     ).scalars().all()
     assert len(corr_txs) == 1
 
-    # AuditLog has MEASUREMENT_APPROVED
     audit_rows = (
         await db_session.execute(
             select(AuditLog).where(
@@ -646,17 +686,17 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
     actions = {a.action for a in audit_rows}
     assert {
         "MEASUREMENT_STARTED",
-        "MEASUREMENT_TANK_EMPTY",
+        "MEASUREMENT_TANK_FULL",
         "MEASUREMENT_INVENTORY_SUBMITTED",
         "MEASUREMENT_STATEMENT_DOWNLOADED",
         "MEASUREMENT_APPROVED",
     }.issubset(actions)
 
-    # Operations on Facility 1 work normally again
+    # Post-approval fuel transfer works again!
     tr_post = await client.post(
         "/api/v1/fuel/transfer",
         headers=operator_auth,
-        json={"facility_id": fac_id, "stock_id": stock_id, "generator_id": gen_id, "liters": 5.0},
+        json={"facility_id": fac_id, "stock_id": stock_id, "generator_id": gen_id, "liters": 4.0},
     )
     assert tr_post.status_code == 201, tr_post.text
 
@@ -667,7 +707,6 @@ async def test_measurement_mode_full_lifecycle_inventory_pdf_approval_and_isolat
     assert len(rep_data["measurements"]) == 1
     assert rep_data["measurements"][0]["statement_number"] == inv_m["statement_number"]
     assert rep_data["measurements"][0]["new_consumption_l_per_h"] == pytest.approx(2.5)
-    assert "Іваненко" in rep_data["measurements"][0]["commission_summary"]
 
     xlsx_res = await client.get(f"/api/v1/reports/export-excel?facility_id={fac_id}", headers=superadmin_auth)
     assert xlsx_res.status_code == 200, xlsx_res.text

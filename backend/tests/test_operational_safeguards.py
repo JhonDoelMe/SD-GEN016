@@ -252,8 +252,10 @@ async def test_operational_guardrail_schedule_end_auto_stop(client, superadmin_a
     sched_q = select(GeneratorSchedule).where(GeneratorSchedule.generator_id == gen.id)
     s_res = await db_session.execute(sched_q)
     sched = s_res.scalars().first()
-    sched.start_time = "02:00"
-    sched.end_time = "02:05"
+    from backend.app.core.timezone import to_facility_time
+    cur_h = to_facility_time(now_utc()).hour
+    sched.start_time = "12:00" if cur_h == 2 else "02:00"
+    sched.end_time = "12:05" if cur_h == 2 else "02:05"
     await db_session.commit()
 
     # 2. Trigger guardrails check

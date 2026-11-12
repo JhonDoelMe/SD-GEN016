@@ -18,7 +18,7 @@ from backend.app.models.measurement import FuelMeasurement
 from backend.app.models.user import User
 from backend.app.schemas.measurement import (
     MeasurementCancelRequest,
-    MeasurementFinishEmptyRequest,
+    MeasurementFinishFullRequest,
     MeasurementInventoryRequest,
     MeasurementStartRequest,
     MeasurementStatusEnvelope,
@@ -32,6 +32,8 @@ from backend.app.services.canister_service import (
     _record_canister_tx,
     _snapshot_pool,
     _validate_pool_invariants,
+    adjust_stock_canisters_to_balance,
+    compute_stock_canister_breakdown,
     sync_stock_balance_from_pools,
 )
 from backend.app.services.settings_service import get_runtime_setting
@@ -81,19 +83,24 @@ async def ensure_facility_not_locked_by_measurement(
 ) -> Optional[FuelMeasurement]:
     """
     Enforce measurement mode locks per facility:
-    - PENDING_INVENTORY / PENDING_APPROVAL blocks ALL operational mutations and adjustments.
-    - MEASURING permits normal fuel/generator operations while blocking ALL fuel/consumption adjustments.
+    - PENDING_INVENTORY / PENDING_APPROVAL: allows generator_run (start/stop/manual-run during blackouts),
+      while blocking fuel warehouse/tank/canister operations and adjustments (HTTP 423) until signed & approved.
+    - MEASURING: permits normal fuel/generator operations (bypassing tank overfill/low-fuel limits)
+      while blocking ALL fuel/consumption manual adjustments.
     """
     active = await get_active_facility_measurement(db, facility_id)
     if not active:
         return None
 
     if active.status in LOCKED_MEASUREMENT_STATUSES:
+        if operation_kind == "generator_run":
+            return active
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail=(
-                "Операції на об'єкті заблоковано: контрольний замір завершено, "
-                "очікується інвентаризація комісією, формування PDF-відомості та погодження Суперадміністратором."
+                "Операції зі складом ГСМ, дозаправка баку, рух каністр та коригування на об'єкті тимчасово "
+                "заблоковані до підписання та погодження відомості інвентаризації. "
+                "Запуск і зупинка генератора працюють у штатному режимі."
             ),
         )
 
@@ -208,7 +215,8 @@ async def _build_measurement_summary(db: AsyncSession, m: FuelMeasurement) -> Me
 
     start_tank = float(m_full.start_tank_level_l or 0.0)
     added_l = float(m_full.added_during_measurement_l or 0.0)
-    total_measured = round(start_tank + added_l, 2)
+    # Full-to-Full method: fuel burned between two full-tank points equals total refills poured into tank
+    total_measured = round(added_l, 2)
     min_thresh = float(m_full.min_liters_threshold or 100.0)
     rem_to_min = round(max(0.0, min_thresh - total_measured), 2)
     progress_pct = round(min(100.0, (total_measured / min_thresh) * 100.0), 1) if min_thresh > 0 else 100.0
@@ -287,7 +295,7 @@ async def _build_measurement_summary(db: AsyncSession, m: FuelMeasurement) -> Me
         min_liters_threshold=round(min_thresh, 2),
         liters_remaining_to_min=rem_to_min,
         progress_pct=progress_pct,
-        can_finish_empty=(m_full.status == "MEASURING" and total_measured + 1e-6 >= min_thresh and active_run is None),
+        can_finish_full=(m_full.status == "MEASURING" and total_measured + 1e-6 >= min_thresh and active_run is None),
         is_generator_running=(active_run is not None),
         elapsed_hours=elapsed_h,
         old_nominal_consumption_l_per_h=round(float(m_full.old_nominal_consumption_l_per_h), 3),
@@ -325,7 +333,10 @@ async def get_measurement_status_envelope(
         measuring = active.status == "MEASURING"
         reason = None
         if locked:
-            reason = "Вимірювання завершено: очікується інвентаризація комісією та погодження Суперадміністратором."
+            reason = (
+                "Склад ГСМ, рух каністр та коригування заблоковані до підписання PDF і погодження Суперадміністратором "
+                "(запуск/зупинка генератора працюють у штатному режимі)."
+            )
         return MeasurementStatusEnvelope(
             has_active=True,
             is_locked=locked,
@@ -456,10 +467,10 @@ async def start_measurement(
     return await _build_measurement_summary(db, m)
 
 
-async def finish_measurement_tank_empty(
+async def finish_measurement_tank_full(
     db: AsyncSession,
     measurement_id: int,
-    data: MeasurementFinishEmptyRequest,
+    data: MeasurementFinishFullRequest,
     user_id: int,
     ip_address: Optional[str] = None,
 ) -> MeasurementSummaryOut:
@@ -480,18 +491,18 @@ async def finish_measurement_tank_empty(
     if gen.status == "RUNNING":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Спочатку зупиніть генератор із фіксацією мотогодин, а потім підтвердьте порожній бак.",
+            detail="Спочатку зупиніть генератор, долийте бак до повного та потім підтвердьте «Бак повний».",
         )
 
-    total_consumed_dec = to_liters(m.start_tank_level_l) + to_liters(m.added_during_measurement_l)
+    # Full-to-Full method: burned liters equal total refills poured into the tank between full start and full finish
+    total_consumed_dec = to_liters(m.added_during_measurement_l)
     min_thresh_dec = to_liters(m.min_liters_threshold or Decimal("100.000"))
     if total_consumed_dec + Decimal("0.001") < min_thresh_dec:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Неможливо завершити вимірювання до відпрацювання принаймні {float(min_thresh_dec):.0f} л палива "
-                f"(зараз обліковано {float(total_consumed_dec):.1f} л: повний бак {float(m.start_tank_level_l):.1f} л + "
-                f"дозаправки {float(m.added_during_measurement_l):.1f} л)."
+                f"Неможливо завершити вимірювання до відпрацювання принаймні {float(min_thresh_dec):.0f} л за заправками в бак "
+                f"(зараз долито {float(total_consumed_dec):.1f} л з необхідних {float(min_thresh_dec):.0f} л)."
             ),
         )
 
@@ -510,8 +521,9 @@ async def finish_measurement_tank_empty(
 
     calc_cons = round(float(total_consumed_dec) / elapsed_hours, 3)
 
-    # Tank is physically confirmed empty (0.0 L)
-    gen.fuel_tank_level_l = 0.0
+    # Tank is physically topped off to 100% capacity — immediately ready for blackout operation!
+    tank_cap = round(float(gen.tank_capacity_l or m.start_tank_level_l or 25.0), 3)
+    gen.fuel_tank_level_l = tank_cap
     if end_hours > float(gen.current_operating_hours or 0.0):
         gen.current_operating_hours = round(end_hours, 3)
     gen.updated_at = utc_now()
@@ -528,13 +540,14 @@ async def finish_measurement_tank_empty(
     await db.flush()
     await log_audit(
         db=db,
-        action="MEASUREMENT_TANK_EMPTY",
+        action="MEASUREMENT_TANK_FULL",
         entity_type="FuelMeasurement",
         entity_id=str(m.id),
         user_id=user_id,
         details={
             "facility_id": m.facility_id,
             "generator_id": m.generator_id,
+            "tank_level_after_l": tank_cap,
             "total_fuel_consumed_l": float(total_consumed_dec),
             "total_hours_elapsed": elapsed_hours,
             "calculated_consumption_l_per_h": calc_cons,
@@ -561,7 +574,7 @@ async def submit_measurement_inventory(
     if m.status not in ("PENDING_INVENTORY", "PENDING_APPROVAL"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Інвентаризація можлива лише після завершення етапу заміру («Бак пустий»).",
+            detail="Інвентаризація можлива лише після завершення етапу заміру («Бак повний»).",
         )
 
     gen = await db.get(Generator, m.generator_id)
@@ -569,11 +582,15 @@ async def submit_measurement_inventory(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
 
     tank_cap = float(gen.tank_capacity_l or 25.0)
-    if data.generator_tank_fact_l > tank_cap + 0.001:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Фактичний залишок у баку ({data.generator_tank_fact_l} л) перевищує місткість бака ({tank_cap} л).",
-        )
+    if not data.tank_full_confirmed and data.generator_tank_fact_l is not None:
+        if data.generator_tank_fact_l > tank_cap + 0.001:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Фактичний залишок у баку ({data.generator_tank_fact_l} л) перевищує місткість бака ({tank_cap} л).",
+            )
+        gen_fact_tank = round(float(data.generator_tank_fact_l), 3)
+    else:
+        gen_fact_tank = round(tank_cap, 3)
 
     # Validate commission (>= 3 members with non-empty names and roles)
     clean_members = []
@@ -614,56 +631,84 @@ async def submit_measurement_inventory(
     pool_input_map = {int(item.pool_id): item for item in data.pools}
     stock_input_map = {int(item.stock_id): item for item in data.stocks}
 
-    pools_fact_rows = []
-    stock_fact_totals: Dict[int, float] = {}
+    pools_by_stock: Dict[int, list[CanisterPool]] = {}
     for p in pools:
-        pin = pool_input_map.get(int(p.id))
-        vol_dec = to_decimal(p.canister_volume_l, 2)
-        if pin:
-            res_dec = to_liters(pin.reserve_liters)
-            total_c = _validate_pool_invariants(pin.full_count, pin.empty_count, pin.away_refill_count, vol_dec, res_dec)
-            fact_full, fact_empty, fact_away, fact_res_dec = pin.full_count, pin.empty_count, pin.away_refill_count, res_dec
-        else:
-            total_c = int(p.total_count)
-            fact_full = int(p.full_count)
-            fact_empty = int(p.empty_count)
-            fact_away = int(p.away_refill_count)
-            fact_res_dec = to_liters(p.reserve_liters)
+        pools_by_stock.setdefault(int(p.stock_id), []).append(p)
 
-        fact_total_l = round(float(Decimal(fact_full) * vol_dec + fact_res_dec), 3)
-        book_total_l = round(float(_pool_available_dec(p)), 3)
-        stock_fact_totals[int(p.stock_id)] = round(stock_fact_totals.get(int(p.stock_id), 0.0) + fact_total_l, 3)
-
-        pools_fact_rows.append(
-            {
-                "pool_id": int(p.id),
-                "stock_id": int(p.stock_id),
-                "pool_name": p.name,
-                "fuel_type": p.fuel_type,
-                "canister_volume_l": round(float(vol_dec), 2),
-                "total_count": total_c,
-                "book_full": int(p.full_count),
-                "book_empty": int(p.empty_count),
-                "book_away": int(p.away_refill_count),
-                "book_reserve_l": round(float(p.reserve_liters or 0.0), 3),
-                "book_total_l": book_total_l,
-                "fact_full": fact_full,
-                "fact_empty": fact_empty,
-                "fact_away": fact_away,
-                "fact_reserve_l": round(float(fact_res_dec), 3),
-                "fact_total_l": fact_total_l,
-                "diff_l": round(fact_total_l - book_total_l, 3),
-            }
-        )
-
+    pools_fact_rows = []
     stocks_fact_rows = []
     for s in stocks:
         sid = int(s.id)
         book_bal = round(float(s.current_balance_l or 0.0), 3)
-        if sid in stock_fact_totals:
-            fact_bal = stock_fact_totals[sid]
-        elif sid in stock_input_map:
+        stock_pools = pools_by_stock.get(sid, [])
+
+        if sid in stock_input_map:
             fact_bal = round(float(stock_input_map[sid].fact_balance_l), 3)
+            if stock_pools:
+                breakdown, _ = compute_stock_canister_breakdown(stock_pools, to_liters(fact_bal))
+                for item in breakdown:
+                    p = item["pool"]
+                    vol_dec = to_decimal(p.canister_volume_l, 2)
+                    fact_total_l = round(float(item["alloc_l"]), 3)
+                    book_total_l = round(float(_pool_available_dec(p)), 3)
+                    pools_fact_rows.append(
+                        {
+                            "pool_id": int(p.id),
+                            "stock_id": sid,
+                            "pool_name": p.name,
+                            "fuel_type": p.fuel_type,
+                            "canister_volume_l": round(float(vol_dec), 2),
+                            "total_count": int(p.total_count),
+                            "book_full": int(p.full_count),
+                            "book_empty": int(p.empty_count),
+                            "book_away": int(p.away_refill_count),
+                            "book_reserve_l": round(float(p.reserve_liters or 0.0), 3),
+                            "book_total_l": book_total_l,
+                            "fact_full": item["new_full"],
+                            "fact_empty": item["new_empty"],
+                            "fact_away": item["new_away"],
+                            "fact_reserve_l": round(float(item["new_reserve"]), 3),
+                            "fact_total_l": fact_total_l,
+                            "diff_l": round(fact_total_l - book_total_l, 3),
+                        }
+                    )
+        elif stock_pools:
+            fact_bal = 0.0
+            for p in stock_pools:
+                pin = pool_input_map.get(int(p.id))
+                vol_dec = to_decimal(p.canister_volume_l, 2)
+                if pin:
+                    res_dec = to_liters(pin.reserve_liters)
+                    total_c = _validate_pool_invariants(pin.full_count, pin.empty_count, pin.away_refill_count, vol_dec, res_dec)
+                    f_full, f_empty, f_away, f_res_dec = pin.full_count, pin.empty_count, pin.away_refill_count, res_dec
+                else:
+                    total_c = int(p.total_count)
+                    f_full, f_empty, f_away = int(p.full_count), int(p.empty_count), int(p.away_refill_count)
+                    f_res_dec = to_liters(p.reserve_liters)
+                fact_total_l = round(float(Decimal(f_full) * vol_dec + f_res_dec), 3)
+                book_total_l = round(float(_pool_available_dec(p)), 3)
+                fact_bal = round(fact_bal + fact_total_l, 3)
+                pools_fact_rows.append(
+                    {
+                        "pool_id": int(p.id),
+                        "stock_id": sid,
+                        "pool_name": p.name,
+                        "fuel_type": p.fuel_type,
+                        "canister_volume_l": round(float(vol_dec), 2),
+                        "total_count": total_c,
+                        "book_full": int(p.full_count),
+                        "book_empty": int(p.empty_count),
+                        "book_away": int(p.away_refill_count),
+                        "book_reserve_l": round(float(p.reserve_liters or 0.0), 3),
+                        "book_total_l": book_total_l,
+                        "fact_full": f_full,
+                        "fact_empty": f_empty,
+                        "fact_away": f_away,
+                        "fact_reserve_l": round(float(f_res_dec), 3),
+                        "fact_total_l": fact_total_l,
+                        "diff_l": round(fact_total_l - book_total_l, 3),
+                    }
+                )
         else:
             fact_bal = book_bal
 
@@ -678,10 +723,10 @@ async def submit_measurement_inventory(
             }
         )
 
-    gen_book_tank = round(float(gen.fuel_tank_level_l or 0.0), 3)
-    gen_fact_tank = round(float(data.generator_tank_fact_l), 3)
+    gen_book_tank = round(tank_cap, 3)
 
     inv_fact = {
+        "tank_full_confirmed": bool(data.tank_full_confirmed),
         "generator_tank_book_l": gen_book_tank,
         "generator_tank_fact_l": gen_fact_tank,
         "generator_tank_diff_l": round(gen_fact_tank - gen_book_tank, 3),
@@ -832,18 +877,18 @@ async def generate_measurement_statement_pdf(
 
     # Section 1: Measurement summary table (273 mm width)
     pdf.set_font(font_family, "B", 10)
-    pdf.cell(273, 6, t("1. Результати контрольного заміру витрат палива («повний бак → порожній бак»)"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(273, 6, t("1. Результати контрольного заміру витрат палива («від повного до повного»)"), new_x="LMARGIN", new_y="NEXT")
 
     m_cols = [
         ("Початок", 31),
         ("Кінець", 31),
         ("Мотогодини", 36),
         ("Відпр., год", 24),
-        ("Повн. бак, л", 25),
-        ("Дозапр., л", 25),
-        ("Спалено, л", 26),
-        ("Було, л/год", 34),
-        ("ФАКТ, л/год", 41),
+        ("Бак старт/кін", 27),
+        ("Залито в бак, л", 26),
+        ("Факт витрати, л", 28),
+        ("Було, л/год", 32),
+        ("ФАКТ, л/год", 38),
     ]
     pdf.set_fill_color(226, 232, 240)
     pdf.set_font(font_family, "B", 8)
@@ -852,12 +897,13 @@ async def generate_measurement_statement_pdf(
     pdf.ln()
 
     pdf.set_font(font_family, "", 8.5)
+    tank_cap_pdf = float(gen.tank_capacity_l or m.start_tank_level_l or 0)
     m_vals = [
         _fmt_pdf_dt(m.started_at),
         _fmt_pdf_dt(m.tank_emptied_at),
         f"{float(m.start_operating_hours):.1f} → {float(m.end_operating_hours or 0):.1f}",
         f"{float(m.total_hours_elapsed or 0):.2f}",
-        f"{float(m.start_tank_level_l or 0):.1f}",
+        f"{tank_cap_pdf:.0f} → {tank_cap_pdf:.0f} л",
         f"{float(m.added_during_measurement_l or 0):.1f}",
         f"{float(m.total_fuel_consumed_l or 0):.1f}",
         f"{float(m.old_nominal_consumption_l_per_h or 0):.3f}",
@@ -897,9 +943,9 @@ async def generate_measurement_statement_pdf(
     g_diff = round(g_fact - g_book, 2)
     inv_rows.append([
         "1",
-        f"Бак генератора: {gen.name if gen else '-'}",
+        f"Бак генератора: {gen.name if gen else '-'} (Повний 100%)",
         gen.fuel_type if gen else "-",
-        "—",
+        "Повний (100%)",
         "—",
         f"{g_book:.2f}",
         f"{g_fact:.2f}",
@@ -1035,13 +1081,12 @@ async def approve_measurement(
     commission = json.loads(m.commission_members_json or "[]")
     stmt_no = m.statement_number or f"ІНВ-{m.id:03d}"
 
-    # 1. Update generator nominal consumption and factual tank balance
+    # 1. Update generator nominal consumption; preserve live tank level if interim blackout runs happened after finish-full
     old_cons = float(gen.nominal_consumption_l_per_h)
     new_cons = float(m.calculated_consumption_l_per_h or old_cons)
-    fact_tank = round(float(inv_fact.get("generator_tank_fact_l", 0.0)), 3)
+    fact_tank = round(float(inv_fact.get("generator_tank_fact_l", gen.fuel_tank_level_l or 0.0)), 3)
 
     gen.nominal_consumption_l_per_h = new_cons
-    gen.fuel_tank_level_l = fact_tank
     gen.updated_at = utc_now()
 
     # 2. Apply factual canister pool counts & reserves + resync stocks
@@ -1091,7 +1136,7 @@ async def approve_measurement(
             await sync_stock_balance_from_pools(db, stock)
             updated_stock_ids.add(int(stock.id))
 
-    # For any stock without canister pools
+    # For any stock without canister pools (or with pools synced above if missed)
     for st_fact in (inv_fact.get("stocks") or []):
         sid = int(st_fact["stock_id"])
         if sid in updated_stock_ids:
@@ -1100,8 +1145,18 @@ async def approve_measurement(
             await db.execute(select(FuelStock).where(FuelStock.id == sid).with_for_update())
         ).scalars().first()
         if stock:
-            stock.current_balance_l = to_liters(st_fact["fact_balance_l"])
+            new_bal = to_liters(st_fact["fact_balance_l"])
+            stock.current_balance_l = new_bal
             stock.updated_at = utc_now()
+            await adjust_stock_canisters_to_balance(
+                db=db,
+                stock=stock,
+                target_balance=new_bal,
+                user_id=user_id,
+                reason=f"Відомість {stmt_no}",
+                operation="INVENTORY_CORRECTION",
+                comment_prefix=f"Інвентаризація за відомістю {stmt_no}",
+            )
 
     m.status = "APPROVED"
     m.approved_by_id = user_id
@@ -1165,7 +1220,7 @@ async def cancel_measurement(
             "facility_id": m.facility_id,
             "generator_id": m.generator_id,
             "reason": m.cancel_reason,
-            "measured_liters_before_cancel": round(float(m.start_tank_level_l or 0) + float(m.added_during_measurement_l or 0), 2),
+            "measured_liters_before_cancel": round(float(m.added_during_measurement_l or 0), 2),
         },
         ip_address=ip_address,
     )
