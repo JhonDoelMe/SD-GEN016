@@ -49,9 +49,21 @@ docker/ssl-fallback/*.key
 .DS_Store
 Thumbs.db
 
+# Node.js
+node_modules/
+package-lock.json
+
 # Local deployment scripts & private credentials (NEVER COMMIT)
 scripts/local_*
 *.local.ps1
 *.local.sh
 deploy_local.*
+
+# Android build artifacts & local properties
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/captures/
+build-apk/
 

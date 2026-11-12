@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SD-GEN016</string>
+    <string name="title_activity_main">SD-GEN016</string>
+    <string name="package_name">ua.pp.sdgen.app</string>
+    <string name="custom_url_scheme">ua.pp.sdgen.app</string>
+</resources>
