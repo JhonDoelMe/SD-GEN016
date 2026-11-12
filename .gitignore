@@ -70,3 +70,9 @@ build-apk/
 *.jks
 *.keystore
 
+# Standalone OTA service secrets & stored APK data
+.ota.env
+ota-server/.env
+ota-server/data/
+ota-server/*.apk
+

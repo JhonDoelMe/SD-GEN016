@@ -1,0 +1,26 @@
+services:
+  ota:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sdgen-ota
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "172.17.0.1:8090:8090"
+    volumes:
+      - ota_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/ota/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  ota_data:

@@ -618,10 +618,15 @@ def test_production_mode_blocks_startup_with_insecure_defaults():
 
 @pytest.mark.asyncio
 async def test_lifespan_aborts_if_audit_sanitization_fails_and_version_matches():
+    import json
+    from pathlib import Path
     from unittest.mock import AsyncMock
     from backend.app.main import app, lifespan
 
-    assert app.version == "5.4.0"
+    expected_version = json.loads(
+        (Path(__file__).resolve().parents[2] / "version.json").read_text(encoding="utf-8")
+    )["versionName"]
+    assert app.version == expected_version
 
     with patch("backend.app.main.sanitize_historical_audit_logs", new=AsyncMock(side_effect=Exception("DB lock during sanitization"))):
         with pytest.raises(RuntimeError, match="CRITICAL SECURITY FAILURE: Historical audit log sanitization failed"):

@@ -38,7 +38,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/frontend/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=5.6.2">
+  <link rel="stylesheet" href="/frontend/styles.css?v=5.6.3">
 </head>
 <body>
 
@@ -3641,6 +3641,10 @@
           </small>
         </div>
         <div id="serverConnectionStatus" class="server-status-box" style="display: none; margin-top: 1rem; padding: 0.75rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>
+        <div id="nativeAppVersionRow" style="display: none; margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color, #2d3748); align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+          <small id="nativeAppVersionLabel" style="color: var(--text-muted);"></small>
+          <button type="button" class="btn-secondary" onclick="checkForAppUpdates({ manual: true })" style="padding: 6px 12px; font-size: 0.82rem;">Перевірити оновлення</button>
+        </div>
       </div>
       <div class="modal-actions" style="display: flex; gap: 8px; margin-top: 1rem;">
         <button type="button" class="btn-secondary" onclick="resetServerSettings()" style="flex: 1;">Скинути</button>
@@ -3649,23 +3653,49 @@
     </div>
   </div>
 
+  <!-- Modal: Native Android OTA Update -->
+  <div id="modalAppUpdate" class="modal-overlay" style="z-index: 10050;">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 id="otaModalTitle" style="margin: 0; display: flex; align-items: center; gap: 8px;">🚀 Доступне оновлення</h3>
+        <button type="button" id="otaCloseBtn" class="close-btn" onclick="dismissOtaUpdateModal()" aria-label="Закрити">&times;</button>
+      </div>
+      <div style="display: grid; gap: 12px;">
+        <div id="otaVersionSummary" style="font-size: 0.9rem; line-height: 1.5; color: var(--text-muted);"></div>
+        <div id="otaChangelogBox" style="background: rgba(15, 23, 42, 0.45); border: 1px solid var(--border-color, #2d3748); border-radius: 10px; padding: 10px 12px; font-size: 0.88rem; line-height: 1.5; max-height: 180px; overflow-y: auto;"></div>
+        <div id="otaProgressWrap" style="display: none;">
+          <div style="height: 8px; border-radius: 999px; background: rgba(148, 163, 184, 0.25); overflow: hidden;">
+            <div id="otaProgressBar" style="width: 0%; height: 100%; background: var(--primary-color, #3b82f6); transition: width 0.15s ease;"></div>
+          </div>
+          <small id="otaProgressText" style="display: block; margin-top: 6px; color: var(--text-muted);"></small>
+        </div>
+        <div id="otaStatusMessage" style="display: none; padding: 10px 12px; border-radius: 8px; font-size: 0.86rem; line-height: 1.45;"></div>
+      </div>
+      <div class="modal-actions" style="display: flex; gap: 8px; margin-top: 1rem;">
+        <button type="button" id="otaLaterBtn" class="btn-secondary" onclick="dismissOtaUpdateModal()" style="flex: 1;">Пізніше</button>
+        <button type="button" id="otaInstallBtn" class="btn-primary" onclick="startOtaDownloadAndInstall()" style="flex: 1;">Оновити зараз</button>
+      </div>
+    </div>
+  </div>
+
     <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/js/core.js?v=5.6.2"></script>
-  <script src="/frontend/js/offline-queue.js?v=5.6.2"></script>
-  <script src="/frontend/js/theme-format.js?v=5.6.2"></script>
-  <script src="/frontend/js/auth-nav.js?v=5.6.2"></script>
-  <script src="/frontend/js/dashboard.js?v=5.6.2"></script>
-  <script src="/frontend/js/fuel.js?v=5.6.2"></script>
-  <script src="/frontend/js/operations.js?v=5.6.2"></script>
-  <script src="/frontend/js/audit-reports.js?v=5.6.2"></script>
-  <script src="/frontend/js/measurement.js?v=5.6.2"></script>
-  <script src="/frontend/js/admin.js?v=5.6.2"></script>
-  <script src="/frontend/js/backups.js?v=5.6.2"></script>
-  <script src="/frontend/js/notifications.js?v=5.6.2"></script>
-  <script src="/frontend/js/yasno.js?v=5.6.2"></script>
-  <script src="/frontend/js/weather-alerts.js?v=5.6.2"></script>
+  <script src="/frontend/js/core.js?v=5.6.3"></script>
+  <script src="/frontend/js/offline-queue.js?v=5.6.3"></script>
+  <script src="/frontend/js/theme-format.js?v=5.6.3"></script>
+  <script src="/frontend/js/auth-nav.js?v=5.6.3"></script>
+  <script src="/frontend/js/dashboard.js?v=5.6.3"></script>
+  <script src="/frontend/js/fuel.js?v=5.6.3"></script>
+  <script src="/frontend/js/operations.js?v=5.6.3"></script>
+  <script src="/frontend/js/audit-reports.js?v=5.6.3"></script>
+  <script src="/frontend/js/measurement.js?v=5.6.3"></script>
+  <script src="/frontend/js/admin.js?v=5.6.3"></script>
+  <script src="/frontend/js/backups.js?v=5.6.3"></script>
+  <script src="/frontend/js/notifications.js?v=5.6.3"></script>
+  <script src="/frontend/js/yasno.js?v=5.6.3"></script>
+  <script src="/frontend/js/weather-alerts.js?v=5.6.3"></script>
+  <script src="/frontend/js/ota-updater.js?v=5.6.3"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

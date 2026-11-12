@@ -1,6 +1,6 @@
 {
   "name": "sd-gen016",
-  "version": "1.0.0",
+  "version": "5.6.3",
   "description": "<p align=\"center\">\r   <img src=\"frontend/icons/logo.png\" alt=\"SD-GEN016 Official Logo\" width=\"160\">\r </p>",
   "main": "index.js",
   "directories": {
@@ -8,7 +8,9 @@
   },
   "scripts": {
     "sync:android": "npx cap copy android && node scripts/sync-android-assets.js",
-    "build:android": "npx cap copy android && node scripts/sync-android-assets.js && cd android && gradlew assembleDebug"
+    "build:android": "npx cap copy android && node scripts/sync-android-assets.js && cd android && gradlew assembleDebug",
+    "bump:version": "node scripts/bump-version.js",
+    "release:android": "powershell -ExecutionPolicy Bypass -File scripts/release_android.ps1"
   },
   "repository": {
     "type": "git",
