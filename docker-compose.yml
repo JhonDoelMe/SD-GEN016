@@ -11,6 +11,7 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
+      - ./docker/firebase:/app/firebase:ro
     depends_on:
       db:
         condition: service_healthy

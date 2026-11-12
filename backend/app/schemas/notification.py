@@ -124,3 +124,29 @@ class NotificationLogOut(BaseModel):
 class TestNotificationIn(BaseModel):
     title: Optional[str] = Field(default="Тестове сповіщення Service Desk", max_length=150)
     body: Optional[str] = Field(default="Система сповіщень працює належним чином на вашому пристрої!", max_length=500)
+
+
+class FcmSubscriptionIn(BaseModel):
+    token: str = Field(..., min_length=20, max_length=512, description="Firebase Cloud Messaging device registration token")
+    user_agent: Optional[str] = Field(default=None, max_length=512)
+    facility_id: Optional[int] = None
+
+    @field_validator("token")
+    @classmethod
+    def validate_fcm_token(cls, v: str) -> str:
+        clean = (v or "").strip()
+        if len(clean) < 20 or any(ch.isspace() for ch in clean):
+            raise ValueError("Некоректний FCM токен пристрою")
+        return clean
+
+
+class FcmUnsubscribeIn(BaseModel):
+    token: str = Field(..., min_length=20, max_length=512)
+
+    @field_validator("token")
+    @classmethod
+    def validate_fcm_token(cls, v: str) -> str:
+        clean = (v or "").strip()
+        if len(clean) < 20 or any(ch.isspace() for ch in clean):
+            raise ValueError("Некоректний FCM токен пристрою")
+        return clean

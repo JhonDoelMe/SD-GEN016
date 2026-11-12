@@ -16,6 +16,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(OtaUpdaterPlugin.class);
+        registerPlugin(FcmPushPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Enforce proper safe-area insets on Android 15/16 Edge-to-Edge so WebView stays below status bar

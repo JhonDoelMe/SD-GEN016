@@ -18,6 +18,7 @@ from backend.app.models.generator import Generator
 from backend.app.models.facility import Facility
 from backend.app.models.maintenance import MaintenanceSchedule
 from backend.app.services.settings_service import get_runtime_setting, set_runtime_setting
+from backend.app.services.fcm_service import send_fcm_message
 from backend.app.core.timezone import now_utc, now_facility, get_facility_tz
 
 logger = logging.getLogger(__name__)
@@ -472,7 +473,27 @@ async def send_push_notification(
     expired_sub_ids = []
 
     push_tasks = []
+    fcm_data = {
+        "url": url,
+        "event_type": event_type,
+        "log_id": str(log_entry.id) if log_entry.id else "",
+        "facility_id": str(facility_id) if facility_id is not None else "",
+        "generator_id": str(generator_id) if generator_id is not None else "",
+    }
     for s in subscriptions:
+        if s.endpoint and s.endpoint.startswith("fcm://"):
+            device_token = s.endpoint[len("fcm://"):]
+            push_tasks.append(
+                send_fcm_message(
+                    device_token=device_token,
+                    title=title,
+                    body=body,
+                    event_type=event_type,
+                    data=fcm_data,
+                )
+            )
+            continue
+
         sub_info = {
             "endpoint": s.endpoint,
             "keys": {

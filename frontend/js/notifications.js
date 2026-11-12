@@ -22,6 +22,64 @@ function areUint8ArraysEqual(a, b) {
 }
 
 const _seenNotifLogIds = new Set();
+const FCM_TOKEN_STORAGE_KEY = 'sd_fcm_device_token';
+const FCM_OPT_OUT_KEY = 'sd_fcm_opted_out';
+let _fcmListenersBound = false;
+
+function getNativeFcmPlugin() {
+  if (
+    window.Capacitor &&
+    typeof window.Capacitor.isNativePlatform === 'function' &&
+    window.Capacitor.isNativePlatform() &&
+    window.Capacitor.Plugins &&
+    window.Capacitor.Plugins.FcmPush
+  ) {
+    return window.Capacitor.Plugins.FcmPush;
+  }
+  return null;
+}
+
+function bindNativeFcmListeners(fcmPlugin) {
+  if (_fcmListenersBound || !fcmPlugin || typeof fcmPlugin.addListener !== 'function') return;
+  _fcmListenersBound = true;
+
+  fcmPlugin.addListener('fcmTokenRefresh', async (ev) => {
+    const newToken = ev && ev.token ? String(ev.token).trim() : '';
+    if (!newToken) return;
+    localStorage.setItem(FCM_TOKEN_STORAGE_KEY, newToken);
+    if (token && currentUser && localStorage.getItem(FCM_OPT_OUT_KEY) !== '1') {
+      try {
+        await api('/notifications/fcm/subscribe', {
+          method: 'POST',
+          body: JSON.stringify({
+            token: newToken,
+            user_agent: navigator.userAgent,
+            facility_id: currentUser.facility_id || null,
+          }),
+        });
+      } catch (_) {}
+    }
+  });
+
+  fcmPlugin.addListener('fcmPushReceived', (p) => {
+    if (!p || typeof p !== 'object') return;
+    const logId = p.logId ? Number(p.logId) : null;
+    if (logId) {
+      _seenNotifLogIds.add(logId);
+      const prevMax = parseInt(localStorage.getItem('sd_last_seen_notif_id') || '0', 10);
+      if (logId > prevMax) {
+        localStorage.setItem('sd_last_seen_notif_id', String(logId));
+      }
+    }
+    const evType = p.eventType ? String(p.eventType) : '';
+    const tType = getToastTypeForNotificationEvent(evType);
+    showToast(`${p.title || 'Сповіщення'} — ${p.body || ''}`, tType, 7500);
+    if (currentFacilityId && (evType.startsWith('AIR_ALERT') || evType.startsWith('YASNO') || evType.startsWith('GENERATOR'))) {
+      loadFacilityIndicators(currentFacilityId, true);
+      loadGeneratorData();
+    }
+  });
+}
 
 function getToastTypeForNotificationEvent(eventType) {
   switch (eventType) {
@@ -44,6 +102,39 @@ function getToastTypeForNotificationEvent(eventType) {
 }
 
 window.syncPushSubscriptionWithServer = async function(silent = true) {
+  const fcmPlugin = getNativeFcmPlugin();
+  if (fcmPlugin) {
+    bindNativeFcmListeners(fcmPlugin);
+    if (!token || !currentUser || localStorage.getItem(FCM_OPT_OUT_KEY) === '1') {
+      return false;
+    }
+    try {
+      const st = await fcmPlugin.getStatus();
+      if (!st || !st.isFirebaseConfigured || st.permissionState !== 'granted') {
+        return false;
+      }
+      const regRes = await fcmPlugin.register();
+      const fcmToken = regRes && regRes.token ? String(regRes.token).trim() : '';
+      if (!fcmToken) return false;
+      localStorage.setItem(FCM_TOKEN_STORAGE_KEY, fcmToken);
+      await api('/notifications/fcm/subscribe', {
+        method: 'POST',
+        body: JSON.stringify({
+          token: fcmToken,
+          user_agent: navigator.userAgent,
+          facility_id: currentUser.facility_id || null,
+        }),
+      });
+      checkPushSubscriptionStatus();
+      return true;
+    } catch (err) {
+      if (!silent) {
+        showToast('Помилка підписки Android Push: ' + err.message, 'error');
+      }
+      return false;
+    }
+  }
+
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     return false;
   }
@@ -248,6 +339,89 @@ async function checkPushSubscriptionStatus() {
   const btnSub = document.getElementById('btnSubscribePush');
   const btnUnsub = document.getElementById('btnUnsubscribePush');
 
+  const fcmPlugin = getNativeFcmPlugin();
+  if (fcmPlugin) {
+    bindNativeFcmListeners(fcmPlugin);
+    try {
+      const nativeStatus = await fcmPlugin.getStatus();
+      let serverConfigured = false;
+      if (token) {
+        try {
+          const srv = await api('/notifications/fcm/status');
+          serverConfigured = Boolean(srv && srv.configured);
+        } catch (_) {}
+      }
+
+      if (!nativeStatus || !nativeStatus.isFirebaseConfigured || (token && !serverConfigured)) {
+        if (badge) {
+          badge.className = 'badge badge-stopped';
+          badge.innerText = 'ОЧІКУЄ FIREBASE';
+        }
+        if (infoText) {
+          const missingClient = !nativeStatus || !nativeStatus.isFirebaseConfigured;
+          const missingServer = token && !serverConfigured;
+          const details = missingClient && missingServer
+            ? 'У збірці APK відсутній google-services.json, а на сервері — ключ Firebase.'
+            : (missingClient
+              ? 'У цій збірці APK ще не підключено google-services.json.'
+              : 'На сервері ще не додано Firebase Service Account JSON.');
+          infoText.innerHTML = `⚙️ <b>Модуль Android Push (FCM) готовий до роботи.</b> ${details}`;
+        }
+        if (btnSub) {
+          btnSub.style.display = 'inline-block';
+          btnSub.disabled = true;
+        }
+        if (btnUnsub) btnUnsub.style.display = 'none';
+        return;
+      }
+
+      const perm = nativeStatus.permissionState;
+      const savedToken = localStorage.getItem(FCM_TOKEN_STORAGE_KEY);
+      const optedOut = localStorage.getItem(FCM_OPT_OUT_KEY) === '1';
+
+      if (perm === 'granted' && savedToken && !optedOut) {
+        if (badge) {
+          badge.className = 'badge badge-running';
+          badge.innerText = 'АКТИВНО (ANDROID) 📲';
+        }
+        if (infoText) {
+          infoText.innerHTML = '✅ <b>Нативні Android Push-сповіщення увімкнено!</b> Повідомлення надходитимуть у шторку та на екран блокування через Firebase Cloud Messaging, навіть коли додаток закрито.';
+        }
+        if (btnSub) btnSub.style.display = 'none';
+        if (btnUnsub) btnUnsub.style.display = 'inline-block';
+      } else if (perm === 'denied') {
+        if (badge) {
+          badge.className = 'badge badge-faulty';
+          badge.innerText = 'ЗАБЛОКОВАНО';
+        }
+        if (infoText) {
+          infoText.innerHTML = '🚫 <b>Дозвіл на сповіщення вимкнено в налаштуваннях Android.</b> Відкрийте Налаштування → Програми → SD-GEN016 → Сповіщення та увімкніть їх.';
+        }
+        if (btnSub) {
+          btnSub.style.display = 'inline-block';
+          btnSub.disabled = true;
+        }
+        if (btnUnsub) btnUnsub.style.display = 'none';
+      } else {
+        if (badge) {
+          badge.className = 'badge badge-stopped';
+          badge.innerText = 'НЕ ПІДКЛЮЧЕНО';
+        }
+        if (infoText) {
+          infoText.innerHTML = 'ℹ️ Натисніть кнопку нижче, щоб дозволити нативні push-сповіщення Android (тривоги, аварії, запуск/зупинка генератора, ТО та паливо).';
+        }
+        if (btnSub) {
+          btnSub.style.display = 'inline-block';
+          btnSub.disabled = false;
+        }
+        if (btnUnsub) btnUnsub.style.display = 'none';
+      }
+    } catch (err) {
+      console.warn('Error checking native FCM push status:', err);
+    }
+    return;
+  }
+
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     if (badge) {
       badge.className = 'badge badge-faulty';
@@ -309,6 +483,39 @@ async function checkPushSubscriptionStatus() {
 }
 
 window.subscribeDevicePush = async function() {
+  const fcmPlugin = getNativeFcmPlugin();
+  if (fcmPlugin) {
+    try {
+      const regRes = await fcmPlugin.register();
+      if (!regRes || !regRes.granted) {
+        showToast('Дозвіл на сповіщення не надано користувачем', 'warning');
+        checkPushSubscriptionStatus();
+        return;
+      }
+      const fcmToken = regRes.token ? String(regRes.token).trim() : '';
+      if (!fcmToken) {
+        showToast('Не вдалося отримати FCM токен пристрою', 'error');
+        return;
+      }
+      localStorage.setItem(FCM_TOKEN_STORAGE_KEY, fcmToken);
+      localStorage.removeItem(FCM_OPT_OUT_KEY);
+      await api('/notifications/fcm/subscribe', {
+        method: 'POST',
+        body: JSON.stringify({
+          token: fcmToken,
+          user_agent: navigator.userAgent,
+          facility_id: currentUser ? (currentUser.facility_id || null) : null,
+        }),
+      });
+      showToast('Android Push-сповіщення успішно увімкнено!', 'success');
+      checkPushSubscriptionStatus();
+      loadNotificationSettings();
+    } catch (err) {
+      showToast('Помилка підписки Android Push: ' + err.message, 'error');
+    }
+    return;
+  }
+
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     showToast('Web Push не підтримується цим браузером', 'error');
     return;
@@ -334,6 +541,29 @@ window.subscribeDevicePush = async function() {
 };
 
 window.unsubscribeDevicePush = async function() {
+  const fcmPlugin = getNativeFcmPlugin();
+  if (fcmPlugin) {
+    try {
+      const savedToken = localStorage.getItem(FCM_TOKEN_STORAGE_KEY);
+      if (savedToken) {
+        try {
+          await api('/notifications/fcm/unsubscribe', {
+            method: 'POST',
+            body: JSON.stringify({ token: savedToken }),
+          });
+        } catch (_) {}
+      }
+      localStorage.removeItem(FCM_TOKEN_STORAGE_KEY);
+      localStorage.setItem(FCM_OPT_OUT_KEY, '1');
+      showToast('Android Push-сповіщення вимкнено', 'info');
+      checkPushSubscriptionStatus();
+      loadNotificationSettings();
+    } catch (err) {
+      showToast('Помилка відписки: ' + err.message, 'error');
+    }
+    return;
+  }
+
   try {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
@@ -355,6 +585,26 @@ window.unsubscribeDevicePush = async function() {
 };
 
 window.triggerTestPushNotification = async function() {
+  const fcmPlugin = getNativeFcmPlugin();
+  if (fcmPlugin) {
+    try {
+      showToast('Відправка тестового Android Push-сповіщення...', 'info');
+      await window.syncPushSubscriptionWithServer(true);
+      const res = await api('/notifications/test', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: '🔔 Тестове сповіщення Service Desk',
+          body: 'Нативні сповіщення Android (FCM) працюють належним чином!',
+        }),
+      });
+      showToast(`Тестове сповіщення надіслано (доставлено: ${res.sent || 0})`, res.sent ? 'success' : 'warning');
+      loadNotificationLogs();
+    } catch (err) {
+      showToast('Помилка відправки: ' + err.message, 'error');
+    }
+    return;
+  }
+
   try {
     showToast('Відправка тестового сповіщення...', 'info');
     // Ensure device subscription is synced before testing

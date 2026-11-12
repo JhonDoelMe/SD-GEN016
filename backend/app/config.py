@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     ALERTS_CACHE_SECONDS: int = 15
     UKRAINE_ALARM_CACHE_SECONDS: int = 60
 
+    # Firebase Cloud Messaging (HTTP v1 API for native Android Push)
+    FIREBASE_SERVICE_ACCOUNT_PATH: str = "/app/firebase/firebase-service-account.json"
+    FIREBASE_SERVICE_ACCOUNT_JSON: str = ""
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def sanitize_database_url(cls, v: str) -> str:

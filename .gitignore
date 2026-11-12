@@ -76,3 +76,10 @@ ota-server/.env
 ota-server/data/
 ota-server/*.apk
 
+# Firebase Cloud Messaging credentials (NEVER COMMIT)
+google-services.json
+android/app/google-services.json
+firebase-service-account.json
+*firebase-adminsdk*.json
+docker/firebase/*.json
+

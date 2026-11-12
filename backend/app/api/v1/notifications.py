@@ -19,6 +19,8 @@ from backend.app.models.notification import NotificationLog, PushSubscription
 from backend.app.schemas.notification import (
     PushSubscriptionIn,
     PushSubscriptionOut,
+    FcmSubscriptionIn,
+    FcmUnsubscribeIn,
     NotificationSettingsIn,
     NotificationSettingsOut,
     NotificationLogOut,
@@ -32,6 +34,7 @@ from backend.app.services.notification_service import (
     send_push_notification,
     check_and_notify_maintenance_due
 )
+from backend.app.services.fcm_service import is_fcm_configured
 from backend.app.services.settings_service import update_system_settings
 from backend.app.services.audit_service import log_audit
 
@@ -84,6 +87,49 @@ async def unsubscribe_push_notifications(
         endpoint=endpoint,
         user_id=current_user.id,
         is_admin=is_user_admin_or_super(current_user)
+    )
+    return {"success": ok}
+
+
+@router.get("/fcm/status")
+async def get_fcm_status(current_user: User = Depends(get_current_user)):
+    """Check whether Firebase Cloud Messaging server credentials are configured."""
+    return {"configured": is_fcm_configured()}
+
+
+@router.post("/fcm/subscribe", response_model=PushSubscriptionOut)
+async def subscribe_fcm_notifications(
+    fcm_in: FcmSubscriptionIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Register or update native Android FCM device token for the logged in user."""
+    facility_id = verify_facility_access(current_user, fcm_in.facility_id or current_user.facility_id)
+    sub = await subscribe_device(
+        db=db,
+        user_id=current_user.id,
+        endpoint=f"fcm://{fcm_in.token}",
+        p256dh="fcm",
+        auth="android",
+        user_agent=fcm_in.user_agent or "SD-GEN016 Android APK",
+        facility_id=facility_id,
+        is_admin=is_user_admin_or_super(current_user),
+    )
+    return sub
+
+
+@router.post("/fcm/unsubscribe")
+async def unsubscribe_fcm_notifications(
+    fcm_out: FcmUnsubscribeIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Unsubscribe native Android FCM device token."""
+    ok = await unsubscribe_device(
+        db=db,
+        endpoint=f"fcm://{fcm_out.token}",
+        user_id=current_user.id,
+        is_admin=is_user_admin_or_super(current_user),
     )
     return {"success": ok}
 
