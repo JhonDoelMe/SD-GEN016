@@ -38,7 +38,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/frontend/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
-  <link rel="stylesheet" href="/frontend/styles.css?v=5.6.1">
+  <link rel="stylesheet" href="/frontend/styles.css?v=5.6.2">
 </head>
 <body>
 
@@ -406,10 +406,10 @@
         <div class="panel-header">
           <h3>Управління паливом (Склади ГСМ ↔ Баки генераторів)</h3>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button type="button" id="btnFuelReceipt" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalReceipt')">📥 + Прийняти паливо</button>
-            <button type="button" id="btnFuelTransfer" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalTransfer')">⛽ Заправити бак</button>
-            <button type="button" id="btnFuelNewCanisterPool" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openCreateCanisterPoolModal()">🛢️ + Пул каністр</button>
-            <button type="button" id="btnFuelNewStock" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalNewStock')">📦 + Новий склад</button>
+            <button type="button" id="btnFuelReceipt" class="btn-action" onclick="openModal('modalReceipt')">📥 + Прийняти паливо</button>
+            <button type="button" id="btnFuelTransfer" class="btn-action" onclick="openModal('modalTransfer')">⛽ Заправити бак</button>
+            <button type="button" id="btnFuelNewCanisterPool" class="btn-action" onclick="openCreateCanisterPoolModal()">🛢️ + Пул каністр</button>
+            <button type="button" id="btnFuelNewStock" class="btn-action" onclick="openModal('modalNewStock')">📦 + Новий склад</button>
           </div>
         </div>
 
@@ -548,7 +548,7 @@
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
             <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; background: #0284c7;" id="btnRecalculateMaint" onclick="recalculateMaintenanceSchedule()">🔄 Перерахувати за нормативом</button>
             <button type="button" id="btnAdminResetMaint" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #f59e0b; color: #fbbf24; background: rgba(245, 158, 11, 0.1); display: none;" onclick="openAdminResetMaintModal()">⚙️ Скидання лічильника ТО</button>
-            <button type="button" id="btnOpenMaintModal" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalMaintenance')">+ Зафіксувати ТО</button>
+            <button type="button" id="btnOpenMaintModal" class="btn-action" onclick="openModal('modalMaintenance')">+ Зафіксувати ТО</button>
           </div>
         </div>
 
@@ -593,7 +593,7 @@
       <div class="panel">
         <div class="panel-header">
           <h3>Журнал несправностей та дефектів</h3>
-          <button type="button" id="btnOpenFaultModal" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalFault')">+ Повідомити про несправність</button>
+          <button type="button" id="btnOpenFaultModal" class="btn-action" onclick="openModal('modalFault')">+ Повідомити про несправність</button>
         </div>
 
         <div class="table-wrapper">
@@ -666,7 +666,7 @@
           </p>
 
           <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-            <button id="btnSubscribePush" class="btn-primary" style="width: auto; padding: 0.5rem 1.25rem;" onclick="subscribeDevicePush()">
+            <button id="btnSubscribePush" class="btn-primary" onclick="subscribeDevicePush()">
               🔔 Увімкнути сповіщення на цьому пристрої
             </button>
             <button id="btnUnsubscribePush" class="btn-action" style="padding: 0.5rem 1.25rem; border-color: #ef4444; color: #f87171; display: none;" onclick="unsubscribeDevicePush()">
@@ -747,7 +747,7 @@
               </label>
             </div>
 
-            <button type="submit" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem;">
+            <button type="submit" class="btn-primary">
               💾 Зберегти налаштування сповіщень
             </button>
           </form>
@@ -757,7 +757,7 @@
         <div class="panel-header" style="margin-top: 1.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
           <h4 style="margin: 0;">📜 Журнал надісланих сповіщень</h4>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button type="button" class="btn-action" style="padding: 0.35rem 0.75rem; font-size: 0.82rem; min-height: auto;" onclick="loadNotificationLogs()">🔄 Оновити</button>
+            <button type="button" class="btn-action" onclick="loadNotificationLogs()">🔄 Оновити</button>
             <button type="button" id="btnClearNotifLogs" class="btn-action" style="padding: 0.35rem 0.75rem; font-size: 0.82rem; min-height: auto; border-color: #ef4444; color: #f87171; display: none;" onclick="clearNotificationLogs()">🗑️ Очистити історію</button>
           </div>
         </div>
@@ -864,7 +864,7 @@
             <label for="repEndDate" style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem; display: block;">Кінець періоду</label>
             <input type="date" id="repEndDate" onchange="onReportCustomDateChange()">
           </div>
-          <button type="button" id="btnGenerateReport" class="btn-primary" style="width: auto; padding: 0.75rem 1.6rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem;" onclick="loadReport(true)">
+          <button type="button" id="btnGenerateReport" class="btn-primary" onclick="loadReport(true)">
             <span id="btnGenerateReportIcon">🔄</span> <span id="btnGenerateReportText">Сформувати звіт</span>
           </button>
         </div>
@@ -1028,7 +1028,7 @@
               Контрольний замір фактичного споживання методом «від повного до повного» (мінімум 100 л по заправках у бак), без блокування запуску/зупинки генератора, з автоматичним розрахунком тари та PDF-відомістю А4 (доступно лише Суперадміністратору).
             </p>
           </div>
-          <button type="button" class="btn-secondary" style="width: auto; padding: 0.45rem 0.9rem; font-size: 0.82rem;" onclick="loadMeasurementTab()">🔄 Оновити</button>
+          <button type="button" class="btn-secondary" onclick="loadMeasurementTab()">🔄 Оновити</button>
         </div>
         <div id="measurementWorkspace">
           <div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Завантаження стану режиму вимірювання...</div>
@@ -1140,8 +1140,8 @@
                 <select id="sysDefaultFuelStockId"></select>
               </div>
             </div>
-            <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
-              <button type="button" id="btnSaveDefaultChain" class="btn-primary" style="width: auto; padding: 0.55rem 1.25rem; font-size: 0.88rem; background: #9333ea; border-color: #9333ea;" onclick="saveDefaultChainSettings()">
+            <div class="modal-actions">
+              <button type="button" id="btnSaveDefaultChain" class="btn-primary" onclick="saveDefaultChainSettings()">
                 💾 Зберегти ланцюжок за замовчуванням
               </button>
             </div>
@@ -1397,7 +1397,7 @@
         <div class="panel-header">
           <h3>👥 Користувачі системи</h3>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <button type="button" id="btnOpenUserCreateModal" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="openModal('modalUserCreate')">+ Створити користувача</button>
+            <button type="button" id="btnOpenUserCreateModal" class="btn-action" onclick="openModal('modalUserCreate')">+ Створити користувача</button>
           </div>
         </div>
 
@@ -1688,9 +1688,9 @@
           <input type="text" id="recComment" placeholder="Додаткова інформація (необов'язково)">
         </div>
 
-        <div style="display: flex; gap: 0.75rem; margin-top: 0.5rem;">
-          <button type="submit" class="btn-primary" style="flex: 1;">Зберегти надходження</button>
-          <button type="button" class="btn-action" style="min-height: 42px; padding: 0.5rem 1rem;" onclick="closeModal('modalReceipt')">Скасувати</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalReceipt')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зберегти надходження</button>
         </div>
       </form>
     </div>
@@ -1725,7 +1725,10 @@
           <label>Початковий запас (л)</label>
           <input type="number" step="0.1" id="newStockInitialBalance" value="0.0" min="0">
         </div>
-        <button type="submit" class="btn-primary">Створити склад</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalNewStock')">Скасувати</button>
+          <button type="submit" class="btn-primary">Створити склад</button>
+        </div>
       </form>
     </div>
   </div>
@@ -1752,8 +1755,8 @@
             <option value="ГАЗ">Газ (LPG)</option>
           </select>
         </div>
-        <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
-          <button type="submit" class="btn-primary" style="flex: 1;">Зберегти зміни</button>
+        <div class="modal-actions">
+          <button type="submit" class="btn-primary">Зберегти зміни</button>
           <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalEditStock')">Скасувати</button>
         </div>
       </form>
@@ -1808,9 +1811,9 @@
           <input type="number" step="0.1" min="0" id="canPoolReserve" value="0.0" required oninput="updateCanisterPoolFormPreview()">
         </div>
         <div id="canPoolLiveHint" style="margin-bottom: 0.75rem; padding: 0.5rem 0.7rem; border-radius: 0.5rem; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 0.8rem; color: var(--text-primary); line-height: 1.4;"></div>
-        <div style="display: flex; gap: 0.75rem;">
-          <button type="submit" class="btn-primary" style="flex: 1;">Зберегти пул</button>
-          <button type="button" class="btn-action" style="min-height: 42px; padding: 0.5rem 1rem;" onclick="closeModal('modalCanisterPool')">Скасувати</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalCanisterPool')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зберегти пул</button>
         </div>
       </form>
     </div>
@@ -1835,9 +1838,9 @@
           <label>Коментар</label>
           <input type="text" id="canActionComment" placeholder="Необов'язковий коментар">
         </div>
-        <div style="display: flex; gap: 0.75rem;">
-          <button type="submit" id="canActionSubmitBtn" class="btn-primary" style="flex: 1;">Підтвердити</button>
-          <button type="button" class="btn-action" style="min-height: 42px; padding: 0.5rem 1rem;" onclick="closeModal('modalCanisterAction')">Скасувати</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalCanisterAction')">Скасувати</button>
+          <button type="submit" id="canActionSubmitBtn" class="btn-primary">Підтвердити</button>
         </div>
       </form>
     </div>
@@ -1899,8 +1902,8 @@
           <textarea id="manualRunNote" rows="2" placeholder="Запис із журналу під час відсутності зв'язку"></textarea>
         </div>
 
-        <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
-          <button type="submit" class="btn-primary" style="flex: 1; background: #2563eb;">Зберегти сеанс у журнал</button>
+        <div class="modal-actions">
+          <button type="submit" class="btn-primary">Зберегти сеанс у журнал</button>
           <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalManualRun')">Скасувати</button>
         </div>
       </form>
@@ -1935,7 +1938,10 @@
           <label>Коментар</label>
           <textarea id="transComment" rows="2" placeholder="Заправка перед зміною"></textarea>
         </div>
-        <button type="submit" class="btn-primary">Заправити бак</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalTransfer')">Скасувати</button>
+          <button type="submit" class="btn-primary">⛽ Заправити бак</button>
+        </div>
       </form>
     </div>
   </div>
@@ -1959,7 +1965,7 @@
           <input type="text" id="adminResetGenName" readonly style="background: var(--bg-secondary); color: var(--text-muted); cursor: not-allowed;">
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+        <div class="grid-2">
           <div class="form-group" style="margin-bottom: 0;">
             <label>Поточні мотогодини</label>
             <input type="text" id="adminResetCurrentHours" readonly style="background: var(--bg-secondary); color: var(--text-muted); font-weight: 600;">
@@ -2028,7 +2034,10 @@
           <label>Вартість матеріалів та робіт (грн)</label>
           <input type="number" step="0.01" id="maintCost" value="0.0" placeholder="0.00">
         </div>
-        <button type="submit" class="btn-primary">Зафіксувати ТО</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalMaintenance')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зафіксувати ТО</button>
+        </div>
       </form>
     </div>
   </div>
@@ -2058,7 +2067,10 @@
           <label>Детальний опис</label>
           <textarea id="faultDesc" required rows="3" placeholder="Опишіть характер несправності, звуки, прояви"></textarea>
         </div>
-        <button type="submit" class="btn-primary" style="background: var(--accent-red);">Надіслати заявку</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalFault')">Скасувати</button>
+          <button type="submit" class="btn-danger">Надіслати заявку</button>
+        </div>
       </form>
     </div>
   </div>
@@ -2080,8 +2092,8 @@
           <label>Примітки щодо усунення несправності *</label>
           <textarea id="resolveFaultNotes" required rows="3" placeholder="напр. Замінено паливний шланг та фільтр, виконано перевірку герметичності"></textarea>
         </div>
-        <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
-          <button type="submit" class="btn-primary" style="flex: 1; background: #22c55e;">Позначити як усунену</button>
+        <div class="modal-actions">
+          <button type="submit" class="btn-primary">Позначити як усунену</button>
           <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalResolveFault')">Скасувати</button>
         </div>
       </form>
@@ -2113,7 +2125,7 @@
           <button type="button" class="btn-action" style="flex: 1; padding: 0.4rem 0.5rem; font-size: 0.8rem; min-height: auto;" onclick="setAuditExportPeriod('month')">30 днів</button>
           <button type="button" class="btn-action" style="flex: 1; padding: 0.4rem 0.5rem; font-size: 0.8rem; min-height: auto;" onclick="setAuditExportPeriod('all')">Весь час</button>
         </div>
-        <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <div class="modal-actions">
           <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalExportAudit')">Скасувати</button>
           <button type="submit" id="btnSubmitAuditExport" class="btn-primary" style="min-height: auto; padding: 0.75rem 1.5rem; background: #0284c7;">📥 Завантажити .xlsx</button>
         </div>
@@ -2172,7 +2184,10 @@
           <label>Причина коригування (ОБОВ'ЯЗКОВО)</label>
           <textarea id="adjReason" required rows="2" placeholder="напр. Акт інвентаризації / звірки №42"></textarea>
         </div>
-        <button type="submit" class="btn-primary" style="background: var(--accent-purple);">Застосувати та зареєструвати в аудиті</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalAdjustment')">Скасувати</button>
+          <button type="submit" class="btn-primary" style="background: var(--accent-purple);">Застосувати та зареєструвати в аудиті</button>
+        </div>
       </form>
     </div>
   </div>
@@ -2217,7 +2232,10 @@
             <option value="">(Усі об'єкти / Не обмежено)</option>
           </select>
         </div>
-        <button type="submit" class="btn-primary">Створити акаунт</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalUserCreate')">Скасувати</button>
+          <button type="submit" class="btn-primary">Створити акаунт</button>
+        </div>
       </form>
     </div>
   </div>
@@ -2267,9 +2285,9 @@
           <label>Новий пароль (залиште порожнім, якщо пароль не змінюється)</label>
           <input type="password" id="editUserPassword" minlength="8" maxlength="128" placeholder="•••••••• (без змін)">
         </div>
-        <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
-          <button type="submit" class="btn-primary" style="flex: 1;">Зберегти зміни</button>
-          <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalUserEdit')">Скасувати</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalUserEdit')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зберегти зміни</button>
         </div>
       </form>
     </div>
@@ -2295,9 +2313,9 @@
           <label>Підтвердження нового пароля *</label>
           <input type="password" id="resetConfirmPassword" required minlength="8" maxlength="128" autocomplete="new-password" placeholder="Повторіть новий пароль">
         </div>
-        <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
-          <button type="submit" class="btn-primary" style="flex: 1;">Оновити пароль</button>
-          <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalUserResetPassword')">Скасувати</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalUserResetPassword')">Скасувати</button>
+          <button type="submit" class="btn-primary">Оновити пароль</button>
         </div>
       </form>
     </div>
@@ -2317,9 +2335,9 @@
         </div>
       </div>
       <input type="hidden" id="deleteUserId">
-      <div style="display: flex; gap: 0.75rem;">
+      <div class="modal-actions">
         <button type="button" id="confirmDeleteUserBtn" class="btn-primary" style="background: #dc2626; flex: 1;">Видалити користувача</button>
-        <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalUserDelete')">Скасувати</button>
+        <button type="button" class="btn-action" onclick="closeModal('modalUserDelete')">Скасувати</button>
       </div>
     </div>
   </div>
@@ -2393,7 +2411,10 @@
             </div>
           </div>
         </div>
-        <button type="submit" class="btn-primary" style="margin-top: 0.5rem;">Зберегти об'єкт</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalCreateFacility')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зберегти об'єкт</button>
+        </div>
       </form>
     </div>
   </div>
@@ -2460,7 +2481,10 @@
             <input type="number" step="1" id="newGenMaintInterval" required value="300">
           </div>
         </div>
-        <button type="submit" class="btn-primary" style="margin-top: 1rem;">Створити генератор</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalCreateGenerator')">Скасувати</button>
+          <button type="submit" class="btn-primary">Створити генератор</button>
+        </div>
       </form>
     </div>
   </div>
@@ -2480,8 +2504,8 @@
           ⚠️ Увага: Усі пов'язані робочі цикли, історія заправок, ТО та несправності цього генератора будуть видалені! Цю дію неможливо скасувати.
         </p>
       </div>
-      <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
-        <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalDeleteGenerator')">Скасувати</button>
+      <div class="modal-actions">
+        <button type="button" class="btn-action" onclick="closeModal('modalDeleteGenerator')">Скасувати</button>
         <button type="button" class="btn-primary" id="confirmDeleteGenBtn" style="background: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentGenerator()">Підтвердити видалення</button>
       </div>
     </div>
@@ -2515,8 +2539,8 @@
           </label>
         </div>
       </div>
-      <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
-        <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalDeleteFacility')">Скасувати</button>
+      <div class="modal-actions">
+        <button type="button" class="btn-action" onclick="closeModal('modalDeleteFacility')">Скасувати</button>
         <button type="button" class="btn-primary" id="confirmDeleteFacilityBtn" style="background: #dc2626; border-color: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentFacility()">Підтвердити видалення</button>
       </div>
     </div>
@@ -2609,9 +2633,9 @@
             </div>
           </div>
         </div>
-        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
-          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalQuickEditFacility')">Скасувати</button>
-          <button type="submit" class="btn-primary" style="min-height: auto; width: auto; padding: 0.65rem 1.25rem;">Зберегти зміни</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalQuickEditFacility')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зберегти зміни</button>
         </div>
       </form>
     </div>
@@ -2664,9 +2688,9 @@
             <input type="number" step="0.01" id="quickEditGenConsumption" required placeholder="напр. 2.10">
           </div>
         </div>
-        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
-          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalQuickEditGenerator')">Скасувати</button>
-          <button type="submit" class="btn-primary" style="min-height: auto; width: auto; padding: 0.65rem 1.25rem;">Зберегти налаштування</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalQuickEditGenerator')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зберегти налаштування</button>
         </div>
       </form>
     </div>
@@ -2689,8 +2713,8 @@
         <p>The above copyright notice, author attribution, and this permission notice shall be included in all copies or substantial portions of the Software, along with a link to the original repository: <a href="https://github.com/JhonDoelMe/SD-GEN016" target="_blank" rel="noopener noreferrer" style="color: #38bdf8;">https://github.com/JhonDoelMe/SD-GEN016</a></p>
         <p>THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.</p>
       </div>
-      <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
-        <button type="button" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem;" onclick="closeModal('modalLicense')">Закрити</button>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" onclick="closeModal('modalLicense')">Закрити</button>
       </div>
     </div>
   </div>
@@ -2737,8 +2761,8 @@
           Офіційний репозиторій: <a href="https://github.com/JhonDoelMe/SD-GEN016" target="_blank" rel="noopener noreferrer" style="color: #38bdf8;">github.com/JhonDoelMe/SD-GEN016</a> | Повна документація: <code>docs/PRIVACY_POLICY.md</code> | E-mail: maxiuallc@gmail.com
         </p>
       </div>
-      <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
-        <button type="button" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem;" onclick="closeModal('modalPrivacyPolicy')">Зрозуміло</button>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" onclick="closeModal('modalPrivacyPolicy')">Зрозуміло</button>
       </div>
     </div>
   </div>
@@ -2783,8 +2807,8 @@
           © 2026 MAXI-UA LLC. Усі права захищені. Документ: <code>docs/TERMS_OF_SERVICE.md</code> | E-mail: maxiuallc@gmail.com
         </p>
       </div>
-      <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
-        <button type="button" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem;" onclick="closeModal('modalTermsOfService')">Погоджуюсь</button>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" onclick="closeModal('modalTermsOfService')">Погоджуюсь</button>
       </div>
     </div>
   </div>
@@ -2845,8 +2869,8 @@
           Повна документація: <code>docs/OPERATIONAL_SAFETY_POLICY.md</code> | MAXI-UA LLC, 2026
         </p>
       </div>
-      <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
-        <button type="button" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem;" onclick="closeModal('modalOperationalSafety')">Ознайомлений</button>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" onclick="closeModal('modalOperationalSafety')">Ознайомлений</button>
       </div>
     </div>
   </div>
@@ -2884,8 +2908,8 @@
           Документація: <code>docs/DATA_GOVERNANCE_AND_AUDIT.md</code> та <code>docs/SLA_AND_SUPPORT.md</code> | MAXI-UA LLC, 2026
         </p>
       </div>
-      <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
-        <button type="button" class="btn-primary" style="width: auto; padding: 0.6rem 1.5rem;" onclick="closeModal('modalDataGovernance')">Зрозуміло</button>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" onclick="closeModal('modalDataGovernance')">Зрозуміло</button>
       </div>
     </div>
   </div>
@@ -2927,7 +2951,10 @@
           <input type="text" id="resetConfirmCode" required placeholder="ОЧИСТИТИ" autocomplete="off">
         </div>
 
-        <button type="submit" class="btn-primary" style="background: #dc2626;">Підтвердити та виконати очищення</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalSystemReset')">Скасувати</button>
+          <button type="submit" class="btn-danger">Підтвердити та виконати очищення</button>
+        </div>
       </form>
     </div>
   </div>
@@ -2973,9 +3000,9 @@
           <input type="text" id="backupNote" maxlength="255" placeholder="напр. Перед оновленням сервера або плановим ТО">
         </div>
 
-        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
-          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalCreateBackup')">Скасувати</button>
-          <button type="submit" id="btnSubmitCreateBackup" class="btn-primary" style="min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalCreateBackup')">Скасувати</button>
+          <button type="submit" id="btnSubmitCreateBackup" class="btn-primary">
             🚀 Запустити створення
           </button>
         </div>
@@ -3005,7 +3032,7 @@
           </label>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+        <div class="grid-2">
           <div class="form-group" style="margin-bottom: 0;">
             <label>Час запуску (Europe/Kyiv) *</label>
             <input type="time" id="cfgBackupScheduleTime" required value="03:00">
@@ -3019,7 +3046,7 @@
           </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+        <div class="grid-2">
           <div class="form-group" style="margin-bottom: 0;">
             <label>Тип автобекапу *</label>
             <select id="cfgBackupDefaultType" required>
@@ -3033,9 +3060,9 @@
           </div>
         </div>
 
-        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
-          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalBackupSettings')">Скасувати</button>
-          <button type="submit" id="btnSubmitSaveBackupSettings" class="btn-primary" style="min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalBackupSettings')">Скасувати</button>
+          <button type="submit" id="btnSubmitSaveBackupSettings" class="btn-primary">
             💾 Зберегти налаштування
           </button>
         </div>
@@ -3084,8 +3111,8 @@
 
         <input type="hidden" id="restoreFilenameHidden">
 
-        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
-          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalConfirmRestore')">Скасувати</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalConfirmRestore')">Скасувати</button>
           <button type="submit" id="btnSubmitRestore" class="btn-primary" style="background: linear-gradient(135deg, #ea580c, #c2410c); border-color: #f97316; min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
             🔄 Підтвердити та відновити
           </button>
@@ -3134,8 +3161,8 @@
           <input type="text" id="uploadRestoreConfirmWordInput" required placeholder="ВІДНОВИТИ" autocomplete="off" style="border-color: rgba(52, 211, 153, 0.5); font-weight: 600; text-transform: uppercase;">
         </div>
 
-        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
-          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalUploadRestore')">Скасувати</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalUploadRestore')">Скасувати</button>
           <button type="submit" id="btnSubmitUploadRestore" class="btn-primary" style="background: linear-gradient(135deg, #059669, #047857); border-color: #10b981; min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
             🚀 Завантажити та відновити
           </button>
@@ -3161,8 +3188,8 @@
         </p>
       </div>
       <input type="hidden" id="deleteBackupFilenameHidden">
-      <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
-        <button type="button" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto;" onclick="closeModal('modalDeleteBackup')">Скасувати</button>
+      <div class="modal-actions">
+        <button type="button" class="btn-action" onclick="closeModal('modalDeleteBackup')">Скасувати</button>
         <button type="button" class="btn-primary" id="confirmDeleteBackupBtn" style="background: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentBackup()">Підтвердити видалення</button>
       </div>
     </div>
@@ -3186,9 +3213,9 @@
           <input type="text" id="forgotLoginOrEmail" required placeholder="admin або myname@company.com" autocomplete="username">
         </div>
         <div id="forgotPasswordFeedback" class="feedback-box"></div>
-        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
-          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalForgotPassword')">Скасувати</button>
-          <button type="submit" id="btnSubmitForgotPassword" class="btn-primary" style="width: auto; padding: 0.65rem 1.4rem; min-height: auto;">
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalForgotPassword')">Скасувати</button>
+          <button type="submit" id="btnSubmitForgotPassword" class="btn-primary">
             ✉️ Надіслати посилання
           </button>
         </div>
@@ -3222,9 +3249,9 @@
           <input type="password" id="resetPasswordConfirm" required minlength="8" placeholder="Повторіть новий пароль" autocomplete="new-password">
         </div>
         <div id="resetPasswordFeedback" class="feedback-box"></div>
-        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
-          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalResetPassword')">Скасувати</button>
-          <button type="submit" id="btnSubmitResetPassword" class="btn-primary" style="width: auto; padding: 0.65rem 1.4rem; min-height: auto;">
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalResetPassword')">Скасувати</button>
+          <button type="submit" id="btnSubmitResetPassword" class="btn-primary">
             💾 Зберегти новий пароль
           </button>
         </div>
@@ -3293,9 +3320,9 @@
         <!-- Блок детальних результатів діагностики -->
         <div id="smtpTestResultCard" style="display: none;"></div>
 
-        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
-          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalSmtpTest')">Закрити</button>
-          <button type="button" id="btnRunSmtpTest" class="btn-primary" style="width: auto; padding: 0.65rem 1.4rem; min-height: auto;" onclick="executeSmtpModalTest()">
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalSmtpTest')">Закрити</button>
+          <button type="button" id="btnRunSmtpTest" class="btn-primary" onclick="executeSmtpModalTest()">
             🚀 Надіслати тестовий лист
           </button>
         </div>
@@ -3318,7 +3345,7 @@
           Система згенерує актуальну книгу Microsoft Excel (.xlsx) із 5 аркушами (сесії генератора, витрата палива, напрацювання ТО, стан складу та коригування) і надішле її у вкладенні на вказані адреси.
         </p>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+        <div class="grid-2">
           <div class="form-group" style="margin-bottom: 0;">
             <label style="font-weight: 600; font-size: 0.88rem;">🏢 Об'єкт звіту:</label>
             <select id="weeklyReportFacilitySelect" class="form-input" onchange="onWeeklyReportModalFacilityChange()"></select>
@@ -3341,8 +3368,8 @@
 
         <div id="weeklyReportResultBox" style="display: none;"></div>
 
-        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
-          <button type="button" class="btn-action" style="min-height: auto;" onclick="closeModal('modalSendWeeklyReport')">Закрити</button>
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalSendWeeklyReport')">Закрити</button>
           <button type="button" id="btnSubmitWeeklyReport" class="btn-primary" style="background: #a855f7; border-color: #a855f7; width: auto; padding: 0.65rem 1.4rem; min-height: auto;" onclick="executeSendWeeklyReport()">
             ✉️ Надіслати звіт зараз
           </button>
@@ -3539,9 +3566,9 @@
         <button type="button" class="close-btn" onclick="closeModal('modalMeasurementStatus')">&times;</button>
       </div>
       <div id="measurementStatusModalBody"></div>
-      <div style="display:flex; gap:0.6rem; justify-content:flex-end; margin-top:1rem; flex-wrap:wrap;">
+      <div class="modal-actions">
         <button type="button" id="btnModalMeasGoAdmin" class="btn-oq-chip btn-oq-chip-info" style="display:none;" onclick="closeModal('modalMeasurementStatus'); switchTab('tab-measurement')">⚙️ Керувати вимірюванням</button>
-        <button type="button" class="btn-secondary" style="width:auto; padding:0.5rem 1rem;" onclick="closeModal('modalMeasurementStatus')">Закрити</button>
+        <button type="button" class="btn-secondary" onclick="closeModal('modalMeasurementStatus')">Закрити</button>
       </div>
     </div>
   </div>
@@ -3589,20 +3616,20 @@
     <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Application Logic -->
-  <script src="/frontend/js/core.js?v=5.6.1"></script>
-  <script src="/frontend/js/offline-queue.js?v=5.6.1"></script>
-  <script src="/frontend/js/theme-format.js?v=5.6.1"></script>
-  <script src="/frontend/js/auth-nav.js?v=5.6.1"></script>
-  <script src="/frontend/js/dashboard.js?v=5.6.1"></script>
-  <script src="/frontend/js/fuel.js?v=5.6.1"></script>
-  <script src="/frontend/js/operations.js?v=5.6.1"></script>
-  <script src="/frontend/js/audit-reports.js?v=5.6.1"></script>
-  <script src="/frontend/js/measurement.js?v=5.6.1"></script>
-  <script src="/frontend/js/admin.js?v=5.6.1"></script>
-  <script src="/frontend/js/backups.js?v=5.6.1"></script>
-  <script src="/frontend/js/notifications.js?v=5.6.1"></script>
-  <script src="/frontend/js/yasno.js?v=5.6.1"></script>
-  <script src="/frontend/js/weather-alerts.js?v=5.6.1"></script>
+  <script src="/frontend/js/core.js?v=5.6.2"></script>
+  <script src="/frontend/js/offline-queue.js?v=5.6.2"></script>
+  <script src="/frontend/js/theme-format.js?v=5.6.2"></script>
+  <script src="/frontend/js/auth-nav.js?v=5.6.2"></script>
+  <script src="/frontend/js/dashboard.js?v=5.6.2"></script>
+  <script src="/frontend/js/fuel.js?v=5.6.2"></script>
+  <script src="/frontend/js/operations.js?v=5.6.2"></script>
+  <script src="/frontend/js/audit-reports.js?v=5.6.2"></script>
+  <script src="/frontend/js/measurement.js?v=5.6.2"></script>
+  <script src="/frontend/js/admin.js?v=5.6.2"></script>
+  <script src="/frontend/js/backups.js?v=5.6.2"></script>
+  <script src="/frontend/js/notifications.js?v=5.6.2"></script>
+  <script src="/frontend/js/yasno.js?v=5.6.2"></script>
+  <script src="/frontend/js/weather-alerts.js?v=5.6.2"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>
