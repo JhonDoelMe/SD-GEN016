@@ -86,6 +86,22 @@
 // ==========================================
 // 🌐 Dynamic API Base URL & Native Android Routing
 // ==========================================
+window.getDefaultNativeServerUrl = function() {
+  const metaDomain = document.querySelector('meta[name="app-primary-domain"]')?.getAttribute('content');
+  const primaryDomain = (metaDomain || window.__APP_PRIMARY_DOMAIN__ || 'sdgen.pp.ua').toLowerCase().trim();
+  return `https://${primaryDomain}`;
+};
+
+// One-time cleanup if a previous build stored an unreachable raw IP default
+(function migrateLegacyDefaultHost() {
+  try {
+    const saved = localStorage.getItem('sd_server_host');
+    if (saved && /^https?:\/\/91\.219\.63\.40(:8000)?$/i.test(saved.trim())) {
+      localStorage.removeItem('sd_server_host');
+    }
+  } catch (_) {}
+})();
+
 window.getApiBaseUrl = function() {
   const customHost = localStorage.getItem('sd_server_host');
   if (customHost && customHost.trim()) {
@@ -93,7 +109,7 @@ window.getApiBaseUrl = function() {
   }
   // When running inside Capacitor / native Android APK or file:// protocol
   if (window.Capacitor || window.location.protocol === 'capacitor:' || window.location.protocol === 'file:') {
-    return 'http://91.219.63.40:8000';
+    return window.getDefaultNativeServerUrl();
   }
   return '';
 };
@@ -105,7 +121,7 @@ window.getApiBaseUrl = function() {
     let url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
     const baseUrl = typeof window.getApiBaseUrl === 'function' ? window.getApiBaseUrl() : '';
     if (baseUrl && typeof url === 'string') {
-      if (url.startsWith('/api/') || url === '/health' || url.startsWith('/health/') || url.startsWith('/static/')) {
+      if (url.startsWith('/api/') || url === '/health' || url.startsWith('/health/') || url.startsWith('/static/') || url.startsWith('/uploads/')) {
         url = baseUrl + url;
         if (input instanceof Request) {
           input = new Request(url, init || input);
@@ -122,8 +138,9 @@ window.getApiBaseUrl = function() {
 window.openServerSettingsModal = function() {
   const modal = document.getElementById('modalServerSettings');
   if (!modal) return;
-  const currentHost = localStorage.getItem('sd_server_host') || 
-    (window.Capacitor || window.location.protocol === 'capacitor:' ? 'http://91.219.63.40:8000' : window.location.origin);
+  const isNative = !!(window.Capacitor || window.location.protocol === 'capacitor:' || window.location.protocol === 'file:');
+  const currentHost = localStorage.getItem('sd_server_host') ||
+    (isNative ? window.getDefaultNativeServerUrl() : window.location.origin);
   const input = document.getElementById('inputServerHost');
   if (input) input.value = currentHost;
   const statusEl = document.getElementById('serverConnectionStatus');
@@ -150,7 +167,7 @@ window.saveServerSettings = async function() {
     return;
   }
   if (!val.startsWith('http://') && !val.startsWith('https://')) {
-    val = 'http://' + val;
+    val = 'https://' + val;
   }
   if (statusEl) {
     statusEl.style.display = 'block';
@@ -158,7 +175,7 @@ window.saveServerSettings = async function() {
     statusEl.className = 'server-status-box status-pending';
   }
   try {
-    const res = await fetch(`${val}/health`, { method: 'GET' });
+    const res = await fetch(`${val}/api/health`, { method: 'GET' });
     if (res.ok) {
       localStorage.setItem('sd_server_host', val);
       if (statusEl) {
@@ -179,20 +196,21 @@ window.saveServerSettings = async function() {
   }
   localStorage.setItem('sd_server_host', val);
   if (statusEl) {
-    statusEl.textContent = '⚠️ Адресу збережено. (Прямий пінг недоступний або потрібна авторизація)';
+    statusEl.textContent = '⚠️ Адресу збережено. (Сервер не відповів на /api/health — перевірте інтернет або адресу)';
     statusEl.className = 'server-status-box status-warning';
   }
   updateServerHostLabel();
   setTimeout(() => {
     closeModal('modalServerSettings');
-  }, 1200);
+  }, 1500);
 };
 
 window.resetServerSettings = function() {
   localStorage.removeItem('sd_server_host');
   const input = document.getElementById('inputServerHost');
+  const isNative = !!(window.Capacitor || window.location.protocol === 'capacitor:' || window.location.protocol === 'file:');
   if (input) {
-    input.value = (window.Capacitor || window.location.protocol === 'capacitor:') ? 'http://91.219.63.40:8000' : window.location.origin;
+    input.value = isNative ? window.getDefaultNativeServerUrl() : window.location.origin;
   }
   const statusEl = document.getElementById('serverConnectionStatus');
   if (statusEl) {
@@ -536,7 +554,9 @@ async function api(endpoint, options = {}) {
     }
     idempotencyKey = parsedBody.idempotency_key || headers['Idempotency-Key'] || window.OfflineQueue.createIdempotencyKey();
     parsedBody.idempotency_key = idempotencyKey;
-    headers['Idempotency-Key'] = idempotencyKey;
+    if (!window.getApiBaseUrl || !window.getApiBaseUrl()) {
+      headers['Idempotency-Key'] = idempotencyKey;
+    }
     fetchOpts.body = JSON.stringify(parsedBody);
 
     if (!navigator.onLine) {

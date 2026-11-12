@@ -95,8 +95,8 @@
           Входячи до системи, ви погоджуєтесь з <a href="javascript:void(0)" onclick="openModal('modalTermsOfService')" style="color: #38bdf8; text-decoration: underline;">Умовами використання</a> та <a href="javascript:void(0)" onclick="openModal('modalPrivacyPolicy')" style="color: #38bdf8; text-decoration: underline;">Політикою конфіденційності</a>
         </div>
         <div style="margin-top: 0.85rem; text-align: center;">
-          <button type="button" class="btn-server-settings" onclick="openServerSettingsModal()" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); color: var(--text-muted); padding: 6px 14px; border-radius: 20px; font-size: 0.82rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;" title="Змінити IP або адресу сервера для мобільного додатку">
-            <span>🌐</span> <span id="authServerLabel">Сервер: 91.219.63.40:8000</span>
+          <button type="button" class="btn-server-settings" onclick="openServerSettingsModal()" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); color: var(--text-muted); padding: 6px 14px; border-radius: 20px; font-size: 0.82rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;" title="Змінити адресу сервера для мобільного додатку">
+            <span>🌐</span> <span id="authServerLabel">Сервер: sdgen.pp.ua</span>
           </button>
         </div>
       </form>
@@ -3634,10 +3634,10 @@
           Вкажіть адресу сервера (IP:порт або домен) для автономного підключення мобільного додатка або віддаленої роботи.
         </p>
         <div class="form-group">
-          <label for="inputServerHost" style="font-weight: 600; margin-bottom: 0.4rem; display: block;">Адреса сервера (URL / IP:порт):</label>
-          <input type="text" id="inputServerHost" placeholder="http://91.219.63.40:8000" style="width: 100%; font-family: monospace; font-size: 0.95rem;">
+          <label for="inputServerHost" style="font-weight: 600; margin-bottom: 0.4rem; display: block;">Адреса сервера (URL або IP:порт):</label>
+          <input type="text" id="inputServerHost" placeholder="https://sdgen.pp.ua" style="width: 100%; font-family: monospace; font-size: 0.95rem;">
           <small style="color: var(--text-muted); display: block; margin-top: 0.35rem;">
-            За замовчуванням: <code>http://91.219.63.40:8000</code> або локальний IP <code>http://192.168.x.x:8000</code>
+            За замовчуванням: <code>https://sdgen.pp.ua</code> або локальний IP <code>http://192.168.x.x:8000</code>
           </small>
         </div>
         <div id="serverConnectionStatus" class="server-status-box" style="display: none; margin-top: 1rem; padding: 0.75rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.4;"></div>

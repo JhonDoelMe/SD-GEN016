@@ -542,8 +542,10 @@
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${authToken}`,
-      'Idempotency-Key': item.idempotency_key,
     };
+    if (!window.getApiBaseUrl || !window.getApiBaseUrl()) {
+      headers['Idempotency-Key'] = item.idempotency_key;
+    }
 
     try {
       const res = await fetch(`/api/v1${item.endpoint}`, {
