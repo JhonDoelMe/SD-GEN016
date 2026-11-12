@@ -1629,12 +1629,12 @@ input[type="checkbox"], input[type="radio"] {
 
 .btn-primary {
   width: 100%;
-  height: var(--h-control);
   min-height: var(--h-control);
+  height: auto;
   background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
   color: white;
   border: none;
-  padding: 0 1.25rem;
+  padding: 0.55rem 1rem;
   border-radius: var(--radius-md);
   font-size: var(--font-control);
   font-weight: 700;
@@ -1643,9 +1643,11 @@ input[type="checkbox"], input[type="radio"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  text-align: center;
+  line-height: 1.25;
   gap: 0.5rem;
   box-sizing: border-box;
-  white-space: nowrap;
+  white-space: normal;
   transition: filter 0.2s, transform 0.1s;
   box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
 }
