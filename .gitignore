@@ -48,3 +48,10 @@ docker/ssl-fallback/*.key
 # OS
 .DS_Store
 Thumbs.db
+
+# Local deployment scripts & private credentials (NEVER COMMIT)
+scripts/local_*
+*.local.ps1
+*.local.sh
+deploy_local.*
+
