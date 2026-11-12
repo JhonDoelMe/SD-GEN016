@@ -4635,3 +4635,40 @@ button[disabled] {
   cursor: pointer;
   accent-color: var(--accent-cyan);
 }
+
+/* ==========================================
+   🌐 Server Connection Modal & Status Styling
+   ========================================== */
+.btn-server-settings:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--accent-cyan) !important;
+}
+
+.server-status-box {
+  transition: all 0.2s ease;
+}
+
+.server-status-box.status-pending {
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+}
+
+.server-status-box.status-success {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+}
+
+.server-status-box.status-warning {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.server-status-box.status-info {
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #cbd5e1;
+}

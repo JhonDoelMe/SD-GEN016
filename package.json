@@ -1,0 +1,30 @@
+{
+  "name": "sd-gen016",
+  "version": "1.0.0",
+  "description": "<p align=\"center\">\r   <img src=\"frontend/icons/logo.png\" alt=\"SD-GEN016 Official Logo\" width=\"160\">\r </p>",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "sync:android": "npx cap copy android && node scripts/sync-android-assets.js",
+    "build:android": "npx cap copy android && node scripts/sync-android-assets.js && cd android && gradlew assembleDebug"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JhonDoelMe/SD-GEN016.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/JhonDoelMe/SD-GEN016/issues"
+  },
+  "homepage": "https://github.com/JhonDoelMe/SD-GEN016#readme",
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/cli": "^8.6.2",
+    "@capacitor/core": "^8.6.2"
+  }
+}

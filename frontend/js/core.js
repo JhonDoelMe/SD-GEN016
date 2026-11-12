@@ -17,6 +17,14 @@
     '127.0.0.1'
   ];
   const currentHost = (window.location.hostname || '').toLowerCase();
+  const protocol = window.location.protocol;
+  const isDirectIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(currentHost);
+  const isNativeApp = !!(window.Capacitor || protocol === 'capacitor:' || protocol === 'file:');
+
+  // Allow native mobile app, local host, and direct IP connections without rogue warning
+  if (isNativeApp || isDirectIp || currentHost === 'localhost' || currentHost === '127.0.0.1') {
+    return;
+  }
 
   // If accessed via unauthorized domain mirror / rogue clone
   if (
@@ -74,6 +82,156 @@
     throw new Error('Script execution halted: Unauthorized domain mirror detected.');
   }
 })();
+
+// ==========================================
+// 🌐 Dynamic API Base URL & Native Android Routing
+// ==========================================
+window.getDefaultNativeServerUrl = function() {
+  const metaDomain = document.querySelector('meta[name="app-primary-domain"]')?.getAttribute('content');
+  const primaryDomain = (metaDomain || window.__APP_PRIMARY_DOMAIN__ || 'sdgen.pp.ua').toLowerCase().trim();
+  return `https://${primaryDomain}`;
+};
+
+// One-time cleanup if a previous build stored an unreachable raw IP default
+(function migrateLegacyDefaultHost() {
+  try {
+    const saved = localStorage.getItem('sd_server_host');
+    if (saved && /^https?:\/\/91\.219\.63\.40(:8000)?$/i.test(saved.trim())) {
+      localStorage.removeItem('sd_server_host');
+    }
+  } catch (_) {}
+})();
+
+window.getApiBaseUrl = function() {
+  const customHost = localStorage.getItem('sd_server_host');
+  if (customHost && customHost.trim()) {
+    return customHost.trim().replace(/\/+$/, '');
+  }
+  // When running inside Capacitor / native Android APK or file:// protocol
+  if (window.Capacitor || window.location.protocol === 'capacitor:' || window.location.protocol === 'file:') {
+    return window.getDefaultNativeServerUrl();
+  }
+  return '';
+};
+
+// Global transparent request routing for mobile APK & remote endpoints
+(function setupApiRouting() {
+  const originalFetch = window.fetch;
+  window.fetch = function(input, init) {
+    let url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
+    const baseUrl = typeof window.getApiBaseUrl === 'function' ? window.getApiBaseUrl() : '';
+    if (baseUrl && typeof url === 'string') {
+      if (url.startsWith('/api/') || url === '/health' || url.startsWith('/health/') || url.startsWith('/static/') || url.startsWith('/uploads/')) {
+        url = baseUrl + url;
+        if (input instanceof Request) {
+          input = new Request(url, init || input);
+        } else {
+          input = url;
+        }
+      }
+    }
+    return originalFetch.call(this, input, init);
+  };
+})();
+
+// Helper functions for Server Connection Settings
+window.openServerSettingsModal = function() {
+  const modal = document.getElementById('modalServerSettings');
+  if (!modal) return;
+  const isNative = !!(window.Capacitor || window.location.protocol === 'capacitor:' || window.location.protocol === 'file:');
+  const currentHost = localStorage.getItem('sd_server_host') ||
+    (isNative ? window.getDefaultNativeServerUrl() : window.location.origin);
+  const input = document.getElementById('inputServerHost');
+  if (input) input.value = currentHost;
+  const statusEl = document.getElementById('serverConnectionStatus');
+  if (statusEl) {
+    statusEl.textContent = '';
+    statusEl.className = 'server-status-box';
+    statusEl.style.display = 'none';
+  }
+  modal.style.display = 'flex';
+};
+
+window.saveServerSettings = async function() {
+  const input = document.getElementById('inputServerHost');
+  const statusEl = document.getElementById('serverConnectionStatus');
+  if (!input) return;
+  let val = input.value.trim().replace(/\/+$/, '');
+  if (!val) {
+    localStorage.removeItem('sd_server_host');
+    if (typeof showNotification === 'function') {
+      showNotification('Налаштування сервера скинуто', 'info');
+    }
+    closeModal('modalServerSettings');
+    updateServerHostLabel();
+    return;
+  }
+  if (!val.startsWith('http://') && !val.startsWith('https://')) {
+    val = 'https://' + val;
+  }
+  if (statusEl) {
+    statusEl.style.display = 'block';
+    statusEl.textContent = '⏳ Перевірка з\'єднання з сервером...';
+    statusEl.className = 'server-status-box status-pending';
+  }
+  try {
+    const res = await fetch(`${val}/api/health`, { method: 'GET' });
+    if (res.ok) {
+      localStorage.setItem('sd_server_host', val);
+      if (statusEl) {
+        statusEl.textContent = '✅ З\'єднання успішне! Сервер активний.';
+        statusEl.className = 'server-status-box status-success';
+      }
+      updateServerHostLabel();
+      setTimeout(() => {
+        closeModal('modalServerSettings');
+        if (typeof showNotification === 'function') {
+          showNotification(`Сервер оновлено: ${val}`, 'success');
+        }
+      }, 800);
+      return;
+    }
+  } catch (err) {
+    console.warn('Direct health check ping failed:', err);
+  }
+  localStorage.setItem('sd_server_host', val);
+  if (statusEl) {
+    statusEl.textContent = '⚠️ Адресу збережено. (Сервер не відповів на /api/health — перевірте інтернет або адресу)';
+    statusEl.className = 'server-status-box status-warning';
+  }
+  updateServerHostLabel();
+  setTimeout(() => {
+    closeModal('modalServerSettings');
+  }, 1500);
+};
+
+window.resetServerSettings = function() {
+  localStorage.removeItem('sd_server_host');
+  const input = document.getElementById('inputServerHost');
+  const isNative = !!(window.Capacitor || window.location.protocol === 'capacitor:' || window.location.protocol === 'file:');
+  if (input) {
+    input.value = isNative ? window.getDefaultNativeServerUrl() : window.location.origin;
+  }
+  const statusEl = document.getElementById('serverConnectionStatus');
+  if (statusEl) {
+    statusEl.style.display = 'block';
+    statusEl.textContent = '🔄 Скинуто до стандартного сервера';
+    statusEl.className = 'server-status-box status-info';
+  }
+  updateServerHostLabel();
+};
+
+window.updateServerHostLabel = function() {
+  const lbl = document.getElementById('authServerLabel');
+  if (lbl) {
+    const base = window.getApiBaseUrl ? window.getApiBaseUrl() : '';
+    lbl.textContent = base ? `Сервер: ${base.replace(/^https?:\/\//, '')}` : 'Сервер: цей хост';
+  }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  window.updateServerHostLabel();
+});
 
 // Service Desk Бензинового Генератора - Frontend Application Logic
 
@@ -396,7 +554,9 @@ async function api(endpoint, options = {}) {
     }
     idempotencyKey = parsedBody.idempotency_key || headers['Idempotency-Key'] || window.OfflineQueue.createIdempotencyKey();
     parsedBody.idempotency_key = idempotencyKey;
-    headers['Idempotency-Key'] = idempotencyKey;
+    if (!window.getApiBaseUrl || !window.getApiBaseUrl()) {
+      headers['Idempotency-Key'] = idempotencyKey;
+    }
     fetchOpts.body = JSON.stringify(parsedBody);
 
     if (!navigator.onLine) {
