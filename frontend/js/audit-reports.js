@@ -399,7 +399,18 @@ function formatAuditDetailsUa(detailsRaw, action) {
     count: 'Кількість', filename: 'Файл', retry_after_sec: 'Блокування (с)', user_login: 'Логін користувача',
     login: 'Логін', full_name: "Ім'я", roles: 'Ролі', canister_volume_l: "Об'єм каністри (л)",
     total_count: 'Всього каністр', driver_name: 'Водій', receipt_number: 'Номер чека',
-    price_per_liter: 'Ціна за літр', provider: 'Мережа АЗК', old: 'Було', new: 'Стало'
+    price_per_liter: 'Ціна за літр', provider: 'Мережа АЗК', old: 'Було', new: 'Стало',
+    model: 'Модель', serial_number: 'Серійний номер',
+    deleted_stock_name: 'Видалений склад', transferred_balance_l: 'Перенесено залишок (л)',
+    target_stock_name: 'Цільовий склад', archived: 'Архівовано',
+    initial_hours: 'Початкові мотогодини', tank_capacity_l: 'Місткість бака (л)',
+    avatar_path: 'Файл аватара', empty_after: 'Порожніх після дії', away_after: 'На АЗС після дії',
+    full_after: 'Повних після дії', reserve_after_l: 'Резерв після дії (л)',
+    start_operating_hours: 'Початкові мотогодини', start_tank_level_l: 'Початковий рівень у баку (л)',
+    old_nominal_consumption_l_per_h: 'Попередня норма витрати (л/год)',
+    new_nominal_consumption_l_per_h: 'Нова норма витрати (л/год)',
+    calculated_consumption_l_per_h: 'Фактична витрата (л/год)',
+    duration_hours: 'Тривалість (год)', fuel_used_l: 'Використано палива (л)'
   };
   const valTrans = {
     STOPPED: 'Зупинено', RUNNING: 'В роботі', MAINTENANCE: 'На обслуговуванні',
@@ -417,7 +428,7 @@ function formatAuditDetailsUa(detailsRaw, action) {
 
   const parts = [];
   for (const [k, v] of Object.entries(details)) {
-    if (['facility_id', 'generator_id', 'run_id', 'stock_id', 'user_id', 'receipt_id'].includes(k)) continue;
+    if (['facility_id', 'generator_id', 'run_id', 'stock_id', 'target_stock_id', 'pool_id', 'measurement_id', 'user_id', 'receipt_id'].includes(k)) continue;
     if (v === null || v === undefined || v === '') continue;
     const kUa = keyTrans[k] || k;
     let vUa = v;
