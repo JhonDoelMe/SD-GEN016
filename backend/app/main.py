@@ -301,7 +301,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Service Desk Генератора (SD-GEN016)",
     description="Система оперативного обліку фактичної експлуатації бензинового генератора",
-    version="5.7.2",
+    version="5.7.3",
     lifespan=lifespan
 )
 

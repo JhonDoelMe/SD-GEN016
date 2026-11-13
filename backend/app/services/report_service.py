@@ -233,13 +233,22 @@ AUDIT_ACTION_UA = {
     # Fuel
     "FUEL_RECEIPT": "Оприбуткування палива на склад",
     "FUEL_RECEIPT_ADDED": "Оприбуткування палива на склад",
+    "FUEL_RECEIPT_UPDATED": "Оновлення оприбуткування палива",
+    "FUEL_RECEIPT_DELETED": "Видалення оприбуткування палива",
     "FUEL_TRANSFER_TO_TANK": "Заправка бака зі складу",
     "FUEL_TRANSFERRED": "Заправка бака зі складу",
     "FUEL_STOCK_CREATED": "Створення складу ГСМ",
     "FUEL_STOCK_UPDATED": "Оновлення складу ГСМ",
     "FUEL_STOCK_DELETED": "Видалення складу ГСМ",
     "FUEL_STOCK_ARCHIVED": "Архівація складу ГСМ",
-    "FUEL_PRICES_REFRESHED": "Оновлення цін АЗК WOG",
+    "FUEL_PRICES_REFRESHED": "Оновлення цін палива (АЗК)",
+    "CANISTER_POOL_CREATED": "Створення пулу каністр",
+    "CANISTER_POOL_UPDATED": "Оновлення пулу каністр",
+    "CANISTER_POOL_DELETED": "Видалення пулу каністр",
+    "CANISTER_DISPATCHED": "Відправка каністр на заправку",
+    "CANISTER_RECEIVED": "Прийом заправлених каністр",
+    "CANISTER_RETURNED_EMPTY": "Повернення порожніх каністр без заправки",
+    "POOL_ADJUSTMENT": "Системне коригування каністр",
 
     # Maintenance
     "MAINTENANCE_RECORDED": "Запис ТО",
@@ -266,10 +275,17 @@ AUDIT_ACTION_UA = {
     "USER_CREATED": "Створення користувача",
     "USER_UPDATED": "Редагування користувача",
     "USER_DELETED": "Видалення користувача",
+    "USER_DEACTIVATED": "Деактивація користувача",
+    "USER_TOGGLE_ACTIVE": "Зміна активності користувача",
     "USER_PASSWORD_RESET": "Скидання пароля користувача",
     "USER_CHANGED_OWN_PASSWORD": "Зміна власного пароля",
     "USER_PASSWORD_RESET_REQUESTED": "Запит на відновлення пароля",
     "USER_PASSWORD_RESET_COMPLETED": "Завершення відновлення пароля",
+    "PROFILE_UPDATED": "Оновлення профілю користувача",
+    "AVATAR_UPDATED": "Оновлення аватара профілю",
+    "AVATAR_DELETED": "Видалення аватара профілю",
+    "USER_AVATAR_UPDATED": "Оновлення аватара користувача",
+    "USER_AVATAR_DELETED": "Видалення аватара користувача",
 
     # System, Backups & Adjustments
     "SYSTEM_ADJUSTMENT": "Системне коригування лічильників",
@@ -282,11 +298,18 @@ AUDIT_ACTION_UA = {
     "SYSTEM_REPORTS_CLEAN": "Очищення звітів",
     "SYSTEM_FACTORY_RESET": "Повне заводське скидання",
     "SYSTEM_RESET": "Очищення / скидання даних",
+    "BACKUP_CREATE": "Створення резервної копії БД",
     "BACKUP_CREATED": "Створення резервної копії БД",
+    "BACKUP_RESTORE": "Відновлення БД з резервної копії",
     "BACKUP_RESTORED": "Відновлення БД з резервної копії",
+    "BACKUP_DELETE": "Видалення резервної копії БД",
     "BACKUP_DELETED": "Видалення резервної копії БД",
     "BACKUP_DOWNLOAD": "Завантаження файлу резервної копії",
     "BACKUP_SETTINGS_UPDATE": "Оновлення розкладу резервного копіювання",
+    "SMTP_TEST_SENT": "Тестове відправлення SMTP",
+    "WEEKLY_DIGEST_EMAIL_SENT": "Відправлення щотижневого звіту (Email)",
+    "EMAIL_UNSUBSCRIBED": "Відмова від email-сповіщень",
+    "EMAIL_RESUBSCRIBED": "Поновлення email-сповіщень",
     "WEEKLY_DIGEST_AUTO_SENT": "Автоматичне відправлення щотижневого звіту",
 
     # Facility
@@ -311,11 +334,24 @@ AUDIT_ENTITY_UA = {
     "FuelMeasurement": "Контрольний замір",
     "FuelReceipt": "Оприбуткування",
     "FuelTransfer": "Заправка",
+    "FuelTransaction": "Заправка",
+    "GeneratorRun": "Робота генератора",
     "MaintenanceRecord": "Запис ТО",
     "MaintenanceSchedule": "Графік ТО",
     "Fault": "Несправність",
+    "FaultReport": "Несправність",
     "User": "Користувач",
     "SystemSetting": "Системні налаштування",
+    "SystemSettings": "Системні налаштування",
+    "system_settings": "Системні налаштування",
+    "SystemAdjustment": "Коригування",
+    "System": "Система",
+    "backup": "Резервна копія",
+    "Backup": "Резервна копія",
+    "NotificationLog": "Сповіщення",
+    "Report": "Звіт",
+    "Auth": "Авторизація",
+    "Profile": "Профіль",
 }
 
 
@@ -444,14 +480,43 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
             "fuel_price_a95": "Ціна А-95",
             "fuel_price_dp": "Ціна ДП",
             "fuel_price_a92": "Ціна А-92",
+            "auto_fetch_fuel_prices": "Автооновлення цін палива",
             "fuel_default_provider": "Мережа за замовчуванням",
+            "max_continuous_run_hours": "Макс. безперервна робота (год)",
+            "auto_stop_on_schedule_end": "Автостоп наприкінці зміни",
+            "notify_running_heartbeat": "Нагадування про активну роботу",
+            "heartbeat_interval_hours": "Інтервал нагадування (год)",
             "email_weekly_report_enabled": "Щотижневий email-звіт",
             "email_weekly_recipients": "Отримувачі email-звіту",
-            "email_notify_safety_stop": "Сповіщення про автостоп",
+            "email_weekly_send_day": "День відправлення email-звіту",
+            "email_weekly_send_time": "Час відправлення email-звіту",
+            "email_weekly_facility_id": "Об'єкт для email-звіту (ID)",
+            "email_weekly_generator_id": "Генератор для email-звіту (ID)",
+            "email_notify_password_change": "Email-сповіщення про зміну пароля",
+            "email_notify_safety_stop": "Email-сповіщення про автостоп",
+            "email_notify_empty_tank": "Email-сповіщення про порожній бак (0 л)",
+            "email_notify_low_fuel": "Email-сповіщення про низький рівень палива",
+            "email_notify_outside_schedule": "Email-сповіщення про роботу поза графіком",
+            "email_notify_critical_fault": "Email-сповіщення про критичну несправність",
+            "email_notify_maintenance_due": "Email-сповіщення про наближення ТО",
+            "notify_outside_schedule": "Сповіщення про роботу поза графіком",
+            "email_notifications_enabled": "Email-сповіщення",
+            "smtp_enabled": "SMTP увімкнено",
+            "smtp_primary_host": "Основний SMTP-сервер",
+            "smtp_primary_port": "Порт основного SMTP",
+            "smtp_primary_user": "Користувач основного SMTP",
+            "smtp_primary_ssl": "SSL основного SMTP",
+            "smtp_primary_from": "Відправник основного SMTP",
             "smtp_fallback_enabled": "Резервний SMTP",
-            "smtp_fallback_host": "Сервер SMTP",
-            "smtp_fallback_port": "Порт SMTP",
-            "smtp_fallback_user": "Користувач SMTP",
+            "smtp_fallback_host": "Резервний SMTP-сервер",
+            "smtp_fallback_port": "Порт резервного SMTP",
+            "smtp_fallback_user": "Користувач резервного SMTP",
+            "smtp_fallback_ssl": "SSL резервного SMTP",
+            "smtp_fallback_from": "Відправник резервного SMTP",
+            "default_facility_id": "Об'єкт за замовчуванням (ID)",
+            "default_generator_id": "Генератор за замовчуванням (ID)",
+            "default_fuel_stock_id": "Склад ГСМ за замовчуванням (ID)",
+            "apply_to_all_generators": "Застосувати до всіх генераторів",
             "login_max_attempts": "Ліміт спроб входу",
             "login_lockout_seconds": "Час блокування (с)",
             "fuel_receipt_max_liters_warning": "Поріг літрів чека",
@@ -460,7 +525,7 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
         }
         update_parts = []
         for k, v in details["updates"].items():
-            if "password" in k.lower() or "secret" in k.lower() or "token" in k.lower() or v == "***REDACTED***":
+            if "password" in k.lower() or "secret" in k.lower() or "token" in k.lower() or v in ("***REDACTED***", "[REDACTED]"):
                 continue
             k_name = setting_labels.get(k, k)
             if isinstance(v, bool):
@@ -533,24 +598,99 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
         m_type = "Регламентне ТО" if details.get("type") == "SCHEDULED" else "Проміжне ТО"
         return f"{m_type} | Роботи: {details.get('work', '')} | Вартість: {details.get('cost', 0)} грн"
 
+    # 9.6 Тест SMTP / Email-звіт
+    if action in ("SMTP_TEST_SENT", "WEEKLY_DIGEST_EMAIL_SENT", "EMAIL_UNSUBSCRIBED", "EMAIL_RESUBSCRIBED") or isinstance(details.get("result"), dict):
+        smtp_provider_map = {"primary": "Основний SMTP", "fallback": "Резервний SMTP", "failover": "Автоперемикання SMTP"}
+        status_map = {"ok": "Успішно", "error": "Помилка", "skipped": "Пропущено"}
+        e_parts = []
+        if details.get("recipient"):
+            e_parts.append(f"Отримувач: {details['recipient']}")
+        if isinstance(details.get("recipients"), list) and details["recipients"]:
+            e_parts.append(f"Отримувачі: {', '.join(str(r) for r in details['recipients'])}")
+        if details.get("email"):
+            e_parts.append(f"Ел. пошта: {details['email']}")
+        if "enabled" in details:
+            e_parts.append(f"Підписка: {'Увімкнено' if details['enabled'] else 'Вимкнено'}")
+        if details.get("provider"):
+            e_parts.append(f"Режим: {smtp_provider_map.get(str(details['provider']).lower(), details['provider'])}")
+        res_obj = details.get("result")
+        if isinstance(res_obj, dict):
+            if res_obj.get("status"):
+                e_parts.append(f"Статус: {status_map.get(str(res_obj['status']).lower(), res_obj['status'])}")
+            if res_obj.get("host"):
+                port_s = f":{res_obj['port']}" if res_obj.get("port") else ""
+                e_parts.append(f"Сервер: {res_obj['host']}{port_s}")
+            if res_obj.get("message"):
+                e_parts.append(str(res_obj["message"]))
+            if res_obj.get("warning"):
+                e_parts.append(f"Попередження: {res_obj['warning']}")
+            if res_obj.get("duration_ms") is not None:
+                e_parts.append(f"Час: {res_obj['duration_ms']} мс")
+        if e_parts:
+            return " | ".join(e_parts)
+
     # 10. Загальний переклад словника
+    role_map = {"superadmin": "Суперадміністратор", "admin": "Адміністратор", "operator": "Оператор", "viewer": "Спостерігач"}
     key_translations = {
         "title": "Назва",
         "description": "Опис",
         "priority": "Пріоритет",
         "status": "Статус",
         "operating_hours": "Мотогодини",
+        "old_status": "Попередній статус",
+        "new_status": "Новий статус",
+        "resolution_notes": "Примітка щодо усунення",
         "generator_status_after": "Статус генератора",
+        "status_after": "Статус генератора",
         "liters": "Літри",
         "cost": "Вартість",
         "cost_total": "Загальна сума",
-        "price_per_l": "Ціна за літр",
+        "price_per_l": "Ціна за літр (грн)",
+        "price_source": "Джерело ціни",
+        "fuel_provider": "Мережа АЗК",
         "source": "Джерело",
         "updated_at": "Оновлено",
+        "source_wog": "Джерело WOG",
+        "updated_at_wog": "Оновлено WOG",
+        "source_okko": "Джерело OKKO",
+        "updated_at_okko": "Оновлено OKKO",
+        "wog_dp": "WOG ДП (грн/л)",
+        "okko_dp": "OKKO ДП (грн/л)",
+        "wog_a95": "WOG А-95 (грн/л)",
+        "okko_a95": "OKKO А-95 (грн/л)",
+        "wog_a92": "WOG А-92 (грн/л)",
+        "okko_a92": "OKKO А-92 (грн/л)",
+        "provider": "Мережа АЗК",
         "name": "Назва",
-        "tank_capacity_l": "Місткість бака",
+        "full_name": "Ім'я",
+        "login": "Логін",
+        "email": "Ел. пошта",
+        "is_active": "Активний",
+        "enabled": "Увімкнено",
+        "roles": "Ролі",
+        "recipients": "Отримувачі",
+        "recipient": "Отримувач",
+        "period": "Період",
+        "date": "Дата",
+        "avatar_path": "Файл аватара",
+        "canister_volume_l": "Об'єм каністри (л)",
+        "total_count": "Всього каністр (шт.)",
+        "full_count": "Повні каністри (шт.)",
+        "empty_count": "Порожні каністри (шт.)",
+        "away_refill_count": "На АЗС (шт.)",
+        "reserve_liters": "Резерв каністр (л)",
+        "empty_after": "Порожніх після дії",
+        "away_after": "На АЗС після дії",
+        "full_after": "Повних після дії",
+        "reserve_after_l": "Резерв після дії (л)",
+        "count": "Кількість",
+        "comment": "Коментар",
+        "tank_capacity_l": "Місткість бака (л)",
+        "tank_capacity": "Місткість бака (л)",
         "initial_hours": "Початкові мотогодини",
-        "initial_balance_l": "Початковий залишок",
+        "initial_fuel_level": "Початковий рівень палива (л)",
+        "initial_balance_l": "Початковий залишок (л)",
+        "maint_interval": "Інтервал ТО (год)",
         "facility_timezone": "Часовий пояс",
         "work_schedule_start": "Початок зміни",
         "work_schedule_end": "Кінець зміни",
@@ -562,39 +702,144 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
         "old_value": "Старе значення",
         "new_value": "Нове значення",
         "reason": "Причина",
+        "model": "Модель",
+        "serial_number": "Серійний номер",
+        "deleted_stock_name": "Видалений склад",
+        "transferred_balance_l": "Перенесено залишок (л)",
+        "target_stock_name": "Цільовий склад",
+        "target_facility_name": "Цільовий об'єкт",
+        "target_name": "Цільовий об'єкт",
+        "archived": "Архівовано",
+        "start_operating_hours": "Початкові мотогодини",
+        "start_tank_level_l": "Початковий рівень у баку (л)",
+        "old_nominal_consumption_l_per_h": "Попередня норма витрати (л/год)",
+        "new_nominal_consumption_l_per_h": "Нова норма витрати (л/год)",
+        "calculated_consumption_l_per_h": "Фактична витрата (л/год)",
+        "start_hours": "Початкові мотогодини",
+        "end_hours": "Кінцеві мотогодини",
+        "start_time": "Час запуску",
+        "end_time": "Час зупинки",
+        "duration_hours": "Тривалість (год)",
+        "fuel_used_l": "Використано палива (л)",
+        "actual_balance_l": "Фактичний залишок (л)",
+        "expected_balance_l": "Очікуваний залишок (л)",
+        "difference_l": "Розбіжність (л)",
+        "added_liters": "Додано (л)",
+        "tank_level_after_l": "Рівень у баку після (л)",
+        "context": "Контекст",
+        "force_start_reason": "Причина примусового запуску",
+        "forced_with_maintenance": "Запуск при простроченому ТО",
+        "generator_tank_fact_l": "Факт у баку генератора (л)",
+        "stocks_fact_total_l": "Факт на складах (л)",
+        "total_fuel_consumed_l": "Всього витрачено палива (л)",
+        "total_hours_elapsed": "Напрацьовано (год)",
+        "start_balance_l": "Початковий залишок (л)",
+        "commission_count": "Членів комісії",
+        "commission_members": "Склад комісії",
+        "statement_number": "Номер відомості",
+        "measured_liters_before_cancel": "Заміряно до скасування (л)",
+        "receipts_count": "Приходів палива (шт.)",
+        "transfers_count": "Заправок (шт.)",
+        "history_preserved": "Історію збережено",
+        "mode": "Режим",
+        "generators_reset": "Скинуто генераторів",
+        "deleted_count": "Видалено записів",
+        "faults": "Несправностей",
+        "runs": "Запусків",
+        "transfers": "Заправок",
+        "maintenance_records": "Записів ТО",
+        "schedule": "Графік ТО",
+        "reports_clean": "Очищення звітів",
+        "settings_reset": "Скидання налаштувань",
+        "updated_settings": "Оновлено параметрів",
+        "filename": "Файл",
+        "safety_backup_file": "Захисний бекап (файл)",
+        "restore_files": "Відновлення файлів",
+        "media_files_restored": "Відновлено медіафайлів",
+        "records_restored": "Відновлено записів БД",
+        "tables_count": "Таблиць у бекапі",
+        "detail": "Деталі",
+        "error": "Помилка",
+        "success": "Успіх",
+        "https": "HTTPS",
     }
     val_translations = {
         "STOPPED": "Зупинено",
         "RUNNING": "В роботі",
         "MAINTENANCE": "На обслуговуванні",
+        "MAINTENANCE_REQUIRED": "Потрібне ТО",
         "FAULT": "Несправність",
+        "FAULTY": "Несправний",
+        "BLOCKED": "Заблоковано",
+        "ARCHIVED": "В архіві",
         "LOW": "Низький",
         "MEDIUM": "Середній",
         "HIGH": "Високий",
         "CRITICAL": "Критичний",
+        "NEW": "Нова",
+        "ACCEPTED": "Прийнято",
         "OPEN": "Відкрито",
+        "IN_PROGRESS": "В роботі",
+        "PENDING": "В очікуванні",
         "RESOLVED": "Усунено",
         "CLOSED": "Закрито",
         "SCHEDULED": "Регламентне ТО",
         "INTERMEDIATE": "Проміжне ТО",
+        "WOG": "WOG",
+        "OKKO": "OKKO",
+        "ALL": "Усі",
+        "INTERNET": "Інтернет",
+        "MANUAL": "Вручну",
+        "PRIMARY": "Основний",
+        "FALLBACK": "Резервний",
+        "FAILOVER": "Автоперемикання",
+        "OK": "Успішно",
+        "ERROR": "Помилка",
+        "OPERATIONAL": "Операційні дані",
+        "FULL": "Повне очищення",
+        "SOFT": "М'яке очищення",
+        "TRUE": "Так",
+        "FALSE": "Ні",
     }
+    reason_phrases = {
+        "Too many failed login attempts": "Забагато невдалих спроб входу",
+        "Invalid login or password": "Невірний логін або пароль",
+        "User is inactive/blocked": "Обліковий запис деактивовано / заблоковано",
+        "[REDACTED]": "[Приховано]",
+    }
+
+    skip_ids = {
+        "facility_id", "generator_id", "run_id", "stock_id", "target_stock_id",
+        "pool_id", "measurement_id", "user_id", "receipt_id", "related_receipt_id",
+        "old_facility_id", "new_facility_id", "safety_backup_id",
+    }
+
+    def _fmt_scalar(sv: Any) -> str:
+        if isinstance(sv, bool):
+            return "Так" if sv else "Ні"
+        if isinstance(sv, str):
+            s = reason_phrases.get(sv) or val_translations.get(sv.upper(), sv)
+            if len(s) == 19 and s[4] == '-' and s[7] == '-' and s[10] == ' ':
+                try:
+                    dt_p = datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+                    s = dt_p.strftime("%d.%m.%Y, %H:%M:%S")
+                except Exception:
+                    pass
+            return s
+        return str(sv)
 
     parts = []
     for k, v in details.items():
-        if k in ("facility_id", "generator_id", "run_id", "stock_id", "user_id", "receipt_id"):
+        if k in skip_ids or v is None or v == "":
             continue
         k_ua = key_translations.get(k, k)
-        if isinstance(v, str):
-            v_ua = val_translations.get(v.upper(), v)
-            if len(v_ua) == 19 and v_ua[4] == '-' and v_ua[7] == '-' and v_ua[10] == ' ':
-                try:
-                    dt_p = datetime.datetime.strptime(v_ua, "%Y-%m-%d %H:%M:%S")
-                    v_ua = dt_p.strftime("%d.%m.%Y, %H:%M:%S")
-                except Exception:
-                    pass
+        if isinstance(v, (str, bool)):
+            v_ua = _fmt_scalar(v)
+        elif isinstance(v, list):
+            v_ua = ", ".join(role_map.get(str(item), _fmt_scalar(item)) for item in v) if v else "-"
         elif isinstance(v, dict):
-            sub_parts = [f"{key_translations.get(sk, sk)}: {val_translations.get(str(sv).upper(), sv)}" for sk, sv in v.items()]
-            v_ua = "{" + ", ".join(sub_parts) + "}"
+            sub_parts = [f"{key_translations.get(sk, sk)}: {_fmt_scalar(sv)}" for sk, sv in v.items() if sv is not None and sv != ""]
+            v_ua = ", ".join(sub_parts) if sub_parts else "-"
         else:
             v_ua = str(v)
         parts.append(f"{k_ua}: {v_ua}")
@@ -1975,6 +2220,11 @@ ADJUSTMENT_FIELD_UA = {
     "status": "Статус генератора",
     "nominal_consumption_l_per_h": "Нормативний розхід (л/год)",
     "current_balance_l": "Залишок на складі (л)",
+    "stock_balance_l": "Залишок на складі (л)",
+    "full_count": "Повні каністри (шт.)",
+    "empty_count": "Порожні каністри (шт.)",
+    "away_refill_count": "Каністри на АЗС (шт.)",
+    "reserve_liters": "Резервна ємність (л)",
     "interval_hours": "Інтервал ТО (год)",
     "next_due_hours": "Наступне ТО (мотогодини)",
     "last_performed_hours": "Останнє ТО (мотогодини)",

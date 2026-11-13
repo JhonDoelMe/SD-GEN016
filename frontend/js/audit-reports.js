@@ -52,7 +52,7 @@ const AUDIT_ACTION_MAP_UA = {
   'FUEL_STOCK_CREATED': 'Створення складу ГСМ',
   'FUEL_STOCK_UPDATED': 'Оновлення складу ГСМ',
   'FUEL_STOCK_DELETED': 'Видалення складу ГСМ',
-  'FUEL_PRICES_REFRESHED': 'Оновлення цін АЗК WOG',
+  'FUEL_PRICES_REFRESHED': 'Оновлення цін палива (АЗК)',
   'CANISTER_POOL_CREATED': 'Створення пулу каністр',
   'CANISTER_POOL_UPDATED': 'Оновлення пулу каністр',
   'CANISTER_POOL_DELETED': 'Видалення пулу каністр',
@@ -238,7 +238,12 @@ function formatAuditDetailsUa(detailsRaw, action) {
   if (details.login && (details.roles || action === 'USER_CREATED' || action === 'USER_DELETED' || action === 'USER_UPDATED')) {
     const roleMap = { superadmin: 'Суперадміністратор', admin: 'Адміністратор', operator: 'Оператор', viewer: 'Спостерігач' };
     const rolesUa = Array.isArray(details.roles) ? details.roles.map(r => roleMap[r] || r).join(', ') : '';
-    return `Користувач: ${details.login}${rolesUa ? ` (Роль: ${rolesUa})` : ''}`;
+    const extra = [];
+    if (details.full_name) extra.push(details.full_name);
+    if (details.email) extra.push(details.email);
+    if (details.is_active === false) extra.push('деактивовано');
+    const extraStr = extra.length ? `, ${extra.join(', ')}` : '';
+    return `Користувач: ${details.login}${extraStr}${rolesUa ? ` (Роль: ${rolesUa})` : ''}`;
   }
 
   // 6.1 Зміни параметрів генератора або об'єкта (Diff changes)
@@ -290,9 +295,19 @@ function formatAuditDetailsUa(detailsRaw, action) {
       fuel_price_a95: 'Ціна А-95',
       fuel_price_dp: 'Ціна ДП',
       fuel_price_a92: 'Ціна А-92',
+      auto_fetch_fuel_prices: 'Автооновлення цін палива',
       fuel_default_provider: 'Мережа за замовчуванням',
+      max_continuous_run_hours: 'Макс. безперервна робота (год)',
+      auto_stop_on_schedule_end: 'Автостоп наприкінці зміни',
+      notify_running_heartbeat: 'Нагадування про активну роботу',
+      heartbeat_interval_hours: 'Інтервал нагадування (год)',
       email_weekly_report_enabled: 'Щотижневий email-звіт',
       email_weekly_recipients: 'Отримувачі email-звіту',
+      email_weekly_send_day: 'День відправлення email-звіту',
+      email_weekly_send_time: 'Час відправлення email-звіту',
+      email_weekly_facility_id: "Об'єкт для email-звіту (ID)",
+      email_weekly_generator_id: 'Генератор для email-звіту (ID)',
+      email_notify_password_change: 'Email-сповіщення про зміну пароля',
       email_notify_safety_stop: 'Email-сповіщення про автостоп',
       email_notify_empty_tank: 'Email-сповіщення про порожній бак (0 л)',
       email_notify_low_fuel: 'Email-сповіщення про низький рівень палива',
@@ -301,19 +316,31 @@ function formatAuditDetailsUa(detailsRaw, action) {
       email_notify_maintenance_due: 'Email-сповіщення про наближення ТО',
       notify_outside_schedule: 'Сповіщення про роботу поза графіком',
       email_notifications_enabled: 'Email-сповіщення',
+      smtp_enabled: 'SMTP увімкнено',
+      smtp_primary_host: 'Основний SMTP-сервер',
+      smtp_primary_port: 'Порт основного SMTP',
+      smtp_primary_user: 'Користувач основного SMTP',
+      smtp_primary_ssl: 'SSL основного SMTP',
+      smtp_primary_from: 'Відправник основного SMTP',
       smtp_fallback_enabled: 'Резервний SMTP',
-      smtp_fallback_host: 'Сервер SMTP',
-      smtp_fallback_port: 'Порт SMTP',
-      smtp_fallback_user: 'Користувач SMTP',
+      smtp_fallback_host: 'Резервний SMTP-сервер',
+      smtp_fallback_port: 'Порт резервного SMTP',
+      smtp_fallback_user: 'Користувач резервного SMTP',
+      smtp_fallback_ssl: 'SSL резервного SMTP',
+      smtp_fallback_from: 'Відправник резервного SMTP',
+      default_facility_id: "Об'єкт за замовчуванням (ID)",
+      default_generator_id: 'Генератор за замовчуванням (ID)',
+      default_fuel_stock_id: 'Склад ГСМ за замовчуванням (ID)',
+      apply_to_all_generators: 'Застосувати до всіх генераторів',
       login_max_attempts: 'Ліміт спроб входу',
       login_lockout_seconds: 'Час блокування (с)',
-      fuel_receipt_max_liters_warning: "Поріг літрів чека",
+      fuel_receipt_max_liters_warning: 'Поріг літрів чека',
       fuel_receipt_min_price: 'Мін. ціна палива',
       fuel_receipt_max_price: 'Макс. ціна палива'
     };
     const uParts = [];
     for (const [k, v] of Object.entries(details.updates)) {
-      if (k.toLowerCase().includes('password') || k.toLowerCase().includes('secret') || k.toLowerCase().includes('token') || v === '***REDACTED***') continue;
+      if (k.toLowerCase().includes('password') || k.toLowerCase().includes('secret') || k.toLowerCase().includes('token') || v === '***REDACTED***' || v === '[REDACTED]') continue;
       const kUa = settingMap[k] || k;
       let vStr = v;
       if (typeof v === 'boolean') vStr = v ? 'увімкнено' : 'вимкнено';
@@ -393,9 +420,33 @@ function formatAuditDetailsUa(detailsRaw, action) {
     if (parts.length > 0) return parts.join(' | ');
   }
 
+  // 9.6 Тест SMTP / Email-звіт (nested result)
+  if ((action === 'SMTP_TEST_SENT' || action === 'WEEKLY_DIGEST_EMAIL_SENT' || action === 'EMAIL_UNSUBSCRIBED' || action === 'EMAIL_RESUBSCRIBED') || (details.result && typeof details.result === 'object')) {
+    const smtpProviderMap = { primary: 'Основний SMTP', fallback: 'Резервний SMTP', failover: 'Автоперемикання SMTP' };
+    const statusMap = { ok: 'Успішно', error: 'Помилка', skipped: 'Пропущено' };
+    const eParts = [];
+    if (details.recipient) eParts.push(`Отримувач: ${details.recipient}`);
+    if (Array.isArray(details.recipients) && details.recipients.length > 0) eParts.push(`Отримувачі: ${details.recipients.join(', ')}`);
+    if (details.email) eParts.push(`Ел. пошта: ${details.email}`);
+    if (details.enabled !== undefined) eParts.push(`Підписка: ${details.enabled ? 'Увімкнено' : 'Вимкнено'}`);
+    if (details.provider) eParts.push(`Режим: ${smtpProviderMap[String(details.provider).toLowerCase()] || details.provider}`);
+    const resObj = details.result && typeof details.result === 'object' ? details.result : null;
+    if (resObj) {
+      if (resObj.status) eParts.push(`Статус: ${statusMap[String(resObj.status).toLowerCase()] || resObj.status}`);
+      if (resObj.host) eParts.push(`Сервер: ${resObj.host}${resObj.port ? `:${resObj.port}` : ''}`);
+      if (resObj.message) eParts.push(String(resObj.message));
+      if (resObj.warning) eParts.push(`Попередження: ${resObj.warning}`);
+      if (resObj.duration_ms !== undefined) eParts.push(`Час: ${resObj.duration_ms} мс`);
+    }
+    if (eParts.length > 0) return eParts.join(' | ');
+  }
+
   // 10. Загальний переклад
+  const roleMap = { superadmin: 'Суперадміністратор', admin: 'Адміністратор', operator: 'Оператор', viewer: 'Спостерігач' };
   const keyTrans = {
     title: 'Назва', description: 'Опис', priority: 'Пріоритет', status: 'Статус', operating_hours: 'Мотогодини',
+    old_status: 'Попередній статус', new_status: 'Новий статус', resolution_notes: 'Примітка щодо усунення',
+    generator_status_after: 'Статус генератора', status_after: 'Статус генератора',
     liters: 'Літри', cost: 'Вартість', cost_total: 'Загальна сума', source: 'Джерело', updated_at: 'Оновлено',
     name: 'Назва', fuel_type: 'Тип палива', reason: 'Причина', field: 'Поле', old_value: 'Було', new_value: 'Стало',
     address: 'Адреса', default_fuel_provider: 'Мережа АЗК', cascade: 'Каскадне видалення',
@@ -405,52 +456,102 @@ function formatAuditDetailsUa(detailsRaw, action) {
     comment: 'Коментар', old_name: 'Попередня назва', new_name: 'Нова назва',
     balance_transferred_l: 'Перенесено залишок (л)', initial_balance_l: 'Початковий залишок (л)',
     stock_name: 'Склад', pool_name: 'Пул каністр', generator_name: 'Генератор', facility_name: "Об'єкт",
+    target_facility_name: "Цільовий об'єкт", target_name: "Цільовий об'єкт",
     count: 'Кількість', filename: 'Файл', retry_after_sec: 'Блокування (с)', user_login: 'Логін користувача',
-    login: 'Логін', full_name: "Ім'я", roles: 'Ролі', canister_volume_l: "Об'єм каністри (л)",
-    total_count: 'Всього каністр', driver_name: 'Водій', receipt_number: 'Номер чека',
-    price_per_liter: 'Ціна за літр', provider: 'Мережа АЗК', old: 'Було', new: 'Стало',
+    login: 'Логін', full_name: "Ім'я", email: 'Ел. пошта', is_active: 'Активний', enabled: 'Увімкнено', roles: 'Ролі',
+    recipients: 'Отримувачі', recipient: 'Отримувач', period: 'Період', date: 'Дата',
+    canister_volume_l: "Об'єм каністри (л)", total_count: 'Всього каністр (шт.)',
+    full_count: 'Повні каністри (шт.)', empty_count: 'Порожні каністри (шт.)',
+    away_refill_count: 'На АЗС (шт.)', reserve_liters: 'Резерв каністр (л)',
+    driver: 'Водій', driver_name: 'Водій', receipt_no: 'Номер чека', receipt_number: 'Номер чека',
+    price_per_l: 'Ціна за літр (грн)', price_per_liter: 'Ціна за літр (грн)', price_source: 'Джерело ціни',
+    fuel_provider: 'Мережа АЗК', is_override: 'Ручне введення',
+    stock_before: 'Склад до (л)', stock_after: 'Склад після (л)',
+    provider: 'Мережа АЗК', old: 'Було', new: 'Стало',
+    source_wog: 'Джерело WOG', updated_at_wog: 'Оновлено WOG',
+    source_okko: 'Джерело OKKO', updated_at_okko: 'Оновлено OKKO',
+    wog_dp: 'WOG ДП (грн/л)', okko_dp: 'OKKO ДП (грн/л)',
+    wog_a95: 'WOG А-95 (грн/л)', okko_a95: 'OKKO А-95 (грн/л)',
+    wog_a92: 'WOG А-92 (грн/л)', okko_a92: 'OKKO А-92 (грн/л)',
     model: 'Модель', serial_number: 'Серійний номер',
     deleted_stock_name: 'Видалений склад', transferred_balance_l: 'Перенесено залишок (л)',
     target_stock_name: 'Цільовий склад', archived: 'Архівовано',
-    initial_hours: 'Початкові мотогодини', tank_capacity_l: 'Місткість бака (л)',
+    initial_hours: 'Початкові мотогодини', initial_fuel_level: 'Початковий рівень палива (л)',
+    tank_capacity_l: 'Місткість бака (л)', tank_capacity: 'Місткість бака (л)', maint_interval: 'Інтервал ТО (год)',
     avatar_path: 'Файл аватара', empty_after: 'Порожніх після дії', away_after: 'На АЗС після дії',
     full_after: 'Повних після дії', reserve_after_l: 'Резерв після дії (л)',
     start_operating_hours: 'Початкові мотогодини', start_tank_level_l: 'Початковий рівень у баку (л)',
     old_nominal_consumption_l_per_h: 'Попередня норма витрати (л/год)',
     new_nominal_consumption_l_per_h: 'Нова норма витрати (л/год)',
     calculated_consumption_l_per_h: 'Фактична витрата (л/год)',
-    duration_hours: 'Тривалість (год)', fuel_used_l: 'Використано палива (л)'
+    duration_hours: 'Тривалість (год)', fuel_used_l: 'Використано палива (л)',
+    start_hours: 'Початкові мотогодини', end_hours: 'Кінцеві мотогодини',
+    start_time: 'Час запуску', end_time: 'Час зупинки',
+    actual_balance_l: 'Фактичний залишок (л)', expected_balance_l: 'Очікуваний залишок (л)',
+    difference_l: 'Розбіжність (л)', added_liters: 'Додано (л)', tank_level_after_l: 'Рівень у баку після (л)',
+    context: 'Контекст', force_start_reason: 'Причина примусового запуску',
+    forced_with_maintenance: 'Запуск при простроченому ТО',
+    generator_tank_fact_l: 'Факт у баку генератора (л)', stocks_fact_total_l: 'Факт на складах (л)',
+    total_fuel_consumed_l: 'Всього витрачено палива (л)', total_hours_elapsed: 'Напрацьовано (год)',
+    start_balance_l: 'Початковий залишок (л)', commission_count: 'Членів комісії',
+    commission_members: 'Склад комісії', statement_number: 'Номер відомості',
+    measured_liters_before_cancel: 'Заміряно до скасування (л)',
+    receipts_count: 'Приходів палива (шт.)', transfers_count: 'Заправок (шт.)',
+    history_preserved: 'Історію збережено', mode: 'Режим',
+    generators_reset: 'Скинуто генераторів', deleted_count: 'Видалено записів',
+    faults: 'Несправностей', runs: 'Запусків', transfers: 'Заправок',
+    maintenance_records: 'Записів ТО', schedule: 'Графік ТО',
+    reports_clean: 'Очищення звітів', settings_reset: 'Скидання налаштувань',
+    updated_settings: 'Оновлено параметрів',
+    safety_backup_file: 'Захисний бекап (файл)', restore_files: 'Відновлення файлів',
+    media_files_restored: 'Відновлено медіафайлів', records_restored: 'Відновлено записів БД',
+    tables_count: 'Таблиць у бекапі', detail: 'Деталі', error: 'Помилка', success: 'Успіх', https: 'HTTPS'
   };
   const valTrans = {
     STOPPED: 'Зупинено', RUNNING: 'В роботі', MAINTENANCE: 'На обслуговуванні',
     MAINTENANCE_REQUIRED: 'Потрібне ТО', FAULT: 'Несправність', FAULTY: 'Несправний',
     BLOCKED: 'Заблоковано', ARCHIVED: 'В архіві',
+    NEW: 'Нова', ACCEPTED: 'Прийнято', OPEN: 'Відкрита', IN_PROGRESS: 'В роботі',
+    PENDING: 'В очікуванні', RESOLVED: 'Усунено', CLOSED: 'Закрито',
     LOW: 'Низький', MEDIUM: 'Середній', HIGH: 'Високий', CRITICAL: 'Критичний',
     SCHEDULED: 'Регламентне ТО', INTERMEDIATE: 'Проміжне ТО',
+    WOG: 'WOG', OKKO: 'OKKO', ALL: 'Усі', INTERNET: 'Інтернет', MANUAL: 'Вручну',
+    PRIMARY: 'Основний', FALLBACK: 'Резервний', FAILOVER: 'Автоперемикання',
+    OK: 'Успішно', ERROR: 'Помилка',
+    OPERATIONAL: 'Операційні дані', FULL: 'Повне очищення', SOFT: "М'яке очищення",
     TRUE: 'Так', FALSE: 'Ні'
   };
   const reasonPhraseTrans = {
     'Too many failed login attempts': 'Забагато невдалих спроб входу',
     'Invalid login or password': 'Невірний логін або пароль',
-    'User is inactive/blocked': 'Обліковий запис деактивовано / заблоковано'
+    'User is inactive/blocked': 'Обліковий запис деактивовано / заблоковано',
+    '[REDACTED]': '[Приховано]'
   };
 
+  const skipIds = new Set([
+    'facility_id', 'generator_id', 'run_id', 'stock_id', 'target_stock_id',
+    'pool_id', 'measurement_id', 'user_id', 'receipt_id', 'related_receipt_id',
+    'old_facility_id', 'new_facility_id', 'safety_backup_id'
+  ]);
+  const formatScalarVal = (v) => {
+    if (typeof v === 'string') return reasonPhraseTrans[v] || valTrans[v.toUpperCase()] || v;
+    if (typeof v === 'boolean') return v ? 'Так' : 'Ні';
+    return v;
+  };
   const parts = [];
   for (const [k, v] of Object.entries(details)) {
-    if (['facility_id', 'generator_id', 'run_id', 'stock_id', 'target_stock_id', 'pool_id', 'measurement_id', 'user_id', 'receipt_id'].includes(k)) continue;
+    if (skipIds.has(k)) continue;
     if (v === null || v === undefined || v === '') continue;
     const kUa = keyTrans[k] || k;
     let vUa = v;
-    if (typeof v === 'string') {
-      vUa = reasonPhraseTrans[v] || valTrans[v.toUpperCase()] || v;
-    } else if (typeof v === 'boolean') {
-      vUa = v ? 'Так' : 'Ні';
+    if (typeof v === 'string' || typeof v === 'boolean') {
+      vUa = formatScalarVal(v);
     } else if (Array.isArray(v)) {
-      vUa = v.length > 0 ? v.join(', ') : '-';
+      vUa = v.length > 0 ? v.map(item => roleMap[item] || formatScalarVal(item)).join(', ') : '-';
     } else if (typeof v === 'object') {
       const subParts = Object.entries(v)
         .filter(([, sv]) => sv !== null && sv !== undefined && sv !== '')
-        .map(([sk, sv]) => `${keyTrans[sk] || sk}: ${sv}`);
+        .map(([sk, sv]) => `${keyTrans[sk] || sk}: ${Array.isArray(sv) ? sv.join(', ') : formatScalarVal(sv)}`);
       vUa = subParts.join(', ') || '-';
     }
     parts.push(`${kUa}: ${vUa}`);

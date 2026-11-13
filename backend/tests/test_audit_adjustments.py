@@ -262,3 +262,92 @@ def test_audit_sanitizer_nested_structures_and_extended_keys():
     assert sanitized["adjustment_entry"]["old_value"] == "[REDACTED]"
     assert sanitized["adjustment_entry"]["new_value"] == "[REDACTED]"
     assert sanitized["adjustment_entry"]["reason"] == "Rotation"
+
+
+def test_audit_translations_complete_ua():
+    from backend.app.services.report_service import (
+        AUDIT_ACTION_UA,
+        AUDIT_ENTITY_UA,
+        format_audit_details_ua,
+    )
+
+    for action in (
+        "BACKUP_CREATE",
+        "BACKUP_DELETE",
+        "BACKUP_RESTORE",
+        "CANISTER_POOL_CREATED",
+        "CANISTER_POOL_UPDATED",
+        "CANISTER_DISPATCHED",
+        "SMTP_TEST_SENT",
+        "WEEKLY_DIGEST_EMAIL_SENT",
+        "EMAIL_UNSUBSCRIBED",
+        "EMAIL_RESUBSCRIBED",
+        "FUEL_PRICES_REFRESHED",
+        "PROFILE_UPDATED",
+    ):
+        assert action in AUDIT_ACTION_UA
+
+    for entity in (
+        "backup",
+        "Report",
+        "System",
+        "NotificationLog",
+        "system_settings",
+        "CanisterPool",
+        "Fault",
+    ):
+        assert entity in AUDIT_ENTITY_UA
+
+    fault_str = format_audit_details_ua(
+        {
+            "generator_id": 1,
+            "old_status": "NEW",
+            "new_status": "RESOLVED",
+            "resolution_notes": "Поміняно",
+            "generator_status_after": "STOPPED",
+        },
+        "FAULT_STATUS_UPDATED",
+    )
+    assert "old_status" not in fault_str
+    assert "NEW" not in fault_str
+    assert "RESOLVED" not in fault_str
+    assert "Попередній статус: Нова" in fault_str
+    assert "Новий статус: Усунено" in fault_str
+
+    smtp_str = format_audit_details_ua(
+        {
+            "recipient": "test@example.com",
+            "provider": "failover",
+            "result": {"status": "ok", "host": "smtp.gmail.com", "port": 587, "duration_ms": 500},
+        },
+        "SMTP_TEST_SENT",
+    )
+    assert "Автоперемикання SMTP" in smtp_str
+    assert "Успішно" in smtp_str
+    assert "500 мс" in smtp_str
+
+    settings_str = format_audit_details_ua(
+        {
+            "updates": {
+                "auto_fetch_fuel_prices": True,
+                "smtp_primary_host": "smtp.gmail.com",
+                "default_facility_id": 1,
+                "apply_to_all_generators": False,
+                "email_notify_password_change": "[REDACTED]",
+            }
+        },
+        "SYSTEM_SETTINGS_UPDATED",
+    )
+    assert "auto_fetch_fuel_prices" not in settings_str
+    assert "smtp_primary_host" not in settings_str
+    assert "default_facility_id" not in settings_str
+    assert "apply_to_all_generators" not in settings_str
+    assert "Автооновлення цін палива: увімкнено" in settings_str
+
+    canister_str = format_audit_details_ua(
+        {"full_count": 3, "empty_count": 2, "away_refill_count": 0, "total_count": 5, "reserve_liters": 0.0},
+        "CANISTER_POOL_UPDATED",
+    )
+    assert "full_count" not in canister_str
+    assert "Повні каністри (шт.): 3" in canister_str
+
