@@ -960,6 +960,10 @@ function _renderBellFeed(data) {
   }
   if (bellBtn) {
     bellBtn.classList.toggle('has-unread', unreadCount > 0);
+    bellBtn.setAttribute(
+      'aria-label',
+      unreadCount > 0 ? `Сповіщення системи (${unreadCount} непрочитаних)` : 'Сповіщення системи'
+    );
   }
 
   const items = Array.isArray(data?.items) ? data.items : [];
@@ -969,7 +973,10 @@ function _renderBellFeed(data) {
   }
 
   listEl.innerHTML = items.map((item) => {
-    const icon = _BELL_EVENT_EMOJI[item.event_type] || '🔔';
+    const rawTitle = String(item.title || 'Сповіщення').trim();
+    const leadingEmojiMatch = rawTitle.match(/^([\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\uFE0F?)\s*/u);
+    const icon = _BELL_EVENT_EMOJI[item.event_type] || (leadingEmojiMatch ? leadingEmojiMatch[1] : '🔔');
+    const cleanTitle = rawTitle.replace(/^(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\uFE0F?\s*)+/u, '').trim() || rawTitle;
     const isUnread = item.is_read === false;
     const unreadCls = isUnread ? ' is-unread' : '';
     const dotHtml = isUnread ? '<span class="notifications-bell-unread-dot" aria-label="Непрочитане"></span>' : '';
@@ -979,7 +986,7 @@ function _renderBellFeed(data) {
         <span class="notifications-bell-icon">${icon}</span>
         <div class="notifications-bell-content">
           <div class="notifications-bell-title">
-            <span>${escapeHtml(item.title || 'Сповіщення')}</span>
+            <span>${escapeHtml(cleanTitle)}</span>
             ${dotHtml}
           </div>
           <div class="notifications-bell-body">${escapeHtml(item.body || '')}</div>

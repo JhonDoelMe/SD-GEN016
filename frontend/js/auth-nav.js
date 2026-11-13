@@ -220,10 +220,11 @@ async function checkAuth() {
     window.updateAccountHeaderUI();
     applyRolePermissionsUI();
 
-    // Load server status and facilities list in parallel instead of sequentially
+    // Load server status, facilities list, and notification bell feed in parallel
     await Promise.allSettled([
       typeof refreshServerStatus === 'function' ? refreshServerStatus() : Promise.resolve(),
-      loadFacilitiesList()
+      loadFacilitiesList(),
+      typeof window.loadBellFeed === 'function' ? window.loadBellFeed(false) : Promise.resolve()
     ]);
 
     await loadAllData();
@@ -318,7 +319,8 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
     }
     await Promise.allSettled([
       typeof refreshServerStatus === 'function' ? refreshServerStatus() : Promise.resolve(),
-      loadFacilitiesList(true)
+      loadFacilitiesList(true),
+      typeof window.loadBellFeed === 'function' ? window.loadBellFeed(false) : Promise.resolve()
     ]);
     await loadAllData();
     if (typeof window.OfflineQueue === 'object' && navigator.onLine) {
