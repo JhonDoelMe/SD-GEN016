@@ -510,7 +510,7 @@ window.openAuditExportModal = async function () {
     showToast('Експорт аудиту в Excel доступний виключно Головному Суперадміністратору 🔒', 'warning');
     return;
   }
-  await window.openModal('modalExportAudit');
+  await window.openModal('modalExportAudit', { skipPostOpen: true });
   try {
     setAuditExportPeriod('month');
   } catch (err) {
@@ -616,7 +616,7 @@ window.openAdjustmentModal = async function() {
     showToast('Системне коригування лічильників доступне виключно Головному Суперадміністратору', 'warning');
     return;
   }
-  await window.openModal('modalAdjustment');
+  await window.openModal('modalAdjustment', { skipPostOpen: true });
 
   // 1. Immediately & synchronously populate facility dropdown from header selector if available
   const mainFacSel = document.getElementById('facilitySelect');

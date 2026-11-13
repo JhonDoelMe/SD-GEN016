@@ -1084,11 +1084,11 @@ async def get_facility_alert(db: AsyncSession, facility_id: int, force: bool = F
 
 async def check_all_facilities_air_alerts(db: AsyncSession) -> None:
     """
-    Перевіряє статус повітряної тривоги по всіх активних об'єктах
+    Перевіряє статус повітряної тривоги по всіх об'єктах
     та автоматично відправляє сповіщення при оголошенні тривоги або відбої.
     """
     from sqlalchemy import select
-    res = await db.execute(select(Facility).where(Facility.is_active == True))  # noqa: E712
+    res = await db.execute(select(Facility))
     facilities = res.scalars().all()
     for fac in facilities:
         try:

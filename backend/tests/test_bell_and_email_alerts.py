@@ -395,3 +395,18 @@ async def test_notification_bell_feed_scoping_and_mark_read(client, db_session, 
     sa_titles = [item["title"] for item in sa_feed.json()["items"]]
     assert "Порожній бак А" in sa_titles
     assert "Низьке паливо Б" in sa_titles
+
+
+@pytest.mark.asyncio
+async def test_check_all_facilities_air_alerts_does_not_fail_on_facility_query(db_session):
+    from backend.app.services.alert_service import check_all_facilities_air_alerts
+
+    fac = Facility(name="Об'єкт Тривог", city="Київ")
+    db_session.add(fac)
+    await db_session.commit()
+
+    with patch("backend.app.services.alert_service.get_facility_alert", new=AsyncMock(return_value={"is_active": False})) as mock_get:
+        await check_all_facilities_air_alerts(db_session)
+        called_ids = [call.args[1] for call in mock_get.await_args_list]
+        assert fac.id in called_ids
+

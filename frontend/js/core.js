@@ -669,7 +669,7 @@ function showToast(message, type = 'info', durationMs = 4000) {
 }
 
 // Modal Helpers & Lazy View Integration
-window.openModal = async function (id) {
+window.openModal = async function (id, options = {}) {
   // Security guard against unauthorized modal opening
   if (id === 'modalSystemReset' && !isSuperAdmin()) {
     showToast('Скидання бази даних доступне виключно Головному Суперадміністратору', 'warning');
@@ -746,8 +746,10 @@ window.openModal = async function (id) {
     if (typeof toggleNavDrawer === 'function') toggleNavDrawer(false);
     if (typeof closeAccountMenu === 'function') closeAccountMenu();
   }
-  if (id === 'modalAdjustment' && typeof openAdjustmentModal === 'function') openAdjustmentModal();
-  if (id === 'modalExportAudit' && typeof openAuditExportModal === 'function') openAuditExportModal();
+  if (!options?.skipPostOpen) {
+    if (id === 'modalAdjustment' && typeof setupAdjustmentModal === 'function') setupAdjustmentModal();
+    if (id === 'modalExportAudit' && typeof setAuditExportPeriod === 'function') setAuditExportPeriod('month');
+  }
   if (id === 'modalOfflineQueue' && typeof window.OfflineQueue === 'object') window.OfflineQueue.renderQueueModal();
   if (typeof window.updateOperationalSafetyBanners === 'function') {
     window.updateOperationalSafetyBanners();
