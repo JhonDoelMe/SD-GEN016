@@ -59,8 +59,17 @@ window.loadFuelSummary = async function () {
     if (cardStock) cardStock.innerText = s.warehouse_balance_l.toFixed(1).replace('.', ',');
     const stockSub = document.getElementById('cardStockSub');
     if (stockSub) {
-      stockSub.innerText = Number(s.canisters_total || 0) > 0
-        ? `${Number(s.canisters_full)}/${Number(s.canisters_total)} повн. каністр`
+      const cTotal = Number(s.canisters_total || 0);
+      const cFull = Number(s.canisters_full || 0);
+      const cMod10 = cTotal % 10;
+      const cMod100 = cTotal % 100;
+      const canisterWord = (cMod10 === 1 && cMod100 !== 11)
+        ? 'каністра'
+        : (cMod10 >= 2 && cMod10 <= 4 && (cMod100 < 10 || cMod100 >= 20))
+          ? 'каністри'
+          : 'каністр';
+      stockSub.innerText = cTotal > 0
+        ? `${cFull}/${cTotal} повн. ${canisterWord}`
         : 'залишок палива';
     }
     const fuelStockBal = document.getElementById('fuelStockBal');
@@ -86,7 +95,7 @@ window.loadMaintenanceSummary = async function () {
   try {
     if (!currentGeneratorId) {
       const cardRem = document.getElementById('cardMaintRem');
-      if (cardRem) cardRem.innerHTML = `0.0 <small style="font-size:0.9rem;">год</small>`;
+      if (cardRem) cardRem.innerHTML = `0,0 <small style="font-size:0.9rem;">год</small>`;
       setText('cardMaintSub', 'генератор не вибрано');
       setText('maintInterval', '-');
       setText('maintLast', '-');
@@ -196,7 +205,8 @@ async function loadGeneratorData() {
     }
 
     document.getElementById('genName').innerText = currentGenerator.name;
-    document.getElementById('genModel').innerText = `Модель: ${currentGenerator.model} | Серійний: ${currentGenerator.serial_number} | Потужність: ${currentGenerator.rated_power_kw} кВт`;
+    const ratedKw = Number(currentGenerator.rated_power_kw || 0).toFixed(1).replace(/\.0$/, '').replace('.', ',');
+    document.getElementById('genModel').innerText = `Модель: ${currentGenerator.model} | Серійний: ${currentGenerator.serial_number} | Потужність: ${ratedKw} кВт`;
     document.getElementById('cardHours').innerText = currentGenerator.current_operating_hours.toFixed(1).replace('.', ',');
 
     const fuelL = currentGenerator.fuel_tank_level_l;
@@ -239,22 +249,31 @@ async function loadGeneratorData() {
     const btnTransfer = document.getElementById('btnQuickTransfer');
 
     const isFuelDeficit = (fuelL <= 0) && !inMeas;
+    const canStartOrStop = !isViewerOnly() && hasPermission('generator:start');
 
     badge.className = 'badge';
     if (currentGenerator.status === 'RUNNING') {
       badge.classList.add('badge-running');
       badge.innerText = 'ПРАЦЮЄ';
-      btn.className = 'btn-hero btn-stop';
+      btn.className = 'btn-hero btn-stop' + (canStartOrStop ? '' : ' btn-disabled-role');
+      btn.disabled = !canStartOrStop;
       btn.innerHTML = '<span>⏹</span><span>ЗУПИНИТИ ГЕНЕРАТОР</span>';
-      btn.removeAttribute('title');
+      if (!canStartOrStop) {
+        btn.title = 'Керування генератором недоступне для поточної ролі';
+      } else {
+        btn.removeAttribute('title');
+      }
     } else if (currentGenerator.status === 'MAINTENANCE_REQUIRED') {
       badge.classList.add('badge-maintenance');
       badge.innerText = 'ПОТРІБНЕ ТО';
-      btn.className = 'btn-hero btn-start' + (isFuelDeficit ? ' btn-fuel-warning' : '');
+      btn.className = 'btn-hero btn-start' + (isFuelDeficit ? ' btn-fuel-warning' : '') + (canStartOrStop ? '' : ' btn-disabled-role');
+      btn.disabled = !canStartOrStop;
       btn.innerHTML = isFuelDeficit
         ? '<span style="font-size: 1.35rem;">⚠️</span><span style="font-size: 1.4rem;">▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>'
         : '<span>▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>';
-      if (isFuelDeficit) {
+      if (!canStartOrStop) {
+        btn.title = 'Керування генератором недоступне для поточної ролі';
+      } else if (isFuelDeficit) {
         btn.title = 'Увага: у баку за обліком 0 л (дефіцит)! Запуск дозволено за фактичним залишком палива.';
       } else {
         btn.removeAttribute('title');
@@ -262,23 +281,36 @@ async function loadGeneratorData() {
     } else if (currentGenerator.status === 'FAULTY') {
       badge.classList.add('badge-faulty');
       badge.innerText = 'НЕСПРАВНИЙ';
-      btn.className = 'btn-hero btn-start';
+      btn.className = 'btn-hero btn-start' + (canStartOrStop ? '' : ' btn-disabled-role');
+      btn.disabled = !canStartOrStop;
       btn.innerHTML = '<span>⚠️</span><span>НЕСПРАВНІСТЬ (БЛОК)</span>';
-      btn.removeAttribute('title');
+      if (!canStartOrStop) {
+        btn.title = 'Керування генератором недоступне для поточної ролі';
+      } else {
+        btn.title = 'Генератор у статусі несправності. Усуньте несправність перед запуском.';
+      }
     } else if (currentGenerator.status === 'BLOCKED') {
       badge.classList.add('badge-blocked');
       badge.innerText = 'ЗАБЛОКОВАНО';
-      btn.className = 'btn-hero btn-start';
+      btn.className = 'btn-hero btn-start' + (canStartOrStop ? '' : ' btn-disabled-role');
+      btn.disabled = !canStartOrStop;
       btn.innerHTML = '<span>🔒</span><span>ЗАБЛОКОВАНО</span>';
-      btn.removeAttribute('title');
+      if (!canStartOrStop) {
+        btn.title = 'Керування генератором недоступне для поточної ролі';
+      } else {
+        btn.title = 'Генератор заблокований адміністратором або графіком роботи.';
+      }
     } else {
       badge.classList.add('badge-stopped');
       badge.innerText = 'ЗУПИНЕНО';
-      btn.className = 'btn-hero btn-start' + (isFuelDeficit ? ' btn-fuel-warning' : '');
+      btn.className = 'btn-hero btn-start' + (isFuelDeficit ? ' btn-fuel-warning' : '') + (canStartOrStop ? '' : ' btn-disabled-role');
+      btn.disabled = !canStartOrStop;
       btn.innerHTML = isFuelDeficit
         ? '<span style="font-size: 1.35rem;">⚠️</span><span style="font-size: 1.4rem;">▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>'
         : '<span>▶</span><span>ЗАПУСТИТИ ГЕНЕРАТОР</span>';
-      if (isFuelDeficit) {
+      if (!canStartOrStop) {
+        btn.title = 'Керування генератором недоступне для поточної ролі';
+      } else if (isFuelDeficit) {
         btn.title = 'Увага: у баку за обліком 0 л (дефіцит)! Запуск дозволено за фактичним залишком палива.';
       } else {
         btn.removeAttribute('title');

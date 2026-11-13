@@ -25,7 +25,7 @@ window.loadFacilityIndicators = async function(facilityId, force = false) {
     const weatherBadge = document.getElementById('headerWeatherBadge');
     if (weather && weather.is_available && weatherBadge) {
       const wIcon = document.getElementById('weatherPillIcon');
-      const wText = document.getElementById('weatherPillText');
+      const wText = document.getElementById('weatherPillTemp');
       const wCity = document.getElementById('weatherPillCity');
       if (wIcon) wIcon.innerText = weather.icon_emoji || '⛅';
       if (wText) wText.innerText = weather.temp_formatted || `${weather.temp_c}°C`;

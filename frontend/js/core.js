@@ -733,23 +733,21 @@ window.openModal = async function (id) {
   }
 
   const modal = document.getElementById(id);
+  if (id === 'modalMeasurementCancel' && !isSuperAdmin()) {
+    showToast('Аварійне скасування доступне лише Суперадміністратору 🔒', 'warning');
+    return;
+  }
+  if (id === 'modalReceipt' && typeof setupReceiptModal === 'function') await setupReceiptModal();
+  if (id === 'modalTransfer' && typeof setupTransferModal === 'function') await setupTransferModal();
+  if (id === 'modalNewStock' && typeof setupNewStockModal === 'function') await setupNewStockModal();
   if (modal) {
     modal.style.display = 'flex';
     document.body.classList.add('modal-open');
     if (typeof toggleNavDrawer === 'function') toggleNavDrawer(false);
     if (typeof closeAccountMenu === 'function') closeAccountMenu();
   }
-  if (id === 'modalReceipt' && typeof setupReceiptModal === 'function') setupReceiptModal();
-  if (id === 'modalTransfer' && typeof setupTransferModal === 'function') setupTransferModal();
-  if (id === 'modalNewStock' && typeof setupNewStockModal === 'function') setupNewStockModal();
   if (id === 'modalAdjustment' && typeof openAdjustmentModal === 'function') openAdjustmentModal();
   if (id === 'modalExportAudit' && typeof openAuditExportModal === 'function') openAuditExportModal();
-  if (id === 'modalMeasurementCancel' && !isSuperAdmin()) {
-    showToast('Аварійне скасування доступне лише Суперадміністратору 🔒', 'warning');
-    if (modal) modal.style.display = 'none';
-    document.body.classList.remove('modal-open');
-    return;
-  }
   if (id === 'modalOfflineQueue' && typeof window.OfflineQueue === 'object') window.OfflineQueue.renderQueueModal();
   if (typeof window.updateOperationalSafetyBanners === 'function') {
     window.updateOperationalSafetyBanners();

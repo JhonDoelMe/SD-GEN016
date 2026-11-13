@@ -614,13 +614,15 @@ document.getElementById('facilitySelect')?.addEventListener('change', async (e) 
   localStorage.setItem('sd_last_facility_id', currentFacilityId);
   currentGeneratorId = null;
   await loadGeneratorsList(currentFacilityId);
-  await loadAllData();
-  if (window.activeTabId === 'tab-admin' && typeof window.renderAdminFacilitiesAndGenerators === 'function') {
-    window.renderAdminFacilitiesAndGenerators();
-  }
-  if ((window.activeTabId === 'tab-fuel' || (window.activeTabId === 'tab-admin' && sessionStorage.getItem('sd_admin_subtab') === 'fuel-admin')) && typeof loadFuelData === 'function') {
-    loadFuelData();
-  }
+  await Promise.all([
+    loadAllData(),
+    (window.activeTabId === 'tab-admin' && typeof window.renderAdminFacilitiesAndGenerators === 'function')
+      ? window.renderAdminFacilitiesAndGenerators(true)
+      : Promise.resolve(),
+    ((window.activeTabId === 'tab-fuel' || (window.activeTabId === 'tab-admin' && sessionStorage.getItem('sd_admin_subtab') === 'fuel-admin')) && typeof loadFuelData === 'function')
+      ? loadFuelData()
+      : Promise.resolve()
+  ]);
 });
 
 document.getElementById('generatorSelect')?.addEventListener('change', async (e) => {

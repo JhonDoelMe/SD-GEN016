@@ -319,19 +319,30 @@ tbody tr:hover {
     flex: 1 1 0 !important;
     width: 100% !important;
     min-width: 0 !important;
-    height: var(--h-control) !important;
+    height: auto !important;
     min-height: var(--h-control) !important;
-    padding: 0 0.5rem !important;
+    padding: 0.5rem 0.65rem !important;
     font-size: var(--font-control) !important;
     font-weight: 600 !important;
+    line-height: 1.25 !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
     text-align: center !important;
-    white-space: nowrap !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
     border-radius: var(--radius-md) !important;
     box-sizing: border-box !important;
     margin: 0 !important;
+  }
+}
+
+@media (max-width: 440px) {
+  .modal-actions {
+    flex-direction: column-reverse !important;
+  }
+  .modal-actions > * {
+    flex: 0 0 auto !important;
   }
 }
 
@@ -477,12 +488,12 @@ input[type="checkbox"], input[type="radio"] {
 }
 
 .btn-secondary {
-  height: var(--h-control);
   min-height: var(--h-control);
+  height: auto;
   background: var(--bg-card);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
-  padding: 0 1.15rem;
+  padding: 0.55rem 1.15rem;
   border-radius: var(--radius-md);
   font-size: var(--font-control);
   font-weight: 600;
@@ -490,9 +501,11 @@ input[type="checkbox"], input[type="radio"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  text-align: center;
+  line-height: 1.25;
   gap: 0.5rem;
   box-sizing: border-box;
-  white-space: nowrap;
+  white-space: normal;
   transition: background-color 0.2s, border-color 0.2s, transform 0.1s;
 }
 
@@ -549,7 +562,7 @@ input[type="checkbox"], input[type="radio"] {
   padding: 1.1rem 1.25rem;
   border-radius: 0.65rem;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  z-index: 2000;
+  z-index: 2500;
   display: none;
   font-size: 0.95rem;
   font-weight: 500;

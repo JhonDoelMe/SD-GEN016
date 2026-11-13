@@ -133,6 +133,7 @@ async function loadFaultsData() {
   try {
     const qGen = currentGeneratorId ? `?generator_id=${encodeURIComponent(currentGeneratorId)}` : '';
     const faults = await api(`/faults${qGen}`);
+    window._cachedFaults = Array.isArray(faults) ? faults : [];
     const prioMap = { CRITICAL: 'Критичний', HIGH: 'Високий', MEDIUM: 'Середній', LOW: 'Низький' };
     const statMap = {
       NEW: 'Нова',
@@ -159,7 +160,7 @@ async function loadFaultsData() {
           <td>${formatDateOnly(f.created_at)}</td>
           <td>
             ${!isResolved ? (hasPermission('faults:manage') ? `
-              <button class="btn-action" onclick="openResolveFaultModal(${Number(f.id)}, '${escapeHtml(f.title).replace(/'/g, "\\'")}')" style="background:#22c55e; border:none; color:white; border-radius:4px; padding:0.35rem 0.65rem; cursor:pointer; font-size:0.8rem; font-weight:600;" title="Усунути несправність">Усунути</button>
+              <button class="btn-action" onclick="openResolveFaultModalById(${Number(f.id)})" style="background:#22c55e; border:none; color:white; border-radius:4px; padding:0.35rem 0.65rem; cursor:pointer; font-size:0.8rem; font-weight:600;" title="Усунути несправність">Усунути</button>
             ` : `
               <button class="btn-action btn-disabled-role" disabled style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:var(--text-muted); border-radius:4px; padding:0.35rem 0.65rem; cursor:not-allowed; font-size:0.8rem; opacity:0.45;" title="Усунення дефектів доступне лише Адміністратору">Усунути (тільки Адмін 🔒)</button>
             `) : `<span style="color:#22c55e; font-size:0.85rem;" title="${resolvedInfo}">✓ Усунено</span>`}
@@ -171,6 +172,11 @@ async function loadFaultsData() {
     console.warn('loadFaultsData error:', err);
   }
 }
+
+window.openResolveFaultModalById = function(id) {
+  const f = (window._cachedFaults || []).find(item => Number(item.id) === Number(id));
+  return window.openResolveFaultModal(id, f ? f.title : '');
+};
 
 window.openResolveFaultModal = async function(id, title) {
   if (window.ViewLoader?.ensureModal) {

@@ -372,11 +372,11 @@ function _renderTablePage(tableId) {
   `;
 }
 
-window.renderPaginatedTable = function(tableId, items, renderRowFn, colspan, emptyText, pageSize = 10) {
+window.renderPaginatedTable = function(tableId, items, renderRowFn, colspan, emptyText, pageSize = 10, resetPage = false) {
   const prev = _tablePaginationState[tableId];
   const arr = Array.isArray(items) ? items : [];
   const totalPages = Math.max(1, Math.ceil(arr.length / pageSize));
-  const keepPage = prev && prev.page ? Math.min(prev.page, totalPages) : 1;
+  const keepPage = (!resetPage && prev && prev.page) ? Math.min(prev.page, totalPages) : 1;
   _tablePaginationState[tableId] = {
     items: arr,
     renderRowFn,

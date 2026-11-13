@@ -98,6 +98,20 @@ const AUDIT_ACTION_MAP_UA = {
   'USER_DELETED': 'Видалення користувача',
   'USER_PASSWORD_RESET': 'Скидання пароля користувача',
   'USER_TOGGLE_ACTIVE': 'Зміна активності користувача',
+  'USER_DEACTIVATED': 'Деактивація користувача',
+  'USER_CHANGED_OWN_PASSWORD': 'Зміна власного пароля',
+  'USER_PASSWORD_RESET_REQUESTED': 'Запит на скидання пароля',
+  'USER_PASSWORD_RESET_COMPLETED': 'Завершення скидання пароля',
+  'PROFILE_UPDATED': 'Оновлення профілю користувача',
+  'AVATAR_UPDATED': 'Оновлення аватара профілю',
+  'AVATAR_DELETED': 'Видалення аватара профілю',
+  'USER_AVATAR_UPDATED': 'Оновлення аватара користувача',
+  'USER_AVATAR_DELETED': 'Видалення аватара користувача',
+  'SMTP_TEST_SENT': 'Тестове відправлення SMTP',
+  'WEEKLY_DIGEST_EMAIL_SENT': 'Відправлення щотижневого звіту (Email)',
+  'FUEL_RECEIPT_UPDATED': 'Оновлення оприбуткування палива',
+  'FUEL_RECEIPT_DELETED': 'Видалення оприбуткування палива',
+  'FACILITY_TRANSFER': 'Переміщення між об\'єктами',
 
   // Measurement Mode
   'MEASUREMENT_STARTED': 'Запуск режиму вимірювання витрати палива',
@@ -134,7 +148,14 @@ const AUDIT_ENTITY_MAP_UA = {
   'SystemSetting': 'Системні налаштування',
   'SystemAdjustment': 'Коригування',
   'FuelMeasurement': 'Контрольний замір',
-  'System': 'Система'
+  'System': 'Система',
+  'backup': 'Резервна копія',
+  'Backup': 'Резервна копія',
+  'system_settings': 'Системні налаштування',
+  'NotificationLog': 'Сповіщення',
+  'Report': 'Звіт',
+  'Auth': 'Авторизація',
+  'Profile': 'Профіль'
 };
 
 const ADJUSTMENT_FIELD_MAP_UA = {
@@ -184,12 +205,16 @@ function formatAuditDetailsUa(detailsRaw, action) {
   // 3. Системне коригування
   if (details.field) {
     const fieldMap = {
-      current_operating_hours: 'Мотогодини',
-      fuel_tank_level_l: 'Бак генератора',
+      ...ADJUSTMENT_FIELD_MAP_UA,
       stock_balance_l: 'Залишок на складі'
     };
     const fName = fieldMap[details.field] || details.field;
-    let res = `Коригування '${fName}': ${details.old_value !== undefined ? details.old_value : '-'} ➔ ${details.new_value !== undefined ? details.new_value : '-'}`;
+    const fmtAdjVal = (v) => {
+      if (v === undefined || v === null) return '-';
+      if (typeof v === 'number') return Number(v.toFixed(2)).toString().replace('.', ',');
+      return v;
+    };
+    let res = `Коригування '${fName}': ${fmtAdjVal(details.old_value)} ➔ ${fmtAdjVal(details.new_value)}`;
     if (details.reason) res += ` (${details.reason})`;
     return res;
   }
@@ -343,6 +368,22 @@ function formatAuditDetailsUa(detailsRaw, action) {
     return `${mType} | Роботи: ${details.work} | Вартість: ${details.cost || 0} грн`;
   }
 
+  // 9.5 Оновлення або видалення складу ГСМ (old / new diff objects)
+  if ((action === 'FUEL_STOCK_UPDATED' || action === 'FUEL_STOCK_DELETED' || action === 'FUEL_STOCK_CREATED') && (details.old || details.new || details.name)) {
+    if (details.old && details.new && typeof details.old === 'object' && typeof details.new === 'object') {
+      const fDiffs = [];
+      if (details.old.name !== details.new.name) fDiffs.push(`Назва: '${details.old.name}' ➔ '${details.new.name}'`);
+      if (details.old.fuel_type !== details.new.fuel_type) fDiffs.push(`Тип палива: '${details.old.fuel_type}' ➔ '${details.new.fuel_type}'`);
+      if (fDiffs.length > 0) return fDiffs.join(' | ');
+    }
+    const parts = [];
+    if (details.name) parts.push(`Склад: '${details.name}'`);
+    if (details.fuel_type) parts.push(`Паливо: ${details.fuel_type}`);
+    if (details.initial_balance_l !== undefined) parts.push(`Початковий залишок: ${formatLiters(details.initial_balance_l)}`);
+    if (details.balance_transferred_l !== undefined) parts.push(`Перенесено залишок: ${formatLiters(details.balance_transferred_l)}`);
+    if (parts.length > 0) return parts.join(' | ');
+  }
+
   // 10. Загальний переклад
   const keyTrans = {
     title: 'Назва', description: 'Опис', priority: 'Пріоритет', status: 'Статус', operating_hours: 'Мотогодини',
@@ -351,7 +392,14 @@ function formatAuditDetailsUa(detailsRaw, action) {
     address: 'Адреса', default_fuel_provider: 'Мережа АЗК', cascade: 'Каскадне видалення',
     generators_deleted: 'Видалені генератори', fuel_stocks_deleted: 'Видалені склади ГСМ',
     users_unbound_count: 'Відкріплено користувачів', records_count: 'Кількість записів',
-    files_count: 'Кількість файлів', notes: 'Примітки', message: 'Повідомлення'
+    files_count: 'Кількість файлів', notes: 'Примітки', message: 'Повідомлення',
+    comment: 'Коментар', old_name: 'Попередня назва', new_name: 'Нова назва',
+    balance_transferred_l: 'Перенесено залишок (л)', initial_balance_l: 'Початковий залишок (л)',
+    stock_name: 'Склад', pool_name: 'Пул каністр', generator_name: 'Генератор', facility_name: "Об'єкт",
+    count: 'Кількість', filename: 'Файл', retry_after_sec: 'Блокування (с)', user_login: 'Логін користувача',
+    login: 'Логін', full_name: "Ім'я", roles: 'Ролі', canister_volume_l: "Об'єм каністри (л)",
+    total_count: 'Всього каністр', driver_name: 'Водій', receipt_number: 'Номер чека',
+    price_per_liter: 'Ціна за літр', provider: 'Мережа АЗК', old: 'Було', new: 'Стало'
   };
   const valTrans = {
     STOPPED: 'Зупинено', RUNNING: 'В роботі', MAINTENANCE: 'На обслуговуванні',
@@ -361,12 +409,30 @@ function formatAuditDetailsUa(detailsRaw, action) {
     SCHEDULED: 'Регламентне ТО', INTERMEDIATE: 'Проміжне ТО',
     TRUE: 'Так', FALSE: 'Ні'
   };
+  const reasonPhraseTrans = {
+    'Too many failed login attempts': 'Забагато невдалих спроб входу',
+    'Invalid login or password': 'Невірний логін або пароль',
+    'User is inactive/blocked': 'Обліковий запис деактивовано / заблоковано'
+  };
 
   const parts = [];
   for (const [k, v] of Object.entries(details)) {
     if (['facility_id', 'generator_id', 'run_id', 'stock_id', 'user_id', 'receipt_id'].includes(k)) continue;
+    if (v === null || v === undefined || v === '') continue;
     const kUa = keyTrans[k] || k;
-    const vUa = typeof v === 'string' ? (valTrans[v.toUpperCase()] || v) : (typeof v === 'boolean' ? (v ? 'Так' : 'Ні') : (typeof v === 'object' ? JSON.stringify(v) : v));
+    let vUa = v;
+    if (typeof v === 'string') {
+      vUa = reasonPhraseTrans[v] || valTrans[v.toUpperCase()] || v;
+    } else if (typeof v === 'boolean') {
+      vUa = v ? 'Так' : 'Ні';
+    } else if (Array.isArray(v)) {
+      vUa = v.length > 0 ? v.join(', ') : '-';
+    } else if (typeof v === 'object') {
+      const subParts = Object.entries(v)
+        .filter(([, sv]) => sv !== null && sv !== undefined && sv !== '')
+        .map(([sk, sv]) => `${keyTrans[sk] || sk}: ${sv}`);
+      vUa = subParts.join(', ') || '-';
+    }
     parts.push(`${kUa}: ${vUa}`);
   }
   return parts.join(' | ') || JSON.stringify(details);
@@ -395,7 +461,7 @@ async function loadAuditData() {
           <td>${escapeHtml(l.ip_address || '-')}</td>
         </tr>
       `;
-    }, 6, 'Аудит порожній', 10);
+    }, 6, 'Аудит порожній', 10, true);
 
     window.renderPaginatedTable('adjustmentsTable', adjustments, (a) => {
       const entityUa = AUDIT_ENTITY_MAP_UA[a.entity_type] || a.entity_type;
@@ -415,7 +481,7 @@ async function loadAuditData() {
           <td>${escapeHtml(a.reason)}</td>
         </tr>
       `;
-    }, 9, 'Коригувань не виконувалось', 10);
+    }, 9, 'Коригувань не виконувалось', 10, true);
   } catch (_) {}
 }
 

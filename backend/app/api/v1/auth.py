@@ -82,7 +82,7 @@ async def login(
             action="AUTH_LOGIN_LOCKED",
             entity_type="User",
             entity_id=login_clean[:64],
-            details={"reason": "Too many failed login attempts", "retry_after_sec": retry_after},
+            details={"reason": "Забагато невдалих спроб входу", "retry_after_sec": retry_after},
             ip_address=ip
         )
         await db.commit()
@@ -104,7 +104,7 @@ async def login(
             action="AUTH_LOGIN_FAILED",
             entity_type="User",
             entity_id=login_clean[:64],
-            details={"reason": "Invalid login or password"},
+            details={"reason": "Невірний логін або пароль"},
             ip_address=ip
         )
         await db.commit()
@@ -122,7 +122,7 @@ async def login(
             entity_type="User",
             entity_id=login_clean[:64],
             user_id=user.id,
-            details={"reason": "Invalid login or password"},
+            details={"reason": "Невірний логін або пароль"},
             ip_address=ip
         )
         await db.commit()
@@ -139,7 +139,7 @@ async def login(
             entity_type="User",
             entity_id=str(user.id),
             user_id=user.id,
-            details={"reason": "User is inactive/blocked"},
+            details={"reason": "Обліковий запис деактивовано / заблоковано"},
             ip_address=ip
         )
         await db.commit()

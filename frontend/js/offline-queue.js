@@ -956,10 +956,10 @@
           ${snapHtml}
           ${isEditing ? _buildEditFormHtml(item) : ''}
           ${!isEditing ? `
-            <div class="oq-actions">
-              <button type="button" class="btn-oq-chip btn-oq-chip-info" ${!navigator.onLine ? 'disabled' : ''} onclick="OfflineQueue.retryItem('${escapeHtml(item.id)}')">🔄 ${isConflict ? 'Повторити як є' : 'Надіслати'}</button>
-              <button type="button" class="btn-oq-chip" onclick="OfflineQueue.toggleEdit('${escapeHtml(item.id)}')">✏️ Змінити</button>
-              <button type="button" class="btn-oq-chip btn-oq-chip-danger" onclick="OfflineQueue.removeItem('${escapeHtml(item.id)}')">🗑️ Видалити</button>
+            <div class="oq-actions" data-oq-id="${escapeHtml(item.id)}">
+              <button type="button" class="btn-oq-chip btn-oq-chip-info" ${!navigator.onLine ? 'disabled' : ''} onclick="OfflineQueue.retryItem(this.parentElement.dataset.oqId)">🔄 ${isConflict ? 'Повторити як є' : 'Надіслати'}</button>
+              <button type="button" class="btn-oq-chip" onclick="OfflineQueue.toggleEdit(this.parentElement.dataset.oqId)">✏️ Змінити</button>
+              <button type="button" class="btn-oq-chip btn-oq-chip-danger" onclick="OfflineQueue.removeItem(this.parentElement.dataset.oqId)">🗑️ Видалити</button>
             </div>
           ` : ''}
         </div>

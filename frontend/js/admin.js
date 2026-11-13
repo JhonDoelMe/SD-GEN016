@@ -362,7 +362,7 @@ document.addEventListener('click', async (e) => {
 });
 
 // Admin Facilities & Generators Tables
-window.renderAdminFacilitiesAndGenerators = async function() {
+window.renderAdminFacilitiesAndGenerators = async function(forceRefresh = false) {
   const facTbody = document.querySelector('#adminFacilitiesTable tbody');
   const genTbody = document.querySelector('#adminGeneratorsTable tbody');
   if (!facTbody && !genTbody) return;
@@ -370,7 +370,9 @@ window.renderAdminFacilitiesAndGenerators = async function() {
   try {
     const canFac = hasPermission('facility:configure');
     const canGen = hasPermission('generator:configure');
-    const facilities = typeof window.getFacilitiesCached === 'function' ? await window.getFacilitiesCached() : await api('/facilities');
+    const canDeleteFac = isSuperAdmin();
+    if (forceRefresh) window.invalidateFacilitiesCache?.();
+    const facilities = typeof window.getFacilitiesCached === 'function' ? await window.getFacilitiesCached(forceRefresh) : await api('/facilities');
     const activeFacId = currentFacilityId || (facilities && facilities[0] ? facilities[0].id : null);
     const generators = activeFacId ? await api(`/generator/list?facility_id=${encodeURIComponent(activeFacId)}`) : [];
 
@@ -381,10 +383,13 @@ window.renderAdminFacilitiesAndGenerators = async function() {
           ? `<span class="badge badge-running">Увімк. (${escapeHtml(f.yasno_group || '-')})</span>`
           : `<span class="badge badge-stopped">Вимк.</span>`;
         const locTxt = [f.city, f.address].filter(Boolean).join(', ') || '-';
+        const deleteFacBtn = canDeleteFac
+          ? `<button type="button" class="btn-action" style="padding:0.25rem 0.5rem;min-height:auto;font-size:0.8rem;border-color:rgba(239,68,68,0.45);color:#f87171;" onclick="openDeleteFacilityModal(${Number(f.id)})" title="Видалити об'єкт">🗑️</button>`
+          : `<button type="button" class="btn-action" disabled style="padding:0.25rem 0.5rem;min-height:auto;font-size:0.8rem;opacity:0.45;cursor:not-allowed;" title="Видалення об'єктів доступне лише Головному адміністратору">🔒</button>`;
         const actionsHtml = canFac ? `
           <div style="display:flex;gap:0.35rem;justify-content:center;">
             <button type="button" class="btn-action" style="padding:0.25rem 0.5rem;min-height:auto;font-size:0.8rem;" onclick="openQuickEditFacilityModal(${Number(f.id)})" title="Налаштування об'єкта">✏️</button>
-            <button type="button" class="btn-action" style="padding:0.25rem 0.5rem;min-height:auto;font-size:0.8rem;border-color:rgba(239,68,68,0.45);color:#f87171;" onclick="openDeleteFacilityModal(${Number(f.id)})" title="Видалити об'єкт">🗑️</button>
+            ${deleteFacBtn}
           </div>` : '<span style="color:var(--text-muted);font-size:0.75rem;">Тільки перегляд</span>';
         return `
           <tr>
@@ -405,14 +410,17 @@ window.renderAdminFacilitiesAndGenerators = async function() {
             <button type="button" class="btn-action" style="padding:0.25rem 0.5rem;min-height:auto;font-size:0.8rem;" onclick="openQuickEditGeneratorModal(${Number(g.id)})" title="Редагувати генератор">✏️</button>
             <button type="button" class="btn-action" style="padding:0.25rem 0.5rem;min-height:auto;font-size:0.8rem;border-color:rgba(239,68,68,0.45);color:#f87171;" onclick="openDeleteGeneratorModal(${Number(g.id)})" title="Видалити генератор">🗑️</button>
           </div>` : '<span style="color:var(--text-muted);font-size:0.75rem;">Тільки перегляд</span>';
+        const hoursVal = Number(g.current_operating_hours ?? g.total_operating_hours ?? 0).toFixed(1).replace('.', ',');
+        const consVal = Number(g.nominal_consumption_l_per_h || 0).toFixed(1).replace('.', ',');
+        const powerVal = Number(g.rated_power_kw || 0).toFixed(1).replace('.', ',');
         return `
           <tr>
             <td>#${Number(g.id)}</td>
             <td><b>${escapeHtml(g.name)}</b><small style="display:block;color:var(--text-muted);">${escapeHtml(g.model || '-')}</small></td>
             <td><code>${escapeHtml(g.serial_number || '-')}</code></td>
             <td>${escapeHtml(g.fuel_type || 'А-95')} • <b>${Number(g.tank_capacity_l || 0).toFixed(0)} л</b></td>
-            <td>${Number(g.nominal_consumption_l_per_h || 0).toFixed(1)} л/г • ${Number(g.rated_power_kw || 0).toFixed(1)} кВт</td>
-            <td><b>${Number(g.total_operating_hours || 0).toFixed(1)} г</b></td>
+            <td>${consVal} л/год • ${powerVal} кВт</td>
+            <td><b>${hoursVal} год</b></td>
             <td style="text-align:center;">${actionsHtml}</td>
           </tr>`;
       }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">Генераторів на обраному об\'єкті не знайдено</td></tr>';
@@ -462,8 +470,6 @@ window.confirmDeleteCurrentGenerator = async function() {
   if (!targetId) return;
   try {
     const res = await api(`/generator/${encodeURIComponent(targetId)}`, { method: 'DELETE' });
-    closeModal('modalDeleteGenerator');
-    showToast(res.message || 'Генератор успішно видалено!', 'success');
     pendingDeleteGeneratorId = null;
     if (Number(targetId) === Number(currentGeneratorId)) {
       localStorage.removeItem('sd_last_generator_id');
@@ -473,8 +479,12 @@ window.confirmDeleteCurrentGenerator = async function() {
       currentGeneratorId = null;
     }
     await loadGeneratorsList(currentFacilityId);
-    await loadAllData();
-    await window.renderAdminFacilitiesAndGenerators();
+    await Promise.all([
+      loadAllData(),
+      window.renderAdminFacilitiesAndGenerators(true)
+    ]);
+    closeModal('modalDeleteGenerator');
+    showToast(res.message || 'Генератор успішно видалено!', 'success');
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -482,8 +492,8 @@ window.confirmDeleteCurrentGenerator = async function() {
 
 // Facility Deletion Handlers
 window.openDeleteFacilityModal = async function(facId = null) {
-  if (!hasPermission('facility:configure')) {
-    showToast("Видалення об'єктів доступне лише Адміністратору", 'warning');
+  if (!isSuperAdmin()) {
+    showToast("Видалення об'єктів доступне лише Головному адміністратору 🔒", 'warning');
     return;
   }
   const targetId = facId ? Number(facId) : (currentFacilityId ? Number(currentFacilityId) : null);
@@ -547,8 +557,6 @@ window.confirmDeleteCurrentFacility = async function() {
 
   try {
     const res = await api(`/facilities/${encodeURIComponent(targetId)}?cascade=${cascade}`, { method: 'DELETE' });
-    closeModal('modalDeleteFacility');
-    showToast(res.message || "Об'єкт успішно видалено!", 'success');
     pendingDeleteFacilityId = null;
     window.invalidateFacilitiesCache?.();
     if (Number(targetId) === Number(currentFacilityId)) {
@@ -560,8 +568,13 @@ window.confirmDeleteCurrentFacility = async function() {
     }
     await loadFacilitiesList(true);
     await loadGeneratorsList(currentFacilityId);
-    await loadAllData();
-    await window.renderAdminFacilitiesAndGenerators();
+    await Promise.all([
+      loadAllData(),
+      window.renderAdminFacilitiesAndGenerators(true),
+      typeof loadFuelData === 'function' ? loadFuelData() : Promise.resolve()
+    ]);
+    closeModal('modalDeleteFacility');
+    showToast(res.message || "Об'єкт успішно видалено!", 'success');
   } catch (err) {
     showToast(err.message || 'Помилка видалення об\'єкта', 'error');
   } finally {
@@ -658,9 +671,6 @@ document.addEventListener('submit', async (e) => {
         default_fuel_provider
       })
     });
-    closeModal('modalCreateFacility');
-    showToast(`Об'єкт "${created.name}" успішно створено!`, 'success');
-
     currentFacilityId = created.id;
     currentGeneratorId = null;
     localStorage.setItem('sd_last_facility_id', currentFacilityId);
@@ -673,8 +683,13 @@ document.addEventListener('submit', async (e) => {
       document.getElementById('facilitySelect').value = created.id;
     }
     await loadGeneratorsList(currentFacilityId);
-    await loadAllData();
-    await window.renderAdminFacilitiesAndGenerators();
+    await Promise.all([
+      loadAllData(),
+      window.renderAdminFacilitiesAndGenerators(true),
+      typeof loadFuelData === 'function' ? loadFuelData() : Promise.resolve()
+    ]);
+    closeModal('modalCreateFacility');
+    showToast(`Об'єкт "${created.name}" успішно створено!`, 'success');
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -730,9 +745,6 @@ document.addEventListener('submit', async (e) => {
       method: 'POST',
       body: JSON.stringify(body)
     });
-    closeModal('modalCreateGenerator');
-    showToast(`Генератор "${created.name}" успішно створено!`, 'success');
-
     // Switch facility context if created on another facility
     currentFacilityId = chosenFacilityId;
     localStorage.setItem('sd_last_facility_id', currentFacilityId);
@@ -748,8 +760,12 @@ document.addEventListener('submit', async (e) => {
     if (document.getElementById('generatorSelect')) {
       document.getElementById('generatorSelect').value = created.id;
     }
-    await loadAllData();
-    await window.renderAdminFacilitiesAndGenerators();
+    await Promise.all([
+      loadAllData(),
+      window.renderAdminFacilitiesAndGenerators(true)
+    ]);
+    closeModal('modalCreateGenerator');
+    showToast(`Генератор "${created.name}" успішно створено!`, 'success');
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -824,15 +840,18 @@ document.addEventListener('submit', async (e) => {
         default_fuel_provider
       })
     });
-    closeModal('modalQuickEditFacility');
-    showToast(`Об'єкт "${updated.name}" успішно оновлено!`, 'success');
     window.invalidateFacilitiesCache?.();
     await loadFacilitiesList(true);
     if (document.getElementById('facilitySelect')) {
       document.getElementById('facilitySelect').value = updated.id;
     }
-    await loadAllData();
-    await window.renderAdminFacilitiesAndGenerators();
+    await Promise.all([
+      loadAllData(),
+      window.renderAdminFacilitiesAndGenerators(true),
+      typeof loadFuelData === 'function' ? loadFuelData() : Promise.resolve()
+    ]);
+    closeModal('modalQuickEditFacility');
+    showToast(`Об'єкт "${updated.name}" успішно оновлено!`, 'success');
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -858,9 +877,10 @@ window.openQuickEditGeneratorModal = async function(genId = null) {
     document.getElementById('quickEditGenName').value = gen.name || '';
     document.getElementById('quickEditGenModel').value = gen.model || '';
     document.getElementById('quickEditGenSerial').value = gen.serial_number || '';
-    document.getElementById('quickEditGenPower').value = gen.rated_power_kw || '';
-    document.getElementById('quickEditGenTank').value = gen.tank_capacity_l || '';
-    document.getElementById('quickEditGenConsumption').value = gen.nominal_consumption_l_per_h || '';
+    const roundClean = (v, dec = 2) => (v === null || v === undefined || v === '') ? '' : Number(Number(v).toFixed(dec));
+    document.getElementById('quickEditGenPower').value = roundClean(gen.rated_power_kw, 1);
+    document.getElementById('quickEditGenTank').value = roundClean(gen.tank_capacity_l, 1);
+    document.getElementById('quickEditGenConsumption').value = roundClean(gen.nominal_consumption_l_per_h, 2);
     if (document.getElementById('quickEditGenFuelType')) {
       document.getElementById('quickEditGenFuelType').value = gen.fuel_type || 'А-95';
     }
@@ -889,14 +909,16 @@ document.addEventListener('submit', async (e) => {
       method: 'PUT',
       body: JSON.stringify(body)
     });
-    closeModal('modalQuickEditGenerator');
-    showToast(`Генератор "${updated.name}" успішно оновлено!`, 'success');
     await loadGeneratorsList(currentFacilityId);
     if (document.getElementById('generatorSelect') && Number(updated.id) === Number(currentGeneratorId)) {
       document.getElementById('generatorSelect').value = updated.id;
     }
-    await loadAllData();
-    await window.renderAdminFacilitiesAndGenerators();
+    await Promise.all([
+      loadAllData(),
+      window.renderAdminFacilitiesAndGenerators(true)
+    ]);
+    closeModal('modalQuickEditGenerator');
+    showToast(`Генератор "${updated.name}" успішно оновлено!`, 'success');
   } catch (err) {
     showToast(err.message, 'error');
   }

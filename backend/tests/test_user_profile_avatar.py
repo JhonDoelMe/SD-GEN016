@@ -199,3 +199,13 @@ async def test_modular_frontend_assets_and_unique_ids(client: AsyncClient):
         assert len(re.findall(r"<div\b", text)) == len(re.findall(r"</div>", text)), (
             f"Unbalanced <div> tags in {view_path.name}"
         )
+        assert "mobile-bottom-nav" not in text and "mobileMoreSheet" not in text, (
+            f"Legacy bottom nav must not remain in {view_path.name}"
+        )
+
+    for js_path in sorted((frontend_dir / "js").glob("*.js")):
+        js_text = js_path.read_text(encoding="utf-8")
+        bad_onclicks = re.findall(r'onclick="[^"]*escapeHtml\([^"]*\)[^"]*"', js_text)
+        assert not bad_onclicks, (
+            f"Unsafe escapeHtml() inside inline onclick in {js_path.name}: {bad_onclicks}"
+        )
