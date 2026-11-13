@@ -52,6 +52,8 @@ class User(Base):
     full_name = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     is_superadmin = Column(Boolean, default=False, nullable=False)
+    email_notifications_enabled = Column(Boolean, default=True, nullable=False)
+    notifications_read_at = Column(DateTime, nullable=True)
     facility_id = Column(Integer, ForeignKey("facilities.id", ondelete="SET NULL"), nullable=True, index=True)
     avatar_path = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)

@@ -39,10 +39,10 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
   <!-- Modular Stylesheets (Loaded in Parallel) -->
-  <link rel="stylesheet" href="/frontend/css/base.css?v=5.6.11">
-  <link rel="stylesheet" href="/frontend/css/components.css?v=5.6.11">
-  <link rel="stylesheet" href="/frontend/css/views.css?v=5.6.11">
-  <link rel="stylesheet" href="/frontend/css/layout.css?v=5.6.11">
+  <link rel="stylesheet" href="/frontend/css/base.css?v=5.7.0">
+  <link rel="stylesheet" href="/frontend/css/components.css?v=5.7.0">
+  <link rel="stylesheet" href="/frontend/css/views.css?v=5.7.0">
+  <link rel="stylesheet" href="/frontend/css/layout.css?v=5.7.0">
 </head>
 <body>
 
@@ -133,7 +133,7 @@
       <button type="button" class="nav-item" id="navTabAdmin" data-tab="tab-admin">⚙️ Адміністрування</button>
     </nav>
     <div class="nav-drawer-footer">
-      <span>SD-GEN016 • v5.6.11</span>
+      <span>SD-GEN016 • v5.7.0</span>
       <button type="button" class="footer-link-btn" style="padding: 0; font-size: 0.76rem;" onclick="toggleNavDrawer(false); openModal('modalOfflineQueue');">📡 Черга PWA</button>
     </div>
   </aside>
@@ -158,6 +158,26 @@
           <span class="pill-text" id="weatherPillTemp">--°</span>
           <span class="pill-subtext" id="weatherPillCity">--</span>
         </button>
+        <div class="header-bell-wrap" id="headerBellWrap">
+          <button type="button" id="headerBellBadge" class="header-pill pill-bell" onclick="toggleNotificationsBell(event)" aria-haspopup="true" aria-expanded="false" aria-label="Сповіщення системи" title="Сповіщення системи">
+            <span class="pill-icon">🔔</span>
+            <span class="pill-text">Події</span>
+            <span id="bellUnreadCount" class="bell-unread-badge" style="display: none;">0</span>
+          </button>
+          <div id="notificationsDropdown" class="notifications-dropdown" style="display: none;" role="menu">
+            <div class="notifications-dropdown-header">
+              <div class="notifications-dropdown-title">🔔 Сповіщення</div>
+              <button type="button" id="btnMarkAllRead" class="btn-bell-mark-read" onclick="markAllNotificationsRead()">✓ Прочитано</button>
+            </div>
+            <div id="notificationsBellList" class="notifications-bell-list">
+              <div class="notifications-bell-empty">Завантаження сповіщень...</div>
+            </div>
+            <div class="notifications-dropdown-footer">
+              <button type="button" class="btn-bell-footer" onclick="loadBellFeed(true)">🔄 Оновити</button>
+              <button type="button" id="btnOpenAllNotifs" class="btn-bell-footer" style="display: none;" onclick="openAllNotificationsLog()">📜 Журнал сповіщень →</button>
+            </div>
+          </div>
+        </div>
         <button type="button" id="headerAlertBadge" class="header-pill pill-alert pill-alert-green" style="display: none;" title="Статус повітряної тривоги" onclick="openAlertModal()">
           <span class="pill-pulse-dot" id="alertPulseDot"></span>
           <span class="pill-icon" id="alertPillIcon">🟢</span>
@@ -333,15 +353,15 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Core Application Scripts (Heavy Modules Lazy-Loaded via ViewLoader) -->
-  <script src="/frontend/js/core.js?v=5.6.11"></script>
-  <script src="/frontend/js/view-loader.js?v=5.6.11"></script>
-  <script src="/frontend/js/offline-queue.js?v=5.6.11"></script>
-  <script src="/frontend/js/theme-format.js?v=5.6.11"></script>
-  <script src="/frontend/js/auth-nav.js?v=5.6.11"></script>
-  <script src="/frontend/js/dashboard.js?v=5.6.11"></script>
-  <script src="/frontend/js/weather-alerts.js?v=5.6.11"></script>
-  <script src="/frontend/js/yasno.js?v=5.6.11"></script>
-  <script src="/frontend/js/notifications.js?v=5.6.11"></script>
+  <script src="/frontend/js/core.js?v=5.7.0"></script>
+  <script src="/frontend/js/view-loader.js?v=5.7.0"></script>
+  <script src="/frontend/js/offline-queue.js?v=5.7.0"></script>
+  <script src="/frontend/js/theme-format.js?v=5.7.0"></script>
+  <script src="/frontend/js/auth-nav.js?v=5.7.0"></script>
+  <script src="/frontend/js/dashboard.js?v=5.7.0"></script>
+  <script src="/frontend/js/weather-alerts.js?v=5.7.0"></script>
+  <script src="/frontend/js/yasno.js?v=5.7.0"></script>
+  <script src="/frontend/js/notifications.js?v=5.7.0"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

@@ -285,6 +285,8 @@ async def send_push_notification(
         "GENERATOR_SAFETY_STOP": "notify_generator_stop",
         "GENERATOR_AUTO_STOP": "notify_generator_stop",
         "GENERATOR_HEARTBEAT": "notify_running_heartbeat",
+        "OUTSIDE_WORK_HOURS": "notify_outside_schedule",
+        "EMPTY_TANK": "notify_low_fuel",
         "LOW_FUEL": "notify_low_fuel",
         "MAINTENANCE_DUE": "notify_maintenance",
         "CRITICAL_FAULT": "notify_critical_faults",
@@ -342,12 +344,12 @@ async def send_push_notification(
                 has_overdue_today = any("прострочено" in (l.title or "").lower() for l in logs_today)
                 if has_overdue_today:
                     return {
-                        "sent": 0, "failed": 0, "skipped": True,
+                        "sent": 0, "failed": 0, "skipped": True, "rate_limited": True,
                         "reason": f"Денний ліміт нагадувань про ТО ({max_daily} на добу) для цього генератора вже досягнуто"
                     }
             else:
                 return {
-                    "sent": 0, "failed": 0, "skipped": True,
+                    "sent": 0, "failed": 0, "skipped": True, "rate_limited": True,
                     "reason": f"Денний ліміт нагадувань про ТО ({max_daily} на добу) для цього генератора вже досягнуто"
                 }
 
@@ -357,26 +359,27 @@ async def send_push_notification(
             if (now - last_time).total_seconds() < 10800:  # 3 hours
                 if not (is_overdue_alert and "прострочено" not in (logs_today[0].title or "").lower()):
                     return {
-                        "sent": 0, "failed": 0, "skipped": True,
+                        "sent": 0, "failed": 0, "skipped": True, "rate_limited": True,
                         "reason": "Нагадування про ТО було надіслано менше 3 годин тому"
                     }
 
-    # 4. Rate limiting for LOW_FUEL (cooldown: 3 hours)
-    if event_type == "LOW_FUEL" and generator_id:
-        q_last_fuel = select(NotificationLog.created_at).where(
+    # 4. Rate limiting for LOW_FUEL / EMPTY_TANK / OUTSIDE_WORK_HOURS (cooldown: 3 hours per event type)
+    if event_type in ("LOW_FUEL", "EMPTY_TANK", "OUTSIDE_WORK_HOURS") and generator_id:
+        q_last_ev = select(NotificationLog.created_at).where(
             and_(
-                NotificationLog.event_type == "LOW_FUEL",
+                NotificationLog.event_type == event_type,
                 NotificationLog.generator_id == generator_id
             )
         ).order_by(NotificationLog.created_at.desc()).limit(1)
-        res_fuel = await db.execute(q_last_fuel)
-        last_fuel_time = res_fuel.scalar()
-        if last_fuel_time and (now - last_fuel_time).total_seconds() < 10800:  # 3 hours
+        res_ev = await db.execute(q_last_ev)
+        last_ev_time = res_ev.scalar()
+        if last_ev_time and (now - last_ev_time).total_seconds() < 10800:  # 3 hours
             return {
                 "sent": 0,
                 "failed": 0,
                 "skipped": True,
-                "reason": "Сповіщення про низький рівень палива вже надсилалося менше 3 годин тому"
+                "rate_limited": True,
+                "reason": f"Сповіщення {event_type} вже надсилалося менше 3 годин тому"
             }
 
     # 5. Fetch active subscriptions (with User eagerly loaded)
@@ -595,10 +598,36 @@ async def check_and_notify_low_fuel(
     current_fuel_l: float
 ):
     threshold_l = float(get_runtime_setting("low_fuel_threshold_l", 5.0))
-    if current_fuel_l <= threshold_l:
+    if current_fuel_l <= 0.1:
+        safe_l = max(0.0, float(current_fuel_l))
+        title = f"⛽ ПОРОЖНІЙ БАК (0 л) — {generator.name}"
+        body = f"У баку генератора закінчилося паливо ({safe_l:.1f} л)! Робота насухо небезпечна — потрібна негайна дозаправка."
+        push_res = await send_push_notification(
+            db=db,
+            title=title,
+            body=body,
+            event_type="EMPTY_TANK",
+            generator_id=generator.id,
+            facility_id=generator.facility_id,
+            url="/?tab=tab-fuel"
+        )
+        if not push_res.get("rate_limited") and get_runtime_setting("email_notify_empty_tank", True) and get_runtime_setting("smtp_enabled", False):
+            try:
+                from backend.app.services.email_service import resolve_facility_email_recipients, send_empty_tank_email
+                recs = await resolve_facility_email_recipients(db, generator.facility_id)
+                if recs:
+                    await send_empty_tank_email(
+                        recipients=recs,
+                        generator_name=generator.name,
+                        fuel_level_l=safe_l,
+                        db=db,
+                    )
+            except Exception as mail_exc:
+                logger.warning("Failed to dispatch EMPTY_TANK email: %s", mail_exc)
+    elif current_fuel_l <= threshold_l:
         title = f"⚠️ Критичний рівень палива — {generator.name}"
         body = f"У баку залишилося всього {current_fuel_l:.1f} л (поріг: {threshold_l:.1f} л). Необхідна дозаправка!"
-        await send_push_notification(
+        push_res = await send_push_notification(
             db=db,
             title=title,
             body=body,
@@ -607,6 +636,20 @@ async def check_and_notify_low_fuel(
             facility_id=generator.facility_id,
             url="/?tab=tab-fuel"
         )
+        if not push_res.get("rate_limited") and get_runtime_setting("email_notify_low_fuel", True) and get_runtime_setting("smtp_enabled", False):
+            try:
+                from backend.app.services.email_service import resolve_facility_email_recipients, send_low_fuel_email
+                recs = await resolve_facility_email_recipients(db, generator.facility_id)
+                if recs:
+                    await send_low_fuel_email(
+                        recipients=recs,
+                        generator_name=generator.name,
+                        fuel_level_l=current_fuel_l,
+                        threshold_l=threshold_l,
+                        db=db,
+                    )
+            except Exception as mail_exc:
+                logger.warning("Failed to dispatch LOW_FUEL email: %s", mail_exc)
 
 
 async def check_and_notify_maintenance_due(
@@ -640,7 +683,7 @@ async def check_and_notify_maintenance_due(
         overdue_h = abs(remaining_hours)
         title = f"🔧 УВАГА: Прострочено ТО — {generator.name}!"
         body = f"Регламент ТО прострочено на {overdue_h:.1f} год (напрацювання: {effective_hours:.1f} год, план: {schedule.next_due_hours:.1f} год). Необхідно терміново виконати регламентні роботи!"
-        await send_push_notification(
+        push_res = await send_push_notification(
             db=db,
             title=title,
             body=body,
@@ -649,10 +692,26 @@ async def check_and_notify_maintenance_due(
             facility_id=generator.facility_id,
             url="/?tab=tab-maintenance"
         )
+        if not push_res.get("rate_limited") and get_runtime_setting("email_notify_maintenance_due", True) and get_runtime_setting("smtp_enabled", False):
+            try:
+                from backend.app.services.email_service import resolve_facility_email_recipients, send_maintenance_due_email
+                recs = await resolve_facility_email_recipients(db, generator.facility_id)
+                if recs:
+                    await send_maintenance_due_email(
+                        recipients=recs,
+                        generator_name=generator.name,
+                        is_overdue=True,
+                        hours_delta=overdue_h,
+                        effective_hours=effective_hours,
+                        next_due_hours=schedule.next_due_hours,
+                        db=db,
+                    )
+            except Exception as mail_exc:
+                logger.warning("Failed to dispatch MAINTENANCE_DUE overdue email: %s", mail_exc)
     elif remaining_hours <= (schedule.interval_hours * 0.1):  # within 10% of interval (e.g. <= 30 hours)
         title = f"🔧 Наближається планове ТО — {generator.name}"
         body = f"Залишилося всього {remaining_hours:.1f} мотогодин до регламентного ТО (план: {schedule.next_due_hours:.1f} год). Підготуйте мастило та фільтри."
-        await send_push_notification(
+        push_res = await send_push_notification(
             db=db,
             title=title,
             body=body,
@@ -661,6 +720,22 @@ async def check_and_notify_maintenance_due(
             facility_id=generator.facility_id,
             url="/?tab=tab-maintenance"
         )
+        if not push_res.get("rate_limited") and get_runtime_setting("email_notify_maintenance_due", True) and get_runtime_setting("smtp_enabled", False):
+            try:
+                from backend.app.services.email_service import resolve_facility_email_recipients, send_maintenance_due_email
+                recs = await resolve_facility_email_recipients(db, generator.facility_id)
+                if recs:
+                    await send_maintenance_due_email(
+                        recipients=recs,
+                        generator_name=generator.name,
+                        is_overdue=False,
+                        hours_delta=remaining_hours,
+                        effective_hours=effective_hours,
+                        next_due_hours=schedule.next_due_hours,
+                        db=db,
+                    )
+            except Exception as mail_exc:
+                logger.warning("Failed to dispatch MAINTENANCE_DUE upcoming email: %s", mail_exc)
 
 
 async def notify_critical_fault(
@@ -680,6 +755,53 @@ async def notify_critical_fault(
         facility_id=generator.facility_id,
         url="/?tab=tab-faults"
     )
+    if get_runtime_setting("email_notify_critical_fault", True) and get_runtime_setting("smtp_enabled", False):
+        try:
+            from backend.app.services.email_service import resolve_facility_email_recipients, send_critical_fault_email
+            recs = await resolve_facility_email_recipients(db, generator.facility_id)
+            if recs:
+                await send_critical_fault_email(
+                    recipients=recs,
+                    generator_name=generator.name,
+                    fault_title=fault_title,
+                    fault_description=fault_description,
+                    db=db,
+                )
+        except Exception as mail_exc:
+            logger.warning("Failed to dispatch CRITICAL_FAULT email: %s", mail_exc)
+
+
+async def notify_outside_work_hours(
+    db: AsyncSession,
+    generator: Generator,
+    schedule_msg: str,
+    context_text: str,
+):
+    title = f"🕒 Робота поза графіком — {generator.name}"
+    body = f"{context_text} ({schedule_msg})"
+    push_res = await send_push_notification(
+        db=db,
+        title=title,
+        body=body,
+        event_type="OUTSIDE_WORK_HOURS",
+        generator_id=generator.id,
+        facility_id=generator.facility_id,
+        url="/?tab=tab-dashboard"
+    )
+    if not push_res.get("rate_limited") and get_runtime_setting("email_notify_outside_schedule", True) and get_runtime_setting("smtp_enabled", False):
+        try:
+            from backend.app.services.email_service import resolve_facility_email_recipients, send_outside_work_hours_email
+            recs = await resolve_facility_email_recipients(db, generator.facility_id)
+            if recs:
+                await send_outside_work_hours_email(
+                    recipients=recs,
+                    generator_name=generator.name,
+                    schedule_msg=schedule_msg,
+                    context_text=context_text,
+                    db=db,
+                )
+        except Exception as mail_exc:
+            logger.warning("Failed to dispatch OUTSIDE_WORK_HOURS email: %s", mail_exc)
 
 
 async def notify_air_alert_start(

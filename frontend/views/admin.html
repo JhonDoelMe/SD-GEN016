@@ -203,6 +203,11 @@
                 <input type="checkbox" id="notifYasnoEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-amber);">
                 <span>⚡ <b>Графіки відключень YASNO</b> (попередження за 20–35 хв до планового знеструмлення об'єкта)</span>
               </label>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; color: var(--text-primary); border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+                <input type="checkbox" id="notifOutsideScheduleEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-amber);">
+                <span>⏰ <b>Робота поза робочим графіком</b> (тривога, коли генератор працює після завершення дозволеного часу)</span>
+              </label>
             </div>
 
             <button type="submit" class="btn-primary">
@@ -430,8 +435,43 @@
               <label class="settings-toggle-item">
                 <input type="checkbox" id="sysEmailNotifySafetyStop" checked>
                 <div class="settings-toggle-content">
-                  <span class="settings-toggle-title">🚨 Термінові листи при аварійній зупинці запобіжника (>12 год)</span>
-                  <span class="settings-toggle-desc">Повідомляє відповідальних осіб, коли генератор вимкнено через загрозу роботи насухо або перевищення ліміту.</span>
+                  <span class="settings-toggle-title">🚨 Термінові листи при автостопі (запобіжник або графік)</span>
+                  <span class="settings-toggle-desc">Повідомляє відповідальних осіб, коли генератор вимкнено запобіжником (>12 год) або автоматично за розкладом.</span>
+                </div>
+              </label>
+              <label class="settings-toggle-item">
+                <input type="checkbox" id="sysEmailNotifyEmptyTank" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title">🪫 Листи при повному вичерпанні палива (0 л)</span>
+                  <span class="settings-toggle-desc">Надсилає термінове повідомлення на email при падінні залишку палива до 0 літрів.</span>
+                </div>
+              </label>
+              <label class="settings-toggle-item">
+                <input type="checkbox" id="sysEmailNotifyLowFuel" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title">⚠️ Листи при низькому рівні палива</span>
+                  <span class="settings-toggle-desc">Сповіщає відповідальних по об'єкту, коли паливо опускається нижче заданого порогу.</span>
+                </div>
+              </label>
+              <label class="settings-toggle-item">
+                <input type="checkbox" id="sysEmailNotifyOutsideSchedule" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title">⏰ Листи при роботі генератора поза графіком</span>
+                  <span class="settings-toggle-desc">Попереджає, якщо генератор продовжує роботу після завершення дозволеного робочого часу.</span>
+                </div>
+              </label>
+              <label class="settings-toggle-item">
+                <input type="checkbox" id="sysEmailNotifyCriticalFault" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title">💥 Листи при критичних несправностях</span>
+                  <span class="settings-toggle-desc">Миттєво надсилає деталі критичної несправності відповідальним особам.</span>
+                </div>
+              </label>
+              <label class="settings-toggle-item">
+                <input type="checkbox" id="sysEmailNotifyMaintenance" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title">🔧 Листи при наближенні ТО</span>
+                  <span class="settings-toggle-desc">Повідомляє адміністраторів та операторів об'єкта про необхідність технічного обслуговування.</span>
                 </div>
               </label>
               <label class="settings-toggle-item">

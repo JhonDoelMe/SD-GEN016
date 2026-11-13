@@ -58,6 +58,7 @@ window.toggleAccountMenu = function (e) {
     window.closeAccountMenu();
   } else {
     window.toggleNavDrawer(false);
+    if (typeof window.closeNotificationsBell === 'function') window.closeNotificationsBell();
     dd.style.display = 'block';
     if (btn) btn.setAttribute('aria-expanded', 'true');
   }
@@ -75,6 +76,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     window.closeAccountMenu();
     window.toggleNavDrawer(false);
+    if (typeof window.closeNotificationsBell === 'function') window.closeNotificationsBell();
   }
 });
 
@@ -116,6 +118,7 @@ window.syncProfileModalUI = function (userObj) {
   const metaSummary = document.getElementById('profileSummaryMeta');
   const fullNameIn = document.getElementById('profileFullName');
   const emailIn = document.getElementById('profileEmail');
+  const emailNotifyIn = document.getElementById('profileEmailNotify');
 
   if (typeof window.renderAvatarElement === 'function') {
     window.renderAvatarElement(img, init, userObj);
@@ -127,6 +130,7 @@ window.syncProfileModalUI = function (userObj) {
   if (metaSummary) metaSummary.innerText = `@${userObj.login} • ${getRolesLabelUa(userObj)}`;
   if (fullNameIn) fullNameIn.value = userObj.full_name || '';
   if (emailIn) emailIn.value = userObj.email || '';
+  if (emailNotifyIn) emailNotifyIn.checked = userObj.email_notifications_enabled !== false;
 };
 
 window.uploadMyAvatar = async function (input) {
@@ -236,6 +240,9 @@ async function checkAuth() {
     if (typeof window.pollRecentNotifications === 'function') {
       window.pollRecentNotifications(true);
     }
+    if (typeof window.loadBellFeed === 'function') {
+      window.loadBellFeed(false);
+    }
     if (window.ViewLoader?.scheduleIdleWarmup) {
       window.ViewLoader.scheduleIdleWarmup();
     }
@@ -322,6 +329,9 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
     }
     if (typeof window.pollRecentNotifications === 'function') {
       window.pollRecentNotifications(true);
+    }
+    if (typeof window.loadBellFeed === 'function') {
+      window.loadBellFeed(false);
     }
     if (window.ViewLoader?.scheduleIdleWarmup) {
       window.ViewLoader.scheduleIdleWarmup();
@@ -657,6 +667,7 @@ document.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fullName = document.getElementById('profileFullName')?.value.trim();
     const emailRaw = document.getElementById('profileEmail')?.value.trim();
+    const emailNotify = document.getElementById('profileEmailNotify')?.checked ?? true;
     const btn = document.getElementById('btnSaveProfile');
     if (!fullName) {
       showToast('ПІБ не може бути порожнім', 'warning');
@@ -666,7 +677,11 @@ document.addEventListener('submit', async (e) => {
     try {
       const updated = await api('/auth/me', {
         method: 'PUT',
-        body: JSON.stringify({ full_name: fullName, email: emailRaw || null })
+        body: JSON.stringify({
+          full_name: fullName,
+          email: emailRaw || null,
+          email_notifications_enabled: emailNotify
+        })
       });
       currentUser = updated;
       if (typeof window.OfflineQueue === 'object') {

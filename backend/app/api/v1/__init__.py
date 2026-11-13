@@ -13,6 +13,7 @@ from backend.app.api.v1.system import router as system_router
 from backend.app.api.v1.notifications import router as notifications_router
 from backend.app.api.v1.backups import router as backups_router
 from backend.app.api.v1.measurement import router as measurement_router
+from backend.app.api.v1.email_public import router as email_public_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(auth_router)
@@ -29,5 +30,6 @@ api_v1_router.include_router(system_router)
 api_v1_router.include_router(notifications_router)
 api_v1_router.include_router(backups_router)
 api_v1_router.include_router(measurement_router)
+api_v1_router.include_router(email_public_router)
 
 __all__ = ["api_v1_router"]

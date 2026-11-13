@@ -86,6 +86,7 @@ function getToastTypeForNotificationEvent(eventType) {
     case 'AIR_ALERT_START':
     case 'CRITICAL_FAULT':
     case 'GENERATOR_SAFETY_STOP':
+    case 'EMPTY_TANK':
       return 'error';
     case 'AIR_ALERT_END':
     case 'GENERATOR_START':
@@ -95,6 +96,8 @@ function getToastTypeForNotificationEvent(eventType) {
     case 'YASNO_OUTAGE_ALERT':
     case 'GENERATOR_HEARTBEAT':
     case 'FUEL_DISCREPANCY':
+    case 'OUTSIDE_WORK_HOURS':
+    case 'GENERATOR_AUTO_STOP':
       return 'warning';
     default:
       return 'info';
@@ -300,6 +303,9 @@ window.pollRecentNotifications = async function(isInitial = false) {
     if (maxId > lastSeenId) {
       localStorage.setItem('sd_last_seen_notif_id', String(maxId));
     }
+    if (typeof window.loadBellFeed === 'function') {
+      window.loadBellFeed(false);
+    }
   } catch (_) {}
 };
 
@@ -328,6 +334,9 @@ if ('serviceWorker' in navigator) {
       if (currentFacilityId && (evType.startsWith('AIR_ALERT') || evType.startsWith('YASNO') || evType.startsWith('GENERATOR'))) {
         loadFacilityIndicators(currentFacilityId, true);
         loadGeneratorData();
+      }
+      if (typeof window.loadBellFeed === 'function') {
+        window.loadBellFeed(false);
       }
     }
   });
@@ -655,6 +664,7 @@ async function loadNotificationSettings() {
     setCheck('notifAirAlertsEnabled', s.notify_air_alerts !== false);
     setCheck('notifAirAlertEndEnabled', s.notify_air_alert_end !== false);
     setCheck('notifYasnoEnabled', s.notify_yasno_outages !== false);
+    setCheck('notifOutsideScheduleEnabled', s.notify_outside_schedule !== false);
   } catch (_) {}
 }
 
@@ -671,7 +681,8 @@ window.saveNotificationSettings = async function(e) {
     notify_critical_faults: document.getElementById('notifFaultsEnabled')?.checked ?? true,
     notify_air_alerts: document.getElementById('notifAirAlertsEnabled')?.checked ?? true,
     notify_air_alert_end: document.getElementById('notifAirAlertEndEnabled')?.checked ?? true,
-    notify_yasno_outages: document.getElementById('notifYasnoEnabled')?.checked ?? true
+    notify_yasno_outages: document.getElementById('notifYasnoEnabled')?.checked ?? true,
+    notify_outside_schedule: document.getElementById('notifOutsideScheduleEnabled')?.checked ?? true
   };
 
   try {
@@ -693,7 +704,9 @@ async function loadNotificationLogs() {
       'GENERATOR_STOP': '🔴 Зупинка',
       'GENERATOR_SAFETY_STOP': '🛑 Автостоп',
       'GENERATOR_AUTO_STOP': '🕒 Графік',
+      'OUTSIDE_WORK_HOURS': '⏰ Поза графіком',
       'GENERATOR_HEARTBEAT': '⏱️ Робота',
+      'EMPTY_TANK': '🪫 Порожній бак',
       'LOW_FUEL': '⚠️ Паливо',
       'FUEL_DISCREPANCY': '⛽ Баланс',
       'MAINTENANCE_DUE': '🔧 ТО',
@@ -701,6 +714,9 @@ async function loadNotificationLogs() {
       'AIR_ALERT_START': '🚨 Тривога',
       'AIR_ALERT_END': '🟢 Відбій',
       'YASNO_OUTAGE_ALERT': '⚡ YASNO',
+      'EMAIL_SENT': '📧 Email',
+      'EMAIL_FAILOVER': '📧 Резервний SMTP',
+      'EMAIL_FAILED': '⚠️ Помилка Email',
       'TEST': '📲 Тест'
     };
 
@@ -847,7 +863,8 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const tasks = [
         loadFacilityIndicators(currentFacilityId),
-        window.pollRecentNotifications(false)
+        window.pollRecentNotifications(false),
+        window.loadBellFeed(false)
       ];
       if (!window.activeTabId || window.activeTabId === 'tab-dashboard') {
         tasks.push(loadGeneratorData());
@@ -873,6 +890,184 @@ document.addEventListener('DOMContentLoaded', () => {
       runDashboardBackgroundRefresh();
     }
   });
+});
+
+// ---------------------------------------------------------------------------
+// Header Notification Bell (🔔) Feed & Interactive Popover
+// ---------------------------------------------------------------------------
+const _BELL_EVENT_EMOJI = {
+  'GENERATOR_START': '🟢',
+  'GENERATOR_STOP': '🔴',
+  'GENERATOR_SAFETY_STOP': '🛑',
+  'GENERATOR_AUTO_STOP': '🕒',
+  'OUTSIDE_WORK_HOURS': '⏰',
+  'GENERATOR_HEARTBEAT': '⏱️',
+  'EMPTY_TANK': '🪫',
+  'LOW_FUEL': '⚠️',
+  'FUEL_DISCREPANCY': '⛽',
+  'MAINTENANCE_DUE': '🔧',
+  'CRITICAL_FAULT': '🚨',
+  'AIR_ALERT_START': '🚨',
+  'AIR_ALERT_END': '🟢',
+  'YASNO_OUTAGE_ALERT': '⚡'
+};
+
+function _getBellTargetTab(eventType) {
+  const viewer = typeof isViewerOnly === 'function' && isViewerOnly();
+  switch (eventType) {
+    case 'EMPTY_TANK':
+    case 'LOW_FUEL':
+    case 'FUEL_DISCREPANCY':
+      return (!viewer && typeof hasPermission === 'function' && hasPermission('fuel:view')) ? 'tab-fuel' : 'tab-dashboard';
+    case 'MAINTENANCE_DUE':
+      return (!viewer && typeof hasPermission === 'function' && hasPermission('maintenance:view')) ? 'tab-maintenance' : 'tab-dashboard';
+    case 'CRITICAL_FAULT':
+      return (!viewer && typeof hasPermission === 'function' && hasPermission('faults:view')) ? 'tab-faults' : 'tab-dashboard';
+    case 'GENERATOR_START':
+    case 'GENERATOR_STOP':
+    case 'GENERATOR_SAFETY_STOP':
+    case 'GENERATOR_AUTO_STOP':
+    case 'OUTSIDE_WORK_HOURS':
+    case 'GENERATOR_HEARTBEAT':
+      return (!viewer && typeof hasPermission === 'function' && hasPermission('runs:view')) ? 'tab-runs' : 'tab-dashboard';
+    default:
+      return 'tab-dashboard';
+  }
+}
+
+function _renderBellFeed(data) {
+  const badge = document.getElementById('bellUnreadCount');
+  const bellBtn = document.getElementById('headerBellBadge');
+  const listEl = document.getElementById('notificationsBellList');
+  const openAllBtn = document.getElementById('btnOpenAllNotifs');
+  if (!listEl) return;
+
+  if (openAllBtn) {
+    const canViewNotifTab = !(typeof isViewerOnly === 'function' && isViewerOnly())
+      && typeof hasPermission === 'function'
+      && hasPermission('notifications:view');
+    openAllBtn.style.display = canViewNotifTab ? 'inline-block' : 'none';
+  }
+
+  const unreadCount = Number(data?.unread_count || 0);
+  if (badge) {
+    if (unreadCount > 0) {
+      badge.innerText = unreadCount > 99 ? '99+' : String(unreadCount);
+      badge.style.display = 'inline-flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  if (bellBtn) {
+    bellBtn.classList.toggle('has-unread', unreadCount > 0);
+  }
+
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if (items.length === 0) {
+    listEl.innerHTML = '<div class="notifications-bell-empty">Поки що немає системних сповіщень</div>';
+    return;
+  }
+
+  listEl.innerHTML = items.map((item) => {
+    const icon = _BELL_EVENT_EMOJI[item.event_type] || '🔔';
+    const isUnread = item.is_read === false;
+    const unreadCls = isUnread ? ' is-unread' : '';
+    const dotHtml = isUnread ? '<span class="notifications-bell-unread-dot" aria-label="Непрочитане"></span>' : '';
+    const timeStr = typeof formatDateTime === 'function' ? formatDateTime(item.created_at) : String(item.created_at || '');
+    return `
+      <button type="button" class="notifications-bell-item${unreadCls}" data-event-type="${escapeHtml(item.event_type || '')}">
+        <span class="notifications-bell-icon">${icon}</span>
+        <div class="notifications-bell-content">
+          <div class="notifications-bell-title">
+            <span>${escapeHtml(item.title || 'Сповіщення')}</span>
+            ${dotHtml}
+          </div>
+          <div class="notifications-bell-body">${escapeHtml(item.body || '')}</div>
+          <div class="notifications-bell-meta">${escapeHtml(timeStr)}</div>
+        </div>
+      </button>
+    `;
+  }).join('');
+}
+
+window.loadBellFeed = async function(interactive = false) {
+  if (!token || !currentUser) return null;
+  try {
+    const res = await fetch('/api/v1/notifications/feed?limit=25', {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    if (!res.ok) {
+      if (interactive) showToast('Не вдалося завантажити сповіщення', 'error');
+      return null;
+    }
+    const data = await res.json();
+    _renderBellFeed(data);
+    return data;
+  } catch (_) {
+    if (interactive) showToast('Помилка з’єднання зі стрічкою сповіщень', 'error');
+    return null;
+  }
+};
+
+window.closeNotificationsBell = function() {
+  const dd = document.getElementById('notificationsDropdown');
+  const btn = document.getElementById('headerBellBadge');
+  if (dd) dd.style.display = 'none';
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+};
+
+window.toggleNotificationsBell = function(e) {
+  if (e) e.stopPropagation();
+  const dd = document.getElementById('notificationsDropdown');
+  const btn = document.getElementById('headerBellBadge');
+  if (!dd) return;
+  const isVisible = dd.style.display === 'block';
+  if (isVisible) {
+    window.closeNotificationsBell();
+  } else {
+    if (typeof window.closeAccountMenu === 'function') window.closeAccountMenu();
+    if (typeof window.toggleNavDrawer === 'function') window.toggleNavDrawer(false);
+    dd.style.display = 'block';
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+    window.loadBellFeed(false);
+  }
+};
+
+window.markAllNotificationsRead = async function() {
+  if (!token || !currentUser) return;
+  try {
+    await api('/notifications/read', { method: 'POST' });
+    await window.loadBellFeed(false);
+  } catch (err) {
+    showToast(err?.message || 'Не вдалося позначити прочитаними', 'error');
+  }
+};
+
+window.openAllNotificationsLog = function() {
+  window.closeNotificationsBell();
+  if (typeof openTab === 'function') {
+    openTab('tab-notifications');
+  }
+};
+
+document.addEventListener('click', (e) => {
+  const wrap = document.getElementById('headerBellWrap');
+  const dd = document.getElementById('notificationsDropdown');
+  if (dd && dd.style.display === 'block' && wrap && !wrap.contains(e.target)) {
+    window.closeNotificationsBell();
+  }
+  const bellItem = e.target.closest?.('.notifications-bell-item');
+  if (bellItem && wrap && wrap.contains(bellItem)) {
+    const evType = bellItem.getAttribute('data-event-type') || '';
+    const targetTab = _getBellTargetTab(evType);
+    window.closeNotificationsBell();
+    if (typeof openTab === 'function') {
+      openTab(targetTab);
+    }
+  }
 });
 
 

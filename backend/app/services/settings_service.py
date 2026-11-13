@@ -119,6 +119,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "notify_maintenance": True,
     "max_maintenance_notifications_per_day": 2,
     "notify_critical_faults": True,
+    "notify_outside_schedule": True,
     "notify_yasno_outages": True,
     "notify_air_alerts": True,
     "notify_air_alert_end": True,
@@ -156,6 +157,9 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     # Email Notification Event Triggers
     "email_notify_password_change": True,
     "email_notify_safety_stop": True,
+    "email_notify_empty_tank": True,
+    "email_notify_low_fuel": True,
+    "email_notify_outside_schedule": True,
     "email_notify_critical_fault": True,
     "email_notify_maintenance_due": True,
     "email_weekly_report_enabled": False,

@@ -975,6 +975,19 @@ async def stop_generator(
                 facility_id=generator.facility_id,
                 url="/?tab=tab-fuel"
             )
+            if get_runtime_setting("email_notify_low_fuel", True) and get_runtime_setting("smtp_enabled", False):
+                from backend.app.services.email_service import (
+                    resolve_facility_email_recipients,
+                    send_fuel_discrepancy_email,
+                )
+                recs = await resolve_facility_email_recipients(db, generator.facility_id)
+                if recs:
+                    await send_fuel_discrepancy_email(
+                        recipients=recs,
+                        generator_name=generator.name,
+                        shortage_l=fuel_shortage_l,
+                        db=db,
+                    )
     except Exception as ex:
         print(f"[NOTIF] Failed to send stop notification: {ex}", flush=True)
 

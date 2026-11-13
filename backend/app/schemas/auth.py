@@ -82,6 +82,7 @@ class UserSummary(BaseModel):
     avatar_url: Optional[str] = None
     is_active: bool
     is_superadmin: bool
+    email_notifications_enabled: bool = True
     roles: List[str] = []
     permissions: List[str] = []
 
@@ -91,6 +92,7 @@ class UserSummary(BaseModel):
 class ProfileUpdateRequest(BaseModel):
     full_name: Optional[str] = Field(None, max_length=150)
     email: Optional[str] = Field(None, max_length=150)
+    email_notifications_enabled: Optional[bool] = None
 
     @field_validator("full_name")
     @classmethod
@@ -153,6 +155,7 @@ class UserUpdate(BaseModel):
     email: Optional[str] = Field(None, max_length=150)
     facility_id: Optional[int] = None
     is_active: Optional[bool] = None
+    email_notifications_enabled: Optional[bool] = None
     role_ids: Optional[List[int]] = None
     password: Optional[str] = Field(None, min_length=8, max_length=128)
 
@@ -202,6 +205,7 @@ class UserOut(BaseModel):
     avatar_url: Optional[str] = None
     is_active: bool
     is_superadmin: bool
+    email_notifications_enabled: bool = True
     created_at: datetime.datetime
     roles: List["RoleOut"] = []
 

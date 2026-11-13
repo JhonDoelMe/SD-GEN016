@@ -105,15 +105,13 @@ async def check_operational_guardrails(db: AsyncSession) -> Dict[str, Any]:
                     # Email notification for safety stop
                     if get_runtime_setting("email_notify_safety_stop", True) and get_runtime_setting("smtp_enabled", False):
                         try:
-                            from backend.app.services.email_service import send_safety_stop_email
-                            admin_res = await db.execute(select(User.email).where(User.is_superadmin == True, User.email.isnot(None)))
-                            recipients = [e for e in admin_res.scalars().all() if e]
-                            rec_setting = str(get_runtime_setting("email_weekly_recipients", "")).strip()
-                            if rec_setting:
-                                for r in rec_setting.replace(";", ",").split(","):
-                                    r_clean = r.strip()
-                                    if r_clean and r_clean not in recipients:
-                                        recipients.append(r_clean)
+                            from backend.app.services.email_service import (
+                                resolve_facility_email_recipients,
+                                send_safety_stop_email,
+                            )
+                            recipients = await resolve_facility_email_recipients(
+                                db, facility_id=gen.facility_id, include_weekly_recipients=True
+                            )
                             if recipients:
                                 await send_safety_stop_email(
                                     recipients=recipients,
@@ -128,28 +126,59 @@ async def check_operational_guardrails(db: AsyncSession) -> Dict[str, Any]:
                 continue
 
             # -------------------------------------------------------------
-            # 2. Guardrail: Work Schedule End Auto-Stop (Strictly Day Shift)
+            # 2. Guardrail: Work Schedule End Auto-Stop / Outside Schedule Alert
             # OPG-01, OPG-07, OPG-08, OPG-19: Use unified stop_generator
             # -------------------------------------------------------------
-            if auto_stop_on_sched and enforce_schedule:
-                schedules_data = [
-                    {"weekday": s.weekday, "start_time": s.start_time, "end_time": s.end_time, "is_active": s.is_active}
-                    for s in (gen.schedules or [])
-                ]
-                is_allowed, sched_msg = is_within_work_schedule(schedules_data, dt=current_time)
+            schedules_data = [
+                {"weekday": s.weekday, "start_time": s.start_time, "end_time": s.end_time, "is_active": s.is_active}
+                for s in (gen.schedules or [])
+            ]
+            if enforce_schedule:
+                is_allowed, sched_msg = is_within_work_schedule(
+                    schedules_data, dt=current_time, tz_name=gen.timezone
+                )
                 if not is_allowed:
-                    note_text = f"Автоматична зупинка за розкладом закінчення робочого дня: {sched_msg}"
-                    stopped_run = await stop_generator(
-                        db=db,
-                        generator_id=gen.id,
-                        user_id=None,
-                        reason="WORK_SCHEDULE_ENDED",
-                        system_note=note_text,
-                        actor_type="SYSTEM_GUARD"
-                    )
-                    if stopped_run:
-                        results["auto_stopped_schedule"] += 1
-                    continue
+                    if auto_stop_on_sched:
+                        note_text = f"Автоматична зупинка за розкладом закінчення робочого дня: {sched_msg}"
+                        stopped_run = await stop_generator(
+                            db=db,
+                            generator_id=gen.id,
+                            user_id=None,
+                            reason="WORK_SCHEDULE_ENDED",
+                            system_note=note_text,
+                            actor_type="SYSTEM_GUARD"
+                        )
+                        if stopped_run:
+                            results["auto_stopped_schedule"] += 1
+                            if get_runtime_setting("email_notify_safety_stop", True) and get_runtime_setting("smtp_enabled", False):
+                                try:
+                                    from backend.app.services.email_service import (
+                                        resolve_facility_email_recipients,
+                                        send_schedule_auto_stop_email,
+                                    )
+                                    recipients = await resolve_facility_email_recipients(
+                                        db, facility_id=gen.facility_id, include_weekly_recipients=True
+                                    )
+                                    if recipients:
+                                        await send_schedule_auto_stop_email(
+                                            recipients=recipients,
+                                            generator_name=gen.name,
+                                            schedule_msg=sched_msg,
+                                            elapsed_hours=stopped_run.duration_hours,
+                                            fuel_level=gen.fuel_tank_level_l,
+                                            db=db,
+                                        )
+                                except Exception as mail_exc:
+                                    print(f"[EMAIL] Notice: schedule auto-stop email dispatch note: {mail_exc}", flush=True)
+                        continue
+                    else:
+                        from backend.app.services.notification_service import notify_outside_work_hours
+                        await notify_outside_work_hours(
+                            db=db,
+                            generator=gen,
+                            schedule_msg=sched_msg,
+                            context_text=f"Генератор працює {elapsed_hours:.1f} год поза робочим графіком (автостоп вимкнено).",
+                        )
 
             # -------------------------------------------------------------
             # 3. Guardrail: Heartbeat Reminder ('Генератор досі працює?')
@@ -236,6 +265,15 @@ async def check_and_send_weekly_digest(db: AsyncSession) -> bool:
         return False
 
     rec_list = [r.strip() for r in recipients_str.replace(";", ",").split(",") if r.strip()]
+    if rec_list:
+        opted_out_res = await db.execute(
+            select(User.email).where(
+                User.email_notifications_enabled == False,  # noqa: E712
+                User.email.isnot(None),
+            )
+        )
+        opted_out_set = {e.strip().lower() for e in opted_out_res.scalars().all() if e}
+        rec_list = [r for r in rec_list if r.lower() not in opted_out_set]
     if not rec_list:
         return False
 

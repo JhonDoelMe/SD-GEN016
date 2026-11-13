@@ -94,6 +94,9 @@ class SystemSettingsUpdateRequest(BaseModel):
     smtp_fallback_from: Optional[str] = Field(default=None, max_length=150)
     email_notify_password_change: Optional[bool] = None
     email_notify_safety_stop: Optional[bool] = None
+    email_notify_empty_tank: Optional[bool] = None
+    email_notify_low_fuel: Optional[bool] = None
+    email_notify_outside_schedule: Optional[bool] = None
     email_notify_critical_fault: Optional[bool] = None
     email_notify_maintenance_due: Optional[bool] = None
     email_weekly_report_enabled: Optional[bool] = None
@@ -343,6 +346,9 @@ async def update_admin_system_settings(
         "smtp_fallback_from",
         "email_notify_password_change",
         "email_notify_safety_stop",
+        "email_notify_empty_tank",
+        "email_notify_low_fuel",
+        "email_notify_outside_schedule",
         "email_notify_critical_fault",
         "email_notify_maintenance_due",
         "email_weekly_report_enabled",

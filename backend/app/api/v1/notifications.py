@@ -37,6 +37,7 @@ from backend.app.services.notification_service import (
 from backend.app.services.fcm_service import is_fcm_configured
 from backend.app.services.settings_service import update_system_settings
 from backend.app.services.audit_service import log_audit
+from backend.app.core.timezone import now_utc
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
@@ -261,3 +262,81 @@ async def check_generator_maintenance_notification(
     await verify_generator_facility_access(db, current_user, generator_id)
     await check_and_notify_maintenance_due(db, generator_id)
     return {"success": True, "message": "Перевірку регламенту ТО виконано"}
+
+
+@router.get("/feed")
+async def get_notification_bell_feed(
+    limit: int = Query(20, ge=1, le=50),
+    facility_id: Optional[int] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    In-app notification bell feed for any logged-in user, scoped by facility/role,
+    with persistent read timestamp (`notifications_read_at`).
+    """
+    is_admin = is_user_admin_or_super(current_user)
+    excluded_types = ["EMAIL_SENT", "EMAIL_FAILOVER", "TEST"]
+    if not is_admin:
+        excluded_types.append("EMAIL_FAILED")
+
+    q = (
+        select(NotificationLog)
+        .where(NotificationLog.event_type.notin_(excluded_types))
+        .order_by(NotificationLog.created_at.desc(), NotificationLog.id.desc())
+        .limit(limit)
+    )
+    if not is_admin:
+        if current_user.facility_id:
+            q = q.where(
+                (NotificationLog.facility_id == current_user.facility_id)
+                | (NotificationLog.facility_id == None)  # noqa: E711
+            )
+    elif facility_id is not None:
+        q = q.where(
+            (NotificationLog.facility_id == facility_id)
+            | (NotificationLog.facility_id == None)  # noqa: E711
+        )
+
+    res = await db.execute(q)
+    logs = res.scalars().all()
+
+    read_at = getattr(current_user, "notifications_read_at", None)
+    unread_count = 0
+    items = []
+    for l in logs:
+        is_unread = read_at is None or l.created_at > read_at
+        if is_unread:
+            unread_count += 1
+        items.append({
+            "id": l.id,
+            "event_type": l.event_type,
+            "generator_id": l.generator_id,
+            "facility_id": l.facility_id,
+            "title": l.title,
+            "body": l.body,
+            "created_at": l.created_at.isoformat() if l.created_at else None,
+            "is_read": not is_unread,
+        })
+
+    return {
+        "items": items,
+        "unread_count": unread_count,
+        "read_at": read_at.isoformat() if read_at else None,
+    }
+
+
+@router.post("/read")
+async def mark_notifications_as_read(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark all in-app bell notifications up to now as read for current user."""
+    now = now_utc(naive=True)
+    current_user.notifications_read_at = now
+    await db.commit()
+    return {
+        "success": True,
+        "unread_count": 0,
+        "read_at": now.isoformat(),
+    }

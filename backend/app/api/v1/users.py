@@ -140,6 +140,8 @@ async def update_user(
                 detail="Неможливо заблокувати власний обліковий запис"
             )
         target_user.is_active = data.is_active
+    if data.email_notifications_enabled is not None:
+        target_user.email_notifications_enabled = bool(data.email_notifications_enabled)
 
     if data.role_ids is not None:
         roles_res = await db.execute(select(Role).where(Role.id.in_(data.role_ids)))

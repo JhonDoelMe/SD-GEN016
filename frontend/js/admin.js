@@ -1132,6 +1132,11 @@ async function loadAdminSystemSettings() {
     if (document.getElementById('sysSmtpEnabled')) document.getElementById('sysSmtpEnabled').checked = s.smtp_enabled === true;
     if (document.getElementById('sysEmailNotifyPwdChange')) document.getElementById('sysEmailNotifyPwdChange').checked = s.email_notify_password_change !== false;
     if (document.getElementById('sysEmailNotifySafetyStop')) document.getElementById('sysEmailNotifySafetyStop').checked = s.email_notify_safety_stop !== false;
+    if (document.getElementById('sysEmailNotifyEmptyTank')) document.getElementById('sysEmailNotifyEmptyTank').checked = s.email_notify_empty_tank !== false;
+    if (document.getElementById('sysEmailNotifyLowFuel')) document.getElementById('sysEmailNotifyLowFuel').checked = s.email_notify_low_fuel !== false;
+    if (document.getElementById('sysEmailNotifyOutsideSchedule')) document.getElementById('sysEmailNotifyOutsideSchedule').checked = s.email_notify_outside_schedule !== false;
+    if (document.getElementById('sysEmailNotifyCriticalFault')) document.getElementById('sysEmailNotifyCriticalFault').checked = s.email_notify_critical_fault !== false;
+    if (document.getElementById('sysEmailNotifyMaintenance')) document.getElementById('sysEmailNotifyMaintenance').checked = s.email_notify_maintenance_due !== false;
     if (document.getElementById('sysEmailWeeklyEnabled')) document.getElementById('sysEmailWeeklyEnabled').checked = s.email_weekly_report_enabled === true;
     if (document.getElementById('sysSmtpPrimaryHost')) document.getElementById('sysSmtpPrimaryHost').value = s.smtp_primary_host || 'smtp.gmail.com';
     if (document.getElementById('sysSmtpPrimaryPort')) document.getElementById('sysSmtpPrimaryPort').value = s.smtp_primary_port || 587;
@@ -1370,6 +1375,11 @@ document.addEventListener('submit', async (e) => {
     smtp_enabled: document.getElementById('sysSmtpEnabled')?.checked ?? false,
     email_notify_password_change: document.getElementById('sysEmailNotifyPwdChange')?.checked ?? true,
     email_notify_safety_stop: document.getElementById('sysEmailNotifySafetyStop')?.checked ?? true,
+    email_notify_empty_tank: document.getElementById('sysEmailNotifyEmptyTank')?.checked ?? true,
+    email_notify_low_fuel: document.getElementById('sysEmailNotifyLowFuel')?.checked ?? true,
+    email_notify_outside_schedule: document.getElementById('sysEmailNotifyOutsideSchedule')?.checked ?? true,
+    email_notify_critical_fault: document.getElementById('sysEmailNotifyCriticalFault')?.checked ?? true,
+    email_notify_maintenance_due: document.getElementById('sysEmailNotifyMaintenance')?.checked ?? true,
     email_weekly_report_enabled: document.getElementById('sysEmailWeeklyEnabled')?.checked ?? false,
     smtp_primary_host: document.getElementById('sysSmtpPrimaryHost')?.value.trim() || 'smtp.gmail.com',
     smtp_primary_port: parseInt(document.getElementById('sysSmtpPrimaryPort')?.value || '587', 10),

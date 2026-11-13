@@ -1083,3 +1083,269 @@
 .footer-mail:hover {
   text-decoration: underline;
 }
+
+/* ==========================================================================
+   HEADER NOTIFICATION BELL & DROPDOWN POPOVER
+   ========================================================================== */
+.header-bell-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.pill-bell {
+  position: relative;
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.28);
+  color: var(--text-primary);
+}
+
+.pill-bell:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.55);
+}
+
+.pill-bell.has-unread {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.bell-unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(239, 68, 68, 0.5);
+}
+
+.notifications-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(380px, calc(100vw - 1rem));
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.48);
+  z-index: 1300;
+  overflow: hidden;
+  animation: fadeSlideDown 0.16s ease-out;
+}
+
+[data-theme="light"] .notifications-dropdown {
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16);
+}
+
+.notifications-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 0.95rem;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(56, 189, 248, 0.06);
+}
+
+.notifications-dropdown-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.btn-bell-mark-read {
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--accent-cyan);
+  border-radius: 8px;
+  padding: 0.28rem 0.58rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-bell-mark-read:hover {
+  background: rgba(56, 189, 248, 0.22);
+}
+
+.notifications-bell-list {
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.notifications-bell-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.7rem 0.95rem;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+
+.notifications-bell-item:last-child {
+  border-bottom: none;
+}
+
+.notifications-bell-item:hover {
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.notifications-bell-item.is-unread {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.notifications-bell-icon {
+  font-size: 1.15rem;
+  line-height: 1.25;
+  flex-shrink: 0;
+}
+
+.notifications-bell-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.notifications-bell-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.notifications-bell-unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+  flex-shrink: 0;
+}
+
+.notifications-bell-body {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.18rem;
+  line-height: 1.38;
+  word-break: break-word;
+}
+
+.notifications-bell-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+  opacity: 0.85;
+}
+
+.notifications-bell-empty {
+  padding: 1.35rem 1rem;
+  text-align: center;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+
+.notifications-dropdown-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.9rem;
+  border-top: 1px solid var(--border-color);
+  background: rgba(15, 23, 42, 0.25);
+}
+
+[data-theme="light"] .notifications-dropdown-footer {
+  background: rgba(241, 245, 249, 0.8);
+}
+
+.btn-bell-footer {
+  border: none;
+  background: transparent;
+  color: var(--accent-cyan);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+}
+
+.btn-bell-footer:hover {
+  background: rgba(56, 189, 248, 0.12);
+}
+
+@media (max-width: 768px) {
+  .pill-bell .bell-unread-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    font-size: 0.65rem;
+  }
+
+  .notifications-dropdown {
+    position: fixed;
+    top: calc(56px + var(--safe-top));
+    left: 0.5rem;
+    right: 0.5rem;
+    width: auto;
+    max-width: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .header-right {
+    gap: 0.25rem;
+  }
+
+  .header-indicators {
+    gap: 0.2rem;
+  }
+
+  .btn-menu-toggle {
+    width: 34px;
+    height: 34px;
+  }
+
+  .brand-name {
+    font-size: 0.85rem;
+  }
+
+  .header-pill {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+  }
+
+  .header-pill .pill-icon {
+    font-size: 0.95rem;
+  }
+
+  .account-avatar-btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  .btn-header-install {
+    height: 30px;
+    padding: 0 0.35rem;
+  }
+}

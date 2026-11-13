@@ -59,6 +59,7 @@ def _build_user_summary(user: User) -> UserSummary:
         avatar_url=user.avatar_url,
         is_active=user.is_active,
         is_superadmin=user.is_superadmin,
+        email_notifications_enabled=bool(getattr(user, "email_notifications_enabled", True)),
         roles=role_names,
         permissions=sorted(permissions_set),
     )
@@ -217,6 +218,8 @@ async def update_my_profile(
         current_user.full_name = payload.full_name
     if "email" in payload.model_fields_set:
         current_user.email = payload.email
+    if payload.email_notifications_enabled is not None:
+        current_user.email_notifications_enabled = bool(payload.email_notifications_enabled)
 
     await db.flush()
     await log_audit(
@@ -225,7 +228,11 @@ async def update_my_profile(
         entity_type="User",
         entity_id=str(current_user.id),
         user_id=current_user.id,
-        details={"full_name": current_user.full_name, "email": current_user.email},
+        details={
+            "full_name": current_user.full_name,
+            "email": current_user.email,
+            "email_notifications_enabled": bool(current_user.email_notifications_enabled),
+        },
         ip_address=get_client_ip(request),
     )
     await db.commit()

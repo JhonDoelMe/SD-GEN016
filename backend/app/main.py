@@ -127,6 +127,8 @@ def ensure_schema_updates(sync_conn):
         sync_conn.execute(text("ALTER TABLE generators ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP"))
         sync_conn.execute(text("ALTER TABLE generator_runs ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)"))
         sync_conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_generator_runs_idempotency_key ON generator_runs(idempotency_key)"))
+        sync_conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE"))
+        sync_conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS notifications_read_at TIMESTAMP"))
         sync_conn.execute(text(
             "UPDATE generator_runs SET status = 'COMPLETED', end_time = COALESCE(end_time, start_time), "
             "end_hours = COALESCE(end_hours, start_hours), duration_seconds = COALESCE(duration_seconds, 0), "
@@ -166,6 +168,13 @@ def ensure_schema_updates(sync_conn):
                 sync_conn.execute(text("ALTER TABLE generators ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1"))
             if "archived_at" not in cols:
                 sync_conn.execute(text("ALTER TABLE generators ADD COLUMN archived_at TIMESTAMP"))
+
+        if "users" in tables:
+            cols = [c["name"] for c in inspector.get_columns("users")]
+            if "email_notifications_enabled" not in cols:
+                sync_conn.execute(text("ALTER TABLE users ADD COLUMN email_notifications_enabled BOOLEAN NOT NULL DEFAULT 1"))
+            if "notifications_read_at" not in cols:
+                sync_conn.execute(text("ALTER TABLE users ADD COLUMN notifications_read_at TIMESTAMP"))
 
         if "generator_runs" in tables:
             cols = [c["name"] for c in inspector.get_columns("generator_runs")]
@@ -292,7 +301,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Service Desk Генератора (SD-GEN016)",
     description="Система оперативного обліку фактичної експлуатації бензинового генератора",
-    version="5.6.11",
+    version="5.7.0",
     lifespan=lifespan
 )
 
