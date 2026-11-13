@@ -381,6 +381,7 @@ window.toggleNavDrawer = function (forceState) {
 window.toggleMobileMoreSheet = window.toggleNavDrawer;
 
 window.activeTabId = 'tab-dashboard';
+window._tabSwitchSeq = 0;
 
 window.switchTab = async function (paneId) {
   if (paneId === 'tab-measurement' && !isSuperAdmin()) {
@@ -397,8 +398,27 @@ window.switchTab = async function (paneId) {
   window.toggleNavDrawer(false);
   window.closeAccountMenu();
 
+  const switchSeq = ++window._tabSwitchSeq;
+
   if (window.ViewLoader?.ensureTab) {
-    await window.ViewLoader.ensureTab(paneId);
+    try {
+      await window.ViewLoader.ensureTab(paneId);
+    } catch (err) {
+      console.error(`Failed to load view for ${paneId}:`, err);
+      if (typeof showToast === 'function') {
+        showToast('Не вдалося завантажити розділ. Перевірте з\'єднання та спробуйте ще раз.', 'error');
+      }
+      return false;
+    }
+  }
+
+  // Abort if user already initiated a newer tab switch while view was loading
+  if (switchSeq !== window._tabSwitchSeq) return false;
+
+  const pane = document.getElementById(paneId);
+  if (!pane) {
+    console.warn(`Tab pane #${paneId} was not found in DOM after loading.`);
+    return false;
   }
 
   window.activeTabId = paneId;
@@ -413,9 +433,15 @@ window.switchTab = async function (paneId) {
     sectionLabel.textContent = cleanText || '⚡ Головна';
   }
 
-  document.querySelectorAll('.tab-pane').forEach((p) => (p.style.display = 'none'));
-  const pane = document.getElementById(paneId);
-  if (pane) pane.style.display = 'block';
+  document.querySelectorAll('.tab-pane').forEach((p) => {
+    const isTarget = p.id === paneId;
+    p.style.display = isTarget ? 'block' : 'none';
+    p.classList.toggle('active', isTarget);
+  });
+
+  if (typeof applyRolePermissionsUI === 'function') {
+    applyRolePermissionsUI();
+  }
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -430,7 +456,6 @@ window.switchTab = async function (paneId) {
     await window.loadMeasurementTab();
   }
   if (paneId === 'tab-admin') {
-    applyRolePermissionsUI();
     const savedSub = sessionStorage.getItem('sd_admin_subtab') || 'facilities';
     await window.switchAdminSubtab(savedSub);
   }
@@ -469,12 +494,12 @@ window.switchAdminSubtab = async function (subtab) {
   }
 };
 
-document.querySelectorAll('.nav-item').forEach((tab) => {
-  tab.addEventListener('click', (e) => {
-    e.preventDefault();
-    const paneId = tab.getAttribute('data-tab');
-    if (paneId) switchTab(paneId);
-  });
+document.addEventListener('click', (e) => {
+  const tab = e.target?.closest?.('.nav-item[data-tab]');
+  if (!tab) return;
+  e.preventDefault();
+  const paneId = tab.getAttribute('data-tab');
+  if (paneId) switchTab(paneId);
 });
 
 // ---------------------------------------------------------------------------

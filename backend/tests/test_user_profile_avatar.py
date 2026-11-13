@@ -170,3 +170,32 @@ async def test_modular_frontend_assets_and_unique_ids(client: AsyncClient):
         for asset in sorted((frontend_dir / subdir).glob(ext)):
             resp = await client.get(f"/frontend/{subdir}/{asset.name}")
             assert resp.status_code == 200, f"Failed to serve /frontend/{subdir}/{asset.name}"
+
+    expected_tabs = (
+        "dashboard",
+        "fuel",
+        "maintenance",
+        "faults",
+        "runs",
+        "reports",
+        "audit",
+        "measurement",
+        "admin",
+    )
+    for tab_name in expected_tabs:
+        view_path = frontend_dir / "views" / f"{tab_name}.html"
+        content = re.sub(r"^\s*(?:<!--[\s\S]*?-->\s*)*", "", view_path.read_text(encoding="utf-8")).strip()
+        assert re.match(rf'^<section id="tab-{tab_name}" class="tab-pane(?:\s+active)?"', content), (
+            f"{view_path.name} must start with <section id=\"tab-{tab_name}\" class=\"tab-pane...\""
+        )
+        assert content.endswith("</section>"), f"{view_path.name} must end with </section>"
+        assert f'data-tab="tab-{tab_name}"' in html, f"Menu item for tab-{tab_name} missing from index.html"
+
+    for view_path in sorted((frontend_dir / "views").glob("*.html")):
+        text = view_path.read_text(encoding="utf-8")
+        assert len(re.findall(r"<section\b", text)) == len(re.findall(r"</section>", text)), (
+            f"Unbalanced <section> tags in {view_path.name}"
+        )
+        assert len(re.findall(r"<div\b", text)) == len(re.findall(r"</div>", text)), (
+            f"Unbalanced <div> tags in {view_path.name}"
+        )
