@@ -1,0 +1,350 @@
+  <div id="modalStopGen" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Зупинка генератора</h3>
+        <button class="close-btn" onclick="closeModal('modalStopGen')">&times;</button>
+      </div>
+      <form id="stopGenForm">
+        <div id="stopModalRedAlertNotice" class="red-alert-safety-info" style="display: none; margin-bottom: 0.85rem;"></div>
+        <div style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 0.5rem; padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.35rem;">
+            <span style="color: var(--text-muted);">Початок роботи:</span>
+            <b id="stopStartTimeDisplay">-</b>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.35rem; align-items: center;">
+            <span style="color: var(--text-muted);">Тривалість циклу:</span>
+            <b id="stopDurationDisplay" style="color: #38bdf8; font-size: 1.25rem; font-family: monospace;">00:00:00</b>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Розрахунковий розхід:</span>
+            <b id="stopEstFuelDisplay" style="color: #4ade80;">0.000 л</b>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Кінцеві мотогодини на лічильнику (необов'язково)</label>
+          <input type="number" step="any" id="stopEndHours" placeholder="Залиште пустим для авто-розрахунку">
+          <small style="color: var(--text-muted);">Якщо лічильник не змінився, значення буде розраховано за секундоміром</small>
+        </div>
+        <div class="form-group">
+          <label>Фактичний рівень палива в баку (л, необов'язково)</label>
+          <input type="number" step="0.1" id="stopEndFuel" placeholder="Якщо не вказано, спишеться розрахунковий розхід">
+        </div>
+        <div class="form-group">
+          <label>Коментар / примітки</label>
+          <textarea id="stopNote" rows="2" placeholder="Планова зупинка, зауваження до роботи"></textarea>
+        </div>
+        <button type="submit" class="btn-hero btn-stop" style="font-size: 1.1rem; padding: 1rem;">Підтвердити зупинку</button>
+      </form>
+    </div>
+  </div>
+  <div id="modalReceipt" class="modal-overlay">
+    <div class="modal-content modal-compact">
+      <div class="modal-header">
+        <h3 id="recModalTitle">📥 Прийом палива на склад</h3>
+        <button class="close-btn" onclick="closeModal('modalReceipt')">&times;</button>
+      </div>
+      <form id="receiptForm">
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Об'єкт</label>
+            <select id="recFacility" required></select>
+          </div>
+          <div class="form-group">
+            <label>Склад ГСМ</label>
+            <select id="recStock" required onchange="onReceiptStockChange()"></select>
+          </div>
+        </div>
+
+        <div id="recCanisterModeBox" style="display: none;">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>Пул каністр</label>
+              <select id="recCanisterPool" onchange="updateReceiptPriceEstimate()"></select>
+            </div>
+            <div class="form-group">
+              <label id="recCanisterCountLabel">Привезено каністр (шт.)</label>
+              <input type="number" step="1" min="1" id="recCanisterCount" value="1" oninput="updateReceiptPriceEstimate()">
+            </div>
+          </div>
+        </div>
+
+        <div id="recLitersModeBox">
+          <div id="recNoPoolHint" style="display: none; margin-bottom: 0.6rem; padding: 0.45rem 0.65rem; border-radius: 0.45rem; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); font-size: 0.78rem; color: #fbbf24;">
+            ℹ️ Для цього складу пул каністр не налаштовано — доступний ввід у літрах.
+          </div>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label>Тип палива</label>
+              <select id="recFuelType" onchange="updateReceiptPriceEstimate()">
+                <option value="А-95" selected>А-95 (WOG 95 Євро5-Е10)</option>
+                <option value="А-95 Mustang">А-95 Mustang (WOG 95 Mustang)</option>
+                <option value="ДП">ДП (WOG ДП Євро5)</option>
+                <option value="ДП Mustang+">ДП Mustang+ (WOG ДП Mustang+)</option>
+                <option value="ГАЗ">ГАЗ (WOG LPG)</option>
+                <option value="А-92">А-92</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Кількість літрів</label>
+              <input type="number" step="0.1" id="recLiters" placeholder="напр. 60.0" oninput="updateReceiptPriceEstimate()">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Мережа АЗС</label>
+            <select id="recFuelProvider" onchange="onReceiptFuelProviderChange()">
+              <option value="wog" selected>АЗК WOG</option>
+              <option value="okko">АЗК OKKO</option>
+              <option value="other">Інша АЗС</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Сума чека (грн, опц.)</label>
+            <input type="number" step="0.01" min="0" id="recCostTotal" placeholder="Авторозрахунок" oninput="updateReceiptPriceEstimate()">
+          </div>
+        </div>
+
+        <div id="recAutoPriceHint" style="margin-bottom: 0.72rem; padding: 0.5rem 0.65rem; border-radius: 0.45rem; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 0.8rem; line-height: 1.4;">
+          💡 Оберіть кількість каністр для розрахунку літрів та суми.
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Хто доставив (ПІБ) *</label>
+            <input type="text" id="recDriver" required placeholder="напр. Іваненко І.І.">
+          </div>
+          <div class="form-group">
+            <label>Номер чека *</label>
+            <input type="text" id="recNumber" required placeholder="напр. ЧЕК-4589">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Коментар</label>
+          <input type="text" id="recComment" placeholder="Додаткова інформація (необов'язково)">
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalReceipt')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зберегти надходження</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalCanisterAction" class="modal-overlay">
+    <div class="modal-content modal-compact" style="max-width: 460px;">
+      <div class="modal-header">
+        <h3 id="canActionTitle">🛢️ Операція з каністрами</h3>
+        <button class="close-btn" onclick="closeModal('modalCanisterAction')">&times;</button>
+      </div>
+      <form id="canisterActionForm">
+        <input type="hidden" id="canActionPoolId">
+        <input type="hidden" id="canActionMode">
+        <div id="canActionPoolInfo" style="margin-bottom: 0.85rem; padding: 0.6rem 0.75rem; border-radius: 0.5rem; background: rgba(148, 163, 184, 0.1); border: 1px solid rgba(148, 163, 184, 0.2); font-size: 0.83rem; line-height: 1.4;"></div>
+        <div class="form-group">
+          <label id="canActionCountLabel">Кількість каністр (шт.)</label>
+          <input type="number" step="1" min="1" id="canActionCount" value="1" required>
+        </div>
+        <div class="form-group">
+          <label>Коментар</label>
+          <input type="text" id="canActionComment" placeholder="Необов'язковий коментар">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalCanisterAction')">Скасувати</button>
+          <button type="submit" id="canActionSubmitBtn" class="btn-primary">Підтвердити</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalManualRun" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">📝 Внесення роботи генератора з журналу</h3>
+        <button class="close-btn" onclick="closeModal('modalManualRun')">&times;</button>
+      </div>
+      <form id="manualRunForm">
+        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 1rem;">
+          Використовуйте, якщо оператор працював без доступу до системи (відсутній інтернет або зв'язок) і зафіксував час роботи на папері.
+        </p>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label>Дата та час запуску *</label>
+            <input type="datetime-local" id="manualRunStartTime" required onchange="calculateManualRunEstimates()">
+          </div>
+          <div class="form-group">
+            <label>Дата та час зупинки *</label>
+            <input type="datetime-local" id="manualRunEndTime" required onchange="calculateManualRunEstimates()">
+          </div>
+        </div>
+
+        <!-- Calculation preview banner -->
+        <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+            <span>Тривалість роботи:</span>
+            <b id="manualRunDurationText" style="color: #38bdf8;">00:00:00 (0.0 год)</b>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span>Розрахункова витрата палива:</span>
+            <b id="manualRunFuelText" style="color: #f59e0b;">~0.0 л</b>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label>Початкові мотогодини</label>
+            <input type="number" step="0.1" id="manualRunStartHours" placeholder="поточні з системи">
+          </div>
+          <div class="form-group">
+            <label>Кінцеві мотогодини</label>
+            <input type="number" step="0.1" id="manualRunEndHours" placeholder="розраховується">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Фактично витрачене паливо (л) <small style="color:var(--text-muted);">(якщо відомо)</small></label>
+          <input type="number" step="0.1" id="manualRunFuelConsumed" placeholder="якщо не вказано — за нормою розходу">
+        </div>
+
+        <div class="form-group">
+          <label>Примітки щодо роботи</label>
+          <textarea id="manualRunNote" rows="2" placeholder="Запис із журналу під час відсутності зв'язку"></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button type="submit" class="btn-primary">Зберегти сеанс у журнал</button>
+          <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalManualRun')">Скасувати</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalTransfer" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Заправити бак генератора</h3>
+        <button class="close-btn" onclick="closeModal('modalTransfer')">&times;</button>
+      </div>
+      <form id="transferForm">
+        <div id="transferModalRedAlertNotice" class="red-alert-safety-info" style="display: none; margin-bottom: 0.85rem;"></div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
+          Переміщення палива: Склад ГСМ → Бак генератора
+        </p>
+        <div class="form-group">
+          <label>Зі складу ГСМ</label>
+          <select id="transStock" required onchange="updateTransferCapacityHint()"></select>
+        </div>
+        <div class="form-group">
+          <label>Генератор (куди заправити)</label>
+          <select id="transGenerator" required onchange="updateTransferCapacityHint()"></select>
+        </div>
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;"><label style="margin-bottom: 0;">Кількість літрів для заправки</label><button type="button" id="btnTransFillTank" onclick="fillTransferTankMax()" style="display: none; background: rgba(56, 189, 248, 0.14); color: var(--accent-cyan); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 6px; padding: 0.18rem 0.55rem; font-size: 0.76rem; font-weight: 600; cursor: pointer;">⚡ До повного</button></div>
+          <input type="number" step="0.1" min="0.1" id="transLiters" required placeholder="напр. 20.0" oninput="validateTransferLitersInput()"><div id="transCapacityHint" style="margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;"></div><div id="transCanisterBreakdownHint" style="margin-top: 0.35rem; font-size: 0.8rem; color: var(--accent-cyan); line-height: 1.4; display: none;"></div>
+        </div>
+        <div class="form-group">
+          <label>Коментар</label>
+          <textarea id="transComment" rows="2" placeholder="Заправка перед зміною"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalTransfer')">Скасувати</button>
+          <button type="submit" class="btn-primary">⛽ Заправити бак</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalMaintenance" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Фіксація технічного обслуговування</h3>
+        <button class="close-btn" onclick="closeModal('modalMaintenance')">&times;</button>
+      </div>
+      <form id="maintForm">
+        <div class="form-group">
+          <label>Тип обслуговування</label>
+          <select id="maintType" required>
+            <option value="SCHEDULED">Регламентне ТО (скидає та подовжує інтервал)</option>
+            <option value="INTERMEDIATE" selected>Проміжне ТО (не скидає регламентний інтервал)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Опис виконаних робіт</label>
+          <textarea id="maintWork" required rows="3" placeholder="напр. Заміна моторної оливи, свічки, чистка фільтра"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Використані витратні матеріали</label>
+          <input type="text" id="maintConsumables" placeholder="напр. Масло 10W40 1.1л, свічка NGK">
+        </div>
+        <div class="form-group">
+          <label>Вартість матеріалів та робіт (грн)</label>
+          <input type="number" step="0.01" id="maintCost" value="0.0" placeholder="0.00">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalMaintenance')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зафіксувати ТО</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalFault" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Повідомити про несправність</h3>
+        <button class="close-btn" onclick="closeModal('modalFault')">&times;</button>
+      </div>
+      <form id="faultForm">
+        <div class="form-group">
+          <label>Коротка назва несправності</label>
+          <input type="text" id="faultTitle" required placeholder="напр. Стукіт у двигуні / витік масла">
+        </div>
+        <div class="form-group">
+          <label>Пріоритет</label>
+          <select id="faultPriority">
+            <option value="LOW">Низький</option>
+            <option value="MEDIUM" selected>Середній</option>
+            <option value="HIGH">Високий</option>
+            <option value="CRITICAL">Критичний (блокує запуск генератора)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Детальний опис</label>
+          <textarea id="faultDesc" required rows="3" placeholder="Опишіть характер несправності, звуки, прояви"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalFault')">Скасувати</button>
+          <button type="submit" class="btn-danger">Надіслати заявку</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalResolveFault" class="modal-overlay">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 style="color: #22c55e;">🛠️ Усунення несправності</h3>
+        <button class="close-btn" onclick="closeModal('modalResolveFault')">&times;</button>
+      </div>
+      <form id="resolveFaultForm">
+        <input type="hidden" id="resolveFaultId">
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 1rem;">
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem;">Несправність:</div>
+          <div id="resolveFaultInfo" style="font-weight: 600; color: var(--text-color); font-size: 0.95rem;">-</div>
+        </div>
+        <div class="form-group">
+          <label>Примітки щодо усунення несправності *</label>
+          <textarea id="resolveFaultNotes" required rows="3" placeholder="напр. Замінено паливний шланг та фільтр, виконано перевірку герметичності"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn-primary">Позначити як усунену</button>
+          <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalResolveFault')">Скасувати</button>
+        </div>
+      </form>
+    </div>
+  </div>
+

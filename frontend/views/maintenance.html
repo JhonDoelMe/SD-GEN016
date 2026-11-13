@@ -1,0 +1,47 @@
+    <section id="tab-maintenance" class="tab-pane" style="display: none;">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Технічне обслуговування генератора</h3>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; background: #0284c7;" id="btnRecalculateMaint" onclick="recalculateMaintenanceSchedule()">🔄 Перерахувати за нормативом</button>
+            <button type="button" id="btnAdminResetMaint" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #f59e0b; color: #fbbf24; background: rgba(245, 158, 11, 0.1); display: none;" onclick="openAdminResetMaintModal()">⚙️ Скидання лічильника ТО</button>
+            <button type="button" id="btnOpenMaintModal" class="btn-action" onclick="openModal('modalMaintenance')">+ Зафіксувати ТО</button>
+          </div>
+        </div>
+
+        <div class="info-card-block">
+          <h4 style="color: var(--accent-cyan); margin-bottom: 0.5rem;">Графік регламентного ТО</h4>
+          <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; font-size: 0.95rem; color: var(--text-primary);">
+            <div>Інтервал регламенту: <b id="maintInterval">300 год</b></div>
+            <div>Останнє ТО виконано на: <b id="maintLast">0.0 год</b></div>
+            <div>Наступне ТО заплановано: <b id="maintNext">300.0 год</b></div>
+            <div>Залишилося: <b id="maintRemaining" style="color: var(--accent-green);">300.0 год</b></div>
+          </div>
+          <div class="progress-bar" style="height: 10px; margin-top: 1rem;">
+            <div id="maintProgress" class="progress-fill" style="width: 0%;"></div>
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.75rem;">
+            ℹ️ <b>Бізнес-правило:</b> Проміжне ТО (заміна свічок, фільтрів, дрібний ремонт) фіксується окремо і не зрушує та не скидає основний регламентний інтервал!
+          </p>
+        </div>
+
+        <h4>Історія технічного обслуговування</h4>
+        <div class="table-wrapper">
+          <table id="maintenanceHistoryTable">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Тип</th>
+                <th>Мотогодини</th>
+                <th>Опис виконаних робіт</th>
+                <th>Матеріали</th>
+                <th>Вартість</th>
+                <th>Виконавець</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+

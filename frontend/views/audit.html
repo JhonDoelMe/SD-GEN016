@@ -1,0 +1,53 @@
+    <section id="tab-audit" class="tab-pane" style="display: none;">
+      <div class="panel">
+        <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+          <h3>Журнал аудиту та Системні коригування</h3>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" id="btnOpenExportAudit" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #38bdf8; color: #38bdf8;" onclick="openAuditExportModal()">📊 Експорт аудиту в Excel</button>
+            <button id="btnOpenAdjustment" class="btn-action" style="padding: 0.5rem 1rem; min-height: auto; border-color: #a855f7; color: #c084fc;" onclick="openAdjustmentModal()">⚙️ Системне коригування (Головний адміністратор)</button>
+          </div>
+        </div>
+
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+          🔒 Кожна операція фіксується в аудиті. Системні коригування дозволені виключно головному системному адміністратору з обов'язковою фіксацією причини зміни лічильників.
+        </p>
+
+        <h4 style="margin: 1rem 0 0.5rem;">Останні записи аудиту</h4>
+        <div class="table-wrapper">
+          <table id="auditTable">
+            <thead>
+              <tr>
+                <th>Час</th>
+                <th>Користувач</th>
+                <th>Дія</th>
+                <th>Об'єкт</th>
+                <th>Деталі</th>
+                <th>IP</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <h4 style="margin: 2rem 0 0.5rem;">Історія системних коригувань</h4>
+        <div class="table-wrapper">
+          <table id="adjustmentsTable">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Адміністратор</th>
+                <th>Об'єкт</th>
+                <th>Цільовий елемент</th>
+                <th>Сутність</th>
+                <th>Поле</th>
+                <th>Старе значення</th>
+                <th>Нове значення</th>
+                <th>Причина коригування</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+

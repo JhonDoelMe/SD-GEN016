@@ -44,6 +44,112 @@ async function loadAllData() {
   applyRolePermissionsUI();
 }
 
+// Lightweight KPI Summary Loaders (keeps Fuel & Operations modules lazy-loaded)
+window.loadFuelSummary = async function () {
+  if (isViewerOnly() || !hasPermission('fuel:view')) return;
+  try {
+    const params = [];
+    if (currentFacilityId) params.push(`facility_id=${encodeURIComponent(currentFacilityId)}`);
+    if (currentGeneratorId) params.push(`generator_id=${encodeURIComponent(currentGeneratorId)}`);
+    const q = params.length ? '?' + params.join('&') : '';
+
+    const s = await api(`/fuel/summary${q}`);
+    window._lastFuelSummary = s;
+    const cardStock = document.getElementById('cardStock');
+    if (cardStock) cardStock.innerText = s.warehouse_balance_l.toFixed(1).replace('.', ',');
+    const stockSub = document.getElementById('cardStockSub');
+    if (stockSub) {
+      stockSub.innerText = Number(s.canisters_total || 0) > 0
+        ? `${Number(s.canisters_full)}/${Number(s.canisters_total)} повн. каністр`
+        : 'залишок палива';
+    }
+    const fuelStockBal = document.getElementById('fuelStockBal');
+    if (fuelStockBal) fuelStockBal.innerText = formatLiters(s.warehouse_balance_l);
+    const fuelTankBal = document.getElementById('fuelTankBal');
+    if (fuelTankBal) fuelTankBal.innerText = formatLiters(s.tank_balance_l);
+    const fuelTotalBought = document.getElementById('fuelTotalBought');
+    if (fuelTotalBought) fuelTotalBought.innerText = formatLiters(s.total_received_l);
+    const fuelTotalSpent = document.getElementById('fuelTotalSpent');
+    if (fuelTotalSpent) fuelTotalSpent.innerText = formatMoney(s.total_spent_uah);
+    const fuelAvgPrice = document.getElementById('fuelAvgPrice');
+    if (fuelAvgPrice) fuelAvgPrice.innerText = formatPricePerLiter(s.avg_price_per_liter);
+
+    if (typeof window.updateFuelAssessmentBlock === 'function') {
+      window.updateFuelAssessmentBlock();
+    }
+  } catch (_) {}
+};
+
+window.loadMaintenanceSummary = async function () {
+  if (isViewerOnly() || !hasPermission('maintenance:view')) return;
+  const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
+  try {
+    if (!currentGeneratorId) {
+      const cardRem = document.getElementById('cardMaintRem');
+      if (cardRem) cardRem.innerHTML = `0.0 <small style="font-size:0.9rem;">год</small>`;
+      setText('cardMaintSub', 'генератор не вибрано');
+      setText('maintInterval', '-');
+      setText('maintLast', '-');
+      setText('maintNext', '-');
+      setText('maintRemaining', '-');
+      const prog = document.getElementById('maintProgress');
+      if (prog) prog.style.width = '0%';
+      return;
+    }
+    const q = `?generator_id=${currentGeneratorId}`;
+    const m = await api(`/maintenance/schedule${q}`);
+    cachedMaintenanceSchedule = m;
+    const cardRem = document.getElementById('cardMaintRem');
+    if (cardRem) cardRem.innerHTML = `${m.hours_remaining.toFixed(1).replace('.', ',')} <small style="font-size:0.9rem;">год</small>`;
+    setText('cardMaintSub', `план: ${formatHoursCounter(m.next_due_hours)}`);
+    setText('maintInterval', `${formatHoursCounter(m.interval_hours)}`);
+    setText('maintLast', `${formatHoursCounter(m.last_performed_hours)}`);
+    setText('maintNext', `${formatHoursCounter(m.next_due_hours)}`);
+    setText('maintRemaining', `${formatHoursCounter(m.hours_remaining)}`);
+
+    const remSpan = document.getElementById('maintRemaining');
+    if (remSpan) {
+      if (m.is_overdue) {
+        remSpan.style.color = '#ef4444';
+        remSpan.innerText += ' (ПРОСТРОЧЕНО!)';
+      } else if (m.is_due) {
+        remSpan.style.color = '#f59e0b';
+        remSpan.innerText += ' (СКОРО ТО)';
+      } else {
+        remSpan.style.color = '#22c55e';
+      }
+    }
+
+    const workedInCycle = m.current_operating_hours - m.last_performed_hours;
+    const progressPct = Math.min(100, Math.max(0, Math.round((workedInCycle / m.interval_hours) * 100)));
+    const prog = document.getElementById('maintProgress');
+    if (prog) prog.style.width = `${progressPct}%`;
+  } catch (_) {}
+};
+
+window.loadRecentRuns = async function () {
+  try {
+    const tbody = document.querySelector('#recentRunsTable tbody');
+    if (!tbody) return;
+    const q = currentGeneratorId ? '&generator_id=' + encodeURIComponent(currentGeneratorId) : '';
+    const runs = await api('/generator/runs?limit=5' + q);
+    tbody.innerHTML = runs.map((r) => {
+      const durText = r.duration_formatted || (r.duration_seconds != null ? formatDuration(r.duration_seconds) : (r.duration_hours ? formatHoursToHms(r.duration_hours) : '-'));
+      const consText = r.calculated_consumption_l != null ? formatLiters(r.calculated_consumption_l) : '-';
+      return `
+        <tr>
+          <td>${formatDateTime(r.start_time)}</td>
+          <td>${formatHoursCounter(r.start_hours)}</td>
+          <td>${r.end_hours != null ? formatHoursCounter(r.end_hours) : '<i>працює...</i>'}</td>
+          <td><b style="color: #38bdf8; font-family: monospace;">${escapeHtml(durText)}</b></td>
+          <td>${escapeHtml(consText)}</td>
+          <td>${escapeHtml(r.user_name || '-')}</td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Циклів не знайдено</td></tr>';
+  } catch (_) {}
+};
+
 // 1. Generator Data
 async function loadGeneratorData() {
   if (!currentGeneratorId) {
@@ -51,7 +157,7 @@ async function loadGeneratorData() {
     const nameEl = document.getElementById('genName');
     if (nameEl) nameEl.innerText = "Немає генератора";
     const modelEl = document.getElementById('genModel');
-    if (modelEl) modelEl.innerText = "На обраному об'єкті ще немає генераторів. Натисніть «+ Генератор», щоб зареєструвати перший генератор.";
+    if (modelEl) modelEl.innerText = "На обраному об'єкті ще немає генераторів. Додайте його в меню ⚙️ Адміністрування → Об'єкти та Генератори.";
     const cardHours = document.getElementById('cardHours');
     if (cardHours) cardHours.innerText = "0,0";
     const cardTank = document.getElementById('cardTank');
@@ -70,8 +176,8 @@ async function loadGeneratorData() {
     if (btn) {
       btn.className = 'btn-hero btn-disabled-role';
       btn.disabled = true;
-      btn.innerHTML = '<span>➕</span><span>ДОДАЙТЕ ГЕНЕРАТОР НА ОБ\'ЄКТ</span>';
-      btn.title = 'Натисніть кнопку "+ Генератор" у верхній панелі, щоб зареєструвати генератор';
+      btn.innerHTML = '<span>➕</span><span>ДОДАЙТЕ ГЕНЕРАТОР В АДМІНЦІ</span>';
+      btn.title = "Перейдіть у меню ⚙️ Адміністрування → Об'єкти та Генератори";
     }
     return;
   }
@@ -645,15 +751,16 @@ function stopRunStopwatch() {
   }
 }
 
-// Start / Stop Main Button Handler with Debounce and Safeguards
-document.getElementById('mainActionBtn').addEventListener('click', async () => {
+// Start / Stop Main Button Handler with Debounce and Safeguards (Delegated for Lazy Dashboard Mount)
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('#mainActionBtn');
+  if (!btn) return;
   if (!currentGenerator) return;
   if (isViewerOnly() || !hasPermission('generator:start')) {
     showToast('Керування генератором недоступне для ролі Спостерігач', 'warning');
     return;
   }
 
-  const btn = document.getElementById('mainActionBtn');
   if (btn.disabled || btn.dataset.busy === 'true') return;
 
   if (currentCooldownSeconds > 0) {
@@ -662,22 +769,29 @@ document.getElementById('mainActionBtn').addEventListener('click', async () => {
   }
 
   if (currentGenerator.status === 'RUNNING') {
-    // Open Stop Modal
+    if (window.ViewLoader?.ensureModal) {
+      await window.ViewLoader.ensureModal('modalStopGen');
+    }
     const endHoursInput = document.getElementById('stopEndHours');
-    endHoursInput.value = '';
-    endHoursInput.min = currentGenerator.current_operating_hours;
+    if (endHoursInput) {
+      endHoursInput.value = '';
+      endHoursInput.min = currentGenerator.current_operating_hours;
+    }
 
     if (activeRun && activeRun.start_time) {
-      document.getElementById('stopStartTimeDisplay').innerText = formatDateTime(activeRun.start_time);
+      const startDisp = document.getElementById('stopStartTimeDisplay');
+      if (startDisp) startDisp.innerText = formatDateTime(activeRun.start_time);
       updateRunStopwatchDisplay();
     } else {
-      document.getElementById('stopStartTimeDisplay').innerText = '-';
-      document.getElementById('stopDurationDisplay').innerText = '00:00:00';
-      document.getElementById('stopEstFuelDisplay').innerText = '0.000 л';
+      const startDisp = document.getElementById('stopStartTimeDisplay');
+      const durDisp = document.getElementById('stopDurationDisplay');
+      const fuelDisp = document.getElementById('stopEstFuelDisplay');
+      if (startDisp) startDisp.innerText = '-';
+      if (durDisp) durDisp.innerText = '00:00:00';
+      if (fuelDisp) fuelDisp.innerText = '0.000 л';
     }
     openModal('modalStopGen');
   } else {
-    // Safeguard: Maintenance Overdue Warning modal
     let forceStart = false;
     if (currentGenerator.status === 'MAINTENANCE_REQUIRED') {
       const confirmStart = confirm(
@@ -687,7 +801,6 @@ document.getElementById('mainActionBtn').addEventListener('click', async () => {
       forceStart = true;
     }
 
-    // Debounce & start generator
     btn.disabled = true;
     btn.dataset.busy = 'true';
     const oldText = btn.innerHTML;
@@ -724,9 +837,8 @@ document.getElementById('mainActionBtn').addEventListener('click', async () => {
   }
 });
 
-// Stop Form Submit
 // Manual Run Entry (Offline/Paper Log)
-window.openManualRunModal = function() {
+window.openManualRunModal = async function () {
   if (isViewerOnly() || !hasPermission('generator:start')) {
     showToast('Ручне внесення мотогодин недоступне для ролі Спостерігач', 'warning');
     return;
@@ -735,11 +847,13 @@ window.openManualRunModal = function() {
     showToast('Будь ласка, спочатку оберіть генератор', 'warning');
     return;
   }
+  if (window.ViewLoader?.ensureModal) {
+    await window.ViewLoader.ensureModal('modalManualRun');
+  }
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   const fmtLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
-  // Default: start 2 hours ago, end 1 hour ago
   const startD = new Date(now.getTime() - 2 * 3600 * 1000);
   const endD = new Date(now.getTime() - 1 * 3600 * 1000);
 
@@ -806,152 +920,158 @@ window.calculateManualRunEstimates = function() {
   }
 };
 
-document.getElementById('manualRunEndHours')?.addEventListener('input', () => {
-  document.getElementById('manualRunEndHours')?.setAttribute('data-manual-edited', 'true');
-});
-
-document.getElementById('manualRunForm')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!currentGeneratorId) {
-    showToast('Генератор не обрано', 'error');
-    return;
-  }
-  const startVal = document.getElementById('manualRunStartTime').value;
-  const endVal = document.getElementById('manualRunEndTime').value;
-  if (!startVal || !endVal) {
-    showToast('Вкажіть час запуску та зупинки', 'warning');
-    return;
-  }
-  const startD = new Date(startVal);
-  const endD = new Date(endVal);
-  if (endD <= startD) {
-    showToast('Час зупинки повинен бути пізнішим за час запуску', 'warning');
-    return;
-  }
-
-  const startHVal = document.getElementById('manualRunStartHours').value;
-  const endHVal = document.getElementById('manualRunEndHours').value;
-  const fuelVal = document.getElementById('manualRunFuelConsumed').value;
-  const noteVal = document.getElementById('manualRunNote').value.trim();
-
-  const body = {
-    generator_id: currentGeneratorId,
-    start_time: startD.toISOString(),
-    end_time: endD.toISOString(),
-    start_hours: startHVal !== '' && !isNaN(parseFloat(startHVal)) ? parseFloat(startHVal) : null,
-    end_hours: endHVal !== '' && !isNaN(parseFloat(endHVal)) ? parseFloat(endHVal) : null,
-    fuel_consumed_l: fuelVal !== '' && !isNaN(parseFloat(fuelVal)) ? parseFloat(fuelVal) : null,
-    note: noteVal || 'Внесено вручну (запис з паперового журналу)'
-  };
-
-  try {
-    const res = await api('/generator/manual-run', {
-      method: 'POST',
-      body: JSON.stringify(body),
-      offlineMeta: {
-        action_type: 'gen_manual_run',
-        title: 'Ручний запис роботи (журнал)',
-        summary: `${currentGenerator?.name || 'Генератор'}: ${startVal} → ${endVal}`,
-        facility_id: currentFacilityId,
-        generator_id: currentGeneratorId,
-      }
-    });
-    closeModal('modalManualRun');
-    if (res && res._queuedOffline) {
-      showToast('📥 Ручний запис роботи збережено в офлайн-чергу', 'warning');
-    } else {
-      const durText = res.duration_formatted || `${res.duration_hours} год`;
-      const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l.toFixed(1)} л` : '-';
-      showToast(`Сеанс роботи успішно внесено в журнал! Час: ${durText}, витрата: ${fuelText}`, 'success');
-    }
-    loadGeneratorData();
-    loadAllData();
-    loadRecentRuns();
-    if (typeof loadRunsTable === 'function') loadRunsTable();
-  } catch (err) {
-    showToast(err.message || 'Помилка при збереженні сеансу роботи', 'error');
+document.addEventListener('input', (e) => {
+  if (e.target && e.target.id === 'manualRunEndHours') {
+    e.target.setAttribute('data-manual-edited', 'true');
   }
 });
 
+document.addEventListener('submit', async (e) => {
+  const form = e.target;
+  if (!form || !form.id) return;
 
-document.getElementById('stopGenForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const submitBtn = e.target.querySelector('button[type="submit"]');
-  if (submitBtn && submitBtn.disabled) return;
-
-  const endHoursVal = document.getElementById('stopEndHours').value;
-  const endHours = endHoursVal !== '' && !isNaN(parseFloat(endHoursVal)) ? parseFloat(endHoursVal) : null;
-  const endFuelVal = document.getElementById('stopEndFuel').value;
-  const endFuel = endFuelVal !== '' && !isNaN(parseFloat(endFuelVal)) ? parseFloat(endFuelVal) : null;
-  const note = document.getElementById('stopNote').value;
-
-  let forceConfirm = false;
-
-  // Typo Safeguard check on frontend
-  if (endHours !== null && currentGenerator) {
-    const startH = activeRun?.start_hours ?? currentGenerator.current_operating_hours;
-    const deltaH = endHours - startH;
-    let elapsedH = 0;
-    if (activeRun?.start_time) {
-      elapsedH = Math.max(0, (Date.now() - new Date(activeRun.start_time).getTime()) / 3600000);
+  if (form.id === 'manualRunForm') {
+    e.preventDefault();
+    if (!currentGeneratorId) {
+      showToast('Генератор не обрано', 'error');
+      return;
+    }
+    const startVal = document.getElementById('manualRunStartTime').value;
+    const endVal = document.getElementById('manualRunEndTime').value;
+    if (!startVal || !endVal) {
+      showToast('Вкажіть час запуску та зупинки', 'warning');
+      return;
+    }
+    const startD = new Date(startVal);
+    const endD = new Date(endVal);
+    if (endD <= startD) {
+      showToast('Час зупинки повинен бути пізнішим за час запуску', 'warning');
+      return;
     }
 
-    const isSuspicious = (deltaH > 14.0) || (elapsedH > 0.02 && Math.abs(deltaH - elapsedH) > 2.0);
-    if (isSuspicious) {
-      const confirmed = confirm(
-        `⚠️ Запобіжник опечатки мотогодин!\n\n` +
-        `Напрацювання за введеним лічильником: ${deltaH.toFixed(2)} год.\n` +
-        `Час роботи за таймером: ${elapsedH.toFixed(2)} год.\n\n` +
-        `Різниця суттєва. Можлива опечатка (зайва цифра або пропущена крапка)!\n` +
-        `Ви впевнені, що показник ${endHours} правильний?`
-      );
-      if (!confirmed) {
-        return;
+    const startHVal = document.getElementById('manualRunStartHours').value;
+    const endHVal = document.getElementById('manualRunEndHours').value;
+    const fuelVal = document.getElementById('manualRunFuelConsumed').value;
+    const noteVal = document.getElementById('manualRunNote').value.trim();
+
+    const body = {
+      generator_id: currentGeneratorId,
+      start_time: startD.toISOString(),
+      end_time: endD.toISOString(),
+      start_hours: startHVal !== '' && !isNaN(parseFloat(startHVal)) ? parseFloat(startHVal) : null,
+      end_hours: endHVal !== '' && !isNaN(parseFloat(endHVal)) ? parseFloat(endHVal) : null,
+      fuel_consumed_l: fuelVal !== '' && !isNaN(parseFloat(fuelVal)) ? parseFloat(fuelVal) : null,
+      note: noteVal || 'Внесено вручну (запис з паперового журналу)'
+    };
+
+    try {
+      const res = await api('/generator/manual-run', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        offlineMeta: {
+          action_type: 'gen_manual_run',
+          title: 'Ручний запис роботи (журнал)',
+          summary: `${currentGenerator?.name || 'Генератор'}: ${startVal} → ${endVal}`,
+          facility_id: currentFacilityId,
+          generator_id: currentGeneratorId,
+        }
+      });
+      closeModal('modalManualRun');
+      if (res && res._queuedOffline) {
+        showToast('📥 Ручний запис роботи збережено в офлайн-чергу', 'warning');
+      } else {
+        const durText = res.duration_formatted || `${res.duration_hours} год`;
+        const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l.toFixed(1)} л` : '-';
+        showToast(`Сеанс роботи успішно внесено в журнал! Час: ${durText}, витрата: ${fuelText}`, 'success');
       }
-      forceConfirm = true;
+      loadGeneratorData();
+      loadAllData();
+      loadRecentRuns();
+      if (typeof loadRunsTable === 'function') loadRunsTable();
+    } catch (err) {
+      showToast(err.message || 'Помилка при збереженні сеансу роботи', 'error');
     }
+    return;
   }
 
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Зупинка...';
-  }
+  if (form.id === 'stopGenForm') {
+    e.preventDefault();
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn && submitBtn.disabled) return;
 
-  try {
-    const res = await api('/generator/stop', {
-      method: 'POST',
-      body: JSON.stringify({
-        generator_id: currentGeneratorId,
-        end_hours: endHours,
-        end_fuel_level_l: endFuel,
-        note: note,
-        force_confirm: forceConfirm
-      }),
-      offlineMeta: {
-        action_type: 'gen_stop',
-        title: 'Зупинка генератора',
-        summary: `${currentGenerator?.name || 'Генератор'}${endHours != null ? ` (мотогод: ${endHours})` : ''}`,
-        facility_id: currentFacilityId,
-        generator_id: currentGeneratorId,
+    const endHoursVal = document.getElementById('stopEndHours').value;
+    const endHours = endHoursVal !== '' && !isNaN(parseFloat(endHoursVal)) ? parseFloat(endHoursVal) : null;
+    const endFuelVal = document.getElementById('stopEndFuel').value;
+    const endFuel = endFuelVal !== '' && !isNaN(parseFloat(endFuelVal)) ? parseFloat(endFuelVal) : null;
+    const note = document.getElementById('stopNote').value;
+
+    let forceConfirm = false;
+
+    if (endHours !== null && currentGenerator) {
+      const startH = activeRun?.start_hours ?? currentGenerator.current_operating_hours;
+      const deltaH = endHours - startH;
+      let elapsedH = 0;
+      if (activeRun?.start_time) {
+        elapsedH = Math.max(0, (Date.now() - new Date(activeRun.start_time).getTime()) / 3600000);
       }
-    });
-    closeModal('modalStopGen');
-    stopRunStopwatch();
-    if (res && res._queuedOffline) {
-      showToast('📥 Зупинку генератора збережено в офлайн-чергу', 'warning');
-    } else {
-      startCooldownTimer(60);
-      const durText = res.duration_formatted || formatDuration(res.duration_seconds) || `${res.duration_hours} год`;
-      const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l} л` : '-';
-      showToast(`Генератор зупинено! Відпрацьовано: ${durText}, розхід: ${fuelText}`, 'success');
+
+      const isSuspicious = (deltaH > 14.0) || (elapsedH > 0.02 && Math.abs(deltaH - elapsedH) > 2.0);
+      if (isSuspicious) {
+        const confirmed = confirm(
+          `⚠️ Запобіжник опечатки мотогодин!\n\n` +
+          `Напрацювання за введеним лічильником: ${deltaH.toFixed(2)} год.\n` +
+          `Час роботи за таймером: ${elapsedH.toFixed(2)} год.\n\n` +
+          `Різниця суттєва. Можлива опечатка (зайва цифра або пропущена крапка)!\n` +
+          `Ви впевнені, що показник ${endHours} правильний?`
+        );
+        if (!confirmed) {
+          return;
+        }
+        forceConfirm = true;
+      }
     }
-    loadAllData();
-  } catch (err) {
-    showToast(err.message || 'Помилка при зупинці генератора', 'error');
-  } finally {
+
     if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = 'Зупинити генератор';
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Зупинка...';
+    }
+
+    try {
+      const res = await api('/generator/stop', {
+        method: 'POST',
+        body: JSON.stringify({
+          generator_id: currentGeneratorId,
+          end_hours: endHours,
+          end_fuel_level_l: endFuel,
+          note: note,
+          force_confirm: forceConfirm
+        }),
+        offlineMeta: {
+          action_type: 'gen_stop',
+          title: 'Зупинка генератора',
+          summary: `${currentGenerator?.name || 'Генератор'}${endHours != null ? ` (мотогод: ${endHours})` : ''}`,
+          facility_id: currentFacilityId,
+          generator_id: currentGeneratorId,
+        }
+      });
+      closeModal('modalStopGen');
+      stopRunStopwatch();
+      if (res && res._queuedOffline) {
+        showToast('📥 Зупинку генератора збережено в офлайн-чергу', 'warning');
+      } else {
+        startCooldownTimer(60);
+        const durText = res.duration_formatted || formatDuration(res.duration_seconds) || `${res.duration_hours} год`;
+        const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l} л` : '-';
+        showToast(`Генератор зупинено! Відпрацьовано: ${durText}, розхід: ${fuelText}`, 'success');
+      }
+      loadAllData();
+    } catch (err) {
+      showToast(err.message || 'Помилка при зупинці генератора', 'error');
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = 'Зупинити генератор';
+      }
     }
   }
 });

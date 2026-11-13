@@ -419,19 +419,12 @@ async function loadAuditData() {
   } catch (_) {}
 }
 
-window.openAuditExportModal = function () {
+window.openAuditExportModal = async function () {
   if (!isSuperAdmin()) {
     showToast('Експорт аудиту в Excel доступний виключно Головному Суперадміністратору 🔒', 'warning');
     return;
   }
-  const modal = document.getElementById('modalExportAudit');
-  if (modal) {
-    modal.style.display = 'flex';
-    document.body.classList.add('modal-open');
-    if (typeof toggleMobileMoreSheet === 'function') {
-      toggleMobileMoreSheet(false);
-    }
-  }
+  await window.openModal('modalExportAudit');
   try {
     setAuditExportPeriod('month');
   } catch (err) {
@@ -537,14 +530,7 @@ window.openAdjustmentModal = async function() {
     showToast('Системне коригування лічильників доступне виключно Головному Суперадміністратору', 'warning');
     return;
   }
-  const modal = document.getElementById('modalAdjustment');
-  if (modal) {
-    modal.style.display = 'flex';
-    document.body.classList.add('modal-open');
-    if (typeof toggleMobileMoreSheet === 'function') {
-      toggleMobileMoreSheet(false);
-    }
-  }
+  await window.openModal('modalAdjustment');
 
   // 1. Immediately & synchronously populate facility dropdown from header selector if available
   const mainFacSel = document.getElementById('facilitySelect');
@@ -592,7 +578,7 @@ async function setupAdjustmentModal() {
     const facSel = document.getElementById('adjFacility');
     let facilities = null;
     try {
-      facilities = await api('/facilities');
+      facilities = typeof window.getFacilitiesCached === 'function' ? await window.getFacilitiesCached() : await api('/facilities');
     } catch (_) {}
 
     if (facSel && facilities && Array.isArray(facilities) && facilities.length > 0) {
@@ -781,7 +767,8 @@ window.updateAdjFields = function() {
   window.onAdjFacilityOrEntityChange();
 };
 
-document.getElementById('adjustmentForm').addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'adjustmentForm') return;
   e.preventDefault();
   const facSel = document.getElementById('adjFacility');
   const facilityId = facSel ? parseInt(facSel.value, 10) : currentFacilityId;

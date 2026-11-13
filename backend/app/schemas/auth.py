@@ -53,18 +53,54 @@ class ChangePasswordRequest(BaseModel):
         return validate_password_complexity(v)
 
 
+def _sanitize_optional_full_name(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    v = v.strip()
+    if not v or "<" in v or ">" in v or "\x00" in v:
+        raise ValueError("ПІБ містить недопустимі символи")
+    return v
+
+
+def _sanitize_optional_email(v: Optional[str]) -> Optional[str]:
+    if v is None or v == "":
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    if "<" in v or ">" in v or "\x00" in v or " " in v or "@" not in v:
+        raise ValueError("Некоректний формат email")
+    return v
+
+
 class UserSummary(BaseModel):
     id: int
     login: str
     full_name: str
     email: Optional[str] = None
     facility_id: Optional[int] = None
+    avatar_url: Optional[str] = None
     is_active: bool
     is_superadmin: bool
     roles: List[str] = []
     permissions: List[str] = []
 
     model_config = {"from_attributes": True}
+
+
+class ProfileUpdateRequest(BaseModel):
+    full_name: Optional[str] = Field(None, max_length=150)
+    email: Optional[str] = Field(None, max_length=150)
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, v: Optional[str]) -> Optional[str]:
+        return _sanitize_optional_full_name(v)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: Optional[str]) -> Optional[str]:
+        return _sanitize_optional_email(v)
 
 
 class UserCreate(BaseModel):
@@ -133,22 +169,12 @@ class UserUpdate(BaseModel):
     @field_validator("full_name")
     @classmethod
     def validate_full_name(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return None
-        v = v.strip()
-        if not v or "<" in v or ">" in v or "\x00" in v:
-            raise ValueError("ПІБ містить недопустимі символи")
-        return v
+        return _sanitize_optional_full_name(v)
 
     @field_validator("email")
     @classmethod
     def validate_email(cls, v: Optional[str]) -> Optional[str]:
-        if v is None or v == "":
-            return None
-        v = v.strip()
-        if "<" in v or ">" in v or "\x00" in v or " " in v or "@" not in v:
-            raise ValueError("Некоректний формат email")
-        return v
+        return _sanitize_optional_email(v)
 
     @field_validator("password")
     @classmethod
@@ -173,6 +199,7 @@ class UserOut(BaseModel):
     full_name: str
     email: Optional[str] = None
     facility_id: Optional[int] = None
+    avatar_url: Optional[str] = None
     is_active: bool
     is_superadmin: bool
     created_at: datetime.datetime

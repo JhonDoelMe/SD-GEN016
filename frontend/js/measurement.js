@@ -79,7 +79,10 @@ function updateMeasurementHeaderUI() {
 }
 
 window.openMeasurementStatusModal = async function () {
-  await loadMeasurementStatus();
+  await Promise.all([
+    loadMeasurementStatus(),
+    window.ViewLoader?.ensureModal('modalMeasurementStatus')
+  ]);
   const state = window._measurementState;
   const body = document.getElementById('measurementStatusModalBody');
   const goAdminBtn = document.getElementById('btnModalMeasGoAdmin');
@@ -90,7 +93,7 @@ window.openMeasurementStatusModal = async function () {
 
   if (!state || !state.has_active || !state.active) {
     body.innerHTML = `<div class="offline-empty-state"><div class="offline-empty-title">Режим вимірювання наразі вимкнено</div><div class="offline-empty-sub">Об'єкт працює у штатному режимі.</div></div>`;
-    openModal('modalMeasurementStatus');
+    await openModal('modalMeasurementStatus');
     return;
   }
 
@@ -625,15 +628,17 @@ window.approveMeasurementMode = async function (measurementId) {
   } catch (_) {}
 };
 
-window.openCancelMeasurementModal = function (measurementId) {
+window.openCancelMeasurementModal = async function (measurementId) {
+  await window.ViewLoader?.ensureModal('modalMeasurementCancel');
   const idEl = document.getElementById('cancelMeasurementId');
   const reasonEl = document.getElementById('cancelMeasurementReason');
   if (idEl) idEl.value = String(measurementId);
   if (reasonEl) reasonEl.value = '';
-  openModal('modalMeasurementCancel');
+  await openModal('modalMeasurementCancel');
 };
 
-document.getElementById('measurementCancelForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'measurementCancelForm') return;
   e.preventDefault();
   const id = document.getElementById('cancelMeasurementId')?.value;
   const reason = document.getElementById('cancelMeasurementReason')?.value.trim() || '';

@@ -1,6 +1,6 @@
 import asyncio
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from backend.app.models.user import User, Role
 from backend.app.schemas.auth import UserCreate, UserUpdate, UserPasswordReset, UserOut, RoleOut
 from backend.app.api.deps import get_current_superadmin, require_permission, get_client_ip
 from backend.app.services.audit_service import log_audit
+from backend.app.services.avatar_service import delete_avatar_file, save_user_avatar
 
 router = APIRouter(prefix="/users", tags=["Користувачі та Ролі"])
 
@@ -219,12 +220,15 @@ async def delete_user(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Неможливо видалити власний обліковий запис")
 
     user_login = target_user.login
+    old_avatar_path = target_user.avatar_path
+    hard_deleted = False
     try:
         async with db.begin_nested():
             await db.delete(target_user)
             await db.flush()
         action_msg = f"Користувача '{user_login}' успішно видалено з системи"
         audit_action = "USER_DELETED"
+        hard_deleted = True
     except Exception:
         target_user.is_active = False
         await db.flush()
@@ -241,4 +245,80 @@ async def delete_user(
         ip_address=get_client_ip(request)
     )
     await db.commit()
+    if hard_deleted and old_avatar_path:
+        delete_avatar_file(old_avatar_path)
     return {"message": action_msg}
+
+
+async def _get_managed_avatar_target(
+    db: AsyncSession,
+    user_id: int,
+    current_user: User,
+) -> User:
+    target_user = (
+        await db.execute(select(User).options(selectinload(User.roles)).where(User.id == user_id))
+    ).scalars().first()
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Користувача не знайдено")
+    if target_user.is_superadmin and target_user.id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Редагування головного суперадміністратора заборонено",
+        )
+    return target_user
+
+
+@router.post("/{user_id}/avatar", response_model=UserOut)
+async def admin_upload_user_avatar(
+    user_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_superadmin),
+):
+    target_user = await _get_managed_avatar_target(db, user_id, current_user)
+    old_path = target_user.avatar_path
+    new_path = await save_user_avatar(file, target_user.id)
+    target_user.avatar_path = new_path
+
+    await db.flush()
+    await log_audit(
+        db=db,
+        action="USER_AVATAR_UPDATED",
+        entity_type="User",
+        entity_id=str(target_user.id),
+        user_id=current_user.id,
+        details={"login": target_user.login, "avatar_path": new_path},
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+    if old_path and old_path != new_path:
+        delete_avatar_file(old_path)
+    return target_user
+
+
+@router.delete("/{user_id}/avatar", response_model=UserOut)
+async def admin_delete_user_avatar(
+    user_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_superadmin),
+):
+    target_user = await _get_managed_avatar_target(db, user_id, current_user)
+    old_path = target_user.avatar_path
+    target_user.avatar_path = None
+
+    await db.flush()
+    await log_audit(
+        db=db,
+        action="USER_AVATAR_DELETED",
+        entity_type="User",
+        entity_id=str(target_user.id),
+        user_id=current_user.id,
+        details={"login": target_user.login},
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+    if old_path:
+        delete_avatar_file(old_path)
+    return target_user

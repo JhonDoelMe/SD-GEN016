@@ -100,19 +100,21 @@ window.loadBackupsList = async function (isUserTriggered = false) {
   }
 };
 
-window.openCreateBackupModal = function () {
+window.openCreateBackupModal = async function () {
   if (!isSuperAdmin()) {
     showToast('Створення бекапів доступне виключно Головному Суперадміністратору 🔒', 'warning');
     return;
   }
+  await window.ViewLoader?.ensureModal('modalCreateBackup');
   const noteInput = document.getElementById('backupNote');
   if (noteInput) noteInput.value = '';
   const radioFull = document.querySelector('input[name="backupTypeChoice"][value="full"]');
   if (radioFull) radioFull.checked = true;
-  openModal('modalCreateBackup');
+  await openModal('modalCreateBackup');
 };
 
-document.getElementById('createBackupForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'createBackupForm') return;
   e.preventDefault();
   if (!isSuperAdmin()) {
     showToast('Створення бекапів доступне виключно Головному Суперадміністратору 🔒', 'warning');
@@ -185,16 +187,17 @@ window.downloadBackup = async function (filename) {
   }
 };
 
-window.openDeleteBackupModal = function (filename) {
+window.openDeleteBackupModal = async function (filename) {
   if (!isSuperAdmin()) {
     showToast('Видалення бекапів доступне виключно Головному Суперадміністратору 🔒', 'warning');
     return;
   }
+  await window.ViewLoader?.ensureModal('modalDeleteBackup');
   const disp = document.getElementById('deleteBackupFilenameDisplay');
   if (disp) disp.textContent = filename;
   const hid = document.getElementById('deleteBackupFilenameHidden');
   if (hid) hid.value = filename;
-  openModal('modalDeleteBackup');
+  await openModal('modalDeleteBackup');
 };
 
 window.confirmDeleteCurrentBackup = async function () {
@@ -233,6 +236,7 @@ window.openRestoreModal = async function (filename) {
     showToast('Відновлення з бекапу доступне виключно Головному Суперадміністратору 🔒', 'warning');
     return;
   }
+  await window.ViewLoader?.ensureModal('modalConfirmRestore');
   const dispName = document.getElementById('restoreFilenameDisplay');
   const dispDetails = document.getElementById('restoreDetailsDisplay');
   const hidName = document.getElementById('restoreFilenameHidden');
@@ -243,7 +247,7 @@ window.openRestoreModal = async function (filename) {
   if (confirmWord) confirmWord.value = '';
   if (dispDetails) dispDetails.innerHTML = '<i>Завантаження метаданих архіву...</i>';
 
-  openModal('modalConfirmRestore');
+  await openModal('modalConfirmRestore');
 
   try {
     const res = await api(`/backups/${encodeURIComponent(filename)}/inspect`);
@@ -264,7 +268,8 @@ window.openRestoreModal = async function (filename) {
   }
 };
 
-document.getElementById('confirmRestoreForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'confirmRestoreForm') return;
   e.preventDefault();
   if (!isSuperAdmin()) {
     showToast('Відновлення системи доступне виключно Головному Суперадміністратору 🔒', 'warning');
@@ -311,24 +316,28 @@ document.getElementById('confirmRestoreForm')?.addEventListener('submit', async 
   }
 });
 
-window.openUploadRestoreModal = function () {
+window.openUploadRestoreModal = async function () {
   if (!isSuperAdmin()) {
     showToast('Відновлення з бекапу доступне виключно Головному Суперадміністратору 🔒', 'warning');
     return;
   }
+  await window.ViewLoader?.ensureModal('modalUploadRestore');
   const fileInput = document.getElementById('uploadRestoreFileInput');
   const confirmWord = document.getElementById('uploadRestoreConfirmWordInput');
   if (fileInput) fileInput.value = '';
   if (confirmWord) confirmWord.value = '';
-  openModal('modalUploadRestore');
+  await openModal('modalUploadRestore');
 };
 
-document.getElementById('btnOpenUploadRestore')?.addEventListener('click', (e) => {
+document.addEventListener('click', (e) => {
+  const btn = e.target?.closest?.('#btnOpenUploadRestore');
+  if (!btn) return;
   e.preventDefault();
   openUploadRestoreModal();
 });
 
-document.getElementById('uploadRestoreForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'uploadRestoreForm') return;
   e.preventDefault();
   if (!isSuperAdmin()) {
     showToast('Відновлення системи доступне виключно Головному Суперадміністратору 🔒', 'warning');
@@ -405,7 +414,10 @@ window.openBackupSettingsModal = async function () {
   }
 
   try {
-    const res = await api('/backups/settings');
+    const [res] = await Promise.all([
+      api('/backups/settings'),
+      window.ViewLoader?.ensureModal('modalBackupSettings')
+    ]);
     const s = res.settings || res || {};
 
     const chkAuto = document.getElementById('cfgBackupAutoEnabled');
@@ -426,13 +438,14 @@ window.openBackupSettingsModal = async function () {
     const inpRet = document.getElementById('cfgBackupRetentionCount');
     if (inpRet) inpRet.value = s.backup_retention_count ?? 7;
 
-    openModal('modalBackupSettings');
+    await openModal('modalBackupSettings');
   } catch (err) {
     showToast(`Помилка отримання налаштувань: ${err.message || 'Невідома помилка'}`, 'error');
   }
 };
 
-document.getElementById('backupSettingsForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'backupSettingsForm') return;
   e.preventDefault();
   if (!isSuperAdmin()) {
     showToast('Налаштування розкладу доступні виключно Головному Суперадміністратору 🔒', 'warning');

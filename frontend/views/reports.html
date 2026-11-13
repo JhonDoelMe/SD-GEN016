@@ -1,0 +1,183 @@
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Експлуатаційна звітність</h3>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button class="btn-action" style="padding: 0.5rem 1.25rem; min-height: auto; background: #16a34a; font-weight: 600;" onclick="downloadReportExcel()">📊 Експорт в Excel (.xlsx)</button>
+          </div>
+        </div>
+
+        <!-- Quick Period Presets -->
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.25rem; align-items: center;">
+          <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Швидкий період:</span>
+          <div id="reportPresetGroup" style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+            <button type="button" class="btn-preset" data-preset="today" onclick="setReportPeriod('today')">Сьогодні</button>
+            <button type="button" class="btn-preset" data-preset="week" onclick="setReportPeriod('week')">Тиждень</button>
+            <button type="button" class="btn-preset" data-preset="month" onclick="setReportPeriod('month')">Місяць</button>
+            <button type="button" class="btn-preset" data-preset="quarter" onclick="setReportPeriod('quarter')">3 Місяці</button>
+            <button type="button" class="btn-preset" data-preset="all" onclick="setReportPeriod('all')">Весь час</button>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; align-items: flex-end;">
+          <div>
+            <label for="repStartDate" style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem; display: block;">Початок періоду</label>
+            <input type="date" id="repStartDate" onchange="onReportCustomDateChange()">
+          </div>
+          <div>
+            <label for="repEndDate" style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem; display: block;">Кінець періоду</label>
+            <input type="date" id="repEndDate" onchange="onReportCustomDateChange()">
+          </div>
+          <button type="button" id="btnGenerateReport" class="btn-primary" onclick="loadReport(true)">
+            <span id="btnGenerateReportIcon">🔄</span> <span id="btnGenerateReportText">Сформувати звіт</span>
+          </button>
+        </div>
+
+        <!-- Report Status Banner (Dynamic Summary) -->
+        <div id="reportStatusBanner" class="report-status-banner" style="display: none;">
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.4rem;">📊</span>
+            <div>
+              <div id="reportStatusPeriod" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">-</div>
+              <div id="reportStatusTarget" style="font-size: 0.8rem; color: var(--text-muted);">-</div>
+            </div>
+          </div>
+          <div id="reportStatusGeneratedAt" style="font-size: 0.8rem; color: var(--accent-cyan); font-weight: 600; background: rgba(6, 182, 212, 0.12); padding: 0.35rem 0.75rem; border-radius: 0.45rem; border: 1px solid rgba(6, 182, 212, 0.25);">
+            Сформовано: щойно
+          </div>
+        </div>
+
+        <!-- Metrics Cards Container -->
+        <div id="reportContainer" class="metrics-grid">
+          <!-- Filled by JS -->
+        </div>
+
+        <!-- Detailed Period Records (Mini-Excel in UI) -->
+        <div id="reportDetailsSection" class="panel" style="margin-top: 1.5rem; display: none;">
+          <div class="panel-header" style="flex-wrap: wrap; gap: 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.85rem;">
+            <div>
+              <h4 style="margin: 0 0 0.25rem 0; font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem;">
+                <span>📋</span> <span>Деталізація за обраний період</span>
+              </h4>
+              <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted);">
+                Оперативні журнали роботи, руху пального та сервісних робіт
+              </p>
+            </div>
+            <div class="report-subtabs" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button type="button" class="report-subtab-btn active" id="btnRepTabRuns" onclick="switchReportSubtab('runs')">
+                <span>⏱️ Пуски генератора</span> <span class="report-badge" id="repBadgeRuns">0</span>
+              </button>
+              <button type="button" class="report-subtab-btn" id="btnRepTabTransfers" onclick="switchReportSubtab('transfers')">
+                <span>⛽ Заправки бака</span> <span class="report-badge" id="repBadgeTransfers">0</span>
+              </button>
+              <button type="button" class="report-subtab-btn" id="btnRepTabReceipts" onclick="switchReportSubtab('receipts')">
+                <span>📦 Надходження на склад</span> <span class="report-badge" id="repBadgeReceipts">0</span>
+              </button>
+              <button type="button" class="report-subtab-btn" id="btnRepTabMaint" onclick="switchReportSubtab('maint')">
+                <span>🔧 Обслуговування (ТО)</span> <span class="report-badge" id="repBadgeMaint">0</span>
+              </button>
+              <button type="button" class="report-subtab-btn" id="btnRepTabMeasurements" onclick="switchReportSubtab('measurements')">
+                <span>📏 Заміри та інвентаризація</span> <span class="report-badge" id="repBadgeMeasurements">0</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Subtab 1: Runs -->
+          <div id="repPaneRuns" class="rep-subtab-pane">
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+              <table id="repRunsTable">
+                <thead>
+                  <tr>
+                    <th>Час запуску</th>
+                    <th>Час зупинки</th>
+                    <th>Тривалість</th>
+                    <th>Мотогодини</th>
+                    <th>Витрата пального</th>
+                    <th>Оператор</th>
+                  </tr>
+                </thead>
+                <tbody id="repRunsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Subtab 2: Fuel Transfers -->
+          <div id="repPaneTransfers" class="rep-subtab-pane" style="display: none;">
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+              <table id="repTransfersTable">
+                <thead>
+                  <tr>
+                    <th>Дата та час</th>
+                    <th>Кількість</th>
+                    <th>Зі складу</th>
+                    <th>Генератор</th>
+                    <th>Оператор</th>
+                  </tr>
+                </thead>
+                <tbody id="repTransfersTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Subtab 3: Fuel Receipts -->
+          <div id="repPaneReceipts" class="rep-subtab-pane" style="display: none;">
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+              <table id="repReceiptsTable">
+                <thead>
+                  <tr>
+                    <th>Дата та час</th>
+                    <th>Кількість</th>
+                    <th>Ціна / л</th>
+                    <th>Сума</th>
+                    <th>Постачальник</th>
+                    <th>Склад ГСМ</th>
+                    <th>Оператор</th>
+                  </tr>
+                </thead>
+                <tbody id="repReceiptsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Subtab 4: Maintenance -->
+          <div id="repPaneMaint" class="rep-subtab-pane" style="display: none;">
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+              <table id="repMaintTable">
+                <thead>
+                  <tr>
+                    <th>Дата та час</th>
+                    <th>Вид ТО</th>
+                    <th>Мотогодини</th>
+                    <th>Опис виконаних робіт</th>
+                    <th>Вартість</th>
+                    <th>Майстер / Фахівець</th>
+                    <th>Вніс запис</th>
+                  </tr>
+                </thead>
+                <tbody id="repMaintTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Subtab 5: Measurements & Inventory -->
+          <div id="repPaneMeasurements" class="rep-subtab-pane" style="display: none;">
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+              <table id="repMeasurementsTable">
+                <thead>
+                  <tr>
+                    <th>Погоджено</th>
+                    <th>№ Відомості</th>
+                    <th>Генератор</th>
+                    <th>Відпрацьовано</th>
+                    <th>Норма (л/год)</th>
+                    <th>Склад комісії</th>
+                    <th>Погодив</th>
+                  </tr>
+                </thead>
+                <tbody id="repMeasurementsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+

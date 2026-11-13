@@ -1,0 +1,681 @@
+    <!-- TAB 10: UNIFIED ADMIN HUB -->
+    <section id="tab-admin" class="tab-pane" style="display: none;">
+      <div class="admin-subtabs-bar" id="adminSubtabsBar" role="tablist">
+        <button type="button" class="admin-subtab-btn active" data-subtab="facilities" onclick="switchAdminSubtab('facilities')">🏢 Об'єкти та Генератори</button>
+        <button type="button" class="admin-subtab-btn" data-subtab="fuel-admin" onclick="switchAdminSubtab('fuel-admin')">🛢️ Склади ГСМ та Каністри</button>
+        <button type="button" class="admin-subtab-btn" data-subtab="notifications" onclick="switchAdminSubtab('notifications')">🔔 Сповіщення</button>
+        <button type="button" class="admin-subtab-btn" data-subtab="system" onclick="switchAdminSubtab('system')">⚙️ Система та Тарифи</button>
+        <button type="button" class="admin-subtab-btn" data-subtab="users" onclick="switchAdminSubtab('users')">👥 Користувачі</button>
+        <button type="button" class="admin-subtab-btn" data-subtab="backups" onclick="switchAdminSubtab('backups')">💾 Бекапи та БД</button>
+      </div>
+
+      <!-- SUBTAB 1: FACILITIES & GENERATORS -->
+      <div id="adminPane-facilities" class="admin-subpane active">
+        <div class="panel" style="margin-bottom: 1.5rem;">
+          <div class="panel-header">
+            <div>
+              <h3 style="margin-bottom: 0.25rem;">🏢 Об'єкти (Локації)</h3>
+              <small style="color: var(--text-muted);">Керування об'єктами, регіонами тривог/погоди та графіками відключень YASNO</small>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button type="button" id="addFacilityBtn" class="btn-action" onclick="openCreateFacilityModal()">+ Створити об'єкт</button>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table id="adminFacilitiesTable">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Назва об'єкта</th>
+                  <th>Місто / Адреса</th>
+                  <th>Мережа АЗС</th>
+                  <th>Графік YASNO</th>
+                  <th style="text-align: center;">Дії</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 style="margin-bottom: 0.25rem;">⚡ Генератори об'єкта</h3>
+              <small style="color: var(--text-muted);">Параметри потужності, об'єму паливного бака, типу палива та розходу</small>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button type="button" id="addGeneratorBtn" class="btn-action" onclick="openCreateGeneratorModal()">+ Створити генератор</button>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table id="adminGeneratorsTable">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Назва / Модель</th>
+                  <th>Серійний №</th>
+                  <th>Паливо / Бак</th>
+                  <th>Розхід / Потужність</th>
+                  <th>Мотогодини</th>
+                  <th style="text-align: center;">Дії</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBTAB 2: FUEL STOCKS & CANISTERS ADMIN -->
+      <div id="adminPane-fuel-admin" class="admin-subpane">
+        <div class="panel" style="margin-bottom: 1.5rem;">
+          <div class="panel-header">
+            <div>
+              <h3 style="margin-bottom: 0.25rem;">🛢️ Склади ГСМ та пули каністр</h3>
+              <small style="color: var(--text-muted);">Налаштування складів палива та закріплених каністр обраного об'єкта</small>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button type="button" id="btnFuelNewCanisterPool" class="btn-action" onclick="openCreateCanisterPoolModal()">🛢️ + Пул каністр</button>
+              <button type="button" id="btnFuelNewStock" class="btn-action" onclick="openModal('modalNewStock')">📦 + Новий склад</button>
+            </div>
+          </div>
+
+          <div id="canisterPoolsSection" style="margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0;">
+              <h4 style="margin: 0;">Каністри об'єкта та резервна ємність</h4>
+              <div id="canisterPoolsSummaryPill" style="font-size: 0.82rem; color: var(--text-muted);">Завантаження...</div>
+            </div>
+            <div class="table-wrapper">
+              <table id="canisterPoolsTable">
+                <thead>
+                  <tr>
+                    <th>Назва пулу</th>
+                    <th>Склад ГСМ</th>
+                    <th>Паливо</th>
+                    <th>Номінал</th>
+                    <th>Повні (шт)</th>
+                    <th>Порожні (шт)</th>
+                    <th>На АЗС (шт)</th>
+                    <th>Резерв (л)</th>
+                    <th>Всього (л)</th>
+                    <th style="text-align: center;">Дії</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <h4 style="margin: 1.25rem 0 0.5rem;">Склади ГСМ об'єкта</h4>
+          <div class="table-wrapper">
+            <table id="fuelStocksTable">
+              <thead>
+                <tr>
+                  <th>№</th>
+                  <th>Назва складу</th>
+                  <th>Об'єкт</th>
+                  <th>Тип палива</th>
+                  <th>Залишок (л)</th>
+                  <th>Останнє оновлення</th>
+                  <th style="text-align: center; width: 110px;">Дії</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBTAB 3: GLOBAL NOTIFICATION RULES & LOGS -->
+      <div id="adminPane-notifications" class="admin-subpane">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 style="margin-bottom: 0.25rem;">🔔 Налаштування системних сповіщень</h3>
+              <small style="color: var(--text-muted);">Глобальні правила тригерів та журнал розсилок (персональна підписка пристрою — у меню акаунта)</small>
+            </div>
+          </div>
+        <!-- Notification Types & Thresholds Settings -->
+        <div class="info-card-block">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h4 style="margin: 0; color: var(--text-primary);">⚙️ Правила та типи сповіщень</h4>
+            <small style="color: var(--text-muted);">Зміни застосовуються для всієї системи (Адмін)</small>
+          </div>
+
+          <form id="notifSettingsForm" onsubmit="saveNotificationSettings(event)">
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.25rem;">
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.95rem; color: var(--text-primary);">
+                <input type="checkbox" id="notifMasterEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-cyan);">
+                <span><b>Загальне увімкнення розсилки сповіщень</b></span>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; color: var(--text-primary);">
+                <input type="checkbox" id="notifStartEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-green);">
+                <span>🟢 <b>Запуск генератора</b> (повідомлення про час старту, оператора, мотогодини та паливо)</span>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; color: var(--text-primary);">
+                <input type="checkbox" id="notifStopEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-red);">
+                <span>🔴 <b>Зупинка генератора</b> (відпрацьований час, розрахункова витрата палива та залишок)</span>
+              </label>
+
+              <div class="notif-rule-group">
+                <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--text-primary);">
+                  <input type="checkbox" id="notifLowFuelEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-amber);">
+                  <span>⚠️ <b>Критичний залишок палива в баку</b></span>
+                </label>
+                <div style="display: flex; align-items: center; gap: 0.75rem; margin-left: 1.85rem; color: var(--text-primary);">
+                  <label for="notifLowFuelThreshold" style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">Поріг спрацювання тривоги:</label>
+                  <input type="number" id="notifLowFuelThreshold" step="0.5" min="1" max="100" value="5.0" class="notif-num-input" style="width: 90px;">
+                  <span style="font-size: 0.85rem; color: var(--text-muted);">літрів</span>
+                </div>
+              </div>
+
+              <div class="notif-rule-group">
+                <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--text-primary);">
+                  <input type="checkbox" id="notifMaintEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-purple);">
+                  <span>🔧 <b>Нагадування про планове ТО</b> (коли наближається або прострочено регламент)</span>
+                </label>
+                <div style="margin-left: 1.85rem; display: flex; align-items: center; gap: 0.75rem; color: var(--text-primary);">
+                  <span style="font-size: 0.85rem; color: var(--text-muted);">Частота нагадувань:</span>
+                  <input type="number" id="notifMaxMaintPerDay" min="1" max="2" value="2" class="notif-num-input" style="width: 70px;">
+                  <span style="font-size: 0.85rem; color: var(--accent-purple);"><b>рази на добу (не більше 2 разів за правилами)</b></span>
+                </div>
+              </div>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; color: var(--text-primary); border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+                <input type="checkbox" id="notifFaultsEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-red);">
+                <span>🚨 <b>Критичні несправності та аварійні блокування</b></span>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; color: var(--text-primary); border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+                <input type="checkbox" id="notifAirAlertsEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-red);">
+                <span>🚨 <b>Повітряна тривога на об'єкті</b> (миттєве сповіщення про тривогу, ракетну небезпеку або БПЛА)</span>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; color: var(--text-primary);">
+                <input type="checkbox" id="notifAirAlertEndEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-green);">
+                <span>🟢 <b>Відбій повітряної тривоги</b> (сповіщення про скасування загрози та тривалість тривоги)</span>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer; font-size: 0.9rem; color: var(--text-primary); border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+                <input type="checkbox" id="notifYasnoEnabled" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--accent-amber);">
+                <span>⚡ <b>Графіки відключень YASNO</b> (попередження за 20–35 хв до планового знеструмлення об'єкта)</span>
+              </label>
+            </div>
+
+            <button type="submit" class="btn-primary">
+              💾 Зберегти налаштування сповіщень
+            </button>
+          </form>
+        </div>
+
+        <!-- Dispatched Notifications Log -->
+        <div class="panel-header" style="margin-top: 1.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+          <h4 style="margin: 0;">📜 Журнал надісланих сповіщень</h4>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" class="btn-action" onclick="loadNotificationLogs()">🔄 Оновити</button>
+            <button type="button" id="btnClearNotifLogs" class="btn-action" style="padding: 0.35rem 0.75rem; font-size: 0.82rem; min-height: auto; border-color: #ef4444; color: #f87171; display: none;" onclick="clearNotificationLogs()">🗑️ Очистити історію</button>
+          </div>
+        </div>
+        <div class="table-wrapper">
+          <table id="notifLogsTable">
+            <thead>
+              <tr>
+                <th>Час</th>
+                <th>Подія</th>
+                <th>Заголовок</th>
+                <th>Текст повідомлення</th>
+                <th>Отримувачі</th>
+                <th>Результат</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      </div>
+
+      <!-- SUBTAB 4: SYSTEM, TARIFFS & SMTP -->
+      <div id="adminPane-system" class="admin-subpane">
+      <div class="panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+          <div>
+            <h3 style="margin-bottom: 0.25rem;">⚙️ Системні налаштування</h3>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0;">
+              Керування робочим регламентом, часовим поясом, цінами пального АЗК WOG та режимами роботи (доступно лише Адміністратору)
+            </p>
+          </div>
+        </div>
+
+        <form id="systemSettingsForm">
+          <!-- Блок 1: Організація та Робочий регламент -->
+          <div class="settings-block">
+            <div class="settings-block-header">
+              <h4 class="settings-block-title">🏢 1. Організація, Часовий пояс та Робочий графік</h4>
+              <span style="font-size: 0.78rem; color: var(--text-muted);">Базові параметри підприємства</span>
+            </div>
+            
+            <div class="settings-grid-org">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Назва організації (у звітах Excel)</label>
+                <input type="text" id="sysOrgName" required placeholder="MAXI-UA LLC">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Часовий пояс системи</label>
+                <select id="sysTimezone">
+                  <option value="Europe/Kyiv">Europe/Kyiv (Україна)</option>
+                  <option value="Europe/Warsaw">Europe/Warsaw (Польща)</option>
+                  <option value="Europe/Berlin">Europe/Berlin (Німеччина)</option>
+                  <option value="Europe/London">Europe/London (Велика Британія)</option>
+                  <option value="UTC">UTC (Всесвітній час)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="settings-grid-schedule">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Початок робочої зміни</label>
+                <input type="time" id="sysWorkStart" required value="08:00">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Завершення робочої зміни</label>
+                <input type="time" id="sysWorkEnd" required value="20:00">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Регламентний інтервал ТО (мотогодин)</label>
+                <input type="number" step="10" min="10" id="sysMaintInterval" required value="300">
+              </div>
+            </div>
+          </div>
+
+          <!-- Блок 2: Ланцюжок за замовчуванням (Default Binding) -->
+          <div class="settings-block" style="background: rgba(168, 85, 247, 0.05); border-color: rgba(168, 85, 247, 0.28);">
+            <div class="settings-block-header" style="border-bottom-color: rgba(168, 85, 247, 0.18);">
+              <h4 class="settings-block-title" style="color: #c084fc;">
+                🔗 2. Стартовий ланцюжок за замовчуванням (Об'єкт ➔ Генератор ➔ Склад ГСМ)
+              </h4>
+              <span style="font-size: 0.8rem; color: #c084fc;">Жорстка зв'язка для старту та щотижневих звітів</span>
+            </div>
+            <p style="font-size: 0.83rem; color: var(--text-muted); margin-bottom: 0.85rem;">
+              Визначає базовий об'єкт, генератор та склад пального, які автоматично відкриваються під час входу в систему, та слугують базою для автоматичних звітів.
+            </p>
+            <div class="settings-grid-chain">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>🏢 Об'єкт за замовчуванням</label>
+                <select id="sysDefaultFacilityId" onchange="onAdminDefaultFacilityChange()"></select>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>⚡ Генератор за замовчуванням</label>
+                <select id="sysDefaultGeneratorId"></select>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>🛢️ Склад ГСМ за замовчуванням</label>
+                <select id="sysDefaultFuelStockId"></select>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button type="button" id="btnSaveDefaultChain" class="btn-primary" onclick="saveDefaultChainSettings()">
+                💾 Зберегти ланцюжок за замовчуванням
+              </button>
+            </div>
+          </div>
+
+          <!-- Блок 3: Табло цін АЗК (WOG та OKKO) та Фіксовані тарифи -->
+          <div class="settings-block" style="background: rgba(34, 197, 94, 0.05); border-color: rgba(34, 197, 94, 0.28);">
+            <div class="settings-block-header" style="border-bottom-color: rgba(34, 197, 94, 0.18); flex-wrap: wrap; gap: 0.75rem;">
+              <div style="display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap;">
+                <h4 class="settings-block-title" style="color: #4ade80; margin-bottom: 0;">
+                  ⛽ 3. Табло цін АЗК
+                </h4>
+                <div class="fuel-provider-tabs">
+                  <button type="button" id="tabFuelProviderWog" class="fuel-tab-btn active-wog" onclick="switchSettingsFuelProvider('wog')">🟢 АЗК WOG</button>
+                  <button type="button" id="tabFuelProviderOkko" class="fuel-tab-btn" onclick="switchSettingsFuelProvider('okko')">🟡 АЗК OKKO</button>
+                </div>
+              </div>
+              <div style="display: flex; gap: 0.65rem; align-items: center; flex-wrap: wrap;">
+                <a id="sysFuelProviderUrl" href="https://wog.ua/ua/fuels/" target="_blank" rel="noopener" style="color: #38bdf8; text-decoration: underline; font-size: 0.82rem;">wog.ua/ua/fuels</a>
+                <span id="sysInternetPricesMeta" style="font-size: 0.8rem; color: #94a3b8;">Джерело: АЗК WOG</span>
+                <button type="button" id="btnRefreshFuelPrices" class="btn-action" style="padding: 0.35rem 0.85rem; font-size: 0.82rem; min-height: auto; flex-direction: row; border-color: #22c55e; color: #4ade80;" onclick="refreshFuelPricesFromInternet()">🟢 Оновити ціни WOG</button>
+              </div>
+            </div>
+            <p style="font-size: 0.83rem; color: var(--text-muted); margin-bottom: 0.85rem;">
+              Актуальне табло роздрібних цін мереж <b>АЗК WOG</b> та <b>АЗК OKKO</b>. Якщо власна договірна ціна нижче встановлена як <b>0</b>, при оприбуткуванні палива без суми чека система автоматично розраховує вартість за ціною обраної мережі АЗС.
+            </p>
+            <div id="wogPriceBoard" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 0.65rem; margin-bottom: 1.1rem;"></div>
+            <div id="okkoPriceBoard" style="display: none; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 0.65rem; margin-bottom: 1.1rem;"></div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Власна ціна А-95 (грн/л, <b>0 = ціна АЗС</b>)</label>
+                <input type="number" step="0.01" min="0" id="sysPriceA95" value="0">
+                <small id="sysNetHintA95" style="color: #4ade80; display: block; margin-top: 0.3rem; font-weight: 500;">WOG: 92.90 грн/л | OKKO: 92.90 грн/л</small>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Власна ціна ДП (грн/л, <b>0 = ціна АЗС</b>)</label>
+                <input type="number" step="0.01" min="0" id="sysPriceDP" value="0">
+                <small id="sysNetHintDP" style="color: #4ade80; display: block; margin-top: 0.3rem; font-weight: 500;">WOG: 103.50 грн/л | OKKO: 106.90 грн/л</small>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Власна ціна А-92 (грн/л, <b>0 = ціна АЗС</b>)</label>
+                <input type="number" step="0.01" min="0" id="sysPriceA92" value="0">
+                <small id="sysNetHintA92" style="color: #4ade80; display: block; margin-top: 0.3rem; font-weight: 500;">WOG: 92.90 грн/л | OKKO: 92.90 грн/л</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Блок 4: Режими роботи та Синхронізація -->
+          <div class="settings-block">
+            <div class="settings-block-header">
+              <h4 class="settings-block-title">⚡ 4. Правила контролю та Синхронізація</h4>
+              <span style="font-size: 0.78rem; color: var(--text-muted);">Натисніть на рядок для увімкнення/вимкнення</span>
+            </div>
+            <div class="settings-toggle-list">
+              <label class="settings-toggle-item">
+                <input type="checkbox" id="sysEnforceSchedule" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title">🕒 Контроль запуску генераторів за робочим графіком</span>
+                  <span class="settings-toggle-desc">Якщо увімкнено — оператори можуть запускати генератор лише в межах дозволеної робочої зміни. Якщо вимкнено — дозволено цілодобовий запуск 24/7.</span>
+                </div>
+              </label>
+
+              <label class="settings-toggle-item">
+                <input type="checkbox" id="sysAutoFetchPrices" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title">🌐 Автоматичне оновлення цін пального з табло АЗК WOG</span>
+                  <span class="settings-toggle-desc">Автоматично підтягувати актуальні роздрібні ціни з офіційного сайту <code>wog.ua/ua/fuels/</code> для розрахунку вартості палива, коли сума чека не вказана.</span>
+                </div>
+              </label>
+
+              <label class="settings-toggle-item" style="border-color: rgba(56, 189, 248, 0.35);">
+                <input type="checkbox" id="sysApplyAllGens" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title" style="color: #38bdf8;">🔄 Синхронізувати графік, часовий пояс та інтервал ТО для всіх об'єктів і генераторів</span>
+                  <span class="settings-toggle-desc">При збереженні налаштувань автоматично застосовувати обраний часовий пояс, години початку/кінця зміни та базовий інтервал ТО до всіх існуючих об'єктів та генераторів у системі.</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Блок 5: Поштовий шлюз (Email / SMTP) та Резервування (Failover) -->
+          <div class="settings-block smtp-container-block">
+            <div class="settings-block-header">
+              <h4 class="settings-block-title smtp-header-title">
+                📧 5. Поштовий шлюз (Email / SMTP) та Резервування (Failover)
+              </h4>
+              <span class="smtp-header-subtitle">Gmail + Ukr.net (Безкоштовно без покупки домену)</span>
+            </div>
+            <p style="font-size: 0.83rem; color: var(--text-muted); margin-bottom: 1rem;">
+              Надійна безкоштовна доставка сповіщень: система використовує <b>Основний SMTP</b> (наприклад, Gmail з паролем додатку).
+              Якщо зв'язок з основним сервером переривається, система автоматично перемикається (<b>Failover</b>) на <b>Резервний SMTP</b> (наприклад, Ukr.net).
+            </p>
+
+            <!-- Загальні перемикачі Email -->
+            <div class="settings-toggle-list" style="margin-bottom: 1.25rem;">
+              <label class="settings-toggle-item">
+                <input type="checkbox" id="sysSmtpEnabled">
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title smtp-header-title" style="font-size: 0.95rem;">🔔 Увімкнути систему сповіщень на Email</span>
+                  <span class="settings-toggle-desc">Дозволяє надсилання одноразових посилань для відновлення пароля, сповіщень про безпеку, аварійних зупинок генераторів та щотижневих звітів.</span>
+                </div>
+              </label>
+              <label class="settings-toggle-item">
+                <input type="checkbox" id="sysEmailNotifyPwdChange" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title">🛡️ Сповіщати користувача на email при зміні його пароля</span>
+                  <span class="settings-toggle-desc">Автоматично надсилає лист безпеки з фіксацією дати та IP-адреси.</span>
+                </div>
+              </label>
+              <label class="settings-toggle-item">
+                <input type="checkbox" id="sysEmailNotifySafetyStop" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title">🚨 Термінові листи при аварійній зупинці запобіжника (>12 год)</span>
+                  <span class="settings-toggle-desc">Повідомляє відповідальних осіб, коли генератор вимкнено через загрозу роботи насухо або перевищення ліміту.</span>
+                </div>
+              </label>
+              <label class="settings-toggle-item">
+                <input type="checkbox" id="sysEmailWeeklyEnabled">
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title">📊 Автоматичний щотижневий звіт (файл Excel із 5 листами)</span>
+                  <span class="settings-toggle-desc">Щотижня генерує зведену книгу Excel (паливо, сесії, ТО, коригування) та надсилає на пошту керівництва.</span>
+                </div>
+              </label>
+            </div>
+
+            <!-- Вкладки конфігурації Primary / Fallback -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin-bottom: 1.25rem;">
+              <!-- Основний SMTP (Gmail) -->
+              <div class="smtp-primary-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                  <strong class="smtp-primary-title">🌐 1. Основний SMTP (Primary)</strong>
+                  <span class="smtp-primary-badge">Рекомендовано Gmail</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label class="smtp-field-label">Сервер (Host)</label>
+                    <input type="text" id="sysSmtpPrimaryHost" placeholder="smtp.gmail.com" value="smtp.gmail.com">
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label class="smtp-field-label">Порт</label>
+                    <input type="number" id="sysSmtpPrimaryPort" placeholder="587" value="587">
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="smtp-field-label">Логін / Email пошти</label>
+                  <input type="email" id="sysSmtpPrimaryUser" placeholder="mygen.alert@gmail.com">
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="smtp-field-label">Пароль додатку (App Password)</label>
+                  <input type="password" id="sysSmtpPrimaryPassword" placeholder="16-значний пароль додатку Google" autocomplete="new-password">
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="smtp-field-label">Ім'я відправника (From Address)</label>
+                  <input type="text" id="sysSmtpPrimaryFrom" placeholder="Service Desk Генератора <mygen@gmail.com>">
+                </div>
+                <label class="smtp-checkbox-subtext">
+                  <input type="checkbox" id="sysSmtpPrimarySsl">
+                  <span>Використовувати прямий SSL (порт 465) замість STARTTLS (587)</span>
+                </label>
+              </div>
+
+              <!-- Резервний SMTP (Ukr.net) -->
+              <div class="smtp-fallback-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                  <strong class="smtp-fallback-title">🛡️ 2. Резервний SMTP (Fallback)</strong>
+                  <label class="smtp-fallback-toggle">
+                    <input type="checkbox" id="sysSmtpFallbackEnabled">
+                    <span>Увімкнено</span>
+                  </label>
+                </div>
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label class="smtp-field-label">Сервер (Host)</label>
+                    <input type="text" id="sysSmtpFallbackHost" placeholder="smtp.ukr.net" value="smtp.ukr.net">
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label class="smtp-field-label">Порт</label>
+                    <input type="number" id="sysSmtpFallbackPort" placeholder="465" value="465">
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="smtp-field-label">Логін / Email пошти</label>
+                  <input type="email" id="sysSmtpFallbackUser" placeholder="mygen@ukr.net">
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="smtp-field-label">Пароль для програм Ukr.net</label>
+                  <input type="password" id="sysSmtpFallbackPassword" placeholder="Пароль для зовнішніх програм Ukr.net" autocomplete="new-password">
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="smtp-field-label">Ім'я відправника (From Address)</label>
+                  <input type="text" id="sysSmtpFallbackFrom" placeholder="Service Desk Генератора <mygen@ukr.net>">
+                </div>
+                <label class="smtp-checkbox-subtext">
+                  <input type="checkbox" id="sysSmtpFallbackSsl" checked>
+                  <span>Використовувати прямий SSL (порт 465 для Ukr.net)</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Щотижневий звіт налаштування -->
+            <div class="smtp-weekly-card">
+              <h5 class="smtp-weekly-title">📊 Параметри щотижневого звіту Excel</h5>
+              <div class="smtp-weekly-grid">
+                <div class="form-group smtp-weekly-group">
+                  <label class="smtp-field-label">Отримувачі (email)</label>
+                  <input type="text" id="sysEmailWeeklyRecipients" placeholder="director@gmail.com, accountant@ukr.net">
+                </div>
+                <div class="form-group smtp-weekly-group">
+                  <label class="smtp-field-label">День тижня</label>
+                  <select id="sysEmailWeeklyDay">
+                    <option value="0">Понеділок</option>
+                    <option value="1">Вівторок</option>
+                    <option value="2">Середа</option>
+                    <option value="3">Четвер</option>
+                    <option value="4">П'ятниця</option>
+                    <option value="5">Субота</option>
+                    <option value="6">Неділя</option>
+                  </select>
+                </div>
+                <div class="form-group smtp-weekly-group">
+                  <label class="smtp-field-label">Час відправки</label>
+                  <input type="time" id="sysEmailWeeklyTime" value="08:00">
+                </div>
+                <div class="form-group smtp-weekly-group">
+                  <label class="smtp-field-label">🏢 Об'єкт звіту</label>
+                  <select id="sysEmailWeeklyFacilityId" onchange="onAdminEmailWeeklyFacilityChange()"></select>
+                </div>
+                <div class="form-group smtp-weekly-group">
+                  <label class="smtp-field-label">⚡ Генератор звіту</label>
+                  <select id="sysEmailWeeklyGeneratorId"></select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Кнопки швидкого тестування -->
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+              <span style="font-size: 0.8rem; color: var(--text-muted); margin-right: 0.5rem;">🧪 Тестування пошти:</span>
+              <button type="button" class="btn-smtp-pill primary" onclick="openSmtpTestModal('primary')">📨 Тест Primary SMTP</button>
+              <button type="button" class="btn-smtp-pill fallback" onclick="openSmtpTestModal('fallback')">📨 Тест Fallback SMTP</button>
+              <button type="button" class="btn-smtp-pill failover" onclick="openSmtpTestModal('failover')">🔄 Тест Failover</button>
+              <button type="button" class="btn-smtp-pill weekly" onclick="openSendWeeklyReportModal()">📊 Надіслати звіт зараз</button>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end;">
+            <button type="submit" class="btn-primary" style="width: auto; min-width: 280px; margin-top: 0; padding: 0.85rem 1.75rem;">💾 Зберегти системні налаштування</button>
+          </div>
+        </form>
+      </div>
+      </div>
+
+      <!-- SUBTAB 5: USERS -->
+      <div id="adminPane-users" class="admin-subpane">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>👥 Користувачі системи</h3>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" id="btnOpenUserCreateModal" class="btn-action" onclick="openModal('modalUserCreate')">+ Створити користувача</button>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table id="usersTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Користувач</th>
+                <th>ПІБ</th>
+                <th>Email</th>
+                <th>Статус</th>
+                <th>Ролі</th>
+                <th>Дії</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      </div>
+
+      <!-- SUBTAB 6: BACKUPS & DB RESET -->
+      <div id="adminPane-backups" class="admin-subpane">
+      <!-- Panel: Резервні копії та Відновлення (SuperAdmin only) -->
+      <div id="panelBackups" class="panel" style="margin-top: 1.5rem; display: none;">
+        <div class="panel-header" style="flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <h3 style="margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.5rem;">
+              <span>💾</span> <span>Резервні копії системи (Бекапи)</span>
+              <span class="badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); font-size: 0.75rem;">Суперадмін</span>
+            </h3>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0;">
+              Створення повних та базових snapshot-копій (БД, медіа-файли, маніфест), автобекап за розкладом та збереження архівів
+            </p>
+          </div>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" id="btnOpenCreateBackup" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #38bdf8; color: #38bdf8; font-weight: 600;" onclick="openCreateBackupModal()">
+              ➕ Створити бекап зараз
+            </button>
+            <button type="button" id="btnOpenUploadRestore" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #10b981; color: #34d399; font-weight: 600;" onclick="openUploadRestoreModal()">
+              📤 Завантажити архів та відновити
+            </button>
+            <button type="button" id="btnOpenBackupSettings" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #a855f7; color: #c084fc; font-weight: 600;" onclick="openBackupSettingsModal()">
+              ⚙️ Розклад автобекапу
+            </button>
+            <button type="button" id="btnSystemReset" class="btn-action" style="padding: 0.55rem 1rem; min-height: auto; flex-direction: row; border-color: #ef4444; color: #f87171; font-weight: 600;" onclick="openSystemResetModal()">
+              🧹 Очищення даних / Скидання БД
+            </button>
+            <button type="button" class="btn-action" style="padding: 0.55rem 0.85rem; min-height: auto; flex-direction: row;" onclick="loadBackupsList(true)" title="Оновити список бекапів">
+              🔄
+            </button>
+          </div>
+        </div>
+
+        <!-- Backup Status Summary Badges -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem;">
+          <div class="stat-summary-card">
+            <span style="font-size: 1.8rem;">📦</span>
+            <div>
+              <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Всього бекапів</div>
+              <div id="backupStatCount" style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">0</div>
+            </div>
+          </div>
+          <div class="stat-summary-card">
+            <span style="font-size: 1.8rem;">💽</span>
+            <div>
+              <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Загальний обсяг</div>
+              <div id="backupStatSize" style="font-size: 1.25rem; font-weight: 700; color: var(--accent-cyan);">0 Б</div>
+            </div>
+          </div>
+          <div class="stat-summary-card">
+            <span style="font-size: 1.8rem;">🕒</span>
+            <div>
+              <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Статус автобекапу</div>
+              <div id="backupStatSchedule" style="font-size: 0.95rem; font-weight: 600; color: var(--text-muted);">Вимкнено</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table id="backupsTable">
+            <thead>
+              <tr>
+                <th>Дата та час</th>
+                <th>Тип</th>
+                <th>Назва файлу</th>
+                <th>Розмір</th>
+                <th>Таблиці / Записи</th>
+                <th>Автор / Примітки</th>
+                <th style="text-align: center;">Дії</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td colspan="7" style="text-align: center; color: var(--text-muted);">Завантаження списку бекапів...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </div>
+    </section>

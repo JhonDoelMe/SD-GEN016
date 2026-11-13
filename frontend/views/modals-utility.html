@@ -1,0 +1,219 @@
+  <div id="modalIosInstall" class="modal-overlay">
+    <div class="modal-content" style="max-width: 440px; text-align: center;">
+      <div class="modal-header" style="justify-content: flex-end; margin-bottom: 0.5rem;">
+        <button class="close-btn" onclick="closeModal('modalIosInstall')">&times;</button>
+      </div>
+      <div style="font-size: 3rem; margin-bottom: 0.5rem;">📲</div>
+      <h3 style="margin-bottom: 0.75rem; font-size: 1.25rem;">Встановлення на iPhone або iPad</h3>
+      <div style="color: var(--text-muted); font-size: 0.95rem; text-align: left; line-height: 1.6; margin-bottom: 1.5rem; background: var(--bg-subtle); padding: 1rem; border-radius: 0.75rem; border: 1px solid var(--border-color);">
+        <p style="margin-bottom: 0.6rem;">1. У нижній панелі Safari натисніть іконку <b>«Поділитися»</b> (<span style="font-size: 1.1rem; color: #38bdf8;">⎋</span> або квадрат зі стрілкою вгору).</p>
+        <p style="margin-bottom: 0.6rem;">2. Прокрутіть список дій униз та натисніть <b>«На початковий екран»</b> (<span style="font-size: 1.1rem; color: #22c55e;">➕ Add to Home Screen</span>).</p>
+        <p>3. У верхньому правому куті натисніть <b>«Додати»</b>.</p>
+      </div>
+      <button type="button" class="btn-primary" onclick="closeModal('modalIosInstall')">Зрозуміло</button>
+    </div>
+  </div>
+
+  <div id="modalForgotPassword" class="modal-overlay">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+          <span>🔑</span> <span>Відновлення пароля</span>
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalForgotPassword')">&times;</button>
+      </div>
+      <form id="forgotPasswordForm" style="padding-top: 0.5rem;">
+        <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem;">
+          Введіть ваш <b>логін</b> або прив'язаний <b>email</b>. Якщо акаунт знайдено в системі, ми надішлемо одноразове посилання та код для відновлення доступу (діє 20 хвилин).
+        </p>
+        <div class="form-group">
+          <label style="font-weight: 600;">Логін або Email:</label>
+          <input type="text" id="forgotLoginOrEmail" required placeholder="admin або myname@company.com" autocomplete="username">
+        </div>
+        <div id="forgotPasswordFeedback" class="feedback-box"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalForgotPassword')">Скасувати</button>
+          <button type="submit" id="btnSubmitForgotPassword" class="btn-primary">
+            ✉️ Надіслати посилання
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalResetPassword" class="modal-overlay">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+          <span>🔐</span> <span>Встановлення нового пароля</span>
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalResetPassword')">&times;</button>
+      </div>
+      <form id="resetPasswordForm" style="padding-top: 0.5rem;">
+        <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem;">
+          Введіть отриманий одноразовий код із листа та новий надійний пароль (від 8 символів, літери та цифри).
+        </p>
+        <div class="form-group">
+          <label style="font-weight: 600;">Одноразовий токен відновлення:</label>
+          <input type="text" id="resetPasswordToken" required placeholder="Вставте код із листа" autocomplete="off" style="font-family: monospace; letter-spacing: 1px;">
+        </div>
+        <div class="form-group">
+          <label style="font-weight: 600;">Новий пароль:</label>
+          <input type="password" id="resetPasswordNew" required minlength="8" placeholder="Мінімум 8 символів" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label style="font-weight: 600;">Підтвердіть новий пароль:</label>
+          <input type="password" id="resetPasswordConfirm" required minlength="8" placeholder="Повторіть новий пароль" autocomplete="new-password">
+        </div>
+        <div id="resetPasswordFeedback" class="feedback-box"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalResetPassword')">Скасувати</button>
+          <button type="submit" id="btnSubmitResetPassword" class="btn-primary">
+            💾 Зберегти новий пароль
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalWeatherDetails" class="modal-overlay">
+    <div class="modal-content modal-weather-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 id="weatherModalTitle" style="display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <span>⛅</span> Погода на об'єкті
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalWeatherDetails')">&times;</button>
+      </div>
+      <div class="weather-modal-body">
+        <div class="weather-hero-card">
+          <div class="weather-hero-main">
+            <span class="weather-hero-icon" id="weatherHeroIcon">⛅</span>
+            <div class="weather-hero-temp" id="weatherHeroTemp">+8.0°C</div>
+          </div>
+          <div class="weather-hero-desc" id="weatherHeroDesc">Хмарно з проясненнями</div>
+          <div class="weather-hero-loc" id="weatherHeroLoc">📍 м. Самар</div>
+        </div>
+
+        <div class="weather-details-grid">
+          <div class="weather-param-box">
+            <span class="param-label">Відчувається</span>
+            <span class="param-val" id="weatherParamFeels">+6.5°C</span>
+          </div>
+          <div class="weather-param-box">
+            <span class="param-label">Вологість</span>
+            <span class="param-val" id="weatherParamHumidity">74%</span>
+          </div>
+          <div class="weather-param-box">
+            <span class="param-label">Вітер</span>
+            <span class="param-val" id="weatherParamWind">2.5 м/с</span>
+          </div>
+          <div class="weather-param-box">
+            <span class="param-label">Тиск</span>
+            <span class="param-val" id="weatherParamPressure">752 мм</span>
+          </div>
+        </div>
+
+        <div class="weather-forecast-section" id="weatherForecastSection" style="display: none;">
+          <div class="weather-forecast-title">📅 Прогноз на 5 днів:</div>
+          <div class="weather-forecast-grid" id="weatherForecastGrid"></div>
+        </div>
+
+        <div class="weather-generator-advice" id="weatherGenAdviceWrap">
+          <div class="advice-header">⚙️ Інженерна рекомендація для генератора:</div>
+          <div class="advice-text" id="weatherGenAdviceText">Температура в межах норми для стабільної роботи генератора.</div>
+        </div>
+
+        <div class="modal-footer-sync">
+          <small id="weatherSyncTime">Оновлено: щойно</small>
+          <button type="button" class="btn-action-small" onclick="refreshFacilityIndicators(true)">Оновити зараз 🔄</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalAlertDetails" class="modal-overlay">
+    <div class="modal-content modal-alert-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 id="alertModalTitle" style="display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+          <span id="alertModalHeaderIcon">🚨</span> Повітряна безпека об'єкта
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalAlertDetails')">&times;</button>
+      </div>
+      <div class="alert-modal-body">
+        <div class="alert-hero-card" id="alertHeroCard">
+          <div class="alert-hero-badge" id="alertHeroBadge">
+            <span id="alertHeroIcon">🟢</span>
+            <span id="alertHeroStatus">ВІДБІЙ ТРИВОГИ</span>
+          </div>
+          <div class="alert-hero-threat" id="alertHeroThreat">Небо чисте (загроз не зафіксовано)</div>
+          <div class="alert-hero-loc" id="alertHeroLoc">📍 Дніпропетровська область, м. Самар</div>
+          <div class="alert-hero-time" id="alertHeroTime" style="display: none;"></div>
+        </div>
+
+        <div class="alert-verification-banner verif-verified" id="alertVerificationBanner">
+          <span class="verif-icon" id="alertVerificationIcon">✅</span>
+          <span class="verif-text" id="alertVerificationText">Підтверджено обома джерелами (Alerts.in.ua + UkraineAlarm)</span>
+        </div>
+
+        <div class="alert-advice-card" id="alertAdviceCard">
+          <div class="alert-advice-title">🛡️ Операційний протокол безпеки:</div>
+          <div class="alert-advice-body" id="alertAdviceBody">
+            Повітряна тривога відсутня. Дозволено штатні регламентні роботи, заправку бака та оприбуткування палива.
+          </div>
+        </div>
+
+        <details class="alert-legend-box alert-legend-details">
+          <summary class="legend-title">ℹ️ Довідка: диференційовані рівні загроз у системі</summary>
+          <div class="legend-body">
+            <div class="legend-row">
+              <span class="legend-badge legend-green">🟢 Зелений</span>
+              <span class="legend-desc">Відбій загрози. Штатна експлуатація.</span>
+            </div>
+            <div class="legend-row">
+              <span class="legend-badge legend-yellow">🟡 Жовтий</span>
+              <span class="legend-desc">Ударні БПЛА (Шахеди) / активність авіації. Підвищена готовність.</span>
+            </div>
+            <div class="legend-row">
+              <span class="legend-badge legend-red">🔴 Червоний</span>
+              <span class="legend-desc">Балістика / ракети / МіГ-31К / КАБ / артобстріл. Негайно в укриття! Робота біля генератора заборонена.</span>
+            </div>
+          </div>
+        </details>
+
+        <div class="modal-footer-sync">
+          <small id="alertSyncProvider">Джерела: alerts.in.ua + ukrainealarm.com</small>
+          <button type="button" class="btn-action-small" onclick="refreshFacilityIndicators(true)">Оновити зараз 🔄</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalMeasurementStatus" class="modal-overlay" style="display: none;">
+    <div class="modal-content modal-wide modal-compact">
+      <div class="modal-header">
+        <h3>📏 Стан контрольного вимірювання</h3>
+        <button type="button" class="close-btn" onclick="closeModal('modalMeasurementStatus')">&times;</button>
+      </div>
+      <div id="measurementStatusModalBody"></div>
+      <div class="modal-actions">
+        <button type="button" id="btnModalMeasGoAdmin" class="btn-oq-chip btn-oq-chip-info" style="display:none;" onclick="closeModal('modalMeasurementStatus'); switchTab('tab-measurement')">⚙️ Керувати вимірюванням</button>
+        <button type="button" class="btn-secondary" onclick="closeModal('modalMeasurementStatus')">Закрити</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalOfflineQueue" class="modal-overlay" style="display: none;">
+    <div class="modal-content modal-wide modal-compact">
+      <div class="modal-header">
+        <h3>🔄 Офлайн-черга та конфлікти</h3>
+        <button type="button" class="close-btn" onclick="closeModal('modalOfflineQueue')">&times;</button>
+      </div>
+      <div id="offlineModalSummary" class="offline-modal-summary"></div>
+      <div class="offline-toolbar-actions">
+        <button type="button" id="btnOfflineModalSyncAll" class="btn-primary btn-oq-toolbar" onclick="OfflineQueue.syncOfflineQueue({ silent: false })">🔄 Синхронізувати</button>
+        <button type="button" class="btn-secondary btn-oq-toolbar" onclick="OfflineQueue.renderQueueModal()">↻ Оновити стан</button>
+      </div>
+      <div id="offlineQueueList" class="offline-queue-list"></div>
+    </div>
+  </div>
+

@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Table, ForeignKey
 from sqlalchemy.orm import relationship
 from backend.app.database import Base, utc_now
@@ -52,8 +53,15 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     is_superadmin = Column(Boolean, default=False, nullable=False)
     facility_id = Column(Integer, ForeignKey("facilities.id", ondelete="SET NULL"), nullable=True, index=True)
+    avatar_path = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+    @property
+    def avatar_url(self) -> Optional[str]:
+        if not self.avatar_path:
+            return None
+        return f"/uploads/{self.avatar_path.lstrip('/')}"
 
     facility = relationship("Facility", back_populates="users")
     roles = relationship("Role", secondary=user_roles, back_populates="users", lazy="selectin")

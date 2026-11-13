@@ -135,7 +135,10 @@ window.getApiBaseUrl = function() {
 })();
 
 // Helper functions for Server Connection Settings
-window.openServerSettingsModal = function() {
+window.openServerSettingsModal = async function() {
+  if (window.ViewLoader?.ensureModal) {
+    await window.ViewLoader.ensureModal('modalServerSettings');
+  }
   const modal = document.getElementById('modalServerSettings');
   if (!modal) return;
   const isNative = !!(window.Capacitor || window.location.protocol === 'capacitor:' || window.location.protocol === 'file:');
@@ -150,6 +153,7 @@ window.openServerSettingsModal = function() {
     statusEl.style.display = 'none';
   }
   modal.style.display = 'flex';
+  document.body.classList.add('modal-open');
 };
 
 window.saveServerSettings = async function() {
@@ -291,22 +295,33 @@ function applyRolePermissionsUI() {
   const superadmin = isSuperAdmin();
 
   // 1. Navigation Tabs restrictions
+  const canAccessAdmin = isAdmin()
+    || hasPermission('facility:configure')
+    || hasPermission('generator:configure')
+    || hasPermission('fuel:configure')
+    || hasPermission('users:manage')
+    || hasPermission('settings:manage');
+
   const tabRules = {
-    'tab-dashboard': true, // always accessible
+    'tab-dashboard': true,
     'tab-fuel': !viewer,
     'tab-maintenance': !viewer,
     'tab-faults': !viewer,
     'tab-runs': !viewer,
-    'tab-notifications': !viewer,
     'tab-audit': isAdmin(),
     'tab-reports': isAdmin(),
     'tab-measurement': superadmin,
-    'tab-admin': isAdmin()
+    'tab-admin': canAccessAdmin
   };
 
   const measNavBtn = document.getElementById('navTabMeasurement');
   if (measNavBtn) {
     measNavBtn.style.display = superadmin ? '' : 'none';
+  }
+
+  const adminNavBtn = document.getElementById('navTabAdmin');
+  if (adminNavBtn) {
+    adminNavBtn.style.display = canAccessAdmin ? '' : 'none';
   }
 
   document.querySelectorAll('.nav-item').forEach((tab) => {
@@ -351,20 +366,28 @@ function applyRolePermissionsUI() {
     }
   }
 
-  // Update mobile navigation items visibility
-  document.querySelectorAll('.mobile-more-item').forEach((item) => {
-    const paneId = item.getAttribute('data-tab');
-    if (!paneId) return;
-    const isAllowed = tabRules[paneId] ?? true;
-    item.style.display = isAllowed ? 'flex' : 'none';
+  // Filter Admin Subtabs by RBAC permissions
+  const subtabRules = {
+    'facilities': isAdmin() || hasPermission('facility:configure') || hasPermission('generator:configure'),
+    'fuel-admin': isAdmin() || hasPermission('fuel:configure'),
+    'notifications': isAdmin() || hasPermission('settings:manage'),
+    'system': isAdmin() || hasPermission('settings:manage'),
+    'users': isAdmin() || hasPermission('users:manage') || superadmin,
+    'backups': superadmin,
+  };
+  document.querySelectorAll('#adminSubtabsBar .admin-subtab-btn').forEach((btn) => {
+    const key = btn.getAttribute('data-subtab');
+    const allowed = subtabRules[key] ?? isAdmin();
+    btn.style.display = allowed ? 'inline-flex' : 'none';
   });
-  document.querySelectorAll('.mobile-nav-btn').forEach((btn) => {
-    const paneId = btn.getAttribute('data-tab');
-    if (!paneId) return;
-    const isAllowed = tabRules[paneId] ?? true;
-    btn.style.opacity = isAllowed ? '' : '0.35';
-    btn.style.pointerEvents = isAllowed ? '' : 'none';
-  });
+  const activeSubBtn = document.querySelector('#adminSubtabsBar .admin-subtab-btn.active');
+  if (activeSubBtn && activeSubBtn.style.display === 'none') {
+    const firstAllowed = Array.from(document.querySelectorAll('#adminSubtabsBar .admin-subtab-btn'))
+      .find((b) => b.style.display !== 'none');
+    if (firstAllowed && typeof window.switchAdminSubtab === 'function') {
+      window.switchAdminSubtab(firstAllowed.getAttribute('data-subtab'));
+    }
+  }
 
   // 2. Helper to set button state with visual lock
   const setBtnState = (btnId, isAllowed, reason, lockedHtml = null) => {
@@ -645,8 +668,8 @@ function showToast(message, type = 'info', durationMs = 4000) {
   }, durationMs);
 }
 
-// Modal Helpers
-window.openModal = function (id) {
+// Modal Helpers & Lazy View Integration
+window.openModal = async function (id) {
   // Security guard against unauthorized modal opening
   if (id === 'modalSystemReset' && !isSuperAdmin()) {
     showToast('Скидання бази даних доступне виключно Головному Суперадміністратору', 'warning');
@@ -705,28 +728,180 @@ window.openModal = function (id) {
     return;
   }
 
+  if (window.ViewLoader?.ensureModal) {
+    await window.ViewLoader.ensureModal(id);
+  }
+
   const modal = document.getElementById(id);
   if (modal) {
     modal.style.display = 'flex';
     document.body.classList.add('modal-open');
-    if (typeof toggleMobileMoreSheet === 'function') {
-      toggleMobileMoreSheet(false);
-    }
+    if (typeof toggleNavDrawer === 'function') toggleNavDrawer(false);
+    if (typeof closeAccountMenu === 'function') closeAccountMenu();
   }
-  if (id === 'modalReceipt') setupReceiptModal();
-  if (id === 'modalTransfer') setupTransferModal();
-  if (id === 'modalNewStock') setupNewStockModal();
-  if (id === 'modalAdjustment') openAdjustmentModal();
-  if (id === 'modalExportAudit') openAuditExportModal();
+  if (id === 'modalReceipt' && typeof setupReceiptModal === 'function') setupReceiptModal();
+  if (id === 'modalTransfer' && typeof setupTransferModal === 'function') setupTransferModal();
+  if (id === 'modalNewStock' && typeof setupNewStockModal === 'function') setupNewStockModal();
+  if (id === 'modalAdjustment' && typeof openAdjustmentModal === 'function') openAdjustmentModal();
+  if (id === 'modalExportAudit' && typeof openAuditExportModal === 'function') openAuditExportModal();
   if (id === 'modalMeasurementCancel' && !isSuperAdmin()) {
     showToast('Аварійне скасування доступне лише Суперадміністратору 🔒', 'warning');
-    modal.style.display = 'none';
+    if (modal) modal.style.display = 'none';
     document.body.classList.remove('modal-open');
     return;
   }
   if (id === 'modalOfflineQueue' && typeof window.OfflineQueue === 'object') window.OfflineQueue.renderQueueModal();
   if (typeof window.updateOperationalSafetyBanners === 'function') {
     window.updateOperationalSafetyBanners();
+  }
+};
+
+// Shared Multipart Upload Helper (supports Avatar uploads without JSON Content-Type)
+window.apiUpload = async function (endpoint, formData, method = 'POST') {
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`/api/v1${endpoint}`, { method, body: formData, headers });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const msg = extractErrorMessage(data, `Помилка завантаження файлу (${res.status})`);
+    showToast(msg, 'error');
+    throw new Error(msg);
+  }
+  return data;
+};
+
+// Shared Deduplicated Facilities Cache
+let _facilitiesCachePromise = null;
+window.getFacilitiesCached = async function (forceRefresh = false) {
+  if (!forceRefresh && Array.isArray(window._cachedFacilitiesList) && window._cachedFacilitiesList.length > 0) {
+    return window._cachedFacilitiesList;
+  }
+  if (!forceRefresh && _facilitiesCachePromise) return _facilitiesCachePromise;
+  _facilitiesCachePromise = api('/facilities')
+    .then((list) => {
+      window._cachedFacilitiesList = Array.isArray(list) ? list : [];
+      return window._cachedFacilitiesList;
+    })
+    .finally(() => {
+      _facilitiesCachePromise = null;
+    });
+  return _facilitiesCachePromise;
+};
+
+window.invalidateFacilitiesCache = function () {
+  window._cachedFacilitiesList = null;
+  _facilitiesCachePromise = null;
+};
+
+// Live Server Status in Footer (Deduplicated & Throttled)
+let _serverStatusInFlight = null;
+let _lastServerStatusAt = 0;
+window.refreshServerStatus = async function (force = false) {
+  if (!force && _serverStatusInFlight) return _serverStatusInFlight;
+  if (!force && Date.now() - _lastServerStatusAt < 8000 && window.systemSettingsCache) return;
+
+  _serverStatusInFlight = (async () => {
+    try {
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/v1/system/status', { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+      _lastServerStatusAt = Date.now();
+
+      const statusEl = document.getElementById('footerServerStatus');
+      const cpuEl = document.getElementById('footerCpu');
+      const ramEl = document.getElementById('footerRam');
+      const ramMbEl = document.getElementById('footerRamMb');
+      const dbEl = document.getElementById('footerDb');
+      const uptimeEl = document.getElementById('footerUptime');
+
+      if (statusEl) statusEl.textContent = data.status === 'online' ? 'Онлайн' : data.status;
+      if (cpuEl) cpuEl.textContent = `${data.cpu.percent}%`;
+      if (ramEl) ramEl.textContent = `${data.memory.percent}%`;
+      if (ramMbEl) ramMbEl.textContent = `(${Math.round(data.memory.used_mb)} / ${Math.round(data.memory.total_mb)} МБ)`;
+      if (dbEl) {
+        dbEl.textContent = data.database.status === 'connected' ? 'OK' : 'Помилка';
+        dbEl.style.color = data.database.status === 'connected' ? '#22c55e' : '#ef4444';
+      }
+      if (uptimeEl) uptimeEl.textContent = data.uptime.formatted || `${data.uptime.seconds}с`;
+
+      window.systemSettingsCache = window.systemSettingsCache || {};
+      if (data.default_facility_id !== undefined) window.systemSettingsCache.default_facility_id = data.default_facility_id;
+      if (data.default_generator_id !== undefined) window.systemSettingsCache.default_generator_id = data.default_generator_id;
+      if (data.default_fuel_stock_id !== undefined) window.systemSettingsCache.default_fuel_stock_id = data.default_fuel_stock_id;
+    } catch (_) {}
+  })().finally(() => {
+    _serverStatusInFlight = null;
+  });
+
+  return _serverStatusInFlight;
+};
+
+// Deterministic 2-Letter Monogram & Avatar Renderer
+const AVATAR_GRADIENTS = [
+  'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
+  'linear-gradient(135deg, #059669 0%, #0d9488 100%)',
+  'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)',
+  'linear-gradient(135deg, #db2777 0%, #e11d48 100%)',
+  'linear-gradient(135deg, #d97706 0%, #ea580c 100%)',
+  'linear-gradient(135deg, #0891b2 0%, #0284c7 100%)',
+];
+
+window.getUserInitials = function (fullName, login) {
+  const cleanName = (fullName || '').trim().replace(/\s+/g, ' ');
+  if (cleanName) {
+    const parts = cleanName.split(' ').filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    if (parts[0].length >= 2) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+    return parts[0][0].toUpperCase();
+  }
+  const cleanLogin = (login || 'SD').trim();
+  return cleanLogin.slice(0, 2).toUpperCase() || 'SD';
+};
+
+window.getAvatarGradient = function (seedStr) {
+  const s = String(seedStr || 'user');
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) {
+    hash = ((hash << 5) - hash) + s.charCodeAt(i);
+    hash |= 0;
+  }
+  return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
+};
+
+window.renderAvatarElement = function (imgEl, initialsEl, userObj) {
+  if (!initialsEl && !imgEl) return;
+  const fullName = userObj?.full_name || '';
+  const login = userObj?.login || 'SD';
+  const initials = window.getUserInitials(fullName, login);
+  const grad = window.getAvatarGradient(login || fullName);
+
+  if (initialsEl) {
+    initialsEl.textContent = initials;
+    initialsEl.style.background = grad;
+  }
+  if (imgEl) {
+    const url = userObj?.avatar_url;
+    if (url) {
+      imgEl.onload = () => {
+        imgEl.style.display = 'block';
+        if (initialsEl) initialsEl.style.display = 'none';
+      };
+      imgEl.onerror = () => {
+        imgEl.style.display = 'none';
+        if (initialsEl) initialsEl.style.display = 'flex';
+      };
+      imgEl.src = url;
+    } else {
+      imgEl.removeAttribute('src');
+      imgEl.style.display = 'none';
+      if (initialsEl) initialsEl.style.display = 'flex';
+    }
   }
 };
 

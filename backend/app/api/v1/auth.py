@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,11 +31,13 @@ from backend.app.models.user import User, PasswordResetToken
 from backend.app.schemas.auth import (
     LoginRequest,
     ChangePasswordRequest,
+    ProfileUpdateRequest,
     TokenResponse,
     UserSummary,
     ForgotPasswordRequest,
     ResetPasswordRequest
 )
+from backend.app.services.avatar_service import delete_avatar_file, save_user_avatar
 from backend.app.services.settings_service import get_runtime_setting
 from backend.app.services.email_service import send_password_reset_email, send_password_changed_email
 from backend.app.api.deps import get_current_user, get_client_ip, security_scheme
@@ -43,6 +45,23 @@ from backend.app.services.audit_service import log_audit
 
 logger = logging.getLogger("auth")
 router = APIRouter(prefix="/auth", tags=["Автентифікація"])
+
+
+def _build_user_summary(user: User) -> UserSummary:
+    role_names = [r.name for r in user.roles]
+    permissions_set = {p.code for r in user.roles for p in r.permissions}
+    return UserSummary(
+        id=user.id,
+        login=user.login,
+        full_name=user.full_name,
+        email=user.email,
+        facility_id=user.facility_id,
+        avatar_url=user.avatar_url,
+        is_active=user.is_active,
+        is_superadmin=user.is_superadmin,
+        roles=role_names,
+        permissions=sorted(permissions_set),
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -131,13 +150,6 @@ async def login(
 
     await reset_login_attempts_db(db, ip, login_clean)
 
-    # Gather user roles and permissions
-    role_names = [r.name for r in user.roles]
-    permissions_set = set()
-    for r in user.roles:
-        for p in r.permissions:
-            permissions_set.add(p.code)
-
     # Configure token lifetime and cookie duration based on remember_me
     if login_data.remember_me:
         token_delta = datetime.timedelta(days=60)
@@ -184,39 +196,93 @@ async def login(
     return TokenResponse(
         access_token=token,
         token_type="bearer",
-        user=UserSummary(
-            id=user.id,
-            login=user.login,
-            full_name=user.full_name,
-            email=user.email,
-            facility_id=user.facility_id,
-            is_active=user.is_active,
-            is_superadmin=user.is_superadmin,
-            roles=role_names,
-            permissions=sorted(list(permissions_set))
-        )
+        user=_build_user_summary(user),
     )
 
 
 @router.get("/me", response_model=UserSummary)
 async def get_me(current_user: User = Depends(get_current_user)):
-    role_names = [r.name for r in current_user.roles]
-    permissions_set = set()
-    for r in current_user.roles:
-        for p in r.permissions:
-            permissions_set.add(p.code)
+    return _build_user_summary(current_user)
 
-    return UserSummary(
-        id=current_user.id,
-        login=current_user.login,
-        full_name=current_user.full_name,
-        email=current_user.email,
-        facility_id=current_user.facility_id,
-        is_active=current_user.is_active,
-        is_superadmin=current_user.is_superadmin,
-        roles=role_names,
-        permissions=sorted(list(permissions_set))
+
+@router.put("/me", response_model=UserSummary)
+async def update_my_profile(
+    payload: ProfileUpdateRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Оновлення власного ПІБ та email поточного користувача."""
+    if payload.full_name is not None:
+        current_user.full_name = payload.full_name
+    if "email" in payload.model_fields_set:
+        current_user.email = payload.email
+
+    await db.flush()
+    await log_audit(
+        db=db,
+        action="PROFILE_UPDATED",
+        entity_type="User",
+        entity_id=str(current_user.id),
+        user_id=current_user.id,
+        details={"full_name": current_user.full_name, "email": current_user.email},
+        ip_address=get_client_ip(request),
     )
+    await db.commit()
+    return _build_user_summary(current_user)
+
+
+@router.post("/me/avatar", response_model=UserSummary)
+async def upload_my_avatar(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Завантаження або заміна власного аватара користувача (256x256 WebP)."""
+    old_path = current_user.avatar_path
+    new_path = await save_user_avatar(file, current_user.id)
+    current_user.avatar_path = new_path
+
+    await db.flush()
+    await log_audit(
+        db=db,
+        action="AVATAR_UPDATED",
+        entity_type="User",
+        entity_id=str(current_user.id),
+        user_id=current_user.id,
+        details={"avatar_path": new_path},
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+    if old_path and old_path != new_path:
+        delete_avatar_file(old_path)
+    return _build_user_summary(current_user)
+
+
+@router.delete("/me/avatar", response_model=UserSummary)
+async def delete_my_avatar(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Видалення власного аватара користувача."""
+    old_path = current_user.avatar_path
+    current_user.avatar_path = None
+
+    await db.flush()
+    await log_audit(
+        db=db,
+        action="AVATAR_DELETED",
+        entity_type="User",
+        entity_id=str(current_user.id),
+        user_id=current_user.id,
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+    if old_path:
+        delete_avatar_file(old_path)
+    return _build_user_summary(current_user)
 
 
 @router.post("/change-password")

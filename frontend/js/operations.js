@@ -1,43 +1,4 @@
-// 3. Maintenance (ТО)
-async function loadMaintenanceSummary() {
-  if (isViewerOnly() || !hasPermission('maintenance:view')) return;
-  try {
-    if (!currentGeneratorId) {
-      document.getElementById('cardMaintRem').innerHTML = `0.0 <small style="font-size:0.9rem;">год</small>`;
-      document.getElementById('cardMaintSub').innerText = `генератор не вибрано`;
-      document.getElementById('maintInterval').innerText = `-`;
-      document.getElementById('maintLast').innerText = `-`;
-      document.getElementById('maintNext').innerText = `-`;
-      document.getElementById('maintRemaining').innerText = `-`;
-      document.getElementById('maintProgress').style.width = `0%`;
-      return;
-    }
-    const q = `?generator_id=${currentGeneratorId}`;
-    const m = await api(`/maintenance/schedule${q}`);
-    cachedMaintenanceSchedule = m;
-    document.getElementById('cardMaintRem').innerHTML = `${m.hours_remaining.toFixed(1).replace('.', ',')} <small style="font-size:0.9rem;">год</small>`;
-    document.getElementById('cardMaintSub').innerText = `план: ${formatHoursCounter(m.next_due_hours)}`;
-    document.getElementById('maintInterval').innerText = `${formatHoursCounter(m.interval_hours)}`;
-    document.getElementById('maintLast').innerText = `${formatHoursCounter(m.last_performed_hours)}`;
-    document.getElementById('maintNext').innerText = `${formatHoursCounter(m.next_due_hours)}`;
-    document.getElementById('maintRemaining').innerText = `${formatHoursCounter(m.hours_remaining)}`;
-
-    const remSpan = document.getElementById('maintRemaining');
-    if (m.is_overdue) {
-      remSpan.style.color = '#ef4444';
-      remSpan.innerText += ' (ПРОСТРОЧЕНО!)';
-    } else if (m.is_due) {
-      remSpan.style.color = '#f59e0b';
-      remSpan.innerText += ' (СКОРО ТО)';
-    } else {
-      remSpan.style.color = '#22c55e';
-    }
-
-    const workedInCycle = m.current_operating_hours - m.last_performed_hours;
-    const progressPct = Math.min(100, Math.max(0, Math.round((workedInCycle / m.interval_hours) * 100)));
-    document.getElementById('maintProgress').style.width = `${progressPct}%`;
-  } catch (_) {}
-}
+// 3. Maintenance (ТО) - loadMaintenanceSummary lives in dashboard.js for fast initial boot
 
 window.recalculateMaintenanceSchedule = async function() {
   try {
@@ -70,36 +31,10 @@ async function loadMaintenanceData() {
   } catch (_) {}
 }
 
-// Maintenance Form Submit
-document.getElementById('maintForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const body = {
-    generator_id: currentGeneratorId,
-    maintenance_type: document.getElementById('maintType').value,
-    work_description: document.getElementById('maintWork').value,
-    consumables_used: document.getElementById('maintConsumables').value,
-    cost: parseFloat(document.getElementById('maintCost').value) || 0.0
-  };
-
-  try {
-    const res = await api('/maintenance/record', {
-      method: 'POST',
-      body: JSON.stringify(body),
-      offlineMeta: {
-        action_type: 'maint_record',
-        title: 'Фіксація ТО генератора',
-        summary: `${body.maintenance_type === 'SCHEDULED' ? 'Регламентне ТО' : 'Проміжне ТО'}: ${body.work_description}`,
-        facility_id: currentFacilityId,
-        generator_id: currentGeneratorId,
-      }
-    });
-    closeModal('modalMaintenance');
-    showToast(res?._queuedOffline ? '📥 Запис ТО збережено в офлайн-чергу!' : 'ТО успішно зафіксовано в системі!', res?._queuedOffline ? 'warning' : 'success');
-    loadAllData();
-  } catch (_) {}
-});
-
-window.openAdminResetMaintModal = function() {
+window.openAdminResetMaintModal = async function() {
+  if (window.ViewLoader?.ensureModal) {
+    await window.ViewLoader.ensureModal('modalAdminResetMaint');
+  }
   const m = cachedMaintenanceSchedule;
   const genName = document.getElementById('genName')?.innerText || 'Поточний генератор';
   const curHours = m ? m.current_operating_hours : (parseFloat(document.getElementById('cardHours')?.innerText?.replace(',', '.') || '0') || 0.0);
@@ -237,7 +172,10 @@ async function loadFaultsData() {
   }
 }
 
-window.openResolveFaultModal = function(id, title) {
+window.openResolveFaultModal = async function(id, title) {
+  if (window.ViewLoader?.ensureModal) {
+    await window.ViewLoader.ensureModal('modalResolveFault');
+  }
   const idEl = document.getElementById('resolveFaultId');
   const infoEl = document.getElementById('resolveFaultInfo');
   const notesEl = document.getElementById('resolveFaultNotes');
@@ -247,9 +185,46 @@ window.openResolveFaultModal = function(id, title) {
   openModal('modalResolveFault');
 };
 
-const resolveFaultForm = document.getElementById('resolveFaultForm');
-if (resolveFaultForm) {
-  resolveFaultForm.addEventListener('submit', async (e) => {
+window.resolveFault = async function(id) {
+  window.openResolveFaultModal(id, '');
+};
+
+document.addEventListener('submit', async (e) => {
+  const form = e.target;
+  if (!form || !form.id) return;
+
+  if (form.id === 'maintForm') {
+    e.preventDefault();
+    const body = {
+      generator_id: currentGeneratorId,
+      maintenance_type: document.getElementById('maintType').value,
+      work_description: document.getElementById('maintWork').value,
+      consumables_used: document.getElementById('maintConsumables').value,
+      cost: parseFloat(document.getElementById('maintCost').value) || 0.0
+    };
+    try {
+      const res = await api('/maintenance/record', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        offlineMeta: {
+          action_type: 'maint_record',
+          title: 'Фіксація ТО генератора',
+          summary: `${body.maintenance_type === 'SCHEDULED' ? 'Регламентне ТО' : 'Проміжне ТО'}: ${body.work_description}`,
+          facility_id: currentFacilityId,
+          generator_id: currentGeneratorId,
+        }
+      });
+      closeModal('modalMaintenance');
+      showToast(res?._queuedOffline ? '📥 Запис ТО збережено в офлайн-чергу!' : 'ТО успішно зафіксовано в системі!', res?._queuedOffline ? 'warning' : 'success');
+      loadAllData();
+      if (typeof loadMaintenanceData === 'function' && document.getElementById('maintenanceHistoryTable')) {
+        loadMaintenanceData();
+      }
+    } catch (_) {}
+    return;
+  }
+
+  if (form.id === 'resolveFaultForm') {
     e.preventDefault();
     const id = document.getElementById('resolveFaultId').value;
     const notes = document.getElementById('resolveFaultNotes').value.trim();
@@ -266,66 +241,40 @@ if (resolveFaultForm) {
     } catch (err) {
       showToast(err.message || 'Помилка при усуненні несправності', 'error');
     }
-  });
-}
+    return;
+  }
 
-window.resolveFault = async function(id) {
-  window.openResolveFaultModal(id, '');
-};
-
-document.getElementById('faultForm')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const body = {
-    generator_id: currentGeneratorId || null,
-    title: document.getElementById('faultTitle').value,
-    priority: document.getElementById('faultPriority').value,
-    description: document.getElementById('faultDesc').value
-  };
-
-  try {
-    const res = await api('/faults', {
-      method: 'POST',
-      body: JSON.stringify(body),
-      offlineMeta: {
-        action_type: 'fault_create',
-        title: 'Реєстрація несправності',
-        summary: `${body.title} (${body.priority})`,
-        facility_id: currentFacilityId,
-        generator_id: currentGeneratorId,
-      }
-    });
-    closeModal('modalFault');
-    showToast(res?._queuedOffline ? '📥 Заявку про несправність збережено в офлайн-чергу' : 'Заявку про несправність створено!', res?._queuedOffline ? 'warning' : 'success');
-    loadFaultsData();
-    loadGeneratorData();
-  } catch (err) {
-    showToast(err.message || 'Помилка при створенні несправності', 'error');
+  if (form.id === 'faultForm') {
+    e.preventDefault();
+    const body = {
+      generator_id: currentGeneratorId || null,
+      title: document.getElementById('faultTitle').value,
+      priority: document.getElementById('faultPriority').value,
+      description: document.getElementById('faultDesc').value
+    };
+    try {
+      const res = await api('/faults', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        offlineMeta: {
+          action_type: 'fault_create',
+          title: 'Реєстрація несправності',
+          summary: `${body.title} (${body.priority})`,
+          facility_id: currentFacilityId,
+          generator_id: currentGeneratorId,
+        }
+      });
+      closeModal('modalFault');
+      showToast(res?._queuedOffline ? '📥 Заявку про несправність збережено в офлайн-чергу' : 'Заявку про несправність створено!', res?._queuedOffline ? 'warning' : 'success');
+      loadFaultsData();
+      loadGeneratorData();
+    } catch (err) {
+      showToast(err.message || 'Помилка при створенні несправності', 'error');
+    }
   }
 });
 
-// 5. Runs History
-async function loadRecentRuns() {
-  try {
-    const q = currentGeneratorId ? '&generator_id=' + encodeURIComponent(currentGeneratorId) : '';
-    const runs = await api('/generator/runs?limit=5' + q);
-    const tbody = document.querySelector('#recentRunsTable tbody');
-    tbody.innerHTML = runs.map((r) => {
-      const durText = r.duration_formatted || (r.duration_seconds != null ? formatDuration(r.duration_seconds) : (r.duration_hours ? formatHoursToHms(r.duration_hours) : '-'));
-      const consText = r.calculated_consumption_l != null ? formatLiters(r.calculated_consumption_l) : '-';
-      return `
-        <tr>
-          <td>${formatDateTime(r.start_time)}</td>
-          <td>${formatHoursCounter(r.start_hours)}</td>
-          <td>${r.end_hours != null ? formatHoursCounter(r.end_hours) : '<i>працює...</i>'}</td>
-          <td><b style="color: #38bdf8; font-family: monospace;">${escapeHtml(durText)}</b></td>
-          <td>${escapeHtml(consText)}</td>
-          <td>${escapeHtml(r.user_name || '-')}</td>
-        </tr>
-      `;
-    }).join('') || '<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">Циклів не знайдено</td></tr>';
-  } catch (_) {}
-}
-
+// 5. Runs History (loadRecentRuns lives in dashboard.js for fast initial boot)
 async function loadRunsData() {
   try {
     const q = currentGeneratorId ? '&generator_id=' + encodeURIComponent(currentGeneratorId) : '';

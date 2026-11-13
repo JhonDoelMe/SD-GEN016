@@ -158,7 +158,7 @@ window.refreshFacilityIndicators = async function(manual = true) {
 };
 
 window.openWeatherModal = async function() {
-  openModal('modalWeatherDetails');
+  await openModal('modalWeatherDetails');
   if (!window._currentWeatherData || !Array.isArray(window._currentWeatherData.forecast) || window._currentWeatherData.forecast.length === 0) {
     if (currentFacilityId) await window.loadFacilityIndicators(currentFacilityId, true);
   }
@@ -300,12 +300,12 @@ window.populateWeatherModal = function(w) {
   }
 };
 
-window.openAlertModal = function() {
+window.openAlertModal = async function() {
+  await openModal('modalAlertDetails');
   if (!window._currentAlertData) {
-    if (currentFacilityId) window.loadFacilityIndicators(currentFacilityId);
+    if (currentFacilityId) await window.loadFacilityIndicators(currentFacilityId);
   }
   window.populateAlertModal(window._currentAlertData);
-  openModal('modalAlertDetails');
 };
 
 window.populateAlertModal = function(a) {

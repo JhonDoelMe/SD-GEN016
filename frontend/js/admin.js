@@ -1,5 +1,84 @@
-// 8. Admin (Users Management - SuperAdmin Only)
+// 8. Admin (Facilities, Generators, Users Management, System Settings)
 let allUsersCache = [];
+let pendingDeleteGeneratorId = null;
+let pendingDeleteFacilityId = null;
+
+function renderManagedUserAvatarPreview(user) {
+  const imgEl = document.getElementById('editUserAvatarImg');
+  const initEl = document.getElementById('editUserAvatarInitials');
+  const circleEl = document.getElementById('editUserAvatarCircle');
+  const delBtn = document.getElementById('btnDeleteManagedAvatar');
+  const fileIn = document.getElementById('editUserAvatarInput');
+  if (fileIn) fileIn.value = '';
+  if (!circleEl || !imgEl || !initEl) return;
+
+  const displayName = user?.full_name || user?.login || '--';
+  const initials = typeof window.getUserInitials === 'function' ? window.getUserInitials(displayName) : displayName.slice(0, 2).toUpperCase();
+  const grad = typeof window.getAvatarGradient === 'function' ? window.getAvatarGradient(user?.login || displayName) : '';
+  if (grad) circleEl.style.background = grad;
+
+  if (user?.avatar_url) {
+    imgEl.src = `${user.avatar_url}${user.avatar_url.includes('?') ? '&' : '?'}t=${Date.now()}`;
+    imgEl.style.display = 'block';
+    initEl.style.display = 'none';
+    if (delBtn) delBtn.style.display = 'inline-flex';
+  } else {
+    imgEl.style.display = 'none';
+    imgEl.removeAttribute('src');
+    initEl.textContent = initials;
+    initEl.style.display = 'flex';
+    if (delBtn) delBtn.style.display = 'none';
+  }
+}
+
+window.uploadManagedUserAvatar = async function (inputEl) {
+  const file = inputEl?.files?.[0];
+  if (!file) return;
+  const uid = parseInt(document.getElementById('editUserId')?.value || '0', 10);
+  if (!uid) return;
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('Розмір зображення не повинен перевищувати 5 МБ', 'warning');
+    inputEl.value = '';
+    return;
+  }
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const updated = await window.apiUpload(`/users/${uid}/avatar`, fd);
+    const idx = allUsersCache.findIndex((u) => Number(u.id) === uid);
+    if (idx >= 0) allUsersCache[idx] = { ...allUsersCache[idx], ...updated };
+    renderManagedUserAvatarPreview(updated);
+    if (currentUser && Number(currentUser.id) === uid) {
+      currentUser.avatar_url = updated.avatar_url || null;
+      window.updateAccountHeaderUI?.();
+    }
+    showToast('Аватар користувача оновлено', 'success');
+    loadUsersData();
+  } catch (err) {
+    showToast(err.message || 'Помилка завантаження аватара', 'error');
+  } finally {
+    inputEl.value = '';
+  }
+};
+
+window.deleteManagedUserAvatar = async function () {
+  const uid = parseInt(document.getElementById('editUserId')?.value || '0', 10);
+  if (!uid) return;
+  try {
+    const updated = await api(`/users/${uid}/avatar`, { method: 'DELETE' });
+    const idx = allUsersCache.findIndex((u) => Number(u.id) === uid);
+    if (idx >= 0) allUsersCache[idx] = { ...allUsersCache[idx], avatar_url: null };
+    renderManagedUserAvatarPreview(updated || { ...allUsersCache[idx], avatar_url: null });
+    if (currentUser && Number(currentUser.id) === uid) {
+      currentUser.avatar_url = null;
+      window.updateAccountHeaderUI?.();
+    }
+    showToast('Аватар користувача видалено', 'info');
+    loadUsersData();
+  } catch (err) {
+    showToast(err.message || 'Помилка видалення аватара', 'error');
+  }
+};
 
 async function loadUsersData() {
   try {
@@ -13,6 +92,11 @@ async function loadUsersData() {
       const rolesUa = (u.roles || []).map((r) => ROLE_MAP_UA[r.name] || r.name).join(', ') || '-';
       const isSuper = u.is_superadmin;
       const facName = u.facility ? u.facility.name : (u.facility_id ? `Об'єкт #${u.facility_id}` : 'Всі об\'єкти');
+      const initials = typeof window.getUserInitials === 'function' ? window.getUserInitials(u.full_name || u.login) : String(u.login || '--').slice(0, 2).toUpperCase();
+      const grad = typeof window.getAvatarGradient === 'function' ? window.getAvatarGradient(u.login || u.full_name) : 'linear-gradient(135deg,#3b82f6,#1d4ed8)';
+      const avatarChip = u.avatar_url
+        ? `<img src="${escapeHtml(u.avatar_url)}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.2);">`
+        : `<span style="width:28px;height:28px;border-radius:50%;background:${grad};color:#fff;font-size:0.72rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${escapeHtml(initials)}</span>`;
 
       let actionsHtml = '';
       if (isSuper) {
@@ -32,7 +116,7 @@ async function loadUsersData() {
       return `
         <tr>
           <td>#${Number(u.id)}</td>
-          <td><b>${escapeHtml(u.login)}</b></td>
+          <td><div style="display:flex;align-items:center;gap:0.5rem;">${avatarChip}<b>${escapeHtml(u.login)}</b></div></td>
           <td>${escapeHtml(u.full_name)}</td>
           <td>${escapeHtml(u.email || '-')}</td>
           <td><span class="badge ${u.is_active ? 'badge-running' : 'badge-faulty'}">${u.is_active ? 'Активний' : 'Заблокований'}</span></td>
@@ -44,8 +128,9 @@ async function loadUsersData() {
   } catch (_) {}
 }
 
-// User Create Form Submit
-document.getElementById('userCreateForm')?.addEventListener('submit', async (e) => {
+// User Create Form Submit (delegated for lazy modal DOM)
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'userCreateForm') return;
   e.preventDefault();
   if (!isSuperAdmin()) {
     showToast('Створення користувачів доступне лише Головному Суперадміністратору 🔒', 'warning');
@@ -84,12 +169,12 @@ document.getElementById('userCreateForm')?.addEventListener('submit', async (e) 
 });
 
 // Edit User Modal & Form
-window.openEditUserModal = function(id) {
+window.openEditUserModal = async function(id) {
   if (!isSuperAdmin()) {
     showToast('Редагування користувачів доступне лише Головному Суперадміністратору 🔒', 'warning');
     return;
   }
-  const u = allUsersCache.find((user) => user.id === id);
+  const u = allUsersCache.find((user) => Number(user.id) === Number(id));
   if (!u) {
     showToast('Користувача не знайдено', 'error');
     return;
@@ -97,6 +182,11 @@ window.openEditUserModal = function(id) {
   if (u.is_superadmin) {
     showToast('Редагування облікового запису головного суперадміністратора заборонено', 'warning');
     return;
+  }
+
+  await window.ViewLoader?.ensureModal('modalUserEdit');
+  if (typeof window.populateCachedFacilitySelects === 'function') {
+    await window.populateCachedFacilitySelects();
   }
 
   document.getElementById('editUserId').value = u.id;
@@ -118,10 +208,12 @@ window.openEditUserModal = function(id) {
     else roleSelect.value = '3';
   }
 
-  openModal('modalUserEdit');
+  renderManagedUserAvatarPreview(u);
+  await openModal('modalUserEdit');
 };
 
-document.getElementById('userEditForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'userEditForm') return;
   e.preventDefault();
   if (!isSuperAdmin()) {
     showToast('Дія доступна лише Головному Суперадміністратору 🔒', 'warning');
@@ -173,12 +265,12 @@ document.getElementById('userEditForm')?.addEventListener('submit', async (e) =>
 });
 
 // Reset Password Modal & Form
-window.openResetPasswordModal = function(id) {
+window.openResetPasswordModal = async function(id) {
   if (!isSuperAdmin()) {
     showToast('Скидання паролів доступне лише Головному Суперадміністратору 🔒', 'warning');
     return;
   }
-  const u = allUsersCache.find((user) => user.id === id);
+  const u = allUsersCache.find((user) => Number(user.id) === Number(id));
   if (!u) {
     showToast('Користувача не знайдено', 'error');
     return;
@@ -188,16 +280,18 @@ window.openResetPasswordModal = function(id) {
     return;
   }
 
+  await window.ViewLoader?.ensureModal('modalUserResetPassword');
   document.getElementById('resetUserId').value = u.id;
   document.getElementById('resetUserDisplayLogin').innerText = u.login;
   document.getElementById('resetUserDisplayName').innerText = u.full_name;
   document.getElementById('resetNewPassword').value = '';
   document.getElementById('resetConfirmPassword').value = '';
 
-  openModal('modalUserResetPassword');
+  await openModal('modalUserResetPassword');
 };
 
-document.getElementById('userResetPasswordForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'userResetPasswordForm') return;
   e.preventDefault();
   if (!isSuperAdmin()) {
     showToast('Дія доступна лише Головному Суперадміністратору 🔒', 'warning');
@@ -227,12 +321,12 @@ document.getElementById('userResetPasswordForm')?.addEventListener('submit', asy
 });
 
 // Delete User Modal
-window.openDeleteUserModal = function(id) {
+window.openDeleteUserModal = async function(id) {
   if (!isSuperAdmin()) {
     showToast('Видалення користувачів доступне лише Головному Суперадміністратору 🔒', 'warning');
     return;
   }
-  const u = allUsersCache.find((user) => user.id === id);
+  const u = allUsersCache.find((user) => Number(user.id) === Number(id));
   if (!u) {
     showToast('Користувача не знайдено', 'error');
     return;
@@ -242,19 +336,21 @@ window.openDeleteUserModal = function(id) {
     return;
   }
 
+  await window.ViewLoader?.ensureModal('modalUserDelete');
   document.getElementById('deleteUserId').value = u.id;
   document.getElementById('deleteUserDisplayLogin').innerText = u.login;
   document.getElementById('deleteUserDisplayName').innerText = u.full_name;
 
-  openModal('modalUserDelete');
+  await openModal('modalUserDelete');
 };
 
-document.getElementById('confirmDeleteUserBtn')?.addEventListener('click', async () => {
+document.addEventListener('click', async (e) => {
+  if (!e.target || e.target.id !== 'confirmDeleteUserBtn') return;
   if (!isSuperAdmin()) {
     showToast('Дія доступна лише Головному Суперадміністратору 🔒', 'warning');
     return;
   }
-  const userId = parseInt(document.getElementById('deleteUserId').value);
+  const userId = parseInt(document.getElementById('deleteUserId')?.value || '0', 10);
   if (!userId) return;
 
   try {
@@ -265,75 +361,157 @@ document.getElementById('confirmDeleteUserBtn')?.addEventListener('click', async
   } catch (_) {}
 });
 
+// Admin Facilities & Generators Tables
+window.renderAdminFacilitiesAndGenerators = async function() {
+  const facTbody = document.querySelector('#adminFacilitiesTable tbody');
+  const genTbody = document.querySelector('#adminGeneratorsTable tbody');
+  if (!facTbody && !genTbody) return;
+
+  try {
+    const canFac = hasPermission('facility:configure');
+    const canGen = hasPermission('generator:configure');
+    const facilities = typeof window.getFacilitiesCached === 'function' ? await window.getFacilitiesCached() : await api('/facilities');
+    const activeFacId = currentFacilityId || (facilities && facilities[0] ? facilities[0].id : null);
+    const generators = activeFacId ? await api(`/generator/list?facility_id=${encodeURIComponent(activeFacId)}`) : [];
+
+    if (facTbody) {
+      facTbody.innerHTML = (facilities || []).map((f) => {
+        const prov = (f.default_fuel_provider || 'wog').toUpperCase();
+        const yasnoBadge = f.yasno_enabled
+          ? `<span class="badge badge-running">Увімк. (${escapeHtml(f.yasno_group || '-')})</span>`
+          : `<span class="badge badge-stopped">Вимк.</span>`;
+        const locTxt = [f.city, f.address].filter(Boolean).join(', ') || '-';
+        const actionsHtml = canFac ? `
+          <div style="display:flex;gap:0.35rem;justify-content:center;">
+            <button type="button" class="btn-action" style="padding:0.25rem 0.5rem;min-height:auto;font-size:0.8rem;" onclick="openQuickEditFacilityModal(${Number(f.id)})" title="Налаштування об'єкта">✏️</button>
+            <button type="button" class="btn-action" style="padding:0.25rem 0.5rem;min-height:auto;font-size:0.8rem;border-color:rgba(239,68,68,0.45);color:#f87171;" onclick="openDeleteFacilityModal(${Number(f.id)})" title="Видалити об'єкт">🗑️</button>
+          </div>` : '<span style="color:var(--text-muted);font-size:0.75rem;">Тільки перегляд</span>';
+        return `
+          <tr>
+            <td>#${Number(f.id)}</td>
+            <td><b>${escapeHtml(f.name)}</b></td>
+            <td>${escapeHtml(locTxt)}</td>
+            <td><span class="badge badge-stopped">${escapeHtml(prov)}</span></td>
+            <td>${yasnoBadge}</td>
+            <td style="text-align:center;">${actionsHtml}</td>
+          </tr>`;
+      }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Об\'єктів не знайдено</td></tr>';
+    }
+
+    if (genTbody) {
+      genTbody.innerHTML = (generators || []).map((g) => {
+        const actionsHtml = canGen ? `
+          <div style="display:flex;gap:0.35rem;justify-content:center;">
+            <button type="button" class="btn-action" style="padding:0.25rem 0.5rem;min-height:auto;font-size:0.8rem;" onclick="openQuickEditGeneratorModal(${Number(g.id)})" title="Редагувати генератор">✏️</button>
+            <button type="button" class="btn-action" style="padding:0.25rem 0.5rem;min-height:auto;font-size:0.8rem;border-color:rgba(239,68,68,0.45);color:#f87171;" onclick="openDeleteGeneratorModal(${Number(g.id)})" title="Видалити генератор">🗑️</button>
+          </div>` : '<span style="color:var(--text-muted);font-size:0.75rem;">Тільки перегляд</span>';
+        return `
+          <tr>
+            <td>#${Number(g.id)}</td>
+            <td><b>${escapeHtml(g.name)}</b><small style="display:block;color:var(--text-muted);">${escapeHtml(g.model || '-')}</small></td>
+            <td><code>${escapeHtml(g.serial_number || '-')}</code></td>
+            <td>${escapeHtml(g.fuel_type || 'А-95')} • <b>${Number(g.tank_capacity_l || 0).toFixed(0)} л</b></td>
+            <td>${Number(g.nominal_consumption_l_per_h || 0).toFixed(1)} л/г • ${Number(g.rated_power_kw || 0).toFixed(1)} кВт</td>
+            <td><b>${Number(g.total_operating_hours || 0).toFixed(1)} г</b></td>
+            <td style="text-align:center;">${actionsHtml}</td>
+          </tr>`;
+      }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">Генераторів на обраному об\'єкті не знайдено</td></tr>';
+    }
+  } catch (err) {
+    console.warn('renderAdminFacilitiesAndGenerators error:', err);
+  }
+};
+
 // Generator Deletion Handlers
-window.openDeleteGeneratorModal = function() {
+window.openDeleteGeneratorModal = async function(genId = null) {
   if (!hasPermission('generator:configure')) {
     showToast('Видалення генератора доступне лише Адміністратору', 'warning');
     return;
   }
-  if (!currentGenerator) {
+  const targetId = genId ? Number(genId) : (currentGeneratorId ? Number(currentGeneratorId) : null);
+  if (!targetId) {
     showToast('Генератор не вибрано', 'error');
     return;
   }
-  if (currentGenerator.status === 'RUNNING') {
-    showToast('Неможливо видалити генератор, який зараз працює! Спершу зупиніть його.', 'error');
-    return;
+  try {
+    const gen = (currentGenerator && Number(currentGenerator.id) === targetId)
+      ? currentGenerator
+      : await api(`/generator?generator_id=${encodeURIComponent(targetId)}`);
+    if (!gen) {
+      showToast('Генератор не знайдено', 'error');
+      return;
+    }
+    if (gen.status === 'RUNNING') {
+      showToast('Неможливо видалити генератор, який зараз працює! Спершу зупиніть його.', 'error');
+      return;
+    }
+    pendingDeleteGeneratorId = Number(gen.id);
+    await window.ViewLoader?.ensureModal('modalDeleteGenerator');
+    const text = document.getElementById('deleteGenConfirmText');
+    if (text) {
+      text.innerHTML = `Ви дійсно бажаєте видалити генератор <b>"${escapeHtml(gen.name)}"</b> (Модель: ${escapeHtml(gen.model)}, S/N: ${escapeHtml(gen.serial_number)})?`;
+    }
+    await openModal('modalDeleteGenerator');
+  } catch (err) {
+    showToast(err.message || 'Помилка завантаження генератора', 'error');
   }
-  const text = document.getElementById('deleteGenConfirmText');
-  if (text) {
-    text.innerHTML = `Ви дійсно бажаєте видалити генератор <b>"${escapeHtml(currentGenerator.name)}"</b> (Модель: ${escapeHtml(currentGenerator.model)}, S/N: ${escapeHtml(currentGenerator.serial_number)})?`;
-  }
-  openModal('modalDeleteGenerator');
 };
 
 window.confirmDeleteCurrentGenerator = async function() {
-  if (!currentGeneratorId) return;
+  const targetId = pendingDeleteGeneratorId || currentGeneratorId;
+  if (!targetId) return;
   try {
-    const res = await api(`/generator/${currentGeneratorId}`, { method: 'DELETE' });
+    const res = await api(`/generator/${encodeURIComponent(targetId)}`, { method: 'DELETE' });
     closeModal('modalDeleteGenerator');
     showToast(res.message || 'Генератор успішно видалено!', 'success');
-    localStorage.removeItem('sd_last_generator_id');
-    if (currentFacilityId) {
-      localStorage.removeItem(`sd_last_gen_facility_${currentFacilityId}`);
+    pendingDeleteGeneratorId = null;
+    if (Number(targetId) === Number(currentGeneratorId)) {
+      localStorage.removeItem('sd_last_generator_id');
+      if (currentFacilityId) {
+        localStorage.removeItem(`sd_last_gen_facility_${currentFacilityId}`);
+      }
+      currentGeneratorId = null;
     }
-    currentGeneratorId = null;
     await loadGeneratorsList(currentFacilityId);
     await loadAllData();
+    await window.renderAdminFacilitiesAndGenerators();
   } catch (err) {
     showToast(err.message, 'error');
   }
 };
 
 // Facility Deletion Handlers
-window.openDeleteFacilityModal = async function() {
+window.openDeleteFacilityModal = async function(facId = null) {
   if (!hasPermission('facility:configure')) {
     showToast("Видалення об'єктів доступне лише Адміністратору", 'warning');
     return;
   }
-  if (!currentFacilityId) {
+  const targetId = facId ? Number(facId) : (currentFacilityId ? Number(currentFacilityId) : null);
+  if (!targetId) {
     showToast("Будь ласка, спочатку оберіть об'єкт для видалення", 'warning');
     return;
   }
 
   try {
-    const facilities = await api('/facilities');
+    const facilities = typeof window.getFacilitiesCached === 'function' ? await window.getFacilitiesCached() : await api('/facilities');
     if (!facilities || facilities.length <= 1) {
       showToast("Неможливо видалити єдиний об'єкт у системі", 'warning');
       return;
     }
-    const currentFac = facilities.find(f => f.id === currentFacilityId) || { name: `ID ${currentFacilityId}` };
-    const generators = await api(`/generator/list?facility_id=${currentFacilityId}`);
-    
-    // Check if any generator is running
+    const targetFac = facilities.find(f => Number(f.id) === targetId) || { id: targetId, name: `ID ${targetId}` };
+    const generators = await api(`/generator/list?facility_id=${encodeURIComponent(targetId)}`);
+
     const runningGen = (generators || []).find(g => g.status === 'RUNNING');
     if (runningGen) {
       showToast(`Неможливо видалити об'єкт: генератор "${runningGen.name}" наразі працює! Спершу зупиніть його.`, 'error');
       return;
     }
 
+    pendingDeleteFacilityId = targetId;
+    await window.ViewLoader?.ensureModal('modalDeleteFacility');
     const text = document.getElementById('deleteFacilityConfirmText');
     if (text) {
-      text.innerHTML = `Ви дійсно бажаєте видалити об'єкт <b>"${escapeHtml(currentFac.name)}"</b>?`;
+      text.innerHTML = `Ви дійсно бажаєте видалити об'єкт <b>"${escapeHtml(targetFac.name)}"</b>?`;
     }
 
     const warnBox = document.getElementById('deleteFacilityGenWarning');
@@ -349,14 +527,15 @@ window.openDeleteFacilityModal = async function() {
       }
     }
 
-    openModal('modalDeleteFacility');
+    await openModal('modalDeleteFacility');
   } catch (err) {
     showToast(err.message, 'error');
   }
 };
 
 window.confirmDeleteCurrentFacility = async function() {
-  if (!currentFacilityId) return;
+  const targetId = pendingDeleteFacilityId || currentFacilityId;
+  if (!targetId) return;
   const btn = document.getElementById('confirmDeleteFacilityBtn');
   const cascadeCheckbox = document.getElementById('deleteFacilityCascadeCheckbox');
   const cascade = cascadeCheckbox ? cascadeCheckbox.checked : false;
@@ -367,19 +546,22 @@ window.confirmDeleteCurrentFacility = async function() {
   }
 
   try {
-    const res = await api(`/facilities/${currentFacilityId}?cascade=${cascade}`, { method: 'DELETE' });
+    const res = await api(`/facilities/${encodeURIComponent(targetId)}?cascade=${cascade}`, { method: 'DELETE' });
     closeModal('modalDeleteFacility');
     showToast(res.message || "Об'єкт успішно видалено!", 'success');
-    localStorage.removeItem('sd_last_facility_id');
-    localStorage.removeItem('sd_last_generator_id');
-    if (currentFacilityId) {
+    pendingDeleteFacilityId = null;
+    window.invalidateFacilitiesCache?.();
+    if (Number(targetId) === Number(currentFacilityId)) {
+      localStorage.removeItem('sd_last_facility_id');
+      localStorage.removeItem('sd_last_generator_id');
       localStorage.removeItem(`sd_last_gen_facility_${currentFacilityId}`);
+      currentFacilityId = null;
+      currentGeneratorId = null;
     }
-    currentFacilityId = null;
-    currentGeneratorId = null;
-    await loadFacilitiesList();
+    await loadFacilitiesList(true);
     await loadGeneratorsList(currentFacilityId);
     await loadAllData();
+    await window.renderAdminFacilitiesAndGenerators();
   } catch (err) {
     showToast(err.message || 'Помилка видалення об\'єкта', 'error');
   } finally {
@@ -391,24 +573,29 @@ window.confirmDeleteCurrentFacility = async function() {
 };
 
 // Modal Helpers for Facility and Generator Creation
-window.openCreateFacilityModal = function() {
+window.openCreateFacilityModal = async function() {
   if (!hasPermission('facility:configure')) {
     showToast("Створення об'єктів доступне лише Адміністратору 🔒", 'warning');
     return;
   }
+  await window.ViewLoader?.ensureModal('modalCreateFacility');
   const nameEl = document.getElementById('newFacilityName');
   if (nameEl) nameEl.value = '';
   const addrEl = document.getElementById('newFacilityAddress');
   if (addrEl) addrEl.value = '';
   const descEl = document.getElementById('newFacilityDescription');
   if (descEl) descEl.value = '';
-  openModal('modalCreateFacility');
+  await openModal('modalCreateFacility');
 };
 
-window.openCreateGeneratorModal = function() {
+window.openCreateGeneratorModal = async function() {
   if (!hasPermission('generator:configure')) {
     showToast('Створення генераторів доступне лише Адміністратору 🔒', 'warning');
     return;
+  }
+  await window.ViewLoader?.ensureModal('modalCreateGenerator');
+  if (typeof window.populateCachedFacilitySelects === 'function') {
+    await window.populateCachedFacilitySelects();
   }
   const modalSel = document.getElementById('newGenFacilityId');
   if (modalSel && currentFacilityId) {
@@ -435,11 +622,12 @@ window.openCreateGeneratorModal = function() {
   const maintEl = document.getElementById('newGenMaintInterval');
   if (maintEl) maintEl.value = '300';
 
-  openModal('modalCreateGenerator');
+  await openModal('modalCreateGenerator');
 };
 
-// Facility Create Form Submit
-document.getElementById('facilityCreateForm')?.addEventListener('submit', async (e) => {
+// Facility Create Form Submit (delegated)
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'facilityCreateForm') return;
   e.preventDefault();
   const name = document.getElementById('newFacilityName')?.value?.trim();
   const address = document.getElementById('newFacilityAddress')?.value?.trim();
@@ -479,19 +667,22 @@ document.getElementById('facilityCreateForm')?.addEventListener('submit', async 
     localStorage.removeItem('sd_last_generator_id');
     localStorage.removeItem(`sd_last_gen_facility_${currentFacilityId}`);
 
-    await loadFacilitiesList();
+    window.invalidateFacilitiesCache?.();
+    await loadFacilitiesList(true);
     if (document.getElementById('facilitySelect')) {
       document.getElementById('facilitySelect').value = created.id;
     }
     await loadGeneratorsList(currentFacilityId);
     await loadAllData();
+    await window.renderAdminFacilitiesAndGenerators();
   } catch (err) {
     showToast(err.message, 'error');
   }
 });
 
-// Generator Create Form Submit
-document.getElementById('generatorCreateForm')?.addEventListener('submit', async (e) => {
+// Generator Create Form Submit (delegated)
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'generatorCreateForm') return;
   e.preventDefault();
   const chosenFacilityId = parseInt(document.getElementById('newGenFacilityId')?.value) || currentFacilityId || 1;
   const name = document.getElementById('newGenName')?.value?.trim();
@@ -558,47 +749,26 @@ document.getElementById('generatorCreateForm')?.addEventListener('submit', async
       document.getElementById('generatorSelect').value = created.id;
     }
     await loadAllData();
+    await window.renderAdminFacilitiesAndGenerators();
   } catch (err) {
     showToast(err.message, 'error');
   }
 });
 
-// Dropdowns Change Listeners
-document.getElementById('facilitySelect')?.addEventListener('change', async (e) => {
-  const targetId = parseInt(e.target.value);
-  if (!isAdmin() && currentUser && currentUser.facility_id && targetId !== currentUser.facility_id) {
-    showToast("Ви не можете вибрати інший об'єкт, ви закріплені за своїм об'єктом!", "warning");
-    e.target.value = currentUser.facility_id;
-    return;
-  }
-  currentFacilityId = targetId;
-  localStorage.setItem('sd_last_facility_id', currentFacilityId);
-  currentGeneratorId = null;
-  await loadGeneratorsList(currentFacilityId);
-  await loadAllData();
-});
-
-document.getElementById('generatorSelect')?.addEventListener('change', async (e) => {
-  currentGeneratorId = parseInt(e.target.value);
-  localStorage.setItem('sd_last_generator_id', currentGeneratorId);
-  if (currentFacilityId) {
-    localStorage.setItem(`sd_last_gen_facility_${currentFacilityId}`, currentGeneratorId);
-  }
-  await loadAllData();
-});
-
 // Quick Edit Facility Modal Handlers
-window.openQuickEditFacilityModal = async function() {
+window.openQuickEditFacilityModal = async function(facId = null) {
   if (!hasPermission('facility:configure')) {
     showToast("Редагування об'єкта доступне лише Адміністратору", 'warning');
     return;
   }
-  if (!currentFacilityId) {
+  const targetFacId = facId ? Number(facId) : (currentFacilityId ? Number(currentFacilityId) : null);
+  if (!targetFacId) {
     showToast("Будь ласка, спочатку оберіть об'єкт", "warning");
     return;
   }
   try {
-    const fac = await api(`/facilities/${currentFacilityId}`);
+    await window.ViewLoader?.ensureModal('modalQuickEditFacility');
+    const fac = await api(`/facilities/${encodeURIComponent(targetFacId)}`);
     document.getElementById('quickEditFacilityId').value = fac.id;
     document.getElementById('quickEditFacilityName').value = fac.name || '';
     document.getElementById('quickEditFacilityAddress').value = fac.address || '';
@@ -620,13 +790,14 @@ window.openQuickEditFacilityModal = async function() {
     const provSel = document.getElementById('quickEditFacilityFuelProvider');
     if (provSel) provSel.value = (fac.default_fuel_provider || 'wog').toLowerCase();
 
-    openModal('modalQuickEditFacility');
+    await openModal('modalQuickEditFacility');
   } catch (err) {
     showToast(err.message || "Не вдалося завантажити дані об'єкта", 'error');
   }
 };
 
-document.getElementById('quickEditFacilityForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'quickEditFacilityForm') return;
   e.preventDefault();
   const facId = parseInt(document.getElementById('quickEditFacilityId').value);
   const name = document.getElementById('quickEditFacilityName').value.trim();
@@ -655,28 +826,34 @@ document.getElementById('quickEditFacilityForm')?.addEventListener('submit', asy
     });
     closeModal('modalQuickEditFacility');
     showToast(`Об'єкт "${updated.name}" успішно оновлено!`, 'success');
-    await loadFacilitiesList();
+    window.invalidateFacilitiesCache?.();
+    await loadFacilitiesList(true);
     if (document.getElementById('facilitySelect')) {
       document.getElementById('facilitySelect').value = updated.id;
     }
     await loadAllData();
+    await window.renderAdminFacilitiesAndGenerators();
   } catch (err) {
     showToast(err.message, 'error');
   }
 });
 
 // Quick Edit Generator Modal Handlers
-window.openQuickEditGeneratorModal = async function() {
+window.openQuickEditGeneratorModal = async function(genId = null) {
   if (!hasPermission('generator:configure')) {
     showToast('Редагування генератора доступне лише Адміністратору', 'warning');
     return;
   }
-  if (!currentGeneratorId) {
+  const targetGenId = genId ? Number(genId) : (currentGeneratorId ? Number(currentGeneratorId) : null);
+  if (!targetGenId) {
     showToast("Будь ласка, спочатку оберіть генератор", "warning");
     return;
   }
   try {
-    const gen = currentGenerator || await api(`/generator?generator_id=${currentGeneratorId}`);
+    await window.ViewLoader?.ensureModal('modalQuickEditGenerator');
+    const gen = (currentGenerator && Number(currentGenerator.id) === targetGenId)
+      ? currentGenerator
+      : await api(`/generator?generator_id=${encodeURIComponent(targetGenId)}`);
     document.getElementById('quickEditGenId').value = gen.id;
     document.getElementById('quickEditGenName').value = gen.name || '';
     document.getElementById('quickEditGenModel').value = gen.model || '';
@@ -687,13 +864,14 @@ window.openQuickEditGeneratorModal = async function() {
     if (document.getElementById('quickEditGenFuelType')) {
       document.getElementById('quickEditGenFuelType').value = gen.fuel_type || 'А-95';
     }
-    openModal('modalQuickEditGenerator');
+    await openModal('modalQuickEditGenerator');
   } catch (err) {
     showToast(err.message || 'Не вдалося завантажити дані генератора', 'error');
   }
 };
 
-document.getElementById('quickEditGeneratorForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'quickEditGeneratorForm') return;
   e.preventDefault();
   const genId = parseInt(document.getElementById('quickEditGenId').value);
   const body = {
@@ -714,144 +892,15 @@ document.getElementById('quickEditGeneratorForm')?.addEventListener('submit', as
     closeModal('modalQuickEditGenerator');
     showToast(`Генератор "${updated.name}" успішно оновлено!`, 'success');
     await loadGeneratorsList(currentFacilityId);
-    if (document.getElementById('generatorSelect')) {
+    if (document.getElementById('generatorSelect') && Number(updated.id) === Number(currentGeneratorId)) {
       document.getElementById('generatorSelect').value = updated.id;
     }
     await loadAllData();
+    await window.renderAdminFacilitiesAndGenerators();
   } catch (err) {
     showToast(err.message, 'error');
   }
 });
-
-// PWA Installation & First-Visit Prompt Logic
-let deferredInstallPrompt = null;
-
-function setupPwaInstall() {
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-  const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
-  const banner = document.getElementById('pwaInstallBanner');
-  const headerInstallBtn = document.getElementById('headerInstallBtn');
-  const installBtn = document.getElementById('pwaInstallBtn');
-  const dismissBtn = document.getElementById('pwaDismissBtn');
-
-  // If already running in standalone PWA app mode, hide install buttons
-  if (isStandalone) {
-    if (banner) banner.style.display = 'none';
-    if (headerInstallBtn) headerInstallBtn.style.display = 'none';
-    return;
-  }
-
-  // Check dismissal timestamp
-  const dismissedTime = localStorage.getItem('pwa_install_dismissed_at');
-  const shouldShowPrompt = !dismissedTime || (Date.now() - parseInt(dismissedTime, 10) > 7 * 24 * 3600 * 1000);
-
-  // Native beforeinstallprompt event (Android / Chromium)
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredInstallPrompt = e;
-    if (headerInstallBtn) headerInstallBtn.style.display = 'inline-flex';
-    if (shouldShowPrompt && banner) {
-      banner.style.display = 'flex';
-    }
-  });
-
-  // Prompt on first visit if not dismissed
-  if (shouldShowPrompt && banner) {
-    setTimeout(() => {
-      const activeStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-      if (!activeStandalone) {
-        banner.style.display = 'flex';
-        if (headerInstallBtn) headerInstallBtn.style.display = 'inline-flex';
-      }
-    }, 1200);
-  } else if (headerInstallBtn) {
-    headerInstallBtn.style.display = 'inline-flex';
-  }
-
-  // Click install on banner
-  installBtn?.addEventListener('click', async () => {
-    if (deferredInstallPrompt) {
-      deferredInstallPrompt.prompt();
-      const choice = await deferredInstallPrompt.userChoice;
-      if (choice.outcome === 'accepted') {
-        if (banner) banner.style.display = 'none';
-        if (headerInstallBtn) headerInstallBtn.style.display = 'none';
-        localStorage.setItem('pwa_installed', 'true');
-      }
-      deferredInstallPrompt = null;
-    } else if (isIos) {
-      openModal('modalIosInstall');
-    } else {
-      showToast('Натисніть на значок встановлення в адресному рядку браузера або меню ⋮ -> "Встановити додаток"', 'info');
-    }
-  });
-
-  // Click install in header
-  headerInstallBtn?.addEventListener('click', async () => {
-    if (deferredInstallPrompt) {
-      deferredInstallPrompt.prompt();
-      const choice = await deferredInstallPrompt.userChoice;
-      if (choice.outcome === 'accepted') {
-        if (headerInstallBtn) headerInstallBtn.style.display = 'none';
-        if (banner) banner.style.display = 'none';
-      }
-      deferredInstallPrompt = null;
-    } else if (isIos) {
-      openModal('modalIosInstall');
-    } else {
-      showToast('Натисніть на значок встановлення в адресному рядку браузера або меню ⋮ -> "Встановити додаток"', 'info');
-    }
-  });
-
-  // Click dismiss
-  dismissBtn?.addEventListener('click', () => {
-    if (banner) banner.style.display = 'none';
-    localStorage.setItem('pwa_install_dismissed_at', Date.now().toString());
-  });
-
-  window.addEventListener('appinstalled', () => {
-    if (banner) banner.style.display = 'none';
-    if (headerInstallBtn) headerInstallBtn.style.display = 'none';
-    localStorage.setItem('pwa_installed', 'true');
-    showToast('Додаток успішно встановлено!', 'success');
-  });
-}
-
-// Live Server Status in Footer
-async function refreshServerStatus() {
-  try {
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    const res = await fetch('/api/v1/system/status', { headers });
-    if (!res.ok) return;
-    const data = await res.json();
-
-    const statusEl = document.getElementById('footerServerStatus');
-    const cpuEl = document.getElementById('footerCpu');
-    const ramEl = document.getElementById('footerRam');
-    const ramMbEl = document.getElementById('footerRamMb');
-    const dbEl = document.getElementById('footerDb');
-    const uptimeEl = document.getElementById('footerUptime');
-
-    if (statusEl) statusEl.textContent = data.status === 'online' ? 'Онлайн' : data.status;
-    if (cpuEl) cpuEl.textContent = `${data.cpu.percent}%`;
-    if (ramEl) ramEl.textContent = `${data.memory.percent}%`;
-    if (ramMbEl) ramMbEl.textContent = `(${Math.round(data.memory.used_mb)} / ${Math.round(data.memory.total_mb)} МБ)`;
-    if (dbEl) {
-      dbEl.textContent = data.database.status === 'connected' ? 'OK' : 'Помилка';
-      dbEl.style.color = data.database.status === 'connected' ? '#22c55e' : '#ef4444';
-    }
-    if (uptimeEl) uptimeEl.textContent = data.uptime.formatted || `${data.uptime.seconds}с`;
-
-    // Cache default binding IDs from server status
-    window.systemSettingsCache = window.systemSettingsCache || {};
-    if (data.default_facility_id !== undefined) window.systemSettingsCache.default_facility_id = data.default_facility_id;
-    if (data.default_generator_id !== undefined) window.systemSettingsCache.default_generator_id = data.default_generator_id;
-    if (data.default_fuel_stock_id !== undefined) window.systemSettingsCache.default_fuel_stock_id = data.default_fuel_stock_id;
-  } catch (_) {}
-}
 
 // Admin System Settings, WOG & OKKO Fuel Prices & DB Reset
 let activeSettingsFuelProvider = 'wog';
@@ -1271,7 +1320,8 @@ window.refreshFuelPricesFromInternet = async function () {
   } catch (_) {}
 };
 
-document.getElementById('systemSettingsForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'systemSettingsForm') return;
   e.preventDefault();
   const submitBtn = e.target.querySelector('button[type="submit"]');
   if (submitBtn) {
@@ -1361,8 +1411,9 @@ window.openSystemResetModal = async function () {
     showToast('Очищення даних та скидання БД доступне виключно Головному Суперадміністратору', 'warning');
     return;
   }
+  await window.ViewLoader?.ensureModal('modalSystemReset');
   try {
-    const facilities = await api('/facilities');
+    const facilities = typeof window.getFacilitiesCached === 'function' ? await window.getFacilitiesCached() : await api('/facilities');
     const sel = document.getElementById('resetFacilitySelect');
     if (sel && facilities) {
       sel.innerHTML = facilities.map((f) => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
@@ -1374,10 +1425,11 @@ window.openSystemResetModal = async function () {
   if (document.getElementById('resetAdminPassword')) document.getElementById('resetAdminPassword').value = '';
   if (document.getElementById('resetConfirmCode')) document.getElementById('resetConfirmCode').value = '';
   toggleResetFacilitySelect();
-  openModal('modalSystemReset');
+  await openModal('modalSystemReset');
 };
 
-document.getElementById('systemResetForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'systemResetForm') return;
   e.preventDefault();
   const mode = document.getElementById('resetModeSelect').value;
   const facId = parseInt(document.getElementById('resetFacilitySelect')?.value || '0', 10) || currentFacilityId || 1;
@@ -1454,11 +1506,12 @@ window.switchSmtpTestTab = function (provider) {
   }
 };
 
-window.openSmtpTestModal = function (provider = 'primary') {
+window.openSmtpTestModal = async function (provider = 'primary') {
   if (!isAdmin()) {
     showToast('Тестування пошти доступне лише адміністратору системи', 'warning');
     return;
   }
+  await window.ViewLoader?.ensureModal('modalSmtpTest');
   const defaultEmail = currentUser?.email || document.getElementById('sysSmtpPrimaryUser')?.value || '';
   const input = document.getElementById('smtpTestRecipientInput');
   if (input) input.value = defaultEmail;
@@ -1472,7 +1525,7 @@ window.openSmtpTestModal = function (provider = 'primary') {
   }
 
   switchSmtpTestTab(provider);
-  openModal('modalSmtpTest');
+  await openModal('modalSmtpTest');
 };
 
 window.executeSmtpModalTest = async function () {
@@ -1639,6 +1692,7 @@ window.openSendWeeklyReportModal = async function () {
     showToast('Відправка звітів доступна лише адміністратору системи', 'warning');
     return;
   }
+  await window.ViewLoader?.ensureModal('modalSendWeeklyReport');
   const configured = document.getElementById('sysEmailWeeklyRecipients')?.value.trim() || currentUser?.email || '';
   const input = document.getElementById('weeklyReportRecipientsInput');
   if (input) input.value = configured;
@@ -1653,7 +1707,7 @@ window.openSendWeeklyReportModal = async function () {
 
   await populateWeeklyReportModalSelectors();
 
-  openModal('modalSendWeeklyReport');
+  await openModal('modalSendWeeklyReport');
 };
 
 window.executeSendWeeklyReport = async function () {

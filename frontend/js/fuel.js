@@ -12,7 +12,7 @@ let cachedReceiptFacilities = [];
 let _receiptModalPools = [];
 window._pendingReceiptTarget = null;
 
-window.openUnifiedCanisterReceiveModal = function (poolId) {
+window.openUnifiedCanisterReceiveModal = async function (poolId) {
   const pool = (window._cachedCanisterPools || []).find(p => Number(p.id) === Number(poolId));
   if (pool) {
     window._pendingReceiptTarget = {
@@ -21,7 +21,7 @@ window.openUnifiedCanisterReceiveModal = function (poolId) {
       poolId: Number(pool.id),
     };
   }
-  openModal('modalReceipt');
+  await openModal('modalReceipt');
 };
 
 window.onReceiptFuelProviderChange = function () {
@@ -175,7 +175,7 @@ window.onReceiptStockChange = function () {
 async function setupReceiptModal() {
   try {
     const [facilities] = await Promise.all([
-      api('/facilities'),
+      typeof window.getFacilitiesCached === 'function' ? window.getFacilitiesCached() : api('/facilities'),
       fetchFuelPricesCache()
     ]);
     cachedReceiptFacilities = facilities || [];
@@ -230,11 +230,13 @@ async function updateReceiptStocks() {
   }
 }
 
-document.getElementById('recFacility')?.addEventListener('change', updateReceiptStocks);
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'recFacility') updateReceiptStocks();
+});
 
 async function setupNewStockModal() {
   try {
-    const facilities = await api('/facilities');
+    const facilities = typeof window.getFacilitiesCached === 'function' ? await window.getFacilitiesCached() : await api('/facilities');
     const facSel = document.getElementById('newStockFacility');
     if (facSel && facilities && facilities.length > 0) {
       facSel.innerHTML = facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
@@ -283,33 +285,7 @@ async function setupTransferModal() {
   }
 }
 
-async function loadFuelSummary() {
-  if (isViewerOnly() || !hasPermission('fuel:view')) return;
-  try {
-    const params = [];
-    if (currentFacilityId) params.push(`facility_id=${encodeURIComponent(currentFacilityId)}`);
-    if (currentGeneratorId) params.push(`generator_id=${encodeURIComponent(currentGeneratorId)}`);
-    const q = params.length ? '?' + params.join('&') : '';
-
-    const s = await api(`/fuel/summary${q}`);
-    window._lastFuelSummary = s;
-    document.getElementById('cardStock').innerText = s.warehouse_balance_l.toFixed(1).replace('.', ',');
-    const stockSub = document.getElementById('cardStockSub');
-    if (stockSub) {
-      stockSub.innerText = Number(s.canisters_total || 0) > 0
-        ? `${Number(s.canisters_full)}/${Number(s.canisters_total)} повн. каністр`
-        : 'залишок палива';
-    }
-    document.getElementById('fuelStockBal').innerText = formatLiters(s.warehouse_balance_l);
-    document.getElementById('fuelTankBal').innerText = formatLiters(s.tank_balance_l);
-    document.getElementById('fuelTotalBought').innerText = formatLiters(s.total_received_l);
-    document.getElementById('fuelTotalSpent').innerText = formatMoney(s.total_spent_uah);
-    document.getElementById('fuelAvgPrice').innerText = formatPricePerLiter(s.avg_price_per_liter);
-    if (typeof window.updateFuelAssessmentBlock === 'function') {
-      window.updateFuelAssessmentBlock();
-    }
-  } catch (_) {}
-}
+// loadFuelSummary lives in dashboard.js (loaded eagerly for KPI cards); reuse safely here.
 
 window._cachedCanisterPools = [];
 
@@ -328,7 +304,7 @@ async function loadFuelData() {
   try {
     const qFac = currentFacilityId ? `?facility_id=${encodeURIComponent(currentFacilityId)}` : '';
     const [, stocks, receipts, transfers, pools, canisterTxs] = await Promise.all([
-      loadFuelSummary(),
+      typeof window.loadFuelSummary === 'function' ? window.loadFuelSummary() : Promise.resolve(),
       api(`/fuel/stocks${qFac}`),
       api(`/fuel/receipts${qFac}`),
       api(`/fuel/transfers${qFac}`),
@@ -418,7 +394,8 @@ async function loadFuelData() {
 }
 
 // Unified Receipt Form Submit (Canister mode when pool exists, or fallback liters)
-document.getElementById('receiptForm').addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'receiptForm') return;
   e.preventDefault();
   const submitBtn = e.target.querySelector('button[type="submit"]');
   if (submitBtn && submitBtn.disabled) return;
@@ -566,7 +543,8 @@ document.getElementById('receiptForm').addEventListener('submit', async (e) => {
 });
 
 // Create New Fuel Stock Form Submit
-document.getElementById('newStockForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'newStockForm') return;
   e.preventDefault();
   const facilityId = parseInt(document.getElementById('newStockFacility').value) || currentFacilityId || 1;
   const name = document.getElementById('newStockName').value.trim();
@@ -587,13 +565,14 @@ document.getElementById('newStockForm')?.addEventListener('submit', async (e) =>
     showToast(`Склад ГСМ "${created.name}" успішно створено!`, 'success');
     document.getElementById('newStockName').value = '';
     document.getElementById('newStockInitialBalance').value = '0.0';
-    loadFuelData();
-    loadFuelSummary();
+    await loadFuelData();
+    if (typeof window.loadFuelSummary === 'function') await window.loadFuelSummary();
   } catch (_) {}
 });
 
 // Edit Fuel Stock Modal and Form Submit
-window.openEditStockModal = function(id, name, fuelType) {
+window.openEditStockModal = async function(id, name, fuelType) {
+  await window.ViewLoader?.ensureModal('modalEditStock');
   document.getElementById('editStockId').value = id;
   document.getElementById('editStockName').value = name;
   const sel = document.getElementById('editStockFuelType');
@@ -608,28 +587,26 @@ window.openEditStockModal = function(id, name, fuelType) {
     }
     sel.value = val;
   }
-  openModal('modalEditStock');
+  await openModal('modalEditStock');
 };
 
-const editStockForm = document.getElementById('editStockForm');
-if (editStockForm) {
-  editStockForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const id = document.getElementById('editStockId').value;
-    const name = document.getElementById('editStockName').value.trim();
-    const fuelType = document.getElementById('editStockFuelType').value;
-    try {
-      await api(`/fuel/stocks/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ name, fuel_type: fuelType })
-      });
-      closeModal('modalEditStock');
-      showToast('Склад ГСМ успішно оновлено!', 'success');
-      loadFuelData();
-      loadFuelSummary();
-    } catch (_) {}
-  });
-}
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'editStockForm') return;
+  e.preventDefault();
+  const id = document.getElementById('editStockId').value;
+  const name = document.getElementById('editStockName').value.trim();
+  const fuelType = document.getElementById('editStockFuelType').value;
+  try {
+    await api(`/fuel/stocks/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, fuel_type: fuelType })
+    });
+    closeModal('modalEditStock');
+    showToast('Склад ГСМ успішно оновлено!', 'success');
+    await loadFuelData();
+    if (typeof window.loadFuelSummary === 'function') await window.loadFuelSummary();
+  } catch (_) {}
+});
 
 window.deleteFuelStock = async function(id, name, balance) {
   let msg = `Ви впевнені, що хочете видалити склад "${name}"?`;
@@ -640,13 +617,14 @@ window.deleteFuelStock = async function(id, name, balance) {
   try {
     const res = await api(`/fuel/stocks/${encodeURIComponent(id)}`, { method: 'DELETE' });
     showToast(res.detail || 'Склад ГСМ успішно видалено!', 'success');
-    loadFuelData();
-    loadFuelSummary();
+    await loadFuelData();
+    if (typeof window.loadFuelSummary === 'function') await window.loadFuelSummary();
   } catch (_) {}
 };
 
 // Transfer Form Submit
-document.getElementById('transferForm').addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'transferForm') return;
   e.preventDefault();
   const stockVal = document.getElementById('transStock').value;
   const genVal = document.getElementById('transGenerator').value;
@@ -854,25 +832,54 @@ window.validateTransferLitersInput = function() {
 
 function renderCanisterPoolsSection(pools, txs) {
   const pill = document.getElementById('canisterPoolsSummaryPill');
+  const opPill = document.getElementById('operatorCanisterSummaryPill');
+  const opStrip = document.getElementById('operatorCanisterStrip');
+  const opCards = document.getElementById('operatorCanisterCards');
   const tbody = document.querySelector('#canisterPoolsTable tbody');
   const txSection = document.getElementById('canisterTxSection');
 
-  if (pill) {
-    if (!pools || pools.length === 0) {
-      pill.innerHTML = 'Пули каністр ще не налаштовані (звичайний облік складу)';
-    } else {
-      const totFull = pools.reduce((a, p) => a + Number(p.full_count || 0), 0);
-      const totEmpty = pools.reduce((a, p) => a + Number(p.empty_count || 0), 0);
-      const totAway = pools.reduce((a, p) => a + Number(p.away_refill_count || 0), 0);
-      const totRes = pools.reduce((a, p) => a + Number(p.reserve_liters || 0), 0);
-      const totAvail = pools.reduce((a, p) => a + Number(p.available_liters || 0), 0);
-      pill.innerHTML = `Повні: <b style="color:#4ade80;">${totFull}</b> • Порожні: <b>${totEmpty}</b> • На АЗС: <b style="color:#fbbf24;">${totAway}</b> • Резерв: <b style="color:#38bdf8;">${totRes.toFixed(1)} л</b> • Усього: <b>${totAvail.toFixed(1)} л</b>`;
-    }
+  let pillHtml = '';
+  if (!pools || pools.length === 0) {
+    pillHtml = 'Пули каністр ще не налаштовані (звичайний облік складу)';
+  } else {
+    const totFull = pools.reduce((a, p) => a + Number(p.full_count || 0), 0);
+    const totEmpty = pools.reduce((a, p) => a + Number(p.empty_count || 0), 0);
+    const totAway = pools.reduce((a, p) => a + Number(p.away_refill_count || 0), 0);
+    const totRes = pools.reduce((a, p) => a + Number(p.reserve_liters || 0), 0);
+    const totAvail = pools.reduce((a, p) => a + Number(p.available_liters || 0), 0);
+    pillHtml = `Повні: <b style="color:#4ade80;">${totFull}</b> • Порожні: <b>${totEmpty}</b> • На АЗС: <b style="color:#fbbf24;">${totAway}</b> • Резерв: <b style="color:#38bdf8;">${totRes.toFixed(1)} л</b> • Усього: <b>${totAvail.toFixed(1)} л</b>`;
   }
+  if (pill) pill.innerHTML = pillHtml;
+  if (opPill) opPill.innerHTML = pillHtml;
 
   const canTransfer = hasPermission('fuel:transfer');
   const canReceipt = hasPermission('fuel:receipt');
   const canConfigure = hasPermission('fuel:configure');
+
+  if (opStrip && opCards) {
+    if (!pools || pools.length === 0) {
+      opStrip.style.display = 'none';
+      opCards.innerHTML = '';
+    } else {
+      opStrip.style.display = 'block';
+      opCards.innerHTML = pools.map((p) => `
+        <div class="metric-card" style="text-align: left; padding: 0.9rem 1rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.35rem;">
+            <div><b>${escapeHtml(p.name)}</b> <span class="badge badge-stopped">${escapeHtml(p.fuel_type)}</span></div>
+            <b style="color:#38bdf8;">${formatLiters(p.available_liters)}</b>
+          </div>
+          <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.65rem;">
+            Склад: ${escapeHtml(p.stock_name || '-')} • Повні: <b style="color:#4ade80;">${Number(p.full_count)}/${Number(p.total_count)}</b> • Пусті: <b>${Number(p.empty_count)}</b> • На АЗС: <b style="color:#fbbf24;">${Number(p.away_refill_count)}</b>
+          </div>
+          <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
+            <button type="button" class="btn-action" style="padding: 0.35rem 0.65rem; min-height: auto; font-size: 0.8rem;" ${(!canTransfer || Number(p.empty_count) === 0) ? 'disabled' : ''} onclick="openCanisterActionModal(${Number(p.id)}, 'dispatch')">📤 На АЗС</button>
+            <button type="button" class="btn-action" style="padding: 0.35rem 0.65rem; min-height: auto; font-size: 0.8rem; border-color: #4ade80; color: #4ade80;" ${(!canReceipt || (Number(p.away_refill_count) === 0 && Number(p.empty_count) === 0)) ? 'disabled' : ''} onclick="openUnifiedCanisterReceiveModal(${Number(p.id)})">📥 Привезли</button>
+            ${Number(p.away_refill_count) > 0 && canTransfer ? `<button type="button" class="btn-action" style="padding: 0.35rem 0.65rem; min-height: auto; font-size: 0.8rem;" onclick="openCanisterActionModal(${Number(p.id)}, 'return')" title="Повернути каністри порожніми без заправки">↩️ Пусті</button>` : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+  }
 
   if (tbody) {
     if (!pools || pools.length === 0) {
@@ -933,6 +940,7 @@ window.openCreateCanisterPoolModal = async function () {
     showToast('Керування пулами каністр доступне лише Адміністратору', 'warning');
     return;
   }
+  await window.ViewLoader?.ensureModal('modalCanisterPool');
   document.getElementById('canPoolId').value = '';
   document.getElementById('canPoolModalTitle').innerText = '🛢️ Налаштувати пул каністр об\'єкта';
   document.getElementById('canPoolName').value = 'Каністри 20л';
@@ -948,7 +956,7 @@ window.openCreateCanisterPoolModal = async function () {
   if (stockSel) stockSel.disabled = false;
 
   try {
-    const facilities = await api('/facilities');
+    const facilities = typeof window.getFacilitiesCached === 'function' ? await window.getFacilitiesCached() : await api('/facilities');
     if (facSel && facilities?.length) {
       facSel.innerHTML = facilities.map(f => `<option value="${Number(f.id)}">${escapeHtml(f.name)}</option>`).join('');
       if (currentFacilityId && facilities.some(f => Number(f.id) === Number(currentFacilityId))) {
@@ -956,7 +964,7 @@ window.openCreateCanisterPoolModal = async function () {
       }
     }
     await window.onCanisterPoolFacilityChange();
-    openModal('modalCanisterPool');
+    await openModal('modalCanisterPool');
     window.updateCanisterPoolFormPreview();
   } catch (err) {
     showToast(err.message || 'Помилка відкриття форми каністр', 'error');
@@ -1011,6 +1019,7 @@ window.openEditCanisterPoolModal = async function (poolId) {
   const pool = (window._cachedCanisterPools || []).find(p => Number(p.id) === Number(poolId));
   if (!pool) return;
 
+  await window.ViewLoader?.ensureModal('modalCanisterPool');
   document.getElementById('canPoolId').value = String(pool.id);
   document.getElementById('canPoolModalTitle').innerText = `✏️ Редагувати пул «${pool.name}»`;
   document.getElementById('canPoolName').value = pool.name;
@@ -1030,7 +1039,7 @@ window.openEditCanisterPoolModal = async function (poolId) {
     stockSel.innerHTML = `<option value="${Number(pool.stock_id)}">${escapeHtml(pool.stock_name || `Склад #${pool.stock_id}`)} (${escapeHtml(pool.fuel_type)})</option>`;
     stockSel.disabled = true;
   }
-  openModal('modalCanisterPool');
+  await openModal('modalCanisterPool');
   window.updateCanisterPoolFormPreview();
 };
 
@@ -1051,7 +1060,8 @@ window.updateCanisterPoolFormPreview = function () {
   hint.innerHTML = `Усього закріплено каністр: <b>${total} шт. × ${vol.toFixed(0)} л</b> • Доступний залишок на складі стане: <b style="color:#4ade80;">${avail.toFixed(1)} л</b> (${full} повн. + ${res.toFixed(1)} л резерву)`;
 };
 
-document.getElementById('canisterPoolForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'canisterPoolForm') return;
   e.preventDefault();
   const editId = document.getElementById('canPoolId').value.trim();
   const payload = {
@@ -1094,10 +1104,11 @@ window.deleteCanisterPool = async function (poolId, name, avail) {
   }
 };
 
-window.openCanisterActionModal = function (poolId, mode) {
+window.openCanisterActionModal = async function (poolId, mode) {
   const pool = (window._cachedCanisterPools || []).find(p => Number(p.id) === Number(poolId));
   if (!pool) return;
 
+  await window.ViewLoader?.ensureModal('modalCanisterAction');
   document.getElementById('canActionPoolId').value = String(pool.id);
   document.getElementById('canActionMode').value = mode;
   document.getElementById('canActionComment').value = '';
@@ -1124,10 +1135,11 @@ window.openCanisterActionModal = function (poolId, mode) {
     submitBtn.innerText = '↩️ Повернути на об\'єкт';
   }
 
-  openModal('modalCanisterAction');
+  await openModal('modalCanisterAction');
 };
 
-document.getElementById('canisterActionForm')?.addEventListener('submit', async (e) => {
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'canisterActionForm') return;
   e.preventDefault();
   const poolId = document.getElementById('canActionPoolId').value;
   const mode = document.getElementById('canActionMode').value;

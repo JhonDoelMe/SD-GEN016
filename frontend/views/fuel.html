@@ -1,0 +1,104 @@
+    <section id="tab-fuel" class="tab-pane" style="display: none;">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h3>⛽ Операції з паливом</h3>
+            <small style="color: var(--text-muted);">Налаштування складів ГСМ та пулів каністр перенесено до розділу ⚙️ Адміністрування</small>
+          </div>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" id="btnFuelReceipt" class="btn-action" onclick="openModal('modalReceipt')">📥 + Прийняти паливо</button>
+            <button type="button" id="btnFuelTransfer" class="btn-action" onclick="openModal('modalTransfer')">⛽ Заправити бак</button>
+          </div>
+        </div>
+
+        <div class="metrics-grid" style="margin-bottom: 1.5rem;">
+          <div class="metric-card">
+            <div class="metric-label">Залишок на складі ГСМ</div>
+            <div class="metric-value" id="fuelStockBal">0.0 л</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Залишок у баку</div>
+            <div class="metric-value" id="fuelTankBal">0.0 л</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Всього закуплено</div>
+            <div class="metric-value" id="fuelTotalBought">0.0 л</div>
+            <div class="metric-sub" id="fuelTotalSpent">0 грн</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Сер. вартість літра</div>
+            <div class="metric-value" id="fuelAvgPrice">0.00 грн</div>
+          </div>
+        </div>
+
+        <!-- Compact Operator Canister Pools Action Strip -->
+        <div id="operatorCanisterStrip" style="display: none; margin-bottom: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
+            <h4 style="margin: 0;">🛢️ Каністри об'єкта</h4>
+            <div id="operatorCanisterSummaryPill" style="font-size: 0.82rem; color: var(--text-muted);"></div>
+          </div>
+          <div id="operatorCanisterCards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem;"></div>
+        </div>
+
+        <h4 style="margin: 1.25rem 0 0.5rem;">Надходження палива на склад (Чеки / Накладні)</h4>
+        <div class="table-wrapper">
+          <table id="fuelReceiptsTable">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Об'єкт</th>
+                <th>Склад ГСМ</th>
+                <th>Мережа АЗС</th>
+                <th>Літри</th>
+                <th>Сума (грн)</th>
+                <th>Ціна/л</th>
+                <th>Водій</th>
+                <th>Чек №</th>
+                <th>Прийняв</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <h4 style="margin: 2rem 0 0.5rem;">Переміщення палива (Склад ГСМ → Бак генератора)</h4>
+        <div class="table-wrapper" style="margin-bottom: 1.5rem;">
+          <table id="fuelTransfersTable">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Зі складу</th>
+                <th>Генератор</th>
+                <th>Заправлено</th>
+                <th>Склад (до → після)</th>
+                <th>Бак (до → після)</th>
+                <th>Коментар</th>
+                <th>Оператор</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div id="canisterTxSection">
+          <h4 style="margin: 2rem 0 0.5rem;">Журнал руху каністр та резервної ємності</h4>
+          <div class="table-wrapper">
+            <table id="canisterTxTable">
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>Пул каністр</th>
+                  <th>Операція</th>
+                  <th>К-сть</th>
+                  <th>Резерв (до → після)</th>
+                  <th>Стан після (повні / пусті / АЗС)</th>
+                  <th>Деталі</th>
+                  <th>Оператор</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>

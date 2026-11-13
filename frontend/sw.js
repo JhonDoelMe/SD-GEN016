@@ -1,23 +1,23 @@
-const CACHE_NAME = 'sd-gen016-v5.6.6';
+const CACHE_NAME = 'sd-gen016-v5.6.7';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
-  '/frontend/styles.css?v=5.6.6',
-  '/frontend/js/core.js?v=5.6.6',
-  '/frontend/js/offline-queue.js?v=5.6.6',
-  '/frontend/js/theme-format.js?v=5.6.6',
-  '/frontend/js/auth-nav.js?v=5.6.6',
-  '/frontend/js/dashboard.js?v=5.6.6',
-  '/frontend/js/fuel.js?v=5.6.6',
-  '/frontend/js/operations.js?v=5.6.6',
-  '/frontend/js/audit-reports.js?v=5.6.6',
-  '/frontend/js/measurement.js?v=5.6.6',
-  '/frontend/js/admin.js?v=5.6.6',
-  '/frontend/js/backups.js?v=5.6.6',
-  '/frontend/js/notifications.js?v=5.6.6',
-  '/frontend/js/yasno.js?v=5.6.6',
-  '/frontend/js/weather-alerts.js?v=5.6.6',
-  '/frontend/js/ota-updater.js?v=5.6.6',
+  '/frontend/css/base.css?v=5.6.7',
+  '/frontend/css/components.css?v=5.6.7',
+  '/frontend/css/views.css?v=5.6.7',
+  '/frontend/css/layout.css?v=5.6.7',
+  '/frontend/js/view-loader.js?v=5.6.7',
+  '/frontend/js/core.js?v=5.6.7',
+  '/frontend/js/offline-queue.js?v=5.6.7',
+  '/frontend/js/theme-format.js?v=5.6.7',
+  '/frontend/js/auth-nav.js?v=5.6.7',
+  '/frontend/js/dashboard.js?v=5.6.7',
+  '/frontend/js/notifications.js?v=5.6.7',
+  '/frontend/js/yasno.js?v=5.6.7',
+  '/frontend/js/weather-alerts.js?v=5.6.7',
+  '/frontend/views/dashboard.html?v=5.6.7',
+  '/frontend/views/modals-account.html?v=5.6.7',
+  '/frontend/views/modals-ops.html?v=5.6.7',
   '/frontend/icons/logo.png',
   '/frontend/icons/apple-touch-icon.png',
   '/frontend/icons/icon-192.png',
@@ -51,13 +51,40 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-
-  // Do NOT intercept or cache API requests - let browser fetch natively
-  if (url.pathname.startsWith('/api/')) {
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
     return;
   }
 
-  // Network first with cache fallback for HTML and static assets
+  // Do NOT intercept or cache API calls or authenticated uploads (avatars/PDFs)
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/uploads/')) {
+    return;
+  }
+
+  // Cache-First for versioned static frontend assets & lazy views/scripts/icons
+  const isStaticAsset =
+    url.pathname.startsWith('/frontend/css/') ||
+    url.pathname.startsWith('/frontend/js/') ||
+    url.pathname.startsWith('/frontend/views/') ||
+    url.pathname.startsWith('/frontend/icons/') ||
+    url.pathname === '/frontend/favicon.ico';
+
+  if (isStaticAsset) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          if (response.status === 200) {
+            const resClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, resClone));
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // Network-first with cache fallback for HTML shell and manifest
   event.respondWith(
     fetch(event.request)
       .then((response) => {

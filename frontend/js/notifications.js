@@ -734,58 +734,110 @@ window.clearNotificationLogs = async function() {
   }
 };
 
+// PWA Installation & First-Visit Prompt Logic (kept in core/notifications so it binds at boot)
+let deferredInstallPrompt = null;
+
+function setupPwaInstall() {
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
+  const banner = document.getElementById('pwaInstallBanner');
+  const headerInstallBtn = document.getElementById('headerInstallBtn');
+  const installBtn = document.getElementById('pwaInstallBtn');
+  const dismissBtn = document.getElementById('pwaDismissBtn');
+
+  if (isStandalone) {
+    if (banner) banner.style.display = 'none';
+    if (headerInstallBtn) headerInstallBtn.style.display = 'none';
+    return;
+  }
+
+  const dismissedTime = localStorage.getItem('pwa_install_dismissed_at');
+  const shouldShowPrompt = !dismissedTime || (Date.now() - parseInt(dismissedTime, 10) > 7 * 24 * 3600 * 1000);
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (headerInstallBtn) headerInstallBtn.style.display = 'inline-flex';
+    if (shouldShowPrompt && banner) {
+      banner.style.display = 'flex';
+    }
+  });
+
+  if (shouldShowPrompt && banner) {
+    setTimeout(() => {
+      const activeStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      if (!activeStandalone) {
+        banner.style.display = 'flex';
+        if (headerInstallBtn) headerInstallBtn.style.display = 'inline-flex';
+      }
+    }, 1200);
+  } else if (headerInstallBtn) {
+    headerInstallBtn.style.display = 'inline-flex';
+  }
+
+  const triggerInstallPrompt = async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        if (banner) banner.style.display = 'none';
+        if (headerInstallBtn) headerInstallBtn.style.display = 'none';
+        localStorage.setItem('pwa_installed', 'true');
+      }
+      deferredInstallPrompt = null;
+    } else if (isIos) {
+      openModal('modalIosInstall');
+    } else {
+      showToast('Натисніть на значок встановлення в адресному рядку браузера або меню ⋮ -> "Встановити додаток"', 'info');
+    }
+  };
+
+  installBtn?.addEventListener('click', triggerInstallPrompt);
+  headerInstallBtn?.addEventListener('click', triggerInstallPrompt);
+
+  dismissBtn?.addEventListener('click', () => {
+    if (banner) banner.style.display = 'none';
+    localStorage.setItem('pwa_install_dismissed_at', Date.now().toString());
+  });
+
+  window.addEventListener('appinstalled', () => {
+    if (banner) banner.style.display = 'none';
+    if (headerInstallBtn) headerInstallBtn.style.display = 'none';
+    localStorage.setItem('pwa_installed', 'true');
+    showToast('Додаток успішно встановлено!', 'success');
+  });
+}
+
 // Initialization on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   startClock();
   setupPwaInstall();
   checkAuth();
-  refreshServerStatus();
   setInterval(() => {
-    if (!document.hidden) refreshServerStatus();
+    if (!document.hidden && token) refreshServerStatus();
   }, 30000);
   setTimeout(checkPushSubscriptionStatus, 1500);
-
-  // Audit export modal trigger listener
-  document.getElementById('btnOpenExportAudit')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    openAuditExportModal();
-  });
-
-  // Forgot password link listener
-  document.getElementById('linkForgotPassword')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    openForgotPasswordModal();
-  });
-
-  // Settings Fuel Provider tab switchers
-  document.getElementById('tabFuelProviderWog')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    window.switchSettingsFuelProvider('wog');
-  });
-  document.getElementById('tabFuelProviderOkko')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    window.switchSettingsFuelProvider('okko');
-  });
 
   // Check for reset_token in URL query parameters
   const urlParams = new URLSearchParams(window.location.search);
   const resetToken = urlParams.get('reset_token');
   if (resetToken) {
-    const tokenInput = document.getElementById('resetPasswordToken');
-    if (tokenInput) tokenInput.value = resetToken;
-    const rfb = document.getElementById('resetPasswordFeedback');
-    if (rfb) {
-      rfb.className = 'feedback-box';
-      rfb.innerText = '';
-    }
-    openModal('modalResetPassword');
+    window.openModal('modalResetPassword').then(() => {
+      const tokenInput = document.getElementById('resetPasswordToken');
+      if (tokenInput) tokenInput.value = resetToken;
+      const rfb = document.getElementById('resetPasswordFeedback');
+      if (rfb) {
+        rfb.className = 'feedback-box';
+        rfb.innerText = '';
+      }
+    });
     try {
       window.history.replaceState({}, document.title, window.location.pathname);
     } catch (_) {}
   }
 
-  // Periodic background refresh for dashboard tiles (smart visibility-aware polling)
+  // Periodic background refresh for active dashboard & header indicators
   let _isBgRefreshRunning = false;
   let _lastBgRefreshAt = Date.now();
   const runDashboardBackgroundRefresh = async () => {
@@ -794,16 +846,18 @@ document.addEventListener('DOMContentLoaded', () => {
     _lastBgRefreshAt = Date.now();
     try {
       const tasks = [
-        loadGeneratorData(),
-        loadFacilityOutageSchedule(currentFacilityId),
         loadFacilityIndicators(currentFacilityId),
         window.pollRecentNotifications(false)
       ];
-      if (!isViewerOnly() && hasPermission('fuel:view')) {
-        tasks.push(loadFuelSummary());
-      }
-      if (!isViewerOnly() && hasPermission('maintenance:view')) {
-        tasks.push(loadMaintenanceSummary());
+      if (!window.activeTabId || window.activeTabId === 'tab-dashboard') {
+        tasks.push(loadGeneratorData());
+        tasks.push(loadFacilityOutageSchedule(currentFacilityId));
+        if (!isViewerOnly() && hasPermission('fuel:view') && typeof loadFuelSummary === 'function') {
+          tasks.push(loadFuelSummary());
+        }
+        if (!isViewerOnly() && hasPermission('maintenance:view') && typeof loadMaintenanceSummary === 'function') {
+          tasks.push(loadMaintenanceSummary());
+        }
       }
       await Promise.allSettled(tasks);
     } finally {

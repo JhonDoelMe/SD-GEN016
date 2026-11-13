@@ -1,0 +1,1248 @@
+  <div id="modalNewStock" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Створити новий склад ГСМ</h3>
+        <button class="close-btn" onclick="closeModal('modalNewStock')">&times;</button>
+      </div>
+      <form id="newStockForm">
+        <div class="form-group">
+          <label>Об'єкт (локація)</label>
+          <select id="newStockFacility" required></select>
+        </div>
+        <div class="form-group">
+          <label>Назва складу ГСМ</label>
+          <input type="text" id="newStockName" required placeholder="напр. Резервний склад №2">
+        </div>
+        <div class="form-group">
+          <label>Тип палива</label>
+          <select id="newStockFuelType">
+            <option value="А-95" selected>Бензин А-95</option>
+            <option value="ДП">Дизельне паливо (ДП)</option>
+            <option value="А-92">Бензин А-92</option>
+            <option value="ГАЗ">Газ (LPG)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Початковий запас (л)</label>
+          <input type="number" step="0.1" id="newStockInitialBalance" value="0.0" min="0">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalNewStock')">Скасувати</button>
+          <button type="submit" class="btn-primary">Створити склад</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalEditStock" class="modal-overlay">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3>Редагувати склад ГСМ</h3>
+        <button class="close-btn" onclick="closeModal('modalEditStock')">&times;</button>
+      </div>
+      <form id="editStockForm">
+        <input type="hidden" id="editStockId">
+        <div class="form-group">
+          <label>Назва складу ГСМ</label>
+          <input type="text" id="editStockName" required placeholder="напр. Резервний склад №2">
+        </div>
+        <div class="form-group">
+          <label>Тип палива</label>
+          <select id="editStockFuelType">
+            <option value="А-95">Бензин А-95</option>
+            <option value="ДП">Дизельне паливо (ДП)</option>
+            <option value="А-92">Бензин А-92</option>
+            <option value="ГАЗ">Газ (LPG)</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn-primary">Зберегти зміни</button>
+          <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalEditStock')">Скасувати</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalCanisterPool" class="modal-overlay">
+    <div class="modal-content modal-compact">
+      <div class="modal-header">
+        <h3 id="canPoolModalTitle">🛢️ Налаштувати пул каністр об'єкта</h3>
+        <button class="close-btn" onclick="closeModal('modalCanisterPool')">&times;</button>
+      </div>
+      <form id="canisterPoolForm">
+        <input type="hidden" id="canPoolId">
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Об'єкт</label>
+            <select id="canPoolFacility" required onchange="onCanisterPoolFacilityChange()"></select>
+          </div>
+          <div class="form-group">
+            <label>Склад ГСМ</label>
+            <select id="canPoolStock" required onchange="onCanisterPoolStockChange()"></select>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Назва пулу</label>
+            <input type="text" id="canPoolName" required placeholder="напр. Каністри 20л">
+          </div>
+          <div class="form-group">
+            <label>Номінал 1 каністри (л)</label>
+            <input type="number" step="0.5" min="1" max="200" id="canPoolVolume" value="20" required oninput="updateCanisterPoolFormPreview()">
+          </div>
+        </div>
+        <div class="form-row-3">
+          <div class="form-group">
+            <label>Повні (шт)</label>
+            <input type="number" step="1" min="0" id="canPoolFull" value="5" required oninput="updateCanisterPoolFormPreview()">
+          </div>
+          <div class="form-group">
+            <label>Порожні (шт)</label>
+            <input type="number" step="1" min="0" id="canPoolEmpty" value="0" required oninput="updateCanisterPoolFormPreview()">
+          </div>
+          <div class="form-group">
+            <label>На АЗС (шт)</label>
+            <input type="number" step="1" min="0" id="canPoolAway" value="0" required oninput="updateCanisterPoolFormPreview()">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Резервна ємність (л)</label>
+          <input type="number" step="0.1" min="0" id="canPoolReserve" value="0.0" required oninput="updateCanisterPoolFormPreview()">
+        </div>
+        <div id="canPoolLiveHint" style="margin-bottom: 0.75rem; padding: 0.5rem 0.7rem; border-radius: 0.5rem; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 0.8rem; color: var(--text-primary); line-height: 1.4;"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalCanisterPool')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зберегти пул</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalAdminResetMaint" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem; color: #fbbf24;">
+          <span>⚙️</span> <span>Скидання лічильника ТО</span>
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalAdminResetMaint')">&times;</button>
+      </div>
+      <form id="adminResetMaintForm" onsubmit="submitAdminResetMaint(event)">
+        <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.85rem; line-height: 1.45;">
+          ℹ️ <b>Для Адміністратора:</b> Фіксує виконання планового регламентного ТО (наприклад, сервісною службою), оновлює останню позначку та переносить наступне планове ТО на новий регламентний інтервал (+300 год).
+        </div>
+        
+        <div class="form-group">
+          <label>Генератор</label>
+          <input type="text" id="adminResetGenName" readonly style="background: var(--bg-secondary); color: var(--text-muted); cursor: not-allowed;">
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Поточні мотогодини</label>
+            <input type="text" id="adminResetCurrentHours" readonly style="background: var(--bg-secondary); color: var(--text-muted); font-weight: 600;">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>ТО виконано на (год)</label>
+            <input type="number" step="0.1" min="0" id="adminResetOperatingHours" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Опис робіт / Сервісна служба</label>
+          <input type="text" id="adminResetWorkDesc" required value="Планове регламентне ТО (сервісна служба)">
+        </div>
+
+        <div class="form-group">
+          <label>Використані матеріали (масло, фільтри тощо)</label>
+          <input type="text" id="adminResetConsumables" placeholder="напр. Моторна олива 10W-40, фільтр, свічка">
+        </div>
+
+        <div class="form-group">
+          <label>Вартість робіт / матеріалів (грн, опціонально)</label>
+          <input type="number" step="0.01" min="0" id="adminResetCost" value="0.0" placeholder="0.00">
+        </div>
+
+        <div class="form-group">
+          <label>Коментар / Номер акту / Примітка</label>
+          <textarea id="adminResetComment" rows="2" placeholder="напр. Акт сервісного обслуговування №..."></textarea>
+        </div>
+
+        <div style="background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.25); border-radius: 0.5rem; padding: 0.65rem 0.85rem; margin-bottom: 1.15rem; font-size: 0.85rem; color: #4ade80;">
+          ⚡ Наступне планове ТО буде розраховано: <b id="adminResetNextDuePreview">-</b>
+        </div>
+
+        <button type="submit" id="btnSubmitAdminResetMaint" class="btn-primary" style="background: #f59e0b; border-color: #f59e0b; color: #000; font-weight: 700; width: 100%;">
+          Скинути лічильник та зафіксувати ТО
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalExportAudit" class="modal-overlay" onclick="if (event.target === this) closeModal('modalExportAudit')">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3>📊 Експорт аудиту в Excel</h3>
+        <button class="close-btn" onclick="closeModal('modalExportAudit')">&times;</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+        🔒 Вивантаження офіційної книги Excel (.xlsx) за стандартом ДСТУ 4163:2020. Містить 2 аркуші: <b>«Журнал дій аудиту»</b> та <b>«Системні коригування»</b>.
+      </p>
+      <form id="formExportAudit" onsubmit="handleExportAuditExcel(event)">
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label for="auditExportStartDate" style="display: block; font-size: 0.9rem; margin-bottom: 0.35rem; color: var(--text-main);">Дата початку періоду (00:00):</label>
+          <input type="date" id="auditExportStartDate" class="form-control" style="width: 100%;" />
+        </div>
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label for="auditExportEndDate" style="display: block; font-size: 0.9rem; margin-bottom: 0.35rem; color: var(--text-main);">Дата завершення періоду (23:59):</label>
+          <input type="date" id="auditExportEndDate" class="form-control" style="width: 100%;" />
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; margin-bottom: 1.25rem;">
+          <button type="button" class="btn-action" style="flex: 1; padding: 0.4rem 0.5rem; font-size: 0.8rem; min-height: auto;" onclick="setAuditExportPeriod('today')">Сьогодні</button>
+          <button type="button" class="btn-action" style="flex: 1; padding: 0.4rem 0.5rem; font-size: 0.8rem; min-height: auto;" onclick="setAuditExportPeriod('week')">7 днів</button>
+          <button type="button" class="btn-action" style="flex: 1; padding: 0.4rem 0.5rem; font-size: 0.8rem; min-height: auto;" onclick="setAuditExportPeriod('month')">30 днів</button>
+          <button type="button" class="btn-action" style="flex: 1; padding: 0.4rem 0.5rem; font-size: 0.8rem; min-height: auto;" onclick="setAuditExportPeriod('all')">Весь час</button>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalExportAudit')">Скасувати</button>
+          <button type="submit" id="btnSubmitAuditExport" class="btn-primary" style="min-height: auto; padding: 0.75rem 1.5rem; background: #0284c7;">📥 Завантажити .xlsx</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalAdjustment" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Системне коригування (Головний адміністратор)</h3>
+        <button class="close-btn" onclick="closeModal('modalAdjustment')">&times;</button>
+      </div>
+      <form id="adjustmentForm">
+        <p style="color: #fbbf24; font-size: 0.85rem; margin-bottom: 1rem;">
+          ⚠️ Зміна експлуатаційних лічильників та залишків складів фіксується в незмінному журналі аудиту.
+        </p>
+        <div class="form-group">
+          <label>Об'єкт</label>
+          <select id="adjFacility" onchange="onAdjFacilityOrEntityChange()">
+            <option value="1">Основний об'єкт</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Категорія сутності</label>
+          <select id="adjEntity" onchange="onAdjFacilityOrEntityChange()">
+            <option value="FuelStock" selected>Склад ГСМ</option>
+            <option value="CanisterPool">Пул каністр</option>
+            <option value="Generator">Генератор</option>
+            <option value="MaintenanceSchedule">Графік ТО</option>
+            <option value="Facility">Параметри об'єкта</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label id="adjTargetLabel">Цільовий елемент</label>
+          <select id="adjTargetItem" onchange="onAdjTargetItemChange()">
+            <option value="1">Основний склад палива</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Поле для коригування</label>
+          <select id="adjField" onchange="onAdjFieldChange()">
+            <option value="current_balance_l">Залишок на складі (л)</option>
+            <option value="name">Назва складу</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+            <label style="margin-bottom: 0;">Нове значення</label>
+            <span id="adjCurrentValHint" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+          </div>
+          <input type="text" id="adjNewValue" required placeholder="Нове значення">
+        </div>
+        <div class="form-group">
+          <label>Причина коригування (ОБОВ'ЯЗКОВО)</label>
+          <textarea id="adjReason" required rows="2" placeholder="напр. Акт інвентаризації / звірки №42"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalAdjustment')">Скасувати</button>
+          <button type="submit" class="btn-primary" style="background: var(--accent-purple);">Застосувати та зареєструвати в аудиті</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+
+  <div id="modalUserCreate" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Створення нового користувача</h3>
+        <button class="close-btn" onclick="closeModal('modalUserCreate')">&times;</button>
+      </div>
+      <form id="userCreateForm">
+        <div class="form-group">
+          <label>Логін</label>
+          <input type="text" id="newLogin" required minlength="3" maxlength="50" pattern="^[a-zA-Z0-9_.\-]+$" autocapitalize="none" spellcheck="false" placeholder="operator2">
+        </div>
+        <div class="form-group">
+          <label>ПІБ</label>
+          <input type="text" id="newName" required maxlength="150" placeholder="Петро Сидоренко">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="newEmail" maxlength="150" placeholder="user@facility.local">
+        </div>
+        <div class="form-group">
+          <label>Пароль (мін. 8 символів, літери та цифри)</label>
+          <input type="password" id="newPassword" required minlength="8" maxlength="128" autocomplete="new-password" placeholder="Мін. 8 символів (літери + цифри)">
+        </div>
+        <div class="form-group">
+          <label>Роль</label>
+          <select id="newUserRole">
+            <option value="3" selected>Оператор</option>
+            <option value="2">Адміністратор</option>
+            <option value="4">Спостерігач</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Закріплений об'єкт (для оператора)</label>
+          <select id="newUserFacility">
+            <option value="">(Усі об'єкти / Не обмежено)</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalUserCreate')">Скасувати</button>
+          <button type="submit" class="btn-primary">Створити акаунт</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <!-- Modal: Edit User -->
+  <div id="modalUserEdit" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>✏️ Редагування користувача</h3>
+        <button class="close-btn" onclick="closeModal('modalUserEdit')">&times;</button>
+      </div>
+      <form id="userEditForm">
+        <input type="hidden" id="editUserId">
+        <div class="profile-avatar-editor" style="margin-bottom: 0.85rem;">
+          <div class="profile-avatar-circle" id="editUserAvatarCircle" style="width: 60px; height: 60px;">
+            <img id="editUserAvatarImg" class="avatar-circle-img" style="display: none;" alt="">
+            <span id="editUserAvatarInitials" class="avatar-circle-initials" style="font-size: 1.2rem;">--</span>
+          </div>
+          <div class="profile-avatar-controls">
+            <div style="font-size: 0.82rem; font-weight: 600; color: var(--text-primary);">Аватар користувача</div>
+            <div class="profile-avatar-btns">
+              <label class="btn-action btn-compact-row" style="cursor: pointer; margin: 0;">
+                <span>📷 Змінити фото</span>
+                <input type="file" id="editUserAvatarInput" accept="image/jpeg,image/png,image/webp,image/gif" style="display: none;" onchange="uploadManagedUserAvatar(this)">
+              </label>
+              <button type="button" id="btnDeleteManagedAvatar" class="btn-action btn-compact-row" style="border-color: rgba(239,68,68,0.45); color: #f87171; display: none;" onclick="deleteManagedUserAvatar()">
+                🗑️ Видалити
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Логін *</label>
+          <input type="text" id="editUserLogin" required minlength="3" maxlength="50" pattern="^[a-zA-Z0-9_.\-]+$" autocapitalize="none" spellcheck="false">
+        </div>
+        <div class="form-group">
+          <label>ПІБ *</label>
+          <input type="text" id="editUserName" required maxlength="150">
+        </div>
+        <div class="form-group">
+          <label>Email / Контакти</label>
+          <input type="email" id="editUserEmail" maxlength="150" placeholder="user@domain.com">
+        </div>
+        <div class="form-group">
+          <label>Роль</label>
+          <select id="editUserRole">
+            <option value="3">Оператор</option>
+            <option value="2">Адміністратор</option>
+            <option value="4">Спостерігач</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Закріплений об'єкт (для оператора)</label>
+          <select id="editUserFacility">
+            <option value="">(Усі об'єкти / Не обмежено)</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-top: 0.5rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" id="editUserActive">
+            <span>Обліковий запис активний (дозволено вхід)</span>
+          </label>
+        </div>
+        <div class="form-group" style="margin-top: 0.75rem;">
+          <label>Новий пароль (залиште порожнім, якщо пароль не змінюється)</label>
+          <input type="password" id="editUserPassword" minlength="8" maxlength="128" placeholder="•••••••• (без змін)">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalUserEdit')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зберегти зміни</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div id="modalUserResetPassword" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>🔑 Встановлення нового пароля</h3>
+        <button class="close-btn" onclick="closeModal('modalUserResetPassword')">&times;</button>
+      </div>
+      <form id="userResetPasswordForm">
+        <input type="hidden" id="resetUserId">
+        <div style="margin-bottom: 1rem; color: var(--text-muted); font-size: 0.9rem;">
+          Зміна пароля для користувача: <b id="resetUserDisplayLogin" style="color: var(--text-primary);"></b> (<span id="resetUserDisplayName"></span>)
+        </div>
+        <div class="form-group">
+          <label>Новий пароль * (мін. 8 символів, літери та цифри)</label>
+          <input type="password" id="resetNewPassword" required minlength="8" maxlength="128" autocomplete="new-password" placeholder="Введіть новий надійний пароль">
+        </div>
+        <div class="form-group">
+          <label>Підтвердження нового пароля *</label>
+          <input type="password" id="resetConfirmPassword" required minlength="8" maxlength="128" autocomplete="new-password" placeholder="Повторіть новий пароль">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalUserResetPassword')">Скасувати</button>
+          <button type="submit" class="btn-primary">Оновити пароль</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalUserDelete" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>🗑️ Видалення користувача</h3>
+        <button class="close-btn" onclick="closeModal('modalUserDelete')">&times;</button>
+      </div>
+      <div style="margin-bottom: 1.25rem; line-height: 1.5;">
+        Ви дійсно бажаєте видалити користувача <b id="deleteUserDisplayLogin" style="color: #ef4444;"></b> (<span id="deleteUserDisplayName"></span>)?
+        <div style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">
+          Якщо користувач має пов'язані робочі цикли чи журнали, його акаунт буде назавжди деактивовано для збереження аудиту.
+        </div>
+      </div>
+      <input type="hidden" id="deleteUserId">
+      <div class="modal-actions">
+        <button type="button" id="confirmDeleteUserBtn" class="btn-primary" style="background: #dc2626; flex: 1;">Видалити користувача</button>
+        <button type="button" class="btn-action" onclick="closeModal('modalUserDelete')">Скасувати</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalCreateFacility" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Створення нового об'єкту (локації)</h3>
+        <button class="close-btn" onclick="closeModal('modalCreateFacility')">&times;</button>
+      </div>
+      <form id="facilityCreateForm">
+        <div class="form-group">
+          <label>Назва об'єкту / локації *</label>
+          <input type="text" id="newFacilityName" required placeholder="Об'єкт №2">
+        </div>
+        <div class="form-group">
+          <label>Адреса / Локація</label>
+          <input type="text" id="newFacilityAddress" placeholder="м. Київ, вул. Промислова, 12">
+        </div>
+        <div class="form-group">
+          <label>Місто / Населений пункт (для погоди та тривог)</label>
+          <input type="text" id="newFacilityCity" placeholder="напр. Самар або Київ (якщо порожньо — визначається автоматично)">
+        </div>
+        <div class="form-group">
+          <label>Опис / Примітки</label>
+          <textarea id="newFacilityDescription" rows="2" placeholder="Опис об'єкта та його призначення"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Основна мережа АЗС об'єкта</label>
+          <select id="newFacilityFuelProvider" class="form-control">
+            <option value="wog" selected>АЗК WOG (wog.ua)</option>
+            <option value="okko">АЗК OKKO (okko.ua)</option>
+          </select>
+        </div>
+        <div style="margin-top: 1rem; padding-top: 0.85rem; border-top: 1px dashed var(--border-color);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.65rem;">
+            <label style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0; color: var(--text-main); display: flex; align-items: center; gap: 0.4rem;">
+              <span>⚡ Графік відключень YASNO</span>
+            </label>
+            <label class="switch-label" style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+              <input type="checkbox" id="newFacilityYasnoEnabled" onchange="document.getElementById('newFacilityYasnoFields').style.display = this.checked ? 'grid' : 'none';" style="cursor: pointer;">
+              <span>Увімкнути</span>
+            </label>
+          </div>
+          <div id="newFacilityYasnoFields" class="grid-2" style="display: none;">
+            <div class="form-group" style="margin-bottom: 0.5rem;">
+              <label style="font-size: 0.8rem;">Оператор (ОСР)</label>
+              <select id="newFacilityYasnoDso" class="form-control" style="font-size: 0.82rem;">
+                <option value="301" selected>ДТЕК Дніпровські електромережі (ДнЕМ)</option>
+                <option value="303">ЦЕК (Центральна енергетична компанія)</option>
+                <option value="902">ПрАТ «ДТЕК Київські електромережі»</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0.5rem;">
+              <label style="font-size: 0.8rem;">Група / Черга (адреса)</label>
+              <select id="newFacilityYasnoGroup" class="form-control" style="font-size: 0.82rem;">
+                <option value="1.1">Група 1.1</option>
+                <option value="1.2">Група 1.2</option>
+                <option value="2.1">Група 2.1</option>
+                <option value="2.2">Група 2.2</option>
+                <option value="3.1">Група 3.1</option>
+                <option value="3.2" selected>Група 3.2</option>
+                <option value="4.1">Група 4.1</option>
+                <option value="4.2">Група 4.2</option>
+                <option value="5.1">Група 5.1</option>
+                <option value="5.2">Група 5.2</option>
+                <option value="6.1">Група 6.1</option>
+                <option value="6.2">Група 6.2</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalCreateFacility')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зберегти об'єкт</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalCreateGenerator" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Додавання нового генератора</h3>
+        <button class="close-btn" onclick="closeModal('modalCreateGenerator')">&times;</button>
+      </div>
+      <form id="generatorCreateForm">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Об'єкт (локація) *</label>
+            <select id="newGenFacilityId" required></select>
+          </div>
+          <div class="form-group">
+            <label>Назва генератора *</label>
+            <input type="text" id="newGenName" required placeholder="Бензиновий генератор 5кВт #2">
+          </div>
+          <div class="form-group">
+            <label>Модель *</label>
+            <input type="text" id="newGenModel" required placeholder="PG-6500">
+          </div>
+          <div class="form-group">
+            <label>Виробник *</label>
+            <input type="text" id="newGenManufacturer" required placeholder="PowerGen">
+          </div>
+          <div class="form-group">
+            <label>Серійний номер *</label>
+            <input type="text" id="newGenSerial" required placeholder="GEN-2026-002">
+          </div>
+          <div class="form-group">
+            <label>Номінальна потужність (кВт) *</label>
+            <input type="number" step="0.1" id="newGenPower" required value="5.0">
+          </div>
+          <div class="form-group">
+            <label>Місткість паливного бака (л) *</label>
+            <input type="number" step="0.1" id="newGenTank" required value="25.0">
+          </div>
+          <div class="form-group">
+            <label>Тип палива *</label>
+            <select id="newGenFuelType">
+              <option value="А-95" selected>А-95</option>
+              <option value="А-92">А-92</option>
+              <option value="ДП">Дизель</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Номінальна витрата (л/год) *</label>
+            <input type="number" step="0.1" id="newGenConsumption" required value="2.2">
+          </div>
+          <div class="form-group">
+            <label>Початкові мотогодини *</label>
+            <input type="number" step="0.1" id="newGenInitialHours" required value="0.0">
+          </div>
+          <div class="form-group">
+            <label>Початковий залишок у баку (л) *</label>
+            <input type="number" step="0.1" id="newGenInitialFuel" required value="0.0">
+          </div>
+          <div class="form-group">
+            <label>Інтервал регламентного ТО (год) *</label>
+            <input type="number" step="1" id="newGenMaintInterval" required value="300">
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalCreateGenerator')">Скасувати</button>
+          <button type="submit" class="btn-primary">Створити генератор</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalDeleteGenerator" class="modal-overlay">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 style="color: #ef4444;">Видалення генератора</h3>
+        <button class="close-btn" onclick="closeModal('modalDeleteGenerator')">&times;</button>
+      </div>
+      <div style="padding: 0.5rem 0 1rem;">
+        <p id="deleteGenConfirmText" style="font-size: 0.95rem; line-height: 1.5; color: var(--text-color);">
+          Ви дійсно бажаєте видалити цей генератор?
+        </p>
+        <p style="font-size: 0.85rem; color: #ef4444; margin-top: 0.5rem; background: rgba(239, 68, 68, 0.1); padding: 0.5rem; border-radius: 4px;">
+          ⚠️ Увага: Усі пов'язані робочі цикли, історія заправок, ТО та несправності цього генератора будуть видалені! Цю дію неможливо скасувати.
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-action" onclick="closeModal('modalDeleteGenerator')">Скасувати</button>
+        <button type="button" class="btn-primary" id="confirmDeleteGenBtn" style="background: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentGenerator()">Підтвердити видалення</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalDeleteFacility" class="modal-overlay">
+    <div class="modal-content" style="max-width: 460px;">
+      <div class="modal-header">
+        <h3 style="color: #ef4444; display: flex; align-items: center; gap: 0.5rem;">
+          <span>🏢</span> <span>Видалення об'єкта</span>
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalDeleteFacility')">&times;</button>
+      </div>
+      <div style="padding: 0.5rem 0 1rem;">
+        <p id="deleteFacilityConfirmText" style="font-size: 0.95rem; line-height: 1.5; color: var(--text-color);">
+          Ви дійсно бажаєте видалити цей об'єкт?
+        </p>
+        <div id="deleteFacilityGenWarning" style="display: none; font-size: 0.85rem; color: #ef4444; margin-top: 0.75rem; background: rgba(239, 68, 68, 0.1); padding: 0.65rem; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.25);">
+          ⚠️ На цьому об'єкті є зареєстровані генератори або склади ГСМ!
+        </div>
+        <div style="margin-top: 0.85rem; padding: 0.65rem; background: var(--bg-card); border-radius: 6px; border: 1px solid var(--border-color);">
+          <label style="display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.88rem; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="deleteFacilityCascadeCheckbox" style="margin-top: 0.2rem; cursor: pointer;">
+            <span>
+              <strong>Каскадне видалення (Cascade)</strong><br>
+              <span style="font-size: 0.8rem; color: var(--text-muted);">
+                Видалити об'єкт разом з усіма його генераторами, складами ГСМ, історією роботи, заправками та ТО.
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-action" onclick="closeModal('modalDeleteFacility')">Скасувати</button>
+        <button type="button" class="btn-primary" id="confirmDeleteFacilityBtn" style="background: #dc2626; border-color: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentFacility()">Підтвердити видалення</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalQuickEditFacility" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>⚙️ Налаштування поточного об'єкта</h3>
+        <button class="close-btn" onclick="closeModal('modalQuickEditFacility')">&times;</button>
+      </div>
+      <form id="quickEditFacilityForm">
+        <input type="hidden" id="quickEditFacilityId">
+        <div class="form-group">
+          <label>Назва об'єкта *</label>
+          <input type="text" id="quickEditFacilityName" required placeholder="напр. Головний офіс / Виробництво">
+        </div>
+        <div class="form-group">
+          <label>Адреса / Локація</label>
+          <input type="text" id="quickEditFacilityAddress" placeholder="напр. вул. Шевченка, 12">
+        </div>
+        <div class="form-group">
+          <label>Місто / Населений пункт (для погоди та тривог)</label>
+          <input type="text" id="quickEditFacilityCity" placeholder="напр. Самар або Київ (якщо порожньо — визначається автоматично)">
+        </div>
+        <div class="form-group">
+          <label>Опис / Примітки</label>
+          <textarea id="quickEditFacilityDescription" rows="2" placeholder="Додаткова інформація про локацію"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Основна мережа АЗС об'єкта</label>
+          <select id="quickEditFacilityFuelProvider" class="form-control">
+            <option value="wog" selected>АЗК WOG (wog.ua)</option>
+            <option value="okko">АЗК OKKO (okko.ua)</option>
+          </select>
+        </div>
+        <div style="margin-top: 1rem; padding-top: 0.85rem; border-top: 1px dashed var(--border-color);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.65rem;">
+            <label style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0; color: var(--text-main); display: flex; align-items: center; gap: 0.4rem;">
+              <span>⚡ Графік відключень YASNO</span>
+            </label>
+            <label class="switch-label" style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
+              <input type="checkbox" id="quickEditFacilityYasnoEnabled" onchange="document.getElementById('quickEditFacilityYasnoFields').style.display = this.checked ? 'grid' : 'none';" style="cursor: pointer;">
+              <span>Увімкнути</span>
+            </label>
+          </div>
+          <div id="quickEditFacilityYasnoFields" class="grid-2" style="display: none;">
+            <div class="form-group" style="margin-bottom: 0.5rem;">
+              <label style="font-size: 0.8rem;">Оператор (ОСР)</label>
+              <select id="quickEditFacilityYasnoDso" class="form-control" style="font-size: 0.82rem;">
+                <option value="301" selected>ДТЕК Дніпровські електромережі (ДнЕМ)</option>
+                <option value="303">ЦЕК (Центральна енергетична компанія)</option>
+                <option value="902">ПрАТ «ДТЕК Київські електромережі»</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0.5rem;">
+              <label style="font-size: 0.8rem;">Група / Черга (адреса)</label>
+              <select id="quickEditFacilityYasnoGroup" class="form-control" style="font-size: 0.82rem;">
+                <option value="1.1">Група 1.1</option>
+                <option value="1.2">Група 1.2</option>
+                <option value="2.1">Група 2.1</option>
+                <option value="2.2">Група 2.2</option>
+                <option value="3.1">Група 3.1</option>
+                <option value="3.2" selected>Група 3.2</option>
+                <option value="4.1">Група 4.1</option>
+                <option value="4.2">Група 4.2</option>
+                <option value="5.1">Група 5.1</option>
+                <option value="5.2">Група 5.2</option>
+                <option value="6.1">Група 6.1</option>
+                <option value="6.2">Група 6.2</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalQuickEditFacility')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зберегти зміни</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <!-- Modal: Quick Edit Generator -->
+  <div id="modalQuickEditGenerator" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>⚙️ Налаштування генератора</h3>
+        <button class="close-btn" onclick="closeModal('modalQuickEditGenerator')">&times;</button>
+      </div>
+      <form id="quickEditGeneratorForm">
+        <input type="hidden" id="quickEditGenId">
+        <div class="form-group">
+          <label>Назва генератора *</label>
+          <input type="text" id="quickEditGenName" required placeholder="напр. Генератор 1 (Honda EU70is)">
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label>Модель *</label>
+            <input type="text" id="quickEditGenModel" required placeholder="напр. EU70is">
+          </div>
+          <div class="form-group">
+            <label>Серійний номер *</label>
+            <input type="text" id="quickEditGenSerial" required placeholder="напр. SN-987452">
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label>Номінальна потужність (кВт) *</label>
+            <input type="number" step="0.1" id="quickEditGenPower" required placeholder="напр. 5.5">
+          </div>
+          <div class="form-group">
+            <label>Ємність бака (л) *</label>
+            <input type="number" step="0.1" id="quickEditGenTank" required placeholder="напр. 25.0">
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label>Тип палива *</label>
+            <select id="quickEditGenFuelType" required>
+              <option value="А-95">Бензин А-95</option>
+              <option value="А-92">Бензин А-92</option>
+              <option value="ДП">Дизельне паливо (ДП)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Паспортний розхід (л/год) *</label>
+            <input type="number" step="0.01" id="quickEditGenConsumption" required placeholder="напр. 2.10">
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalQuickEditGenerator')">Скасувати</button>
+          <button type="submit" class="btn-primary">Зберегти налаштування</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div id="modalSystemReset" class="modal-overlay">
+    <div class="modal-content" style="max-width: 560px; border-color: rgba(239, 68, 68, 0.45);">
+      <div class="modal-header">
+        <h3 style="color: #f87171;">🧹 Очищення даних та Скидання БД</h3>
+        <button class="close-btn" onclick="closeModal('modalSystemReset')">&times;</button>
+      </div>
+      <form id="systemResetForm">
+        <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 0.5rem; padding: 0.85rem; margin-bottom: 1rem; font-size: 0.85rem; color: #fca5a5;">
+          ⚠️ <b>Увага!</b> Цей інструмент призначений для підготовки чистої системи перед продажем, впровадженням на новому об'єкті або очищення тестових звітів. Дія виконується миттєво і не може бути скасована.
+        </div>
+
+        <div class="form-group">
+          <label>Оберіть режим очищення</label>
+          <select id="resetModeSelect" required onchange="toggleResetFacilitySelect()">
+            <option value="facility_clean">🏢 Очистити журнали та звіти обраного об'єкта (лічильники в 0)</option>
+            <option value="reports_clean">📊 Очистити ВСІ журнали та звіти по всій системі (зберегти об'єкти і користувачів)</option>
+            <option value="settings_reset">⚙️ Скинути системні налаштування до стандартних заводських</option>
+            <option value="factory_reset">🏭 Повне заводське скидання БД — Перед продажем / Нове впровадження (Головний адміністратор)</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="resetFacilityGroup">
+          <label>Цільовий об'єкт для очищення звітів</label>
+          <select id="resetFacilitySelect"></select>
+        </div>
+
+        <div class="form-group">
+          <label>Ваш поточний пароль адміністратора</label>
+          <input type="password" id="resetAdminPassword" required placeholder="Введіть ваш пароль для підтвердження">
+        </div>
+
+        <div class="form-group">
+          <label>Введіть кодове слово <b>ОЧИСТИТИ</b> (або <b>RESET</b>)</label>
+          <input type="text" id="resetConfirmCode" required placeholder="ОЧИСТИТИ" autocomplete="off">
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalSystemReset')">Скасувати</button>
+          <button type="submit" class="btn-danger">Підтвердити та виконати очищення</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalCreateBackup" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3>💾 Створення резервної копії (Бекап)</h3>
+        <button class="close-btn" onclick="closeModal('modalCreateBackup')">&times;</button>
+      </div>
+      <form id="createBackupForm">
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1.2rem; line-height: 1.5;">
+          Оберіть тип створення архіву. Резервна копія зберігається у форматі <code>.zip</code> із контрольними сумами SHA-256 та маніфестом даних.
+        </p>
+
+        <div class="form-group">
+          <label style="font-weight: 600; margin-bottom: 0.5rem; display: block;">Тип резервної копії *</label>
+          <div style="display: flex; flex-direction: column; gap: 0.65rem;">
+            <label style="display: flex; align-items: flex-start; gap: 0.75rem; background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.75rem; cursor: pointer;">
+              <input type="radio" name="backupTypeChoice" value="full" checked style="margin-top: 0.25rem; accent-color: #38bdf8;">
+              <div>
+                <div style="font-weight: 600; color: var(--text-primary); font-size: 0.95rem;">📦 Повний бекап (Повна копія сервера: всі файли + дамп бази)</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+                  Створює повну резервну копію всього сервера: вихідний код, медіафайли, скрипти, документація, конфігурації + повний дамп бази даних (20 таблиць та файл БД).
+                </div>
+              </div>
+            </label>
+            <label style="display: flex; align-items: flex-start; gap: 0.75rem; background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.75rem; cursor: pointer;">
+              <input type="radio" name="backupTypeChoice" value="partial" style="margin-top: 0.25rem; accent-color: #38bdf8;">
+              <div>
+                <div style="font-weight: 600; color: var(--text-primary); font-size: 0.95rem;">📑 Частковий бекап (Лише дамп бази, конфігурація, .env)</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+                  Включає дамп усіх таблиць бази даних, конфігураційні файли (Docker, Nginx, Alembic) та файл .env без вихідного коду чи медіафайлів.
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+          <label>Коментар / Примітка до бекапу (необов'язково)</label>
+          <input type="text" id="backupNote" maxlength="255" placeholder="напр. Перед оновленням сервера або плановим ТО">
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalCreateBackup')">Скасувати</button>
+          <button type="submit" id="btnSubmitCreateBackup" class="btn-primary">
+            🚀 Запустити створення
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalBackupSettings" class="modal-overlay">
+    <div class="modal-content" style="max-width: 540px;">
+      <div class="modal-header">
+        <h3>⚙️ Налаштування автоматичного резервного копіювання</h3>
+        <button class="close-btn" onclick="closeModal('modalBackupSettings')">&times;</button>
+      </div>
+      <form id="backupSettingsForm">
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1.2rem; line-height: 1.5;">
+          Автоматичне створення бекапів виконується фоновим демоном сервера за київським часом (Europe/Kyiv) із автоматичною ротацією застарілих копій.
+        </p>
+
+        <div class="settings-toggle-list" style="margin-bottom: 1.25rem;">
+          <label class="settings-toggle-item" style="border-color: rgba(168, 85, 247, 0.35); cursor: pointer;">
+            <input type="checkbox" id="cfgBackupAutoEnabled" style="accent-color: #a855f7;">
+            <div class="settings-toggle-content">
+              <span class="settings-toggle-title" style="color: #c084fc;">🕒 Увімкнути автоматичний бекап за розкладом</span>
+              <span class="settings-toggle-desc">Регулярно створювати архів системи у фоновому режимі без участі оператора.</span>
+            </div>
+          </label>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Час запуску (Europe/Kyiv) *</label>
+            <input type="time" id="cfgBackupScheduleTime" required value="03:00">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Періодичність *</label>
+            <select id="cfgBackupFrequency" required>
+              <option value="daily">Щодня (Daily)</option>
+              <option value="weekly">Щотижня (Weekly)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Тип автобекапу *</label>
+            <select id="cfgBackupDefaultType" required>
+              <option value="full">📦 Повний (Копія сервера + база даних)</option>
+              <option value="partial">📑 Частковий (Дамп бази + конфіг + .env)</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Зберігати останніх копій (ротація) *</label>
+            <input type="number" id="cfgBackupRetentionCount" min="1" max="100" required value="7">
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalBackupSettings')">Скасувати</button>
+          <button type="submit" id="btnSubmitSaveBackupSettings" class="btn-primary">
+            💾 Зберегти налаштування
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalConfirmRestore" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 style="color: #fb923c;">🔄 Відновлення системи з бекапу</h3>
+        <button class="close-btn" onclick="closeModal('modalConfirmRestore')">&times;</button>
+      </div>
+      <form id="confirmRestoreForm">
+        <div style="background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">ОБРАНИЙ АРХІВ:</div>
+          <div id="restoreFilenameDisplay" style="font-weight: 700; color: var(--accent-cyan); font-family: monospace; word-break: break-all;"></div>
+          <div id="restoreDetailsDisplay" style="font-size: 0.85rem; color: var(--text-primary); margin-top: 0.4rem;"></div>
+        </div>
+
+        <div style="background: rgba(234, 88, 12, 0.12); border: 1px solid rgba(249, 115, 22, 0.4); border-radius: 0.5rem; padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; color: #fb923c; font-weight: 700; font-size: 0.92rem; margin-bottom: 0.35rem;">
+            <span>⚠️</span> <span>УВАГА: ЗАМІНА ДАНИХ</span>
+          </div>
+          <div style="font-size: 0.82rem; color: #fdba74; line-height: 1.45;">
+            Поточні дані в базі будуть очищені та замінені даними з цього архіву. 
+            <br>
+            <b>🛡️ Безпека:</b> перед початком система автоматично збереже поточний стан у snapshot безпеки.
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.88rem;">
+            <input type="checkbox" id="restoreFilesCheckbox" checked style="accent-color: #f97316;">
+            <span>Відновити також файли та фото чеків/несправностей (uploads)</span>
+          </label>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="font-size: 0.85rem; font-weight: 600;">
+            Для підтвердження введіть слово <span style="color: #f97316; font-family: monospace; letter-spacing: 1px;">ВІДНОВИТИ</span>: *
+          </label>
+          <input type="text" id="restoreConfirmWordInput" required placeholder="ВІДНОВИТИ" autocomplete="off" style="border-color: rgba(249, 115, 22, 0.5); font-weight: 600; text-transform: uppercase;">
+        </div>
+
+        <input type="hidden" id="restoreFilenameHidden">
+
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalConfirmRestore')">Скасувати</button>
+          <button type="submit" id="btnSubmitRestore" class="btn-primary" style="background: linear-gradient(135deg, #ea580c, #c2410c); border-color: #f97316; min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
+            🔄 Підтвердити та відновити
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalUploadRestore" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 style="color: #34d399;">📤 Завантаження архіву та відновлення</h3>
+        <button class="close-btn" onclick="closeModal('modalUploadRestore')">&times;</button>
+      </div>
+      <form id="uploadRestoreForm">
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1.2rem; line-height: 1.5;">
+          Завантажте файл архіву резервної копії (.zip) з вашого комп'ютера. Система збереже його в сховище бекапів та розгорне дані.
+        </p>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="font-weight: 600;">Оберіть файл резервної копії (.zip) *</label>
+          <input type="file" id="uploadRestoreFileInput" accept=".zip" required style="padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px dashed var(--border-color); border-radius: 0.5rem; width: 100%;">
+        </div>
+
+        <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(52, 211, 153, 0.3); border-radius: 0.5rem; padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; color: #34d399; font-weight: 700; font-size: 0.92rem; margin-bottom: 0.35rem;">
+            <span>🛡️</span> <span>АВТОМАТИЧНИЙ ЗАХИСТ</span>
+          </div>
+          <div style="font-size: 0.82rem; color: #a7f3d0; line-height: 1.45;">
+            Перед імпортом система створить резервний snapshot поточної бази на випадок відкоту.
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.88rem;">
+            <input type="checkbox" id="uploadRestoreFilesCheckbox" checked style="accent-color: #10b981;">
+            <span>Відновити фотографії та медіа-файли з архіву (папка uploads/)</span>
+          </label>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="font-size: 0.85rem; font-weight: 600;">
+            Для підтвердження введіть слово <span style="color: #34d399; font-family: monospace; letter-spacing: 1px;">ВІДНОВИТИ</span>: *
+          </label>
+          <input type="text" id="uploadRestoreConfirmWordInput" required placeholder="ВІДНОВИТИ" autocomplete="off" style="border-color: rgba(52, 211, 153, 0.5); font-weight: 600; text-transform: uppercase;">
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalUploadRestore')">Скасувати</button>
+          <button type="submit" id="btnSubmitUploadRestore" class="btn-primary" style="background: linear-gradient(135deg, #059669, #047857); border-color: #10b981; min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
+            🚀 Завантажити та відновити
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modalDeleteBackup" class="modal-overlay">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 style="color: #ef4444;">🗑️ Видалення бекапу</h3>
+        <button class="close-btn" onclick="closeModal('modalDeleteBackup')">&times;</button>
+      </div>
+      <div style="padding: 0.5rem 0 1rem;">
+        <p style="font-size: 0.95rem; line-height: 1.5; color: var(--text-color);">
+          Ви дійсно бажаєте безповоротно видалити файл резервної копії:
+        </p>
+        <div id="deleteBackupFilenameDisplay" style="font-weight: 700; color: #f87171; word-break: break-all; margin: 0.5rem 0; font-family: monospace; background: rgba(239, 68, 68, 0.1); padding: 0.5rem; border-radius: 4px;"></div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">
+          Цю дію неможливо скасувати. Файл архіву буде видалено з сервера.
+        </p>
+      </div>
+      <input type="hidden" id="deleteBackupFilenameHidden">
+      <div class="modal-actions">
+        <button type="button" class="btn-action" onclick="closeModal('modalDeleteBackup')">Скасувати</button>
+        <button type="button" class="btn-primary" id="confirmDeleteBackupBtn" style="background: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentBackup()">Підтвердити видалення</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalSmtpTest" class="modal-overlay">
+    <div class="modal-content" style="max-width: 580px;">
+      <div class="modal-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+          <span>🧪</span> <span>Тестування поштового шлюзу (Email / SMTP)</span>
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalSmtpTest')">&times;</button>
+      </div>
+
+      <div style="padding-top: 0.25rem;">
+        <!-- Режим тестування -->
+        <label style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.4rem;">
+          Оберіть канал для перевірки:
+        </label>
+        <div class="test-provider-tabs">
+          <button type="button" class="test-provider-btn active" id="tabBtnSmtpPrimary" onclick="switchSmtpTestTab('primary')">
+            🌐 1. Primary (Gmail)
+          </button>
+          <button type="button" class="test-provider-btn" id="tabBtnSmtpFallback" onclick="switchSmtpTestTab('fallback')">
+            🛡️ 2. Fallback (Ukr.net)
+          </button>
+          <button type="button" class="test-provider-btn" id="tabBtnSmtpFailover" onclick="switchSmtpTestTab('failover')">
+            🔄 3. Failover (Авто)
+          </button>
+        </div>
+
+        <!-- Поточні реквізити каналу, що тестується -->
+        <div id="smtpTestConfigSummary" class="smtp-test-summary-card">
+          <div class="smtp-summary-row">
+            <span class="smtp-summary-key">Сервер:</span>
+            <strong id="smtpTestHostDisplay" class="smtp-summary-val-host">smtp.gmail.com:587</strong>
+          </div>
+          <div class="smtp-summary-row">
+            <span class="smtp-summary-key">Обліковий запис:</span>
+            <strong id="smtpTestUserDisplay" class="smtp-summary-val-user">(не вказано)</strong>
+          </div>
+          <div class="smtp-summary-row">
+            <span class="smtp-summary-key">Шифрування:</span>
+            <span id="smtpTestSslDisplay" class="smtp-summary-val-ssl">STARTTLS (порт 587)</span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label style="font-weight: 600; font-size: 0.88rem;">Куди надіслати тестовий лист (Email отримувача):</label>
+          <input type="email" id="smtpTestRecipientInput" required placeholder="vash.email@gmail.com" autocomplete="email">
+          <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 0.25rem;">
+            Система виконає підключення до обраного поштового шлюзу, перевірить автентифікацію та надішле контрольний лист.
+          </small>
+        </div>
+
+        <!-- Індикатор виконання -->
+        <div id="smtpTestSpinner" class="smtp-spinner-box" style="display: none;">
+          <div style="font-size: 1.5rem; margin-bottom: 0.35rem;">⏳</div>
+          <strong id="smtpTestSpinnerText" class="smtp-spinner-text">Встановлення з'єднання з поштовим сервером...</strong>
+          <div class="smtp-spinner-subtext">Перевірка TLS/SSL handshake та автентифікації</div>
+        </div>
+
+        <!-- Блок детальних результатів діагностики -->
+        <div id="smtpTestResultCard" style="display: none;"></div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalSmtpTest')">Закрити</button>
+          <button type="button" id="btnRunSmtpTest" class="btn-primary" onclick="executeSmtpModalTest()">
+            🚀 Надіслати тестовий лист
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalSendWeeklyReport" class="modal-overlay">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+          <span>📊</span> <span>Щотижневий звіт Excel</span>
+        </h3>
+        <button class="close-btn" onclick="closeModal('modalSendWeeklyReport')">&times;</button>
+      </div>
+
+      <div style="padding-top: 0.25rem;">
+        <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem;">
+          Система згенерує актуальну книгу Microsoft Excel (.xlsx) із 5 аркушами (сесії генератора, витрата палива, напрацювання ТО, стан складу та коригування) і надішле її у вкладенні на вказані адреси.
+        </p>
+
+        <div class="grid-2">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label style="font-weight: 600; font-size: 0.88rem;">🏢 Об'єкт звіту:</label>
+            <select id="weeklyReportFacilitySelect" class="form-input" onchange="onWeeklyReportModalFacilityChange()"></select>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label style="font-weight: 600; font-size: 0.88rem;">⚡ Генератор звіту:</label>
+            <select id="weeklyReportGeneratorSelect" class="form-input"></select>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label style="font-weight: 600; font-size: 0.88rem;">Отримувачі звіту (email через кому):</label>
+          <input type="text" id="weeklyReportRecipientsInput" required placeholder="director@company.com, chief@ukr.net">
+        </div>
+
+        <div id="weeklyReportSpinner" class="smtp-weekly-spinner-box" style="display: none;">
+          <div style="font-size: 1.5rem; margin-bottom: 0.35rem;">📊</div>
+          <strong class="smtp-weekly-spinner-text">Генерація книги Excel та відправка листа...</strong>
+        </div>
+
+        <div id="weeklyReportResultBox" style="display: none;"></div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-action" onclick="closeModal('modalSendWeeklyReport')">Закрити</button>
+          <button type="button" id="btnSubmitWeeklyReport" class="btn-primary" style="background: #a855f7; border-color: #a855f7; width: auto; padding: 0.65rem 1.4rem; min-height: auto;" onclick="executeSendWeeklyReport()">
+            ✉️ Надіслати звіт зараз
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Bottom Navigation Bar (Visible on mobile <= 768px) -->
+  <nav class="mobile-bottom-nav" id="mobileBottomNav" aria-label="Мобільна навігація">
+    <button type="button" class="mobile-nav-btn active" data-tab="tab-dashboard" onclick="switchTab('tab-dashboard')">
+      <span class="mobile-nav-icon">⚡</span>
+      <span class="mobile-nav-label">Головна</span>
+    </button>
+    <button type="button" class="mobile-nav-btn" data-tab="tab-fuel" onclick="switchTab('tab-fuel')">
+      <span class="mobile-nav-icon">⛽</span>
+      <span class="mobile-nav-label">Паливо</span>
+    </button>
+    <button type="button" class="mobile-nav-btn" data-tab="tab-runs" onclick="switchTab('tab-runs')">
+      <span class="mobile-nav-icon">📋</span>
+      <span class="mobile-nav-label">Журнал</span>
+    </button>
+    <button type="button" class="mobile-nav-btn" data-tab="tab-maintenance" onclick="switchTab('tab-maintenance')">
+      <span class="mobile-nav-icon">🔧</span>
+      <span class="mobile-nav-label">ТО</span>
+    </button>
+    <button type="button" class="mobile-nav-btn" id="btnMobileMore" onclick="toggleMobileMoreSheet()">
+      <span class="mobile-nav-icon">☰</span>
+      <span class="mobile-nav-label">Більше</span>
+    </button>
+  </nav>
+
+  <!-- Mobile "More" Drawer / Action Sheet -->
+  <div class="mobile-more-backdrop" id="mobileMoreBackdrop" onclick="toggleMobileMoreSheet(false)"></div>
+  <div class="mobile-more-sheet" id="mobileMoreSheet" role="dialog" aria-modal="true" aria-label="Додаткові розділи меню">
+    <div class="mobile-more-handle"></div>
+    <div class="mobile-more-header">
+      <h4>Додаткові розділи</h4>
+      <button type="button" class="mobile-more-close" onclick="toggleMobileMoreSheet(false)" aria-label="Закрити">&times;</button>
+    </div>
+    <div class="mobile-more-grid">
+      <button type="button" class="mobile-more-item" data-tab="tab-faults" onclick="switchTab('tab-faults')">
+        <span class="more-icon">⚠️</span>
+        <span class="more-label">Несправності</span>
+      </button>
+      <button type="button" class="mobile-more-item" data-tab="tab-notifications" onclick="switchTab('tab-notifications')">
+        <span class="more-icon">🔔</span>
+        <span class="more-label">Сповіщення</span>
+      </button>
+      <button type="button" class="mobile-more-item" data-tab="tab-audit" onclick="switchTab('tab-audit')">
+        <span class="more-icon">🔍</span>
+        <span class="more-label">Аудит</span>
+      </button>
+      <button type="button" class="mobile-more-item" data-tab="tab-reports" onclick="switchTab('tab-reports')">
+        <span class="more-icon">📊</span>
+        <span class="more-label">Звіти</span>
+      </button>
+      <button type="button" class="mobile-more-item" id="mobileMoreMeasurement" data-tab="tab-measurement" style="display: none;" onclick="switchTab('tab-measurement')">
+        <span class="more-icon">📏</span>
+        <span class="more-label">Вимірювання</span>
+      </button>
+      <button type="button" class="mobile-more-item" data-tab="tab-admin" onclick="switchTab('tab-admin')">
+        <span class="more-icon">⚙️</span>
+        <span class="more-label">Адмін</span>
+      </button>
+      <button type="button" class="mobile-more-item" onclick="cycleTheme(); toggleMobileMoreSheet(false);">
+        <span class="more-icon" id="mobileMoreThemeIcon">🌓</span>
+        <span class="more-label">Тема</span>
+      </button>
+      <button type="button" class="mobile-more-item" onclick="openServerSettingsModal(); toggleMobileMoreSheet(false);">
+        <span class="more-icon">🌐</span>
+        <span class="more-label">Сервер</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+
+  <div id="modalMeasurementCancel" class="modal-overlay" style="display: none;">
+    <div class="modal-content modal-compact">
+      <div class="modal-header">
+        <h3>✖️ Аварійне скасування вимірювання</h3>
+        <button type="button" class="close-btn" onclick="closeModal('modalMeasurementCancel')">&times;</button>
+      </div>
+      <p style="font-size:0.86rem; color:var(--text-muted); margin-bottom:0.85rem;">
+        Запис контрольного вимірювання буде позначено як скасований, номінальна норма витрат та залишки на складі/в баку залишаться без змін, а блокування операцій об'єкта буде знято. Дія фіксується у журналі аудиту.
+      </p>
+      <form id="measurementCancelForm">
+        <input type="hidden" id="cancelMeasurementId">
+        <div class="form-group">
+          <label for="cancelMeasurementReason">Причина аварійного скасування (мін. 5 символів) *</label>
+          <textarea id="cancelMeasurementReason" rows="3" minlength="5" required placeholder="Наприклад: хибний старт, заміна датчика рівня, перебої електропостачання..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalMeasurementCancel')">Назад</button>
+          <button type="submit" class="btn-danger">Підтвердити скасування</button>
+        </div>
+      </form>
+    </div>
+  </div>
+

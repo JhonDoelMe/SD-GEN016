@@ -68,10 +68,16 @@ function applyTheme(mode, notify = false) {
     }
   }
 
-  // Update mobile drawer theme icon
-  const mobThemeIcon = document.getElementById('mobileMoreThemeIcon');
-  if (mobThemeIcon) {
-    mobThemeIcon.innerText = mode === 'auto' ? '🌓' : (mode === 'light' ? '☀️' : '🌙');
+  // Update Account Menu Theme Label
+  const accThemeLabel = document.getElementById('accountThemeLabel');
+  if (accThemeLabel) {
+    if (mode === 'auto') {
+      accThemeLabel.innerText = effective === 'light' ? 'Авто (день)' : 'Авто (ніч)';
+    } else if (mode === 'light') {
+      accThemeLabel.innerText = 'Світла ☀️';
+    } else {
+      accThemeLabel.innerText = 'Темна 🌙';
+    }
   }
 
   lastEffectiveTheme = effective;
@@ -195,8 +201,9 @@ function updateKyivClock() {
 }
 
 function startClock() {
-  updateKyivClock();
-  setInterval(updateKyivClock, 1000);
+  // Re-check auto day/night theme once per minute instead of waking every second
+  checkAutoThemeTransition();
+  setInterval(checkAutoThemeTransition, 60000);
 }
 
 // Universal UTC & Kyiv Date/Time Formatters

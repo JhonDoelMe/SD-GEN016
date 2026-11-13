@@ -1,0 +1,42 @@
+      <div class="panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header" style="align-items: flex-start; gap: 0.75rem;">
+          <div>
+            <h3 style="margin-bottom: 0.25rem;">📏 Режим вимірювання витрат палива та інвентаризація</h3>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0;">
+              Контрольний замір фактичного споживання методом «від повного до повного» (мінімум 100 л по заправках у бак), без блокування запуску/зупинки генератора, з автоматичним розрахунком тари та PDF-відомістю А4 (доступно лише Суперадміністратору).
+            </p>
+          </div>
+          <button type="button" class="btn-secondary" onclick="loadMeasurementTab()">🔄 Оновити</button>
+        </div>
+        <div id="measurementWorkspace">
+          <div style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Завантаження стану режиму вимірювання...</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h3 style="margin-bottom: 0.2rem;">📋 Історія контрольних замірів об'єкта</h3>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">Завершені, погоджені та скасовані вимірювання витрат палива</p>
+          </div>
+        </div>
+        <div class="table-container" style="max-height: 440px; overflow-y: auto;">
+          <table id="measurementHistoryTable">
+            <thead>
+              <tr>
+                <th>№ Відомості</th>
+                <th>Статус</th>
+                <th>Генератор</th>
+                <th>Старт</th>
+                <th>Відпрацьовано</th>
+                <th>Норма (було → факт)</th>
+                <th>Склад комісії</th>
+                <th>Дія / PDF</th>
+              </tr>
+            </thead>
+            <tbody id="measurementHistoryTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
