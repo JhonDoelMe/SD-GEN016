@@ -805,3 +805,19 @@ document.addEventListener('submit', async (e) => {
     }
   }
 });
+
+// Hard Refresh Application Shell & SW Cache (preserves auth token & offline queue)
+window.hardRefreshApp = async function () {
+  if (typeof closeAccountMenu === 'function') closeAccountMenu();
+  try {
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => k.startsWith('sd-gen016-')).map((k) => caches.delete(k)));
+    }
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.update().catch(() => {})));
+    }
+  } catch (_) {}
+  window.location.reload();
+};

@@ -15,7 +15,7 @@
   border-bottom: 1px solid var(--border-color);
   position: sticky;
   top: 0;
-  z-index: 60;
+  z-index: 80;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
 }
 
@@ -719,8 +719,7 @@
   }
 
   .app-header {
-    padding: 0 0.65rem;
-    padding-top: var(--safe-top);
+    padding: var(--safe-top) calc(0.65rem + var(--safe-right)) 0 calc(0.65rem + var(--safe-left));
     min-height: calc(52px + var(--safe-top));
     gap: 0.4rem;
   }

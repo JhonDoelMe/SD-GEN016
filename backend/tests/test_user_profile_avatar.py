@@ -209,3 +209,8 @@ async def test_modular_frontend_assets_and_unique_ids(client: AsyncClient):
         assert not bad_onclicks, (
             f"Unsafe escapeHtml() inside inline onclick in {js_path.name}: {bad_onclicks}"
         )
+
+    base_css = (frontend_dir / "css" / "base.css").read_text(encoding="utf-8")
+    layout_css = (frontend_dir / "css" / "layout.css").read_text(encoding="utf-8")
+    assert "overflow-x: clip" in base_css, "html, body must use overflow-x: clip so sticky header works"
+    assert "position: sticky" in layout_css and ".app-header" in layout_css, ".app-header must be sticky"
