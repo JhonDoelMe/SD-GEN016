@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.database import get_db
 from backend.app.core.security import get_password_hash
 from backend.app.models.user import User, Role
+from backend.app.models.facility import Facility
 from backend.app.schemas.auth import UserCreate, UserUpdate, UserPasswordReset, UserOut, RoleOut
 from backend.app.api.deps import get_current_superadmin, require_permission, get_client_ip
 from backend.app.services.audit_service import log_audit
@@ -61,13 +62,18 @@ async def create_user(
         roles_res = await db.execute(select(Role).where(Role.id.in_(data.role_ids)))
         roles = list(roles_res.scalars().all())
 
+    target_facility_id = data.facility_id if "facility_id" in data.model_fields_set else 1
+    if target_facility_id is not None:
+        if not await db.get(Facility, target_facility_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Об'єкт не знайдено")
+
     pwd_hash = await asyncio.to_thread(get_password_hash, data.password)
     new_user = User(
         login=clean_login,
         email=data.email.strip() if data.email else None,
         full_name=data.full_name.strip(),
         password_hash=pwd_hash,
-        facility_id=data.facility_id if data.facility_id is not None else 1,
+        facility_id=target_facility_id,
         is_active=True,
         is_superadmin=False,
     )
@@ -131,14 +137,11 @@ async def update_user(
         target_user.full_name = data.full_name.strip()
     if data.email is not None:
         target_user.email = data.email.strip() if data.email else None
-    if data.facility_id is not None:
+    if "facility_id" in data.model_fields_set:
+        if data.facility_id is not None and not await db.get(Facility, data.facility_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Об'єкт не знайдено")
         target_user.facility_id = data.facility_id
     if data.is_active is not None:
-        if target_user.id == current_user.id and not data.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Неможливо заблокувати власний обліковий запис"
-            )
         target_user.is_active = data.is_active
     if data.email_notifications_enabled is not None:
         target_user.email_notifications_enabled = bool(data.email_notifications_enabled)

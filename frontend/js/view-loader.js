@@ -4,7 +4,7 @@
 (function initViewLoader() {
   const selfSrc = document.currentScript?.src || '';
   const vMatch = selfSrc.match(/[?&]v=([^&]+)/);
-  const ASSET_VERSION = vMatch ? vMatch[1] : '5.7.2';
+  const ASSET_VERSION = vMatch ? vMatch[1] : '5.7.4';
 
   const loadedViews = new Set();
   const viewPromises = new Map();
@@ -24,7 +24,7 @@
     'tab-faults':      { view: 'faults.html',      host: 'viewsHost', scripts: ['operations.js'] },
     'tab-runs':        { view: 'runs.html',        host: 'viewsHost', scripts: ['operations.js'] },
     'tab-audit':       { view: 'audit.html',       host: 'viewsHost', scripts: ['audit-reports.js'] },
-    'tab-reports':     { view: 'reports.html',     host: 'viewsHost', scripts: ['audit-reports.js'] },
+    'tab-reports':     { view: 'reports.html',     host: 'viewsHost', scripts: ['audit-reports.js', 'measurement.js'] },
     'tab-measurement': { view: 'measurement.html', host: 'viewsHost', scripts: ['measurement.js'] },
     'tab-admin':       { view: 'admin.html',       host: 'viewsHost', scripts: ['fuel.js', 'admin.js', 'backups.js'] },
   };

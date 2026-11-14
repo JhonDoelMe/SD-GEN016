@@ -147,12 +147,24 @@ def reset_login_attempts(ip: Optional[str], login: str) -> None:
 _RESET_ATTEMPTS: Dict[str, Tuple[int, float, float]] = {}
 
 
+def _cleanup_reset_attempts(now: float, window_sec: float = 900.0) -> None:
+    if len(_RESET_ATTEMPTS) <= 256:
+        return
+    expired = [
+        k for k, (_, first_ts, locked_until) in _RESET_ATTEMPTS.items()
+        if (locked_until > 0 and locked_until <= now) or (locked_until <= 0 and (now - first_ts) > window_sec)
+    ]
+    for k in expired:
+        _RESET_ATTEMPTS.pop(k, None)
+
+
 def check_password_reset_rate_limit(ip: Optional[str], identifier: str) -> Optional[int]:
     """
     Checks rate limiting for password reset requests (max 3 requests per 15 minutes).
     Returns remaining lockout/cooldown seconds if blocked, else None.
     """
     now = time.time()
+    _cleanup_reset_attempts(now)
     ident_norm = identifier.lower().strip()
     keys = [f"reset:ip:{ip or 'unknown'}", f"reset:id:{ident_norm}"]
     for k in keys:
@@ -171,6 +183,7 @@ def record_password_reset_attempt(ip: Optional[str], identifier: str, max_attemp
     Records a password reset attempt. If exceeded max_attempts in window_sec, locks for window_sec.
     """
     now = time.time()
+    _cleanup_reset_attempts(now, window_sec)
     ident_norm = identifier.lower().strip()
     keys = [f"reset:ip:{ip or 'unknown'}", f"reset:id:{ident_norm}"]
     blocked_sec = None

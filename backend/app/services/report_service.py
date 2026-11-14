@@ -762,6 +762,12 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
         "error": "Помилка",
         "success": "Успіх",
         "https": "HTTPS",
+        "idempotency_key": "Ключ ідемпотентності",
+        "used_from_reserve_l": "Використано з резерву (л)",
+        "opened_canisters_count": "Відкрито каністр (шт.)",
+        "canister_reserve_after_l": "Залишок резерву після (л)",
+        "actor_type": "Тип суб'єкта",
+        "is_override": "Примусове підтвердження",
     }
     val_translations = {
         "STOPPED": "Зупинено",
@@ -1241,33 +1247,6 @@ async def generate_operational_report(
     )
 
 
-def export_report_to_csv(report: OperationalReportOut) -> str:
-    output = io.StringIO()
-    writer = csv.writer(output, delimiter=';')
-
-    writer.writerow(["Параметр", "Значення", "Одиниця виміру"])
-    writer.writerow(["Період звіт", f"{report.start_date} - {report.end_date}", ""])
-    writer.writerow(["Генератор", sanitize_spreadsheet_cell(report.generator_name), ""])
-    writer.writerow(["Кількість робочих циклів (пусків)", report.total_runs_count, "шт"])
-    writer.writerow(["Відпрацьовано мотогодин", report.total_operating_hours, "год"])
-    writer.writerow(["Розрахункова витрата палива", report.total_calculated_consumption_l, "л"])
-    writer.writerow(["Оприбутковано палива на склад", report.total_fuel_received_l, "л"])
-    writer.writerow(["Загальна вартість закупленого палива", report.total_fuel_receipts_cost_uah, "грн"])
-    writer.writerow(["Середня вартість літра", report.avg_fuel_price_per_liter, "грн/л"])
-    writer.writerow(["Заправлено в бак генератора", report.total_fuel_transferred_to_tank_l, "л"])
-    writer.writerow(["Поточний залишок на складі ГСМ", report.current_stock_balance_l, "л"])
-    writer.writerow(["Поточний рівень у баку", report.current_tank_level_l, "л"])
-    writer.writerow(["Кількість проведених ТО", report.total_maintenance_count, "шт"])
-    writer.writerow(["- з них регламентних ТО", report.scheduled_maintenance_count, "шт"])
-    writer.writerow(["- з них проміжних ТО", report.intermediate_maintenance_count, "шт"])
-    writer.writerow(["Витрати на ТО та матеріали", report.total_maintenance_cost_uah, "грн"])
-    writer.writerow(["Зареєстровано несправностей", report.total_faults_count, "шт"])
-    writer.writerow(["Усунено несправностей", report.resolved_faults_count, "шт"])
-    writer.writerow(["Відкритих несправностей", report.open_faults_count, "шт"])
-
-    return output.getvalue()
-
-
 async def generate_excel_report(
     db: AsyncSession,
     generator_id: Optional[int] = None,
@@ -1469,9 +1448,9 @@ async def generate_excel_report(
     ]
     for row_idx, (k1, v1, k2, v2) in enumerate(meta_info, start=3):
         ws1.cell(row=row_idx, column=1, value=k1).font = BOLD_FONT
-        ws1.cell(row=row_idx, column=2, value=v1).font = REGULAR_FONT
+        ws1.cell(row=row_idx, column=2, value=sanitize_spreadsheet_cell(v1)).font = REGULAR_FONT
         ws1.cell(row=row_idx, column=4, value=k2).font = BOLD_FONT
-        ws1.cell(row=row_idx, column=5, value=v2).font = REGULAR_FONT
+        ws1.cell(row=row_idx, column=5, value=sanitize_spreadsheet_cell(v2)).font = REGULAR_FONT
         ws1.row_dimensions[row_idx].height = 20
 
     # Summary KPI Tables

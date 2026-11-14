@@ -146,4 +146,6 @@ def is_within_work_schedule(
         return False, f"Запуск заборонено: поточний час {current_time_str} поза межами робочого графіка ({ranges_repr})"
     else:
         all_ranges = ", ".join(r_str for (_, _, _, r_str) in valid_active_schedules)
-        return False, f"Запуск заборонено: на поточний день ({local_dt.strftime('%A')}) не налаштовано дозволеного робочого часу ({all_ranges})"
+        ua_weekdays = ("Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя")
+        day_ua = ua_weekdays[local_dt.weekday()]
+        return False, f"Запуск заборонено: на поточний день ({day_ua}) не налаштовано дозволеного робочого часу ({all_ranges})"

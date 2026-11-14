@@ -341,7 +341,11 @@ async def test_multi_warehouse_receipt_transfer_and_excel(client, superadmin_aut
 @pytest.mark.asyncio
 async def test_system_status_api(client, superadmin_auth):
     """Тест ендпоінту стану сервера для підвалу сайту"""
-    res = await client.get("/api/v1/system/status")
+    client.cookies.clear()
+    unauth_res = await client.get("/api/v1/system/status")
+    assert unauth_res.status_code == 401
+
+    res = await client.get("/api/v1/system/status", headers=superadmin_auth)
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "online"
@@ -645,7 +649,7 @@ async def test_facility_cascade_delete_and_chain_binding(client, db_session, sup
     assert get_runtime_setting("default_facility_id") is None
 
     # 11. Verify system status includes default binding fields
-    status_res = await client.get("/api/v1/system/status")
+    status_res = await client.get("/api/v1/system/status", headers=superadmin_auth)
     assert status_res.status_code == 200
     status_data = status_res.json()
     assert "default_facility_id" in status_data

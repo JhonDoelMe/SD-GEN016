@@ -252,7 +252,7 @@ window.loadMeasurementTab = async function () {
           <div class="form-row-2" style="margin-top:1rem; padding-top:0.85rem; border-top:1px dashed var(--border-color);">
             <div class="form-group">
               <label>Кінцеві мотогодини (залиште поточні або уточніть)</label>
-              <input type="number" step="0.1" min="${Number(m.current_operating_hours)}" id="measFinishEndHours" value="${Number(m.current_operating_hours).toFixed(1)}">
+              <input type="number" step="0.01" min="${Number(m.current_operating_hours).toFixed(2)}" id="measFinishEndHours" value="${Number(m.current_operating_hours).toFixed(2)}">
             </div>
             <div class="form-group">
               <label>Завершення після фінальної заправки</label>
@@ -624,7 +624,11 @@ window.approveMeasurementMode = async function (measurementId) {
   try {
     await api(`/measurement/${encodeURIComponent(measurementId)}/approve`, { method: 'POST' });
     showToast('✅ Погоджено! Фактичний розхід і залишки зафіксовано, система у звичайному режимі.', 'success');
-    await Promise.allSettled([loadMeasurementTab(), loadAllData(), loadFuelData()]);
+    await Promise.allSettled([
+      loadMeasurementTab(),
+      typeof loadAllData === 'function' ? loadAllData() : Promise.resolve(),
+      typeof loadFuelData === 'function' ? loadFuelData() : Promise.resolve()
+    ]);
   } catch (_) {}
 };
 

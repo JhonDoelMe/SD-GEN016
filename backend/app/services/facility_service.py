@@ -260,7 +260,15 @@ async def delete_facility(
     from backend.app.models.fuel import FuelReceipt, FuelTransfer
     from backend.app.models.canister import CanisterPool, CanisterTransaction
     from backend.app.models.notification import PushSubscription, NotificationLog
+    from backend.app.models.measurement import FuelMeasurement
     from backend.app.models.user import User
+    from backend.app.services.measurement_service import get_active_facility_measurement
+
+    if await get_active_facility_measurement(db, facility_id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неможливо видалити об'єкт під час активного вимірювання витрати пального. Спочатку завершіть або скасуйте замір."
+        )
 
     # 1. Unbind users assigned to this facility
     await db.execute(update(User).where(User.facility_id == facility_id).values(facility_id=None))
@@ -274,19 +282,19 @@ async def delete_facility(
 
     # 3. Cascade delete associated generators if requested
     if cascade:
-        from backend.app.models.generator import GeneratorRun, GeneratorSchedule
-        from backend.app.models.maintenance import MaintenanceRecord, MaintenanceSchedule
+        from backend.app.models.generator import GeneratorRun
+        from backend.app.models.maintenance import MaintenanceRecord
         from backend.app.models.fault import Fault
         for gen in list(facility.generators):
             await db.execute(sql_delete(GeneratorRun).where(GeneratorRun.generator_id == gen.id))
-            await db.execute(sql_delete(GeneratorSchedule).where(GeneratorSchedule.generator_id == gen.id))
             await db.execute(sql_delete(MaintenanceRecord).where(MaintenanceRecord.generator_id == gen.id))
-            await db.execute(sql_delete(MaintenanceSchedule).where(MaintenanceSchedule.generator_id == gen.id))
             await db.execute(sql_delete(Fault).where(Fault.generator_id == gen.id))
             await db.execute(sql_delete(FuelTransfer).where(FuelTransfer.generator_id == gen.id))
+            await db.execute(sql_delete(FuelMeasurement).where(FuelMeasurement.generator_id == gen.id))
             await db.delete(gen)
 
-    # 4. Delete associated canister transactions/pools and fuel stocks
+    # 4. Delete associated measurements, canister transactions/pools and fuel stocks
+    await db.execute(sql_delete(FuelMeasurement).where(FuelMeasurement.facility_id == facility_id))
     await db.execute(sql_delete(CanisterTransaction).where(CanisterTransaction.facility_id == facility_id))
     await db.execute(sql_delete(CanisterPool).where(CanisterPool.facility_id == facility_id))
     for stock in list(facility.fuel_stocks):

@@ -24,7 +24,7 @@ from backend.app.services.yasno_service import run_yasno_checker_loop
 from backend.app.api.v1 import api_v1_router
 
 
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, select, text
 
 
 def ensure_schema_updates(sync_conn):
@@ -208,7 +208,8 @@ def ensure_schema_updates(sync_conn):
             "fuel_transfers", "canister_pools", "canister_transactions",
             "users", "roles", "permissions",
             "maintenance_schedules", "maintenance_records",
-            "generator_runs", "faults", "audit_logs", "system_adjustments",
+            "generator_schedules", "generator_runs", "fuel_measurements", "faults",
+            "audit_logs", "system_adjustments", "idempotency_records",
             "push_subscriptions", "notification_logs", "password_resets"
         )
         for tbl in serial_tables:
@@ -317,7 +318,14 @@ app.add_middleware(
     allow_origins=settings.effective_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "X-Requested-With",
+        "Idempotency-Key",
+        "X-Idempotency-Key",
+    ],
 )
 
 
@@ -425,10 +433,25 @@ if FRONTEND_DIR.exists():
         if not token:
             return JSONResponse({"error": "Неавторизований доступ до файлів"}, status_code=401)
 
-        from backend.app.core.security import decode_access_token
+        from backend.app.core.security import decode_access_token, compute_password_signature
+        from backend.app.models.user import User
         payload = decode_access_token(token)
         if not payload or await is_token_revoked_db(db, token):
             return JSONResponse({"error": "Недійсний або прострочений токен"}, status_code=401)
+
+        try:
+            user_id_int = int(payload.get("sub"))
+        except (ValueError, TypeError):
+            return JSONResponse({"error": "Некоректний токен авторизації"}, status_code=401)
+
+        user_res = await db.execute(select(User).where(User.id == user_id_int))
+        user = user_res.scalars().first()
+        if not user or not user.is_active:
+            return JSONResponse({"error": "Доступ заборонено або обліковий запис деактивовано"}, status_code=401)
+
+        token_pwd_sig = payload.get("pwd_sig")
+        if token_pwd_sig and token_pwd_sig != compute_password_signature(user.password_hash):
+            return JSONResponse({"error": "Сесія недійсна через зміну пароля"}, status_code=401)
 
         uploads_base = Path(settings.UPLOAD_DIR).resolve()
         target_file = (uploads_base / file_path).resolve()

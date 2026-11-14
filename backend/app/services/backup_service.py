@@ -25,10 +25,11 @@ from backend.app.models.canister import CanisterPool, CanisterTransaction
 from backend.app.models.maintenance import MaintenanceSchedule, MaintenanceRecord
 from backend.app.models.fault import Fault
 from backend.app.models.audit import AuditLog, SystemAdjustment
-from backend.app.models.user import User, Role, Permission, user_roles, role_permissions
+from backend.app.models.user import User, Role, Permission, PasswordResetToken, user_roles, role_permissions
 from backend.app.models.settings import SystemSetting
 from backend.app.models.notification import PushSubscription, NotificationLog
 from backend.app.models.measurement import FuelMeasurement
+from backend.app.models.idempotency import IdempotencyRecord
 
 
 def get_backup_dir() -> Path:
@@ -56,7 +57,10 @@ def compute_sha256(file_path: Path) -> str:
     return sha.hexdigest()
 
 
-SENSITIVE_ENV_KEYWORDS = ("SECRET", "PASSWORD", "PRIVATE", "KEY", "TOKEN", "DATABASE_URL", "DSN", "CREDENTIAL", "AUTH")
+SENSITIVE_ENV_KEYWORDS = (
+    "SECRET", "PASSWORD", "PRIVATE", "KEY", "TOKEN", "DATABASE_URL",
+    "DSN", "CREDENTIAL", "AUTH", "SERVICE_ACCOUNT", "FIREBASE", "VAPID", "WEBHOOK", "PASS"
+)
 MAX_ZIP_FILES = 10_000
 MAX_UNCOMPRESSED_BYTES = 500 * 1024 * 1024  # 500 MB
 
@@ -137,6 +141,7 @@ TABLE_ORDER = [
     ("roles", Role),
     ("facilities", Facility),
     ("users", User),
+    ("password_reset_tokens", PasswordResetToken),
     ("system_settings", SystemSetting),
     ("generators", Generator),
     ("generator_schedules", GeneratorSchedule),
@@ -154,6 +159,7 @@ TABLE_ORDER = [
     ("push_subscriptions", PushSubscription),
     ("notification_logs", NotificationLog),
     ("audit_logs", AuditLog),
+    ("idempotency_records", IdempotencyRecord),
 ]
 
 M2M_TABLES = [
@@ -280,17 +286,18 @@ async def create_backup(
                 await asyncio.to_thread(_sqlite_online_backup, str(root_db), str(staging_dir / "service_desk.db"))
                 included_components.append("service_desk.db (фізична база даних, узгоджений snapshot)")
 
-        # 3. Copy configuration files (.env with secrets redacted, .env.example, docker-compose.yml, nginx.conf)
+        # 3. Copy configuration files (.env* with secrets redacted, .env.example, docker-compose.yml, nginx.conf)
         config_staging = staging_dir / "config"
         config_staging.mkdir(exist_ok=True)
-        for env_name in [".env", ".env.example"]:
-            env_file = project_root / env_name
-            if env_file.exists():
-                if env_name == ".env":
-                    _copy_env_redacted(env_file, config_staging / env_name)
-                else:
-                    shutil.copy2(env_file, config_staging / env_name)
-                included_components.append(f"config/{env_name}")
+        for env_file in sorted(project_root.glob(".env*")):
+            if not env_file.is_file():
+                continue
+            env_name = env_file.name
+            if env_name.endswith(".example"):
+                shutil.copy2(env_file, config_staging / env_name)
+            else:
+                _copy_env_redacted(env_file, config_staging / env_name)
+            included_components.append(f"config/{env_name}")
 
         for cfg_rel in ["docker-compose.yml", "alembic.ini", "Dockerfile"]:
             cfg_file = project_root / cfg_rel
@@ -311,9 +318,9 @@ async def create_backup(
 
             exclude_dirs = {
                 ".git", ".pytest_cache", "__pycache__", "backups", "venv", ".venv",
-                ".idea", ".vscode", "node_modules"
+                ".idea", ".vscode", "node_modules", "firebase"
             }
-            exclude_extensions = {".pyc", ".pyo", ".zip", ".pem", ".key"}
+            exclude_extensions = {".pyc", ".pyo", ".zip", ".pem", ".key", ".p12", ".pfx"}
 
             target_dirs = ["backend", "frontend", "docker", "scripts", "docs", "uploads"]
             for dir_name in target_dirs:
@@ -325,20 +332,29 @@ async def create_backup(
                         cur_dest = server_staging / rel
                         cur_dest.mkdir(parents=True, exist_ok=True)
                         for file_name in files:
-                            if any(file_name.endswith(ext) for ext in exclude_extensions):
+                            low_name = file_name.lower()
+                            if any(low_name.endswith(ext) for ext in exclude_extensions):
+                                continue
+                            if "service-account" in low_name or "service_account" in low_name:
                                 continue
                             src_file = Path(root_path) / file_name
                             try:
-                                shutil.copy2(src_file, cur_dest / file_name)
+                                if low_name.startswith(".env") and not low_name.endswith(".example"):
+                                    _copy_env_redacted(src_file, cur_dest / file_name)
+                                else:
+                                    shutil.copy2(src_file, cur_dest / file_name)
                                 total_server_files += 1
                             except Exception:
                                 pass
 
-            # Copy root project files (redact .env if present)
+            # Copy root project files (redact .env* except .example if present)
             for root_f in project_root.iterdir():
-                if root_f.is_file() and not any(root_f.name.endswith(ext) for ext in exclude_extensions):
+                low_root = root_f.name.lower()
+                if root_f.is_file() and not any(low_root.endswith(ext) for ext in exclude_extensions):
+                    if "service-account" in low_root or "service_account" in low_root:
+                        continue
                     try:
-                        if root_f.name == ".env":
+                        if low_root.startswith(".env") and not low_root.endswith(".example"):
                             _copy_env_redacted(root_f, server_staging / root_f.name)
                         else:
                             shutil.copy2(root_f, server_staging / root_f.name)
@@ -349,9 +365,17 @@ async def create_backup(
             included_components.append(f"server_files/ ({total_server_files} файлів: вихідний код, медіа, скрипти)")
 
         # 5. Generate manifest.json (BAK-13: Centralize application version)
+        app_version = "5.7.4"
+        pkg_json = project_root / "package.json"
+        if pkg_json.is_file():
+            try:
+                app_version = str(json.loads(pkg_json.read_text(encoding="utf-8")).get("version") or app_version)
+            except Exception:
+                pass
+
         manifest = {
             "app_name": "Service Desk Бензинового Генератора (SD-GEN016)",
-            "app_version": "5.4.0",
+            "app_version": app_version,
             "backup_id": backup_id,
             "filename": zip_filename,
             "backup_type": clean_type,
@@ -639,7 +663,13 @@ async def restore_backup(
             raise ValueError("Файл 'database_export.json' повинен містити кореневий об'єкт таблиць!")
 
         # BAK-01: Verify all required tables are present in export BEFORE modifying current DB
-        optional_restore_tables = {"canister_pools", "canister_transactions"}
+        optional_restore_tables = {
+            "canister_pools",
+            "canister_transactions",
+            "fuel_measurements",
+            "password_reset_tokens",
+            "idempotency_records",
+        }
         required_tables = [t[0] for t in TABLE_ORDER if t[0] not in optional_restore_tables]
         missing_tables = [t for t in required_tables if t not in tables_data]
         if missing_tables:
@@ -753,6 +783,7 @@ async def restore_backup(
             },
             ip_address=creator_ip
         )
+        await session.commit()
 
         return {
             "status": "success",
@@ -821,7 +852,7 @@ async def run_backup_scheduler():
             cur_today = now_facility().strftime("%Y-%m-%d")
             for b in list_backups():
                 c_at = str(b.get("created_at") or "")
-                b_creator = str(b.get("creator") or "")
+                b_creator = str(b.get("created_by") or b.get("creator") or "")
                 b_notes = str(b.get("notes") or "")
                 if c_at.startswith(cur_today) and (
                     b_creator == "SYSTEM_SCHEDULER" or "Автоматичний бекап" in b_notes

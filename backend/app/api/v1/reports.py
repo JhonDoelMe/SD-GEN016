@@ -12,7 +12,7 @@ from backend.app.api.deps import (
     verify_generator_facility_access,
 )
 from backend.app.services.report_service import (
-    generate_operational_report, export_report_to_csv, generate_excel_report, parse_report_dt
+    generate_operational_report, generate_excel_report, parse_report_dt
 )
 
 router = APIRouter(prefix="/reports", tags=["Звітність"])

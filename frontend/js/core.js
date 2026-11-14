@@ -198,15 +198,10 @@ window.saveServerSettings = async function() {
   } catch (err) {
     console.warn('Direct health check ping failed:', err);
   }
-  localStorage.setItem('sd_server_host', val);
   if (statusEl) {
-    statusEl.textContent = '⚠️ Адресу збережено. (Сервер не відповів на /api/health — перевірте інтернет або адресу)';
-    statusEl.className = 'server-status-box status-warning';
+    statusEl.textContent = '❌ Сервер не відповів на /api/health — перевірте адресу або мережу. Зміни не збережено.';
+    statusEl.className = 'server-status-box status-error';
   }
-  updateServerHostLabel();
-  setTimeout(() => {
-    closeModal('modalServerSettings');
-  }, 1500);
 };
 
 window.resetServerSettings = function() {
@@ -577,9 +572,7 @@ async function api(endpoint, options = {}) {
     }
     idempotencyKey = parsedBody.idempotency_key || headers['Idempotency-Key'] || window.OfflineQueue.createIdempotencyKey();
     parsedBody.idempotency_key = idempotencyKey;
-    if (!window.getApiBaseUrl || !window.getApiBaseUrl()) {
-      headers['Idempotency-Key'] = idempotencyKey;
-    }
+    headers['Idempotency-Key'] = idempotencyKey;
     fetchOpts.body = JSON.stringify(parsedBody);
 
     if (!navigator.onLine) {
@@ -602,8 +595,11 @@ async function api(endpoint, options = {}) {
     if (res.status === 401) {
       if (endpoint !== '/auth/login') {
         token = null;
+        if (typeof currentUser !== 'undefined') currentUser = null;
         localStorage.removeItem('sd_token');
         sessionStorage.removeItem('sd_token');
+        window.invalidateFacilitiesCache?.();
+        window.OfflineQueue?.clearAll?.().catch(() => {});
         showAuthScreen();
         const authErr = new Error('Сесія закінчилась. Будь ласка, увійдіть знову');
         authErr.isAuthError = true;

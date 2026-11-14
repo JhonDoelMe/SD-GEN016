@@ -49,7 +49,7 @@ window.loadFacilityOutageSchedule = async function(facilityId = null, forceRefre
       if (data.next_outage) {
         nextEl.style.display = 'inline-block';
         const dayWord = data.next_outage.day === 'today' ? 'сьогодні' : 'завтра';
-        nextEl.innerHTML = `Наступне знеструмлення: <b>${data.next_outage.start} — ${data.next_outage.end}</b> (${dayWord}, через ${data.next_outage.human_until})`;
+        nextEl.innerHTML = `Наступне знеструмлення: <b>${escapeHtml(String(data.next_outage.start || ''))} — ${escapeHtml(String(data.next_outage.end || ''))}</b> (${dayWord}, через ${escapeHtml(String(data.next_outage.human_until || ''))})`;
       } else {
         nextEl.style.display = 'inline-block';
         nextEl.innerHTML = 'Відключень не заплановано ✨';

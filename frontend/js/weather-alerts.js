@@ -245,16 +245,16 @@ window.populateWeatherModal = function(w) {
     if (days.length > 0) {
       fcGrid.innerHTML = days.map((d) => {
         const popHtml = (d.pop_percent && d.pop_percent >= 20)
-          ? `<span class="fc-day-pop">💧 ${d.pop_percent}%</span>`
+          ? `<span class="fc-day-pop">💧 ${escapeHtml(String(d.pop_percent))}%</span>`
           : `<span class="fc-day-pop fc-day-pop-empty">&nbsp;</span>`;
-        const safeDesc = String(d.description || '').replace(/"/g, '&quot;');
+        const safeDesc = escapeHtml(String(d.description || ''));
         return `
           <div class="weather-forecast-day" title="${safeDesc}">
-            <span class="fc-day-label">${d.day_label || d.date}</span>
-            <span class="fc-day-icon">${d.icon_emoji || '⛅'}</span>
+            <span class="fc-day-label">${escapeHtml(String(d.day_label || d.date || ''))}</span>
+            <span class="fc-day-icon">${escapeHtml(String(d.icon_emoji || '⛅'))}</span>
             <div class="fc-day-temps">
-              <span class="fc-temp-max">${d.temp_max_formatted || ''}</span>
-              <span class="fc-temp-min">${d.temp_min_formatted || ''}</span>
+              <span class="fc-temp-max">${escapeHtml(String(d.temp_max_formatted || ''))}</span>
+              <span class="fc-temp-min">${escapeHtml(String(d.temp_min_formatted || ''))}</span>
             </div>
             ${popHtml}
           </div>

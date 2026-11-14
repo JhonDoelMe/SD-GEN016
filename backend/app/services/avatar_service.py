@@ -14,8 +14,10 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from backend.app.config import settings
 
 MAX_AVATAR_BYTES = 5 * 1024 * 1024  # 5 MB
+MAX_AVATAR_PIXELS = 25_000_000  # 5000 x 5000 max pixel budget against decompression bombs
 AVATAR_SIZE = (256, 256)
 ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP", "GIF", "BMP"}
+Image.MAX_IMAGE_PIXELS = MAX_AVATAR_PIXELS
 
 
 def _process_and_write_avatar_sync(raw_bytes: bytes, user_id: int) -> str:
@@ -26,6 +28,12 @@ def _process_and_write_avatar_sync(raw_bytes: bytes, user_id: int) -> str:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Непідтримуваний формат зображення. Дозволено JPEG, PNG, WebP або GIF.",
+                )
+            width, height = img.size
+            if width <= 0 or height <= 0 or (width * height) > MAX_AVATAR_PIXELS:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Роздільна здатність зображення перевищує допустимий ліміт.",
                 )
             transposed = ImageOps.exif_transpose(img)
             if transposed.mode not in ("RGB", "RGBA"):
@@ -48,7 +56,7 @@ def _process_and_write_avatar_sync(raw_bytes: bytes, user_id: int) -> str:
             return f"avatars/{filename}"
     except HTTPException:
         raise
-    except (UnidentifiedImageError, OSError, ValueError) as exc:
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Не вдалося обробити зображення. Завантажте коректний файл JPEG, PNG або WebP.",

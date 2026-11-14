@@ -11,7 +11,7 @@ if (fs.existsSync(publicDir)) {
     fs.mkdirSync(targetFrontendDir, { recursive: true });
   }
 
-  const items = ['icons', 'js', 'styles.css', 'favicon.ico'];
+  const items = ['icons', 'js', 'css', 'views', 'favicon.ico'];
   for (const item of items) {
     const src = path.join(publicDir, item);
     const dest = path.join(targetFrontendDir, item);

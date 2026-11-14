@@ -405,8 +405,13 @@ async def check_and_notify_yasno_outages(db: AsyncSession) -> List[Dict[str, Any
 
     dispatched = []
     now_utc = datetime.datetime.now(datetime.timezone.utc)
-    today_iso = now_utc.strftime("%Y-%m-%d")
-    today_start_naive_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+    now_local = now_utc.astimezone(ZoneInfo("Europe/Kyiv"))
+    today_iso = now_local.strftime("%Y-%m-%d")
+    today_start_naive_utc = (
+        now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        .astimezone(datetime.timezone.utc)
+        .replace(tzinfo=None)
+    )
 
     for fac in facilities:
         try:

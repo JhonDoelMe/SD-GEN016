@@ -105,12 +105,12 @@ def test_smtp_tls_fail_closed_when_starttls_unsupported():
 
         with pytest.raises(smtplib.SMTPNotSupportedError, match="не підтримує обов'язковий протокол шифрування STARTTLS"):
             send_smtp_message_sync(
-                host="insecure.smtp.local",
+                host="smtp.example.com",
                 port=587,
-                user="admin@local.host",
+                user="admin@example.com",
                 password="PlaintextPasswordShouldNeverBeSent!",
-                from_addr="admin@local.host",
-                to_addr="dest@local.host",
+                from_addr="admin@example.com",
+                to_addr="dest@example.com",
                 subject="Test",
                 html_body="<p>Test</p>",
                 use_ssl=False

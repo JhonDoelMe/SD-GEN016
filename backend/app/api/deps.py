@@ -87,6 +87,11 @@ async def verify_generator_facility_access(
     or if user has no assigned facility).
     """
     if generator_id is None:
+        if not is_user_admin_or_super(current_user) and not current_user.facility_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Доступ заборонено: ваш обліковий запис очікує закріплення за об'єктом адміністратором"
+            )
         return
 
     gen = await db.get(Generator, generator_id)

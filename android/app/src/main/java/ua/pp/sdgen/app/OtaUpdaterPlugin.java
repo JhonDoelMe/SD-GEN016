@@ -38,9 +38,11 @@ public class OtaUpdaterPlugin extends Plugin {
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 60000;
     private static final Pattern APK_CODE_PATTERN = Pattern.compile("^sdgen-update-(\\d+)\\.apk$");
+    private static final Pattern SHA256_PATTERN = Pattern.compile("^[0-9a-f]{64}$");
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private volatile String pendingApkPath = null;
+    private volatile String pendingExpectedSha256 = null;
 
     @PluginMethod
     public void getAppInfo(PluginCall call) {
@@ -102,7 +104,21 @@ public class OtaUpdaterPlugin extends Plugin {
         String expectedSha256 = call.getString("sha256", "");
         long targetCode = call.getInt("versionCode", 0);
 
-        if (downloadUrl == null || (!downloadUrl.startsWith("https://") && !downloadUrl.startsWith("http://"))) {
+        if (downloadUrl == null || !downloadUrl.startsWith("https://")) {
+            call.reject("Небезпечна або некоректна URL-адреса завантаження APK (потрібен HTTPS).");
+            return;
+        }
+        final URL parsedDownloadUrl;
+        try {
+            parsedDownloadUrl = new URL(downloadUrl);
+            String host = parsedDownloadUrl.getHost() != null
+                ? parsedDownloadUrl.getHost().trim().toLowerCase(Locale.ROOT)
+                : "";
+            if (host.isEmpty() || "localhost".equals(host) || host.startsWith("127.") || "169.254.169.254".equals(host)) {
+                call.reject("Неприпустимий хост завантаження оновлення.");
+                return;
+            }
+        } catch (Exception e) {
             call.reject("Некоректна URL-адреса завантаження APK.");
             return;
         }
@@ -114,6 +130,10 @@ public class OtaUpdaterPlugin extends Plugin {
         final String normalizedExpectedSha = expectedSha256 != null
             ? expectedSha256.trim().toLowerCase(Locale.ROOT)
             : "";
+        if (!SHA256_PATTERN.matcher(normalizedExpectedSha).matches()) {
+            call.reject("Відсутня або некоректна контрольна сума SHA-256 релізу.");
+            return;
+        }
 
         executor.execute(() -> {
             File tmpFile = null;
@@ -124,11 +144,11 @@ public class OtaUpdaterPlugin extends Plugin {
                 }
 
                 File targetFile = new File(otaDir, "sdgen-update-" + targetCode + ".apk");
-                if (targetFile.exists() && !normalizedExpectedSha.isEmpty()) {
+                if (targetFile.exists()) {
                     String cachedSha = computeFileSha256(targetFile);
                     if (normalizedExpectedSha.equals(cachedSha) && verifyApkPackage(targetFile)) {
                         emitProgress(100, targetFile.length(), targetFile.length());
-                        proceedWithInstall(call, targetFile);
+                        proceedWithInstall(call, targetFile, normalizedExpectedSha);
                         return;
                     }
                     //noinspection ResultOfMethodCallIgnored
@@ -141,9 +161,8 @@ public class OtaUpdaterPlugin extends Plugin {
                     tmpFile.delete();
                 }
 
-                URL url = new URL(downloadUrl);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setInstanceFollowRedirects(true);
+                HttpURLConnection conn = (HttpURLConnection) parsedDownloadUrl.openConnection();
+                conn.setInstanceFollowRedirects(false);
                 conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
                 conn.setReadTimeout(READ_TIMEOUT_MS);
                 conn.setRequestProperty("Cache-Control", "no-cache");
@@ -185,7 +204,7 @@ public class OtaUpdaterPlugin extends Plugin {
                 }
 
                 String actualSha = bytesToHex(digest.digest());
-                if (!normalizedExpectedSha.isEmpty() && !normalizedExpectedSha.equals(actualSha)) {
+                if (!normalizedExpectedSha.equals(actualSha)) {
                     throw new SecurityException("Контрольна сума SHA-256 не співпадає. Файл пошкоджено.");
                 }
 
@@ -200,7 +219,7 @@ public class OtaUpdaterPlugin extends Plugin {
                 }
 
                 emitProgress(100, downloadedBytes, totalBytes > 0 ? totalBytes : downloadedBytes);
-                proceedWithInstall(call, targetFile);
+                proceedWithInstall(call, targetFile, normalizedExpectedSha);
             } catch (Exception e) {
                 if (tmpFile != null && tmpFile.exists()) {
                     //noinspection ResultOfMethodCallIgnored
@@ -211,10 +230,11 @@ public class OtaUpdaterPlugin extends Plugin {
         });
     }
 
-    private void proceedWithInstall(PluginCall call, File apkFile) {
+    private void proceedWithInstall(PluginCall call, File apkFile, String expectedSha256) {
         getBridge().executeOnMainThread(() -> {
             try {
                 pendingApkPath = apkFile.getAbsolutePath();
+                pendingExpectedSha256 = expectedSha256;
                 if (!canInstallPackages()) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
@@ -245,13 +265,22 @@ public class OtaUpdaterPlugin extends Plugin {
                 call.resolve(ret);
                 return;
             }
-            if (pendingApkPath == null) {
+            if (pendingApkPath == null || pendingExpectedSha256 == null) {
                 call.reject("Шлях до завантаженого APK втрачено. Спробуйте ще раз.");
                 return;
             }
             File apkFile = new File(pendingApkPath);
             if (!apkFile.exists()) {
                 call.reject("Файл оновлення відсутній. Повторіть завантаження.");
+                return;
+            }
+            String actualSha = computeFileSha256(apkFile);
+            if (!pendingExpectedSha256.equals(actualSha) || !verifyApkPackage(apkFile)) {
+                //noinspection ResultOfMethodCallIgnored
+                apkFile.delete();
+                pendingApkPath = null;
+                pendingExpectedSha256 = null;
+                call.reject("Контрольна сума або підпис APK не пройшли повторну перевірку.");
                 return;
             }
             launchApkInstaller(apkFile);

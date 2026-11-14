@@ -9,6 +9,7 @@
   const STORE_QUEUE = 'mutation_queue';
   const FALLBACK_CACHE_KEY = 'sd_offline_read_cache_v1';
   const FALLBACK_QUEUE_KEY = 'sd_offline_mutation_queue_v1';
+  const USER_SCOPE_KEY = 'sd_offline_user_scope_v1';
 
   let _dbPromise = null;
   let _isOfflineMode = !navigator.onLine;
@@ -542,10 +543,8 @@
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${authToken}`,
+      'Idempotency-Key': item.idempotency_key,
     };
-    if (!window.getApiBaseUrl || !window.getApiBaseUrl()) {
-      headers['Idempotency-Key'] = item.idempotency_key;
-    }
 
     try {
       const res = await fetch(`/api/v1${item.endpoint}`, {
@@ -1056,6 +1055,59 @@
     if (typeof showToast === 'function') showToast('Операцію видалено з локальної черги.', 'info');
   }
 
+  async function _clearStore(storeName) {
+    const db = await _openDb();
+    if (!db) return false;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).clear();
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch (_) {
+        resolve(false);
+      }
+    });
+  }
+
+  async function clearAll() {
+    await Promise.all([
+      _clearStore(STORE_CACHE),
+      _clearStore(STORE_QUEUE),
+    ]);
+    try {
+      localStorage.removeItem(FALLBACK_CACHE_KEY);
+      localStorage.removeItem(FALLBACK_QUEUE_KEY);
+      localStorage.removeItem(USER_SCOPE_KEY);
+    } catch (_) {}
+    _isOfflineMode = !navigator.onLine;
+    _lastOfflineCacheTime = null;
+    _editingItemId = null;
+    _serverSnapCache = {};
+    await updateOfflineUIStatus();
+  }
+
+  async function ensureUserScope(userIdentity) {
+    const scope = userIdentity ? String(userIdentity).trim().toLowerCase() : '';
+    if (!scope) return;
+    let prev = '';
+    try {
+      prev = (localStorage.getItem(USER_SCOPE_KEY) || '').trim().toLowerCase();
+    } catch (_) {}
+    if (prev && prev !== scope) {
+      await clearAll();
+    } else if (!prev) {
+      const cachedMe = await cacheGet('/auth/me');
+      const cachedLogin = cachedMe?.data?.login ? String(cachedMe.data.login).trim().toLowerCase() : '';
+      if (cachedLogin && cachedLogin !== scope) {
+        await clearAll();
+      }
+    }
+    try {
+      localStorage.setItem(USER_SCOPE_KEY, scope);
+    } catch (_) {}
+  }
+
   function init() {
     window.addEventListener('online', () => {
       setOfflineMode(false);
@@ -1094,6 +1146,8 @@
     removeItem,
     setOfflineMode,
     updateOfflineUIStatus,
+    clearAll,
+    ensureUserScope,
   };
 
   if (document.readyState === 'loading') {

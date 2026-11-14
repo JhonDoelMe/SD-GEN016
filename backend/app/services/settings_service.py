@@ -8,6 +8,7 @@ import httpx
 from zoneinfo import ZoneInfo
 from typing import Dict, Any, Optional, Tuple
 from sqlalchemy import select, delete, update
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -20,9 +21,12 @@ from backend.app.models.canister import CanisterPool, CanisterTransaction
 from backend.app.models.maintenance import MaintenanceSchedule, MaintenanceRecord
 from backend.app.models.fault import Fault
 from backend.app.models.audit import AuditLog, SystemAdjustment
-from backend.app.models.user import User
+from backend.app.models.user import User, PasswordResetToken
 from backend.app.models.idempotency import IdempotencyRecord
 from backend.app.models.measurement import FuelMeasurement
+from backend.app.models.notification import PushSubscription, NotificationLog
+from backend.app.models.security import AuthAttempt, RevokedToken
+from backend.app.services.avatar_service import delete_avatar_file
 
 # Default WOG Ukraine retail fuel prices fallback (UAH per liter)
 DEFAULT_INTERNET_PRICES: Dict[str, float] = {
@@ -327,10 +331,6 @@ async def fetch_wog_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, 
 
     logger.info("Використано резервний кеш цін для АЗК WOG")
     return dict(DEFAULT_INTERNET_PRICES), list(DEFAULT_WOG_LINEUP), "АЗК WOG (резервний кеш)", False
-
-
-# Backward compatibility alias
-fetch_ukraine_fuel_prices_online = fetch_wog_fuel_prices_online
 
 
 async def fetch_okko_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, float], list, str, bool]:
@@ -1124,12 +1124,27 @@ async def perform_system_reset(
         await db.execute(delete(FuelStock))
         await db.execute(delete(SystemSetting))
         await db.execute(delete(IdempotencyRecord))
+        await db.execute(delete(PushSubscription))
+        await db.execute(delete(NotificationLog))
+        await db.execute(delete(PasswordResetToken))
+        await db.execute(delete(AuthAttempt))
+        await db.execute(delete(RevokedToken))
 
-        # Remove non-superadmin users
-        non_admins_res = await db.execute(select(User).where(User.is_superadmin == False))
+        # Remove non-superadmin users (with eager-loaded roles and avatar cleanup)
+        non_admins_res = await db.execute(
+            select(User).options(selectinload(User.roles)).where(User.is_superadmin == False)
+        )
+        avatars_to_delete = []
         for u in non_admins_res.scalars().all():
+            if getattr(u, "avatar_path", None):
+                avatars_to_delete.append(u.avatar_path)
             u.roles.clear()
             await db.delete(u)
+
+        # Unbind remaining superadmins from non-root/deleted facilities
+        await db.execute(
+            update(User).where(User.is_superadmin == True).values(facility_id=None)
+        )
         await db.flush()
 
         # Keep or recreate Facility #1
@@ -1219,6 +1234,8 @@ async def perform_system_reset(
             ip_address=ip_address
         )
         await db.commit()
+        for av_path in avatars_to_delete:
+            delete_avatar_file(av_path)
         return {"status": "ok", "mode": mode, "message": "Виконано повне заводське скидання БД. Система повністю чиста і готова до роботи або передачі замовнику."}
 
     else:

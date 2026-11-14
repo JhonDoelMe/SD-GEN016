@@ -5,8 +5,10 @@ import email.utils
 import hashlib
 import hmac
 import html
+import ipaddress
 import logging
 import smtplib
+import socket
 import ssl
 import urllib.parse
 from email.message import EmailMessage
@@ -295,6 +297,38 @@ def _strip_html(html_str: str) -> str:
     return "\n".join(lines)
 
 
+_ALLOWED_SMTP_PORTS = {25, 465, 587, 2525}
+_BLOCKED_INTERNAL_HOSTS = {
+    "localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback",
+    "db", "postgres", "postgresql", "redis", "nginx", "ota-server", "app", "backend",
+}
+
+
+def validate_smtp_target(host: str, port: Optional[int] = None) -> None:
+    """
+    Validates SMTP target host/port to prevent SSRF / internal port scanning.
+    Blocks loopback, link-local (cloud metadata), unspecified, multicast IPs,
+    common internal service hostnames, and non-standard SMTP ports.
+    """
+    clean_host = (host or "").strip().lower().rstrip(".")
+    if not clean_host or any(c.isspace() or ord(c) < 32 for c in clean_host):
+        raise ValueError("Некоректний SMTP-хост")
+
+    if clean_host in _BLOCKED_INTERNAL_HOSTS or clean_host.endswith((".local", ".internal", ".localhost")):
+        raise ValueError(f"Внутрішній або loopback SMTP-хост '{host}' заборонено")
+
+    try:
+        ip_obj = ipaddress.ip_address(clean_host.strip("[]"))
+        if ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_unspecified or ip_obj.is_multicast:
+            raise ValueError(f"Заборонена IP-адреса SMTP-хоста: '{host}'")
+    except ValueError as ve:
+        if "SMTP-хост" in str(ve) or "IP-адреса" in str(ve):
+            raise
+
+    if port is not None and int(port) not in _ALLOWED_SMTP_PORTS:
+        raise ValueError(f"Непідтримуваний SMTP-порт: {port}. Дозволено лише {sorted(_ALLOWED_SMTP_PORTS)}")
+
+
 def send_smtp_message_sync(
     host: str,
     port: int,
@@ -316,6 +350,7 @@ def send_smtp_message_sync(
     """
     if not host:
         raise ValueError("SMTP host is not specified")
+    validate_smtp_target(host, port)
 
     to_list = [to_addr] if isinstance(to_addr, str) else list(to_addr)
     to_str = ", ".join(to_list)
@@ -766,12 +801,18 @@ async def _send_personalized_email(
     attachments: Optional[List[Dict[str, Any]]] = None,
     db: Optional[AsyncSession] = None,
     allow_unsubscribe: bool = True,
+    config_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Sends email with individualized 1-click unsubscribe links and RFC 8058 headers
     to each recipient without duplicating clutter in logs.
     """
-    if not get_runtime_setting("smtp_enabled", False):
+    smtp_enabled = bool(
+        config_override.get("smtp_enabled")
+        if config_override and "smtp_enabled" in config_override
+        else get_runtime_setting("smtp_enabled", False)
+    )
+    if not smtp_enabled:
         return {"status": "skipped", "message": "SMTP вимкнено"}
 
     norm: List[RecipientItem] = []
@@ -817,6 +858,7 @@ async def _send_personalized_email(
             html_body=html_body,
             attachments=attachments,
             db=db,
+            config_override=config_override,
             extra_headers=headers,
             log_to_db=(idx == 0),
         )
@@ -1208,7 +1250,8 @@ async def send_weekly_digest_email(
     excel_bytes: bytes,
     period_label: str,
     summary_text: str = "",
-    db: Optional[AsyncSession] = None
+    db: Optional[AsyncSession] = None,
+    config_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Sends weekly generator operation digest with attached 5-sheet Excel workbook."""
     subject = f"📊 Щотижневий звіт роботи генераторів — {period_label}"
@@ -1238,4 +1281,5 @@ async def send_weekly_digest_email(
         action_button_html=_dashboard_action_button("tab-reports", "Відкрити звіти"),
         attachments=attachments,
         db=db,
+        config_override=config_override,
     )

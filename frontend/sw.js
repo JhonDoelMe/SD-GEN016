@@ -15,9 +15,26 @@ const STATIC_ASSETS = [
   '/frontend/js/notifications.js?v=5.7.4',
   '/frontend/js/yasno.js?v=5.7.4',
   '/frontend/js/weather-alerts.js?v=5.7.4',
+  '/frontend/js/fuel.js?v=5.7.4',
+  '/frontend/js/operations.js?v=5.7.4',
+  '/frontend/js/audit-reports.js?v=5.7.4',
+  '/frontend/js/measurement.js?v=5.7.4',
+  '/frontend/js/admin.js?v=5.7.4',
+  '/frontend/js/backups.js?v=5.7.4',
   '/frontend/views/dashboard.html?v=5.7.4',
+  '/frontend/views/fuel.html?v=5.7.4',
+  '/frontend/views/maintenance.html?v=5.7.4',
+  '/frontend/views/faults.html?v=5.7.4',
+  '/frontend/views/runs.html?v=5.7.4',
+  '/frontend/views/audit.html?v=5.7.4',
+  '/frontend/views/reports.html?v=5.7.4',
+  '/frontend/views/measurement.html?v=5.7.4',
+  '/frontend/views/admin.html?v=5.7.4',
   '/frontend/views/modals-account.html?v=5.7.4',
   '/frontend/views/modals-ops.html?v=5.7.4',
+  '/frontend/views/modals-admin.html?v=5.7.4',
+  '/frontend/views/modals-utility.html?v=5.7.4',
+  '/frontend/views/modals-legal.html?v=5.7.4',
   '/frontend/icons/logo.png',
   '/frontend/icons/email-logo.png',
   '/frontend/icons/apple-touch-icon.png',
@@ -186,7 +203,16 @@ self.addEventListener('pushsubscriptionchange', (event) => {
 // Notification Click Event Handling: focus or open app window to target tab
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) ? event.notification.data.url : '/';
+  const rawUrl = (event.notification.data && typeof event.notification.data.url === 'string')
+    ? event.notification.data.url.trim()
+    : '/';
+  let targetUrl = '/';
+  try {
+    const parsed = new URL(rawUrl, self.location.origin);
+    if (parsed.origin === self.location.origin && parsed.pathname.startsWith('/')) {
+      targetUrl = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+  } catch (_) {}
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {

@@ -71,8 +71,9 @@ services:
       - /bin/sh
       - -c
       - |
-        PRIMARY="$${PRIMARY_DOMAIN:-sdgen.pp.ua}"
-        DOMAINS="$$PRIMARY www.$$PRIMARY $${ADDITIONAL_DOMAINS:-}"
+        PRIMARY="$$(printf '%s' "$${PRIMARY_DOMAIN:-sdgen.pp.ua}" | tr -cd 'A-Za-z0-9.-')"
+        EXTRA="$$(printf '%s' "$${ADDITIONAL_DOMAINS:-}" | tr -cd 'A-Za-z0-9._ -')"
+        DOMAINS="$$PRIMARY www.$$PRIMARY $${EXTRA}"
         sed "s/__PRIMARY_DOMAIN__/$$DOMAINS/g" /tmp/nginx.conf > /etc/nginx/conf.d/default.conf
         mkdir -p /tmp/ssl
         if [ -f /etc/nginx/ssl/fullchain.pem ] && [ -f /etc/nginx/ssl/privkey.pem ]; then

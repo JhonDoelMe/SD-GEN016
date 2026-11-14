@@ -166,6 +166,11 @@ async def create_receipt(
         verify_facility_access(current_user, data.facility_id)
     elif current_user.facility_id:
         data.facility_id = current_user.facility_id
+    elif not is_user_admin_or_super(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Доступ заборонено: користувача не прив'язано до жодного об'єкта"
+        )
     elif not data.stock_id:
         data.facility_id = 1
 
@@ -279,6 +284,11 @@ async def create_transfer(
         verify_facility_access(current_user, data.facility_id)
     elif current_user.facility_id:
         data.facility_id = current_user.facility_id
+    elif not is_user_admin_or_super(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Доступ заборонено: користувача не прив'язано до жодного об'єкта"
+        )
     elif not data.stock_id:
         data.facility_id = 1
 
@@ -344,7 +354,7 @@ async def list_transfers(
     generator_id: Optional[int] = None,
     limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("fuel:view"))
 ):
     eff_facility_id = verify_facility_access(current_user, facility_id)
     await verify_generator_facility_access(db, current_user, generator_id)
@@ -473,6 +483,7 @@ async def dispatch_canisters_api(
     existing = await db.get(CanisterPool, pool_id)
     if existing:
         verify_facility_access(current_user, existing.facility_id)
+    data.idempotency_key = resolve_idempotency_key(request, data.idempotency_key)
 
     async def _exec():
         pool = await dispatch_canisters(db, pool_id, data, current_user.id, get_client_ip(request))
@@ -501,6 +512,7 @@ async def return_empty_canisters_api(
     existing = await db.get(CanisterPool, pool_id)
     if existing:
         verify_facility_access(current_user, existing.facility_id)
+    data.idempotency_key = resolve_idempotency_key(request, data.idempotency_key)
 
     async def _exec():
         pool = await return_empty_canisters(db, pool_id, data, current_user.id, get_client_ip(request))

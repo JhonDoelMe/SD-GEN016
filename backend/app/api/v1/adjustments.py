@@ -13,7 +13,7 @@ from backend.app.models.fuel import FuelStock
 from backend.app.models.maintenance import MaintenanceSchedule
 from backend.app.models.audit import SystemAdjustment
 from backend.app.schemas.audit import SystemAdjustmentCreate, SystemAdjustmentOut
-from backend.app.api.deps import get_current_superadmin, require_permission, get_client_ip
+from backend.app.api.deps import get_current_superadmin, require_permission, get_client_ip, verify_facility_access
 from backend.app.services.audit_service import record_system_adjustment
 from backend.app.services.canister_service import (
     adjust_canister_pool_field,
@@ -66,12 +66,13 @@ async def list_adjustments(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("audit:view"))
 ):
+    eff_facility_id = verify_facility_access(current_user, facility_id)
     query = (
         select(SystemAdjustment)
         .options(selectinload(SystemAdjustment.user), selectinload(SystemAdjustment.facility))
     )
-    if facility_id:
-        query = query.where(SystemAdjustment.facility_id == facility_id)
+    if eff_facility_id:
+        query = query.where(SystemAdjustment.facility_id == eff_facility_id)
 
     query = query.order_by(SystemAdjustment.id.desc()).limit(limit)
     res = await db.execute(query)

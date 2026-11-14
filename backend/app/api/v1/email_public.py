@@ -156,8 +156,11 @@ async def _set_email_subscription_state(
         )
         target_user = res.scalars().first()
 
+    changed = False
     if target_user:
-        target_user.email_notifications_enabled = enabled
+        if bool(target_user.email_notifications_enabled) != enabled:
+            target_user.email_notifications_enabled = enabled
+            changed = True
     elif not enabled and clean_email:
         # Remove standalone external email from weekly recipients if unsubscribed
         raw_rec = str(get_runtime_setting("email_weekly_recipients", "") or "").strip()
@@ -166,17 +169,19 @@ async def _set_email_subscription_state(
             filtered = [x for x in items if x.lower() != clean_email]
             if len(filtered) != len(items):
                 await update_system_settings(db, {"email_weekly_recipients": ", ".join(filtered)})
+                changed = True
 
-    await log_audit(
-        db=db,
-        action="EMAIL_RESUBSCRIBED" if enabled else "EMAIL_UNSUBSCRIBED",
-        entity_type="User",
-        entity_id=str(target_user.id) if target_user else clean_email[:64],
-        user_id=target_user.id if target_user else None,
-        details={"email": clean_email, "enabled": enabled},
-        ip_address=get_client_ip(request),
-    )
-    await db.commit()
+    if changed:
+        await log_audit(
+            db=db,
+            action="EMAIL_RESUBSCRIBED" if enabled else "EMAIL_UNSUBSCRIBED",
+            entity_type="User",
+            entity_id=str(target_user.id) if target_user else clean_email[:64],
+            user_id=target_user.id if target_user else None,
+            details={"email": clean_email, "enabled": enabled},
+            ip_address=get_client_ip(request),
+        )
+        await db.commit()
     return target_user
 
 

@@ -1130,7 +1130,7 @@
 }
 
 .yasno-day-btn:hover {
-  color: var(--text-main);
+  color: var(--text-primary);
 }
 
 .yasno-day-btn.active {
@@ -2119,7 +2119,7 @@
 .fuel-assess-val {
   font-size: 1.45rem;
   font-weight: 700;
-  color: var(--text-main);
+  color: var(--text-primary);
   line-height: 1.2;
 }
 .fuel-assess-sub {

@@ -13,11 +13,13 @@ from backend.app.models.fault import Fault
 from backend.app.models.fuel import FuelTransfer
 from backend.app.models.facility import Facility
 from backend.app.models.user import User
+from backend.app.models.measurement import FuelMeasurement
 from backend.app.schemas.generator import (
     GeneratorWizardSetup, GeneratorCreate, GeneratorStopRequest, GeneratorUpdate,
     GeneratorManualRunCreate, GeneratorFacilityTransferRequest
 )
 from backend.app.services.audit_service import log_audit
+from backend.app.services.settings_service import get_runtime_setting
 from backend.app.services.fuel_service import (
     validate_and_reconcile_generator_tank_level,
     consume_generator_fuel
@@ -308,6 +310,9 @@ async def setup_generator_wizard(
             detail="Неможливо переналаштувати генератор через майстер під час його активної роботи (RUNNING)."
         )
 
+    from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+    await ensure_facility_not_locked_by_measurement(db, generator.facility_id, "fuel_adjustment")
+
     generator.name = setup_data.name.strip()
     generator.model = setup_data.model.strip()
     generator.manufacturer = setup_data.manufacturer.strip()
@@ -343,13 +348,7 @@ async def setup_generator_wizard(
     init_hours = setup_data.initial_operating_hours
     if setup_data.last_maintenance_performed_hours is not None:
         last_performed = setup_data.last_maintenance_performed_hours
-        if last_performed >= init_hours and init_hours < interval:
-            last_performed = 0.0
-            next_due = interval
-        else:
-            next_due = last_performed + interval
-            while next_due <= init_hours:
-                next_due += interval
+        next_due = round(last_performed + interval, 2)
     else:
         cycle = int(init_hours // interval)
         last_performed = float(cycle * interval)
@@ -1085,13 +1084,7 @@ async def create_generator(
     init_hours = setup_data.initial_operating_hours
     if setup_data.last_maintenance_performed_hours is not None:
         last_performed = setup_data.last_maintenance_performed_hours
-        if last_performed >= init_hours and init_hours < interval:
-            last_performed = 0.0
-            next_due = interval
-        else:
-            next_due = last_performed + interval
-            while next_due <= init_hours:
-                next_due += interval
+        next_due = round(last_performed + interval, 2)
     else:
         last_performed = 0.0
         next_due = interval
@@ -1162,12 +1155,25 @@ async def delete_generator(
             detail="Неможливо видалити або архівувати генератор, який зараз працює! Спочатку зупиніть генератор."
         )
 
+    active_meas_count = (await db.execute(
+        select(func.count(FuelMeasurement.id)).where(
+            FuelMeasurement.generator_id == generator.id,
+            FuelMeasurement.status.in_(("MEASURING", "PENDING_INVENTORY", "PENDING_APPROVAL"))
+        )
+    )).scalar() or 0
+    if active_meas_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Неможливо видалити або архівувати генератор під час активного вимірювання витрати пального."
+        )
+
     runs_count = (await db.execute(select(func.count(GeneratorRun.id)).where(GeneratorRun.generator_id == generator.id))).scalar() or 0
     transfers_count = (await db.execute(select(func.count(FuelTransfer.id)).where(FuelTransfer.generator_id == generator.id))).scalar() or 0
     maint_count = (await db.execute(select(func.count(MaintenanceRecord.id)).where(MaintenanceRecord.generator_id == generator.id))).scalar() or 0
     faults_count = (await db.execute(select(func.count(Fault.id)).where(Fault.generator_id == generator.id))).scalar() or 0
+    meas_count = (await db.execute(select(func.count(FuelMeasurement.id)).where(FuelMeasurement.generator_id == generator.id))).scalar() or 0
 
-    total_history = runs_count + transfers_count + maint_count + faults_count
+    total_history = runs_count + transfers_count + maint_count + faults_count + meas_count
     gen_name = generator.name
 
     if total_history > 0:
@@ -1474,6 +1480,8 @@ async def update_generator(
     if data.fuel_type is not None and data.fuel_type.strip():
         new_ft = data.fuel_type.strip()
         if new_ft != generator.fuel_type:
+            from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+            await ensure_facility_not_locked_by_measurement(db, generator.facility_id, "fuel_adjustment")
             changes["fuel_type"] = (generator.fuel_type, new_ft)
             generator.fuel_type = new_ft
 

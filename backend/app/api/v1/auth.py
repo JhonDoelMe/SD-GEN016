@@ -18,6 +18,7 @@ from backend.app.core.security import (
     verify_password,
     verify_dummy_password,
     create_access_token,
+    decode_access_token,
 )
 from backend.app.services.auth_security_service import (
     revoke_access_token_db,
@@ -39,7 +40,11 @@ from backend.app.schemas.auth import (
 )
 from backend.app.services.avatar_service import delete_avatar_file, save_user_avatar
 from backend.app.services.settings_service import get_runtime_setting
-from backend.app.services.email_service import send_password_reset_email, send_password_changed_email
+from backend.app.services.email_service import (
+    send_password_reset_email,
+    send_password_changed_email,
+    get_public_base_url,
+)
 from backend.app.api.deps import get_current_user, get_client_ip, security_scheme
 from backend.app.services.audit_service import log_audit
 
@@ -160,7 +165,7 @@ async def login(
         cookie_max_age = None  # Session cookie
 
     token = create_access_token(
-        {"sub": str(user.id), "login": user.login},
+        {"sub": str(user.id), "login": user.login, "rem": bool(login_data.remember_me)},
         expires_delta=token_delta,
         password_hash=user.password_hash
     )
@@ -297,6 +302,7 @@ async def change_own_password(
     payload: ChangePasswordRequest,
     request: Request,
     response: Response,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -308,12 +314,34 @@ async def change_own_password(
             detail="Поточний пароль вказано невірно"
         )
 
+    old_tokens = []
+    if credentials and credentials.credentials:
+        old_tokens.append(credentials.credentials)
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token and cookie_token not in old_tokens:
+        old_tokens.append(cookie_token)
+
+    is_remember = False
+    for tok in old_tokens:
+        decoded_old = decode_access_token(tok)
+        if decoded_old and decoded_old.get("rem"):
+            is_remember = True
+            break
+    for tok in old_tokens:
+        await revoke_access_token_db(db, tok)
+
     current_user.password_hash = await asyncio.to_thread(get_password_hash, payload.new_password)
     await db.flush()
 
+    token_delta = (
+        datetime.timedelta(days=60)
+        if is_remember
+        else datetime.timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
     # Issue a fresh access token with the new password signature so current session stays valid
     new_token = create_access_token(
-        {"sub": str(current_user.id), "login": current_user.login},
+        {"sub": str(current_user.id), "login": current_user.login, "rem": is_remember},
+        expires_delta=token_delta,
         password_hash=current_user.password_hash
     )
 
@@ -321,14 +349,17 @@ async def change_own_password(
         request.url.scheme == "https"
         or request.headers.get("x-forwarded-proto", "").lower() == "https"
     )
-    response.set_cookie(
-        key="access_token",
-        value=new_token,
-        httponly=True,
-        samesite="lax",
-        secure=is_https,
-        path="/",
-    )
+    cookie_kwargs = {
+        "key": "access_token",
+        "value": new_token,
+        "httponly": True,
+        "samesite": "lax",
+        "secure": is_https,
+        "path": "/",
+    }
+    if is_remember:
+        cookie_kwargs["max_age"] = 60 * 86400
+    response.set_cookie(**cookie_kwargs)
 
     await log_audit(
         db=db,
@@ -458,9 +489,7 @@ async def forgot_password(
 
     # Dispatch email
     try:
-        base_url = str(request.base_url).rstrip("/")
-        if request.headers.get("x-forwarded-proto", "").lower() == "https":
-            base_url = base_url.replace("http://", "https://")
+        base_url = get_public_base_url(str(request.base_url))
         await send_password_reset_email(
             to_addr=user.email,
             user_name=user.full_name,

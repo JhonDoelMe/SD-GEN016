@@ -197,6 +197,9 @@ async function checkAuth() {
       dashMountPromise
     ]);
     currentUser = meRes;
+    if (typeof window.OfflineQueue === 'object') {
+      await window.OfflineQueue.ensureUserScope?.(currentUser?.login || currentUser?.id);
+    }
   } catch (err) {
     await dashMountPromise;
     if (err && err.isOffline && token && typeof window.OfflineQueue === 'object') {
@@ -228,6 +231,17 @@ async function checkAuth() {
     ]);
 
     await loadAllData();
+
+    if (window.ViewLoader?.ensureScript) {
+      window.ViewLoader.ensureScript('measurement.js')
+        .then(() => window.loadMeasurementStatus?.())
+        .catch(() => {});
+    }
+    if (window._initialDeepLinkTab && typeof window.switchTab === 'function') {
+      const targetDeepTab = window._initialDeepLinkTab;
+      window._initialDeepLinkTab = null;
+      await window.switchTab(targetDeepTab);
+    }
 
     if (typeof window.OfflineQueue === 'object') {
       window.OfflineQueue.updateOfflineUIStatus();
@@ -314,6 +328,7 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
     applyRolePermissionsUI();
     showToast(`Вітаємо, ${currentUser.full_name}!`, 'success');
     if (typeof window.OfflineQueue === 'object') {
+      await window.OfflineQueue.ensureUserScope?.(currentUser?.login || currentUser?.id);
       await window.OfflineQueue.cachePut('/auth/me', currentUser);
       window.OfflineQueue.updateOfflineUIStatus();
     }
@@ -323,6 +338,17 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
       typeof window.loadBellFeed === 'function' ? window.loadBellFeed(false) : Promise.resolve()
     ]);
     await loadAllData();
+
+    if (window.ViewLoader?.ensureScript) {
+      window.ViewLoader.ensureScript('measurement.js')
+        .then(() => window.loadMeasurementStatus?.())
+        .catch(() => {});
+    }
+    if (window._initialDeepLinkTab && typeof window.switchTab === 'function') {
+      const targetDeepTab = window._initialDeepLinkTab;
+      window._initialDeepLinkTab = null;
+      await window.switchTab(targetDeepTab);
+    }
     if (typeof window.OfflineQueue === 'object' && navigator.onLine) {
       window.OfflineQueue.syncOfflineQueue({ silent: true }).catch(() => {});
     }
@@ -357,7 +383,7 @@ document.getElementById('logoutBtn')?.addEventListener('click', async () => {
     await api('/auth/logout', { method: 'POST', suppressToast: true });
   } catch (_) {}
   if (typeof window.OfflineQueue === 'object') {
-    await window.OfflineQueue.cachePut('/auth/me', null);
+    await window.OfflineQueue.clearAll?.();
   }
   token = null;
   localStorage.removeItem('sd_token');
@@ -719,10 +745,22 @@ document.addEventListener('submit', async (e) => {
     }
     if (btn) btn.disabled = true;
     try {
-      await api('/auth/change-password', {
+      const res = await api('/auth/change-password', {
         method: 'POST',
         body: JSON.stringify({ current_password: curPwd, new_password: newPwd })
       });
+      if (res && res.access_token) {
+        token = res.access_token;
+        const rememberMe = localStorage.getItem('sd_remember_me') !== 'false' && (localStorage.getItem('sd_token') !== null || sessionStorage.getItem('sd_token') === null);
+        if (rememberMe) {
+          localStorage.setItem('sd_token', token);
+          sessionStorage.removeItem('sd_token');
+        } else {
+          sessionStorage.setItem('sd_token', token);
+          localStorage.removeItem('sd_token');
+        }
+        if (res.user) currentUser = res.user;
+      }
       form.reset();
       showToast('Пароль успішно змінено!', 'success');
     } catch (_) {

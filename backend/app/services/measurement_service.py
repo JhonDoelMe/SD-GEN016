@@ -399,6 +399,13 @@ async def start_measurement(
     if gen.facility_id and int(gen.facility_id) != facility_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Генератор належить до іншого об'єкта.")
 
+    # Lock Facility row to serialize concurrent start_measurement requests for the same facility
+    fac_row = (
+        await db.execute(select(Facility).where(Facility.id == facility_id).with_for_update())
+    ).scalars().first()
+    if not fac_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Об'єкт не знайдено")
+
     existing = await get_active_facility_measurement(db, facility_id)
     if existing:
         raise HTTPException(
@@ -1087,6 +1094,18 @@ async def approve_measurement(
     fact_tank = round(float(inv_fact.get("generator_tank_fact_l", gen.fuel_tank_level_l or 0.0)), 3)
 
     gen.nominal_consumption_l_per_h = new_cons
+    if inv_fact.get("tank_full_confirmed") is False and inv_fact.get("generator_tank_fact_l") is not None:
+        interim_consumed = 0.0
+        if m.tank_emptied_at is not None:
+            interim_res = await db.execute(
+                select(GeneratorRun).where(
+                    GeneratorRun.generator_id == gen.id,
+                    GeneratorRun.status == "COMPLETED",
+                    GeneratorRun.start_time >= m.tank_emptied_at,
+                )
+            )
+            interim_consumed = sum(float(r.fuel_consumed_l or 0.0) for r in interim_res.scalars().all())
+        gen.fuel_tank_level_l = round(max(0.0, fact_tank - interim_consumed), 3)
     gen.updated_at = utc_now()
 
     # 2. Apply factual canister pool counts & reserves + resync stocks

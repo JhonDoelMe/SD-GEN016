@@ -141,7 +141,8 @@ def format_uptime(seconds: float) -> str:
 
 @router.get("/status")
 async def get_system_status(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     Повертає реальний статус стану сервера:
@@ -428,12 +429,6 @@ async def reset_system_or_clean_db(
             detail="Невірний пароль адміністратора. Операцію скасовано."
         )
 
-    if payload.mode == "factory_reset" and not current_user.is_superadmin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Повне заводське скидання БД (factory_reset) дозволено виключно Головному Системному Адміністратору (SuperAdmin)."
-        )
-
     try:
         result = await perform_system_reset(
             db=db,
@@ -494,21 +489,28 @@ async def test_email_configuration(
         if val is not None:
             config_override[attr] = val
 
+    from backend.app.services.email_service import validate_smtp_target
+    for prefix in ("smtp_primary", "smtp_fallback"):
+        h_override = config_override.get(f"{prefix}_host")
+        p_override = config_override.get(f"{prefix}_port")
+        if h_override is not None or p_override is not None:
+            host_to_check = h_override if h_override is not None else str(get_runtime_setting(f"{prefix}_host", "") or "")
+            port_to_check = p_override if p_override is not None else int(get_runtime_setting(f"{prefix}_port", 587) or 587)
+            if host_to_check:
+                try:
+                    validate_smtp_target(host_to_check, port_to_check)
+                except ValueError as exc:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
     start_t = time.time()
-    orig_smtp_enabled = bool(get_runtime_setting("smtp_enabled", False))
-    from backend.app.services.settings_service import set_runtime_setting
-    set_runtime_setting("smtp_enabled", True)
-    try:
-        res = await send_email_with_failover(
-            to_addr=to_addr,
-            subject=subject,
-            html_body=html_body,
-            db=db,
-            force_provider=force_prov,
-            config_override=config_override
-        )
-    finally:
-        set_runtime_setting("smtp_enabled", orig_smtp_enabled)
+    res = await send_email_with_failover(
+        to_addr=to_addr,
+        subject=subject,
+        html_body=html_body,
+        db=db,
+        force_provider=force_prov,
+        config_override=config_override
+    )
 
     duration_ms = int(round((time.time() - start_t) * 1000))
     res["duration_ms"] = duration_ms
@@ -561,19 +563,14 @@ async def send_weekly_digest_manual(
     week_ago = now_dt - datetime.timedelta(days=7)
     period_label = f"{week_ago.strftime('%d.%m.%Y')} — {now_dt.strftime('%d.%m.%Y')}"
 
-    orig_smtp_enabled = bool(get_runtime_setting("smtp_enabled", False))
-    from backend.app.services.settings_service import set_runtime_setting
-    set_runtime_setting("smtp_enabled", True)
-    try:
-        res = await send_weekly_digest_email(
-            recipients=rec_list,
-            excel_bytes=excel_bytes,
-            period_label=period_label,
-            summary_text=f"Звіт надіслано адміністратором {current_user.full_name} ({current_user.login}).",
-            db=db
-        )
-    finally:
-        set_runtime_setting("smtp_enabled", orig_smtp_enabled)
+    res = await send_weekly_digest_email(
+        recipients=rec_list,
+        excel_bytes=excel_bytes,
+        period_label=period_label,
+        summary_text=f"Звіт надіслано адміністратором {current_user.full_name} ({current_user.login}).",
+        db=db,
+        config_override={"smtp_enabled": True}
+    )
 
     await log_audit(
         db=db,

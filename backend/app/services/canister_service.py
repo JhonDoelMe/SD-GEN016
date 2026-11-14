@@ -3,7 +3,7 @@
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -233,6 +233,25 @@ async def create_canister_pool(
         data.full_count, data.empty_count, data.away_refill_count, vol_dec, res_dec
     )
 
+    existing_pools_count = (
+        await db.execute(
+            select(func.count(CanisterPool.id)).where(
+                CanisterPool.stock_id == stock.id,
+                CanisterPool.is_active == True,  # noqa: E712
+            )
+        )
+    ).scalar() or 0
+    stock_bal = to_liters(stock.current_balance_l)
+    new_pool_avail = to_liters(Decimal(data.full_count) * vol_dec + res_dec)
+    if existing_pools_count == 0 and stock_bal > Decimal("0.000") and new_pool_avail != stock_bal:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"На складі '{stock.name}' вже обліковується {float(stock_bal):.1f} л палива без пулу каністр. "
+                "Щоб уникнути втрати балансу, вкажіть відповідний запас у каністрах/резерві або вирівняйте залишок складу."
+            ),
+        )
+
     pool = CanisterPool(
         facility_id=data.facility_id,
         stock_id=stock.id,
@@ -300,6 +319,16 @@ async def update_canister_pool(
     user_id: int,
     ip_address: Optional[str] = None,
 ) -> CanisterPool:
+    stock_id_val = (
+        await db.execute(select(CanisterPool.stock_id).where(CanisterPool.id == pool_id))
+    ).scalar_one_or_none()
+    if stock_id_val is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пул каністр не знайдено")
+
+    # Єдиний порядок блокування: спочатку FuelStock, потім CanisterPool (запобігання deadlock)
+    stock = (
+        await db.execute(select(FuelStock).where(FuelStock.id == stock_id_val).with_for_update())
+    ).scalars().first()
     pool = (
         await db.execute(select(CanisterPool).where(CanisterPool.id == pool_id).with_for_update())
     ).scalars().first()
@@ -308,10 +337,6 @@ async def update_canister_pool(
 
     from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
     await ensure_facility_not_locked_by_measurement(db, pool.facility_id, "fuel_adjustment")
-
-    stock = (
-        await db.execute(select(FuelStock).where(FuelStock.id == pool.stock_id).with_for_update())
-    ).scalars().first()
 
     before_snap = _snapshot_pool(pool)
     old_avail = _pool_available_dec(pool)
@@ -326,6 +351,15 @@ async def update_canister_pool(
     new_res = to_liters(data.reserve_liters) if data.reserve_liters is not None else to_liters(pool.reserve_liters)
 
     new_total = _validate_pool_invariants(new_full, new_empty, new_away, new_vol, new_res)
+    new_pool_avail = to_liters(Decimal(new_full) * new_vol + new_res)
+    if data.is_active is False and new_pool_avail > Decimal("0.000"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Неможливо деактивувати пул каністр із залишком палива ({float(new_pool_avail):.1f} л). "
+                "Спочатку спишіть або обнуліть залишок."
+            ),
+        )
 
     pool.canister_volume_l = new_vol
     pool.full_count = new_full
@@ -388,6 +422,15 @@ async def delete_canister_pool(
     user_id: int,
     ip_address: Optional[str] = None,
 ) -> dict:
+    stock_id_val = (
+        await db.execute(select(CanisterPool.stock_id).where(CanisterPool.id == pool_id))
+    ).scalar_one_or_none()
+    if stock_id_val is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пул каністр не знайдено")
+
+    stock = (
+        await db.execute(select(FuelStock).where(FuelStock.id == stock_id_val).with_for_update())
+    ).scalars().first()
     pool = (
         await db.execute(select(CanisterPool).where(CanisterPool.id == pool_id).with_for_update())
     ).scalars().first()
@@ -404,7 +447,6 @@ async def delete_canister_pool(
             detail=f"Неможливо видалити пул каністр із залишком палива ({float(avail):.1f} л). Спочатку спишіть або обнуліть залишок."
         )
 
-    stock = await db.get(FuelStock, pool.stock_id)
     pool_name = pool.name
     facility_id = pool.facility_id
     await db.delete(pool)
@@ -569,17 +611,48 @@ async def receive_canisters(
     Bring filled canisters back to the facility (`away_refill_count` or `empty_count` -> `full_count`),
     optionally create a matching FuelReceipt, and sync FuelStock balance.
     """
+    stock_id_val = (
+        await db.execute(select(CanisterPool.stock_id).where(CanisterPool.id == pool_id))
+    ).scalar_one_or_none()
+    if stock_id_val is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Активний пул каністр не знайдено")
+
+    # Єдиний порядок блокування: спочатку FuelStock, потім CanisterPool
+    stock = (
+        await db.execute(select(FuelStock).where(FuelStock.id == stock_id_val).with_for_update())
+    ).scalars().first()
     pool = (
         await db.execute(select(CanisterPool).where(CanisterPool.id == pool_id).with_for_update())
     ).scalars().first()
     if not pool or not pool.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Активний пул каністр не знайдено")
 
-    stock = (
-        await db.execute(select(FuelStock).where(FuelStock.id == pool.stock_id).with_for_update())
-    ).scalars().first()
     if not stock or not stock.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пов'язаний склад ГСМ не знайдено або архівовано.")
+
+    if data.idempotency_key:
+        existing_rec = (
+            await db.execute(select(FuelReceipt).where(FuelReceipt.idempotency_key == data.idempotency_key))
+        ).scalars().first()
+        if existing_rec:
+            existing_tx = (
+                await db.execute(
+                    select(CanisterTransaction).where(CanisterTransaction.related_receipt_id == existing_rec.id)
+                )
+            ).scalars().first()
+            if existing_tx:
+                if int(existing_tx.pool_id) != int(pool_id):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Ключ ідемпотентності вже використано для іншого пулу каністр.",
+                    )
+                return (
+                    await db.execute(
+                        select(CanisterPool)
+                        .options(selectinload(CanisterPool.facility), selectinload(CanisterPool.stock))
+                        .where(CanisterPool.id == pool.id)
+                    )
+                ).scalars().first()
 
     from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
     await ensure_facility_not_locked_by_measurement(db, pool.facility_id, "canister_op")
@@ -1024,6 +1097,15 @@ async def adjust_canister_pool_field(
     reason: str,
 ) -> Tuple[CanisterPool, str, str]:
     """Adjust an explicit field on CanisterPool via SuperAdmin SystemAdjustment and resync FuelStock."""
+    stock_id_val = (
+        await db.execute(select(CanisterPool.stock_id).where(CanisterPool.id == pool_id))
+    ).scalar_one_or_none()
+    if stock_id_val is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пул каністр не знайдено")
+
+    stock = (
+        await db.execute(select(FuelStock).where(FuelStock.id == stock_id_val).with_for_update())
+    ).scalars().first()
     pool = (
         await db.execute(select(CanisterPool).where(CanisterPool.id == pool_id).with_for_update())
     ).scalars().first()
@@ -1032,10 +1114,6 @@ async def adjust_canister_pool_field(
 
     from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
     await ensure_facility_not_locked_by_measurement(db, pool.facility_id, "fuel_adjustment")
-
-    stock = (
-        await db.execute(select(FuelStock).where(FuelStock.id == pool.stock_id).with_for_update())
-    ).scalars().first()
 
     before_snap = _snapshot_pool(pool)
     old_avail = _pool_available_dec(pool)

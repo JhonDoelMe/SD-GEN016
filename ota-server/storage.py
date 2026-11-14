@@ -6,6 +6,9 @@ import hashlib
 import os
 import re
 import sqlite3
+import threading
+import uuid
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, BinaryIO
@@ -45,6 +48,7 @@ class OtaStorage:
         self.app_id = app_id
         self.app_name = app_name
         self.max_releases = max(1, int(max_releases))
+        self._lock = threading.RLock()
 
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.apks_dir.mkdir(parents=True, exist_ok=True)
@@ -196,7 +200,7 @@ class OtaStorage:
         final_path = (self.apks_dir / stored_name).resolve()
         if final_path.parent != self.apks_dir:
             raise OtaValidationError("Неприпустиме ім'я файлу.")
-        tmp_path = self.apks_dir / f".upload-{os.getpid()}-{version_code}.tmp"
+        tmp_path = self.apks_dir / f".upload-{uuid.uuid4().hex}-{version_code}.tmp"
 
         hasher = hashlib.sha256()
         total_bytes = 0
@@ -224,101 +228,116 @@ class OtaStorage:
             if total_bytes < 1024:
                 raise OtaValidationError("APK файл занадто малий або порожній.")
 
+            try:
+                with zipfile.ZipFile(tmp_path, "r") as zf:
+                    if "AndroidManifest.xml" not in zf.namelist():
+                        raise OtaValidationError(
+                            "Архів APK не містить AndroidManifest.xml."
+                        )
+            except zipfile.BadZipFile as exc:
+                raise OtaValidationError(
+                    "Пошкоджений APK/ZIP-архів."
+                ) from exc
+
             sha256_hex = hasher.hexdigest()
             now_iso = datetime.now(timezone.utc).isoformat()
 
-            with self._connect() as conn:
-                existing = conn.execute(
-                    "SELECT version_code, stored_name FROM releases WHERE version_code = ?",
-                    (version_code,),
-                ).fetchone()
-                max_row = conn.execute(
-                    "SELECT COALESCE(MAX(version_code), 0) AS max_code FROM releases"
-                ).fetchone()
-                max_code = int(max_row["max_code"]) if max_row else 0
-
-                if not replace and version_code <= max_code:
-                    raise OtaConflictError(
-                        f"version_code={version_code} має бути строго більшим за поточний максимум ({max_code})."
-                    )
-
+            with self._lock:
+                pruned_to_remove: list[str] = []
                 old_stored_to_remove: str | None = None
-                if existing and existing["stored_name"] != stored_name:
-                    old_stored_to_remove = str(existing["stored_name"])
+                with self._connect() as conn:
+                    existing = conn.execute(
+                        "SELECT version_code, stored_name FROM releases WHERE version_code = ?",
+                        (version_code,),
+                    ).fetchone()
+                    max_row = conn.execute(
+                        "SELECT COALESCE(MAX(version_code), 0) AS max_code FROM releases"
+                    ).fetchone()
+                    max_code = int(max_row["max_code"]) if max_row else 0
 
-                os.replace(tmp_path, final_path)
+                    if not replace and version_code <= max_code:
+                        raise OtaConflictError(
+                            f"version_code={version_code} має бути строго більшим за поточний максимум ({max_code})."
+                        )
 
-                conn.execute("UPDATE releases SET is_active = 0")
-                if existing:
-                    conn.execute(
-                        """
-                        UPDATE releases
-                        SET version_name = ?, file_name = ?, stored_name = ?,
-                            file_size = ?, sha256 = ?, changelog = ?,
-                            is_mandatory = ?, is_active = 1, published_at = ?
-                        WHERE version_code = ?
-                        """,
-                        (
-                            clean_ver,
-                            public_file_name,
-                            stored_name,
-                            total_bytes,
-                            sha256_hex,
-                            (changelog or "").strip(),
-                            1 if is_mandatory else 0,
-                            now_iso,
-                            version_code,
-                        ),
-                    )
-                else:
-                    conn.execute(
-                        """
-                        INSERT INTO releases (
-                            version_code, version_name, file_name, stored_name,
-                            file_size, sha256, changelog, is_mandatory,
-                            is_active, download_count, published_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
-                        """,
-                        (
-                            version_code,
-                            clean_ver,
-                            public_file_name,
-                            stored_name,
-                            total_bytes,
-                            sha256_hex,
-                            (changelog or "").strip(),
-                            1 if is_mandatory else 0,
-                            now_iso,
-                        ),
-                    )
+                    if existing and existing["stored_name"] != stored_name:
+                        old_stored_to_remove = str(existing["stored_name"])
 
-                if min_supported_version_code is not None:
-                    conn.execute(
-                        "UPDATE policy SET min_supported_version_code = ?, updated_at = ? WHERE id = 1",
-                        (int(min_supported_version_code), now_iso),
-                    )
+                    conn.execute("UPDATE releases SET is_active = 0")
+                    if existing:
+                        conn.execute(
+                            """
+                            UPDATE releases
+                            SET version_name = ?, file_name = ?, stored_name = ?,
+                                file_size = ?, sha256 = ?, changelog = ?,
+                                is_mandatory = ?, is_active = 1, published_at = ?
+                            WHERE version_code = ?
+                            """,
+                            (
+                                clean_ver,
+                                public_file_name,
+                                stored_name,
+                                total_bytes,
+                                sha256_hex,
+                                (changelog or "").strip(),
+                                1 if is_mandatory else 0,
+                                now_iso,
+                                version_code,
+                            ),
+                        )
+                    else:
+                        conn.execute(
+                            """
+                            INSERT INTO releases (
+                                version_code, version_name, file_name, stored_name,
+                                file_size, sha256, changelog, is_mandatory,
+                                is_active, download_count, published_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+                            """,
+                            (
+                                version_code,
+                                clean_ver,
+                                public_file_name,
+                                stored_name,
+                                total_bytes,
+                                sha256_hex,
+                                (changelog or "").strip(),
+                                1 if is_mandatory else 0,
+                                now_iso,
+                            ),
+                        )
 
-                self._prune_old_releases(conn)
-                min_supported = self._get_min_supported(conn)
-                saved = conn.execute(
-                    "SELECT * FROM releases WHERE version_code = ?",
-                    (version_code,),
-                ).fetchone()
+                    if min_supported_version_code is not None:
+                        conn.execute(
+                            "UPDATE policy SET min_supported_version_code = ?, updated_at = ? WHERE id = 1",
+                            (int(min_supported_version_code), now_iso),
+                        )
 
-            if old_stored_to_remove:
-                self._safe_unlink(self.apks_dir / old_stored_to_remove)
+                    pruned_to_remove = self._prune_old_releases(conn)
+                    min_supported = self._get_min_supported(conn)
+                    saved = conn.execute(
+                        "SELECT * FROM releases WHERE version_code = ?",
+                        (version_code,),
+                    ).fetchone()
+                    os.replace(tmp_path, final_path)
+
+                if old_stored_to_remove:
+                    self._safe_unlink(self.apks_dir / old_stored_to_remove)
+                for pruned_name in pruned_to_remove:
+                    self._safe_unlink(self.apks_dir / pruned_name)
 
             return self._row_to_dict(saved, min_supported)
         except Exception:
             self._safe_unlink(tmp_path)
             raise
 
-    def _prune_old_releases(self, conn: sqlite3.Connection) -> None:
+    def _prune_old_releases(self, conn: sqlite3.Connection) -> list[str]:
         rows = conn.execute(
             "SELECT version_code, stored_name, is_active FROM releases ORDER BY version_code DESC"
         ).fetchall()
         if len(rows) <= self.max_releases:
-            return
+            return []
+        removed_names: list[str] = []
         for row in rows[self.max_releases :]:
             if int(row["is_active"]) == 1:
                 continue
@@ -326,7 +345,8 @@ class OtaStorage:
                 "DELETE FROM releases WHERE version_code = ?",
                 (int(row["version_code"]),),
             )
-            self._safe_unlink(self.apks_dir / str(row["stored_name"]))
+            removed_names.append(str(row["stored_name"]))
+        return removed_names
 
     def _safe_unlink(self, path: Path) -> None:
         try:

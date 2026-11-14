@@ -205,7 +205,12 @@ async def get_notification_logs(
 ):
     """Get history of dispatched notifications."""
     q = select(NotificationLog).order_by(NotificationLog.created_at.desc()).limit(limit)
-    if not is_user_admin_or_super(current_user) and current_user.facility_id:
+    if not is_user_admin_or_super(current_user):
+        if not current_user.facility_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Доступ заборонено: користувача не прив'язано до жодного об'єкта"
+            )
         q = q.where(
             (NotificationLog.facility_id == current_user.facility_id)
             | (NotificationLog.facility_id == None)  # noqa: E711
@@ -256,7 +261,7 @@ async def clear_notification_logs(
 async def check_generator_maintenance_notification(
     generator_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("maintenance:view"))
 ):
     """Manually check maintenance schedule and trigger reminder if due (max 2 times per day)."""
     await verify_generator_facility_access(db, current_user, generator_id)
@@ -276,6 +281,7 @@ async def get_notification_bell_feed(
     with persistent read timestamp (`notifications_read_at`).
     """
     is_admin = is_user_admin_or_super(current_user)
+    eff_facility_id = verify_facility_access(current_user, facility_id)
     excluded_types = ["EMAIL_SENT", "EMAIL_FAILOVER", "TEST"]
     if not is_admin:
         excluded_types.append("EMAIL_FAILED")
@@ -286,15 +292,9 @@ async def get_notification_bell_feed(
         .order_by(NotificationLog.created_at.desc(), NotificationLog.id.desc())
         .limit(limit)
     )
-    if not is_admin:
-        if current_user.facility_id:
-            q = q.where(
-                (NotificationLog.facility_id == current_user.facility_id)
-                | (NotificationLog.facility_id == None)  # noqa: E711
-            )
-    elif facility_id is not None:
+    if eff_facility_id is not None:
         q = q.where(
-            (NotificationLog.facility_id == facility_id)
+            (NotificationLog.facility_id == eff_facility_id)
             | (NotificationLog.facility_id == None)  # noqa: E711
         )
 

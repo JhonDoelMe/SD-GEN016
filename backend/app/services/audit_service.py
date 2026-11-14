@@ -19,6 +19,7 @@ NON_SENSITIVE_KEY_ALLOWLIST = {
     "foreign_key",
     "primary_key",
     "sort_key",
+    "idempotency_key",
 }
 
 

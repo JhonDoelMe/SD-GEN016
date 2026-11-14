@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -18,8 +19,11 @@ from app import create_ota_app  # noqa: E402
 
 
 def _fake_apk(content: bytes = b"dummy-apk-payload") -> bytes:
-    # Minimal PK\x03\x04 ZIP magic prefix + >= 1024 bytes
-    return b"PK\x03\x04" + (content * 200)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+        zf.writestr("AndroidManifest.xml", content * 120)
+        zf.writestr("classes.dex", b"dex\n035\x00" + content * 80)
+    return buf.getvalue()
 
 
 @pytest.fixture()
@@ -150,3 +154,25 @@ def test_upload_manifest_download_policy_and_rollback(ota_client: TestClient) ->
     assert rb.status_code == 200
     assert rb.json()["version_code"] == 3
     assert ota_client.get("/ota/download/latest.apk").content == apk3
+
+
+def test_upload_rejects_zip_without_android_manifest(ota_client: TestClient) -> None:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+        zf.writestr("readme.txt", b"not-an-apk" * 200)
+    bad = ota_client.post(
+        "/ota/api/releases",
+        headers={"X-OTA-Admin-Token": "test-ota-admin-token-1234567890"},
+        files={"file": ("fake.apk", io.BytesIO(buf.getvalue()), "application/vnd.android.package-archive")},
+        data={"version_code": "10", "version_name": "5.7.4"},
+    )
+    assert bad.status_code == 400
+    assert "AndroidManifest.xml" in bad.json()["detail"]
+
+
+def test_admin_auth_rate_limiting(ota_client: TestClient) -> None:
+    for _ in range(10):
+        res = ota_client.get("/ota/api/releases", headers={"X-OTA-Admin-Token": "wrong-token"})
+        assert res.status_code == 401
+    blocked = ota_client.get("/ota/api/releases", headers={"X-OTA-Admin-Token": "wrong-token"})
+    assert blocked.status_code == 429

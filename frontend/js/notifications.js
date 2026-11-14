@@ -761,7 +761,7 @@ function setupPwaInstall() {
   const installBtn = document.getElementById('pwaInstallBtn');
   const dismissBtn = document.getElementById('pwaDismissBtn');
 
-  if (isStandalone) {
+  if (isStandalone || localStorage.getItem('pwa_installed') === 'true') {
     if (banner) banner.style.display = 'none';
     if (headerInstallBtn) headerInstallBtn.style.display = 'none';
     return;
@@ -779,7 +779,7 @@ function setupPwaInstall() {
     }
   });
 
-  if (shouldShowPrompt && banner) {
+  if (isIos && shouldShowPrompt && banner) {
     setTimeout(() => {
       const activeStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
       if (!activeStandalone) {
@@ -787,7 +787,7 @@ function setupPwaInstall() {
         if (headerInstallBtn) headerInstallBtn.style.display = 'inline-flex';
       }
     }, 1200);
-  } else if (headerInstallBtn) {
+  } else if (isIos && headerInstallBtn) {
     headerInstallBtn.style.display = 'inline-flex';
   }
 
@@ -835,8 +835,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }, 30000);
   setTimeout(checkPushSubscriptionStatus, 1500);
 
-  // Check for reset_token in URL query parameters
+  // Check for reset_token and tab deep-link in URL query parameters
   const urlParams = new URLSearchParams(window.location.search);
+  const deepTab = urlParams.get('tab');
+  if (deepTab && /^tab-[a-z0-9-]+$/.test(deepTab)) {
+    window._initialDeepLinkTab = deepTab;
+    try {
+      urlParams.delete('tab');
+      const qs = urlParams.toString();
+      window.history.replaceState({}, document.title, window.location.pathname + (qs ? `?${qs}` : ''));
+    } catch (_) {}
+  }
   const resetToken = urlParams.get('reset_token');
   if (resetToken) {
     window.openModal('modalResetPassword').then(() => {
@@ -1055,8 +1064,12 @@ window.markAllNotificationsRead = async function() {
 
 window.openAllNotificationsLog = function() {
   window.closeNotificationsBell();
-  if (typeof openTab === 'function') {
-    openTab('tab-notifications');
+  if (typeof window.switchTab === 'function') {
+    window.switchTab('tab-admin').then(() => {
+      if (typeof window.switchAdminSubtab === 'function') {
+        window.switchAdminSubtab('notifications');
+      }
+    });
   }
 };
 
@@ -1071,8 +1084,8 @@ document.addEventListener('click', (e) => {
     const evType = bellItem.getAttribute('data-event-type') || '';
     const targetTab = _getBellTargetTab(evType);
     window.closeNotificationsBell();
-    if (typeof openTab === 'function') {
-      openTab(targetTab);
+    if (typeof window.switchTab === 'function') {
+      window.switchTab(targetTab);
     }
   }
 });

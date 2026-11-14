@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import hmac
 import os
+import threading
+import time
+from collections import defaultdict, deque
 from typing import Optional
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
@@ -89,7 +92,13 @@ def create_ota_app(
         allow_headers=["Authorization", "Content-Type", "X-OTA-Admin-Token", "Accept"],
     )
 
+    auth_fail_lock = threading.Lock()
+    auth_failures: dict[str, deque[float]] = defaultdict(deque)
+    auth_max_fails = 10
+    auth_window_sec = 300.0
+
     def require_admin(
+        request: Request,
         x_ota_admin_token: Optional[str] = Header(default=None),
         authorization: Optional[str] = Header(default=None),
     ) -> None:
@@ -98,14 +107,39 @@ def create_ota_app(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="OTA_ADMIN_TOKEN не налаштований на сервері.",
             )
+        client_ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (
+            request.client.host if request.client else "unknown"
+        )
+        now_ts = time.monotonic()
+        with auth_fail_lock:
+            q = auth_failures[client_ip]
+            while q and (now_ts - q[0]) > auth_window_sec:
+                q.popleft()
+            if len(q) >= auth_max_fails:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Забагато невдалих спроб авторизації. Спробуйте пізніше.",
+                )
+
         candidate = (x_ota_admin_token or "").strip()
         if not candidate and authorization and authorization.lower().startswith("bearer "):
             candidate = authorization[7:].strip()
         if not candidate or not hmac.compare_digest(candidate, resolved_token):
+            with auth_fail_lock:
+                q = auth_failures[client_ip]
+                while q and (now_ts - q[0]) > auth_window_sec:
+                    q.popleft()
+                q.append(now_ts)
+                if len(auth_failures) > 2048:
+                    stale = [k for k, dq in auth_failures.items() if not dq or (now_ts - dq[-1]) > auth_window_sec]
+                    for k in stale:
+                        del auth_failures[k]
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Невірний або відсутній токен адміністратора OTA.",
             )
+        with auth_fail_lock:
+            auth_failures.pop(client_ip, None)
 
     @app.get("/ota/health")
     def ota_health() -> JSONResponse:
