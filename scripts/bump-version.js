@@ -108,6 +108,10 @@ function main() {
       .replace(/\?v=\d+\.\d+\.\d+/g, `?v=${nextName}`)
   );
 
+  replaceFile('frontend/js/view-loader.js', (txt) =>
+    txt.replace(/(const ASSET_VERSION = vMatch \? vMatch\[1\] : ')[^']+(')/, `$1${nextName}$2`)
+  );
+
   replaceFile('backend/app/main.py', (txt) =>
     txt.replace(/(\bapp = FastAPI\([\s\S]*?\bversion=)"[^"]+"/, `$1"${nextName}"`)
   );

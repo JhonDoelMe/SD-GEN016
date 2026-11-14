@@ -302,7 +302,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Service Desk Генератора (SD-GEN016)",
     description="Система оперативного диспетчерського обліку експлуатації мережі бензинових та дизельних генераторів (Multi-site, ПММ, ТО, інвентаризація, Push/Email)",
-    version="5.7.4",
+    version="5.7.5",
     lifespan=lifespan
 )
 
@@ -344,6 +344,7 @@ async def add_security_headers(request: Request, call_next):
         "font-src 'self' https://fonts.gstatic.com data:; "
         "img-src 'self' data: blob:; "
         "connect-src 'self'; "
+        "object-src 'none'; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self'"
