@@ -74,12 +74,20 @@
     });
   }
 
-  function renderServerModalAppVersion(info) {
+  async function renderServerModalAppVersion(info) {
+    const plugin = getOtaPlugin();
+    if (!info && !currentAppInfo && plugin) {
+      try {
+        currentAppInfo = await plugin.getAppInfo();
+      } catch (_) {}
+    }
+    const resolved = info || currentAppInfo;
+    if (!resolved) return;
     const box = document.getElementById('nativeAppVersionRow');
     const label = document.getElementById('nativeAppVersionLabel');
     if (!box || !label) return;
     box.style.display = 'flex';
-    label.textContent = `Android додаток: v${info.versionName || '—'} (build ${info.versionCode || 0})`;
+    label.textContent = `Android додаток: v${resolved.versionName || '—'} (build ${resolved.versionCode || 0})`;
   }
 
   function setStatusMessage(text, isError) {
@@ -96,7 +104,12 @@
     el.textContent = text;
   }
 
-  function showUpdateModal(info, manifest) {
+  async function showUpdateModal(info, manifest) {
+    if (window.ViewLoader?.ensureModal) {
+      try {
+        await window.ViewLoader.ensureModal('modalAppUpdate');
+      } catch (_) {}
+    }
     const modal = document.getElementById('modalAppUpdate');
     if (!modal) return;
 
@@ -228,13 +241,18 @@
   async function checkForAppUpdates(options = {}) {
     const manual = Boolean(options.manual);
     const plugin = getOtaPlugin();
-    if (!plugin) return null;
+    if (!plugin) {
+      if (manual && typeof window.showToast === 'function') {
+        window.showToast('Перевірка APK-оновлень доступна лише в Android-додатку.', 'info');
+      }
+      return null;
+    }
 
     try {
       if (!currentAppInfo) {
         currentAppInfo = await plugin.getAppInfo();
-        renderServerModalAppVersion(currentAppInfo);
       }
+      await renderServerModalAppVersion(currentAppInfo);
 
       if (!manual) {
         try {
@@ -277,7 +295,7 @@
         } catch (_) {}
 
         if (manual || mandatory || dismissedCode < latestCode) {
-          showUpdateModal(currentAppInfo, manifest);
+          await showUpdateModal(currentAppInfo, manifest);
         }
       } else if (manual && typeof window.showToast === 'function') {
         window.showToast(`У вас актуальна версія v${currentAppInfo.versionName}`);
@@ -295,8 +313,12 @@
   window.checkForAppUpdates = checkForAppUpdates;
   window.startOtaDownloadAndInstall = startOtaDownloadAndInstall;
   window.dismissOtaUpdateModal = dismissOtaUpdateModal;
+  window.refreshOtaVersionBadge = () => renderServerModalAppVersion();
 
-  document.addEventListener('DOMContentLoaded', () => {
+  let otaInitialized = false;
+  function initOtaUpdater() {
+    if (otaInitialized) return;
+    otaInitialized = true;
     const plugin = getOtaPlugin();
     if (!plugin) return;
 
@@ -315,5 +337,12 @@
         checkForAppUpdates({ manual: false });
       }
     });
-  });
+  }
+
+  // Script may be lazy-loaded by ViewLoader AFTER DOMContentLoaded has already fired
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initOtaUpdater);
+  } else {
+    initOtaUpdater();
+  }
 })();

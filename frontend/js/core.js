@@ -154,6 +154,14 @@ window.openServerSettingsModal = async function() {
   }
   modal.style.display = 'flex';
   document.body.classList.add('modal-open');
+  if (isNative) {
+    if (window.ViewLoader?.ensureScript && typeof window.refreshOtaVersionBadge !== 'function') {
+      await window.ViewLoader.ensureScript('ota-updater.js').catch(() => {});
+    }
+    if (typeof window.refreshOtaVersionBadge === 'function') {
+      window.refreshOtaVersionBadge().catch(() => {});
+    }
+  }
 };
 
 window.saveServerSettings = async function() {

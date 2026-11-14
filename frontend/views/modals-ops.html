@@ -244,7 +244,7 @@
         </div>
         <div class="form-group">
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;"><label style="margin-bottom: 0;">Кількість літрів для заправки</label><button type="button" id="btnTransFillTank" onclick="fillTransferTankMax()" style="display: none; background: rgba(56, 189, 248, 0.14); color: var(--accent-cyan); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 6px; padding: 0.18rem 0.55rem; font-size: 0.76rem; font-weight: 600; cursor: pointer;">⚡ До повного</button></div>
-          <input type="number" step="0.1" min="0.1" id="transLiters" required placeholder="напр. 20.0" oninput="validateTransferLitersInput()"><div id="transCapacityHint" style="margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;"></div><div id="transCanisterBreakdownHint" style="margin-top: 0.35rem; font-size: 0.8rem; color: var(--accent-cyan); line-height: 1.4; display: none;"></div>
+          <input type="number" step="any" min="0.01" id="transLiters" required placeholder="напр. 20.0" oninput="validateTransferLitersInput()"><div id="transCapacityHint" style="margin-top: 0.4rem; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;"></div><div id="transCanisterBreakdownHint" style="margin-top: 0.35rem; font-size: 0.8rem; color: var(--accent-cyan); line-height: 1.4; display: none;"></div>
         </div>
         <div class="form-group">
           <label>Коментар</label>

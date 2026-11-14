@@ -772,12 +772,16 @@ async def transfer_fuel_to_tank(
             detail=f"Недостатньо палива на складі ГСМ! Доступно: {float(src_before):.1f} л, запитано: {float(liters):.1f} л"
         )
 
-    # FUEL-02: Захист від переливу бака генератора (в режимі вимірювання допускаємо долив до фізичної ємності бака)
+    # FUEL-02: Захист від переливу бака генератора (в режимі вимірювання допускаємо долив до фізичної ємності бака;
+    # для звичайної заправки до повного враховуємо похибку округлення відображення до 0.05 л)
     tank_before = to_liters(generator.fuel_tank_level_l)
     tank_cap = to_liters(generator.tank_capacity_l)
     tank_after = tank_before + liters
     if tank_after > tank_cap:
+        rounding_slack = Decimal("0.050")
         if in_meas and liters <= tank_cap:
+            tank_after = tank_cap
+        elif tank_before < tank_cap and tank_after <= tank_cap + rounding_slack:
             tank_after = tank_cap
         else:
             max_possible = tank_cap if in_meas else max(Decimal("0.000"), tank_cap - tank_before)

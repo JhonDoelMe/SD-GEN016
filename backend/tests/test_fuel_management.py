@@ -170,3 +170,58 @@ async def test_fuel_stock_update_and_delete(client, superadmin_auth, operator_au
     audit_actions = [a['action'] for a in audit_res.json()]
     assert 'FUEL_STOCK_UPDATED' in audit_actions
     assert 'FUEL_STOCK_DELETED' in audit_actions
+
+
+@pytest.mark.asyncio
+async def test_fuel_transfer_allows_0_05l_rounding_tolerance_to_fill_full_60l_tank(client, superadmin_auth, operator_auth):
+    """Filling up to full 60.0L succeeds cleanly even with 0.001L tank residue (e.g. 59.944L + 0.1L -> 60.0L)."""
+    await client.post(
+        "/api/v1/generator/wizard",
+        headers=superadmin_auth,
+        json={
+            "name": "VULKAN 60",
+            "model": "VK-60",
+            "manufacturer": "Vulkan",
+            "serial_number": "SN-VK-60",
+            "rated_power_kw": 8.0,
+            "tank_capacity_l": 60.0,
+            "fuel_type": "А-95",
+            "nominal_consumption_l_per_h": 2.5,
+            "initial_operating_hours": 10.0,
+            "initial_fuel_tank_level_l": 59.944,
+            "work_schedule_start": "00:00",
+            "work_schedule_end": "23:59",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv",
+        },
+    )
+    rec = await client.post(
+        "/api/v1/fuel/receipt",
+        headers=operator_auth,
+        json={
+            "liters": 50.0,
+            "cost_total": 2500.0,
+            "fuel_type": "А-95",
+            "driver_name": "Коваленко О.В.",
+            "receipt_number": "ЧЕК-600001",
+        },
+    )
+    assert rec.status_code == 201
+
+    # Filling +0.1L when tank has 59.944L (displayed as 59.9L) tops off to exact 60.0L
+    topoff = await client.post(
+        "/api/v1/fuel/transfer",
+        headers=operator_auth,
+        json={"liters": 0.1, "comment": "Долив до повного 60л"},
+    )
+    assert topoff.status_code == 201, topoff.text
+    assert topoff.json()["tank_balance_after"] == 60.0
+
+    # Once at full 60.0L, any further transfer still fails with overflow error
+    over = await client.post(
+        "/api/v1/fuel/transfer",
+        headers=operator_auth,
+        json={"liters": 0.1},
+    )
+    assert over.status_code == 400
+    assert "Перевищення місткості бака" in over.json()["detail"]

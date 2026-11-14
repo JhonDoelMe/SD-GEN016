@@ -864,6 +864,22 @@ document.addEventListener('submit', async (e) => {
 // Hard Refresh Application Shell & SW Cache (preserves auth token & offline queue)
 window.hardRefreshApp = async function () {
   if (typeof closeAccountMenu === 'function') closeAccountMenu();
+  const isNative = !!(
+    window.Capacitor &&
+    typeof window.Capacitor.isNativePlatform === 'function' &&
+    window.Capacitor.isNativePlatform()
+  );
+  if (isNative) {
+    try {
+      if (window.ViewLoader?.ensureScript && typeof window.checkForAppUpdates !== 'function') {
+        await window.ViewLoader.ensureScript('ota-updater.js');
+      }
+      if (typeof window.checkForAppUpdates === 'function') {
+        await window.checkForAppUpdates({ manual: true });
+        return;
+      }
+    } catch (_) {}
+  }
   try {
     if ('caches' in window) {
       const keys = await caches.keys();
