@@ -673,6 +673,34 @@ function showToast(message, type = 'info', durationMs = 4000) {
 }
 
 // Modal Helpers & Lazy View Integration
+window._openModalStack = window._openModalStack || [];
+
+window.getTopOpenModalId = function () {
+  const stack = Array.isArray(window._openModalStack) ? window._openModalStack : [];
+  const candidates = [];
+  const overlays = document.querySelectorAll('.modal-overlay');
+  overlays.forEach((el, domIdx) => {
+    if (!el || !el.id || el.id === 'authOverlay') return;
+    const style = window.getComputedStyle(el);
+    if (!style || style.display === 'none' || style.visibility === 'hidden') return;
+    if (el.id === 'modalAppUpdate') {
+      const closeBtn = document.getElementById('otaUpdateCloseBtn');
+      if (closeBtn && closeBtn.style.display === 'none') return;
+    }
+    const zRaw = parseInt(style.zIndex, 10);
+    const zIndex = Number.isFinite(zRaw) ? zRaw : 1000;
+    const stackIdx = stack.indexOf(el.id);
+    candidates.push({ id: el.id, zIndex, stackIdx, domIdx });
+  });
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => {
+    if (b.zIndex !== a.zIndex) return b.zIndex - a.zIndex;
+    if (b.stackIdx !== a.stackIdx) return b.stackIdx - a.stackIdx;
+    return b.domIdx - a.domIdx;
+  });
+  return candidates[0].id;
+};
+
 window.openModal = async function (id, options = {}) {
   // Security guard against unauthorized modal opening
   if (id === 'modalSystemReset' && !isSuperAdmin()) {
@@ -746,6 +774,8 @@ window.openModal = async function (id, options = {}) {
   if (id === 'modalNewStock' && typeof setupNewStockModal === 'function') await setupNewStockModal();
   if (modal) {
     modal.style.display = 'flex';
+    window._openModalStack = (window._openModalStack || []).filter((mId) => mId !== id);
+    window._openModalStack.push(id);
     document.body.classList.add('modal-open');
     if (typeof toggleNavDrawer === 'function') toggleNavDrawer(false);
     if (typeof closeAccountMenu === 'function') closeAccountMenu();
@@ -912,6 +942,9 @@ window.renderAvatarElement = function (imgEl, initialsEl, userObj) {
 window.closeModal = function (id) {
   const modal = document.getElementById(id);
   if (modal) modal.style.display = 'none';
+  if (Array.isArray(window._openModalStack)) {
+    window._openModalStack = window._openModalStack.filter((mId) => mId !== id);
+  }
   const anyOpen = Array.from(document.querySelectorAll('.modal-overlay')).some(m => m.style.display === 'flex' || m.style.display === 'block');
   if (!anyOpen) {
     document.body.classList.remove('modal-open');

@@ -2,6 +2,8 @@ function showAuthScreen() {
   document.body.classList.add('not-authenticated');
   const overlay = document.getElementById('authOverlay');
   if (overlay) overlay.style.display = 'flex';
+  window._navHistory = [];
+  window._lastNativeBackPressAt = 0;
 }
 
 function hideAuthScreen() {
@@ -74,9 +76,19 @@ document.addEventListener('click', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    window.closeAccountMenu();
-    window.toggleNavDrawer(false);
-    if (typeof window.closeNotificationsBell === 'function') window.closeNotificationsBell();
+    const drawerOpen = document.getElementById('navDrawer')?.classList.contains('open');
+    const accOpen = document.getElementById('accountDropdown')?.style.display === 'block';
+    const bellOpen = document.getElementById('notificationsDropdown')?.style.display === 'block';
+    if (drawerOpen || accOpen || bellOpen) {
+      window.closeAccountMenu();
+      window.toggleNavDrawer(false);
+      if (typeof window.closeNotificationsBell === 'function') window.closeNotificationsBell();
+      return;
+    }
+    const topModalId = typeof window.getTopOpenModalId === 'function' ? window.getTopOpenModalId() : null;
+    if (topModalId && typeof window.closeModal === 'function') {
+      window.closeModal(topModalId);
+    }
   }
 });
 
@@ -420,8 +432,34 @@ window.toggleMobileMoreSheet = window.toggleNavDrawer;
 
 window.activeTabId = 'tab-dashboard';
 window._tabSwitchSeq = 0;
+window._navHistory = window._navHistory || [];
+window._lastNativeBackPressAt = 0;
 
-window.switchTab = async function (paneId) {
+window._pushNavHistory = function (entry) {
+  if (!entry || !entry.tab) return;
+  if (!Array.isArray(window._navHistory)) window._navHistory = [];
+  const last = window._navHistory[window._navHistory.length - 1];
+  if (last && last.tab === entry.tab && (last.subtab || null) === (entry.subtab || null)) {
+    return;
+  }
+  window._navHistory.push({ tab: entry.tab, subtab: entry.subtab || null });
+  if (window._navHistory.length > 30) {
+    window._navHistory.shift();
+  }
+};
+
+function _getActiveSubtabForTab(tabId) {
+  if (tabId === 'tab-admin') {
+    const activeBtn = document.querySelector('#adminSubtabsBar .admin-subtab-btn.active');
+    return activeBtn?.getAttribute('data-subtab') || sessionStorage.getItem('sd_admin_subtab') || 'facilities';
+  }
+  if (tabId === 'tab-reports') {
+    return window.activeReportSubtab || 'runs';
+  }
+  return null;
+}
+
+window.switchTab = async function (paneId, options = {}) {
   if (paneId === 'tab-measurement' && !isSuperAdmin()) {
     showToast('Розділ "Режим вимірювання" доступний лише Суперадміністратору 🔒', 'warning');
     return false;
@@ -436,6 +474,8 @@ window.switchTab = async function (paneId) {
   window.toggleNavDrawer(false);
   window.closeAccountMenu();
 
+  const prevTab = window.activeTabId;
+  const prevSubtab = _getActiveSubtabForTab(prevTab);
   const switchSeq = ++window._tabSwitchSeq;
 
   if (window.ViewLoader?.ensureTab) {
@@ -458,6 +498,13 @@ window.switchTab = async function (paneId) {
     console.warn(`Tab pane #${paneId} was not found in DOM after loading.`);
     return false;
   }
+
+  if (paneId === 'tab-dashboard') {
+    window._navHistory = [];
+  } else if (options?.pushHistory !== false && prevTab && prevTab !== paneId) {
+    window._pushNavHistory({ tab: prevTab, subtab: prevSubtab });
+  }
+  window._lastNativeBackPressAt = 0;
 
   window.activeTabId = paneId;
   document.querySelectorAll('.nav-item').forEach((t) => t.classList.remove('active'));
@@ -495,20 +542,28 @@ window.switchTab = async function (paneId) {
   }
   if (paneId === 'tab-admin') {
     const savedSub = sessionStorage.getItem('sd_admin_subtab') || 'facilities';
-    await window.switchAdminSubtab(savedSub);
+    await window.switchAdminSubtab(savedSub, { pushHistory: false });
   }
   return true;
 };
 
-window.switchAdminSubtab = async function (subtab) {
+window.switchAdminSubtab = async function (subtab, options = {}) {
   const btns = Array.from(document.querySelectorAll('#adminSubtabsBar .admin-subtab-btn'));
   if (btns.length === 0) return;
+
+  const currentActiveBtn = btns.find((b) => b.classList.contains('active'));
+  const prevSub = currentActiveBtn?.getAttribute('data-subtab') || sessionStorage.getItem('sd_admin_subtab') || null;
 
   let targetBtn = btns.find((b) => b.getAttribute('data-subtab') === subtab && b.style.display !== 'none');
   if (!targetBtn) {
     targetBtn = btns.find((b) => b.style.display !== 'none') || btns[0];
     subtab = targetBtn?.getAttribute('data-subtab') || 'facilities';
   }
+
+  if (options?.pushHistory !== false && window.activeTabId === 'tab-admin' && prevSub && prevSub !== subtab) {
+    window._pushNavHistory({ tab: 'tab-admin', subtab: prevSub });
+  }
+  window._lastNativeBackPressAt = 0;
 
   sessionStorage.setItem('sd_admin_subtab', subtab);
   btns.forEach((b) => b.classList.toggle('active', b.getAttribute('data-subtab') === subtab));
@@ -891,4 +946,112 @@ window.hardRefreshApp = async function () {
     }
   } catch (_) {}
   window.location.reload();
+};
+
+// Native Android Hardware/Gesture Back Button Handler
+window.__handleNativeBack = function () {
+  // 1. Close open slide-over navigation drawer first
+  const navDrawer = document.getElementById('navDrawer');
+  if (navDrawer && navDrawer.classList.contains('open')) {
+    window.toggleNavDrawer(false);
+    window._lastNativeBackPressAt = 0;
+    return true;
+  }
+
+  // 2. Close open top-bar dropdown menus
+  const accountDropdown = document.getElementById('accountDropdown');
+  if (accountDropdown && accountDropdown.style.display === 'block') {
+    window.closeAccountMenu();
+    window._lastNativeBackPressAt = 0;
+    return true;
+  }
+  const notificationsDropdown = document.getElementById('notificationsDropdown');
+  if (notificationsDropdown && notificationsDropdown.style.display === 'block') {
+    if (typeof window.closeNotificationsBell === 'function') {
+      window.closeNotificationsBell();
+    } else {
+      notificationsDropdown.style.display = 'none';
+    }
+    window._lastNativeBackPressAt = 0;
+    return true;
+  }
+
+  // 3. Close top-most open modal (excluding #authOverlay and mandatory OTA gate)
+  const topModalId = typeof window.getTopOpenModalId === 'function' ? window.getTopOpenModalId() : null;
+  if (topModalId) {
+    if (typeof window.closeModal === 'function') {
+      window.closeModal(topModalId);
+    } else {
+      const m = document.getElementById(topModalId);
+      if (m) m.style.display = 'none';
+    }
+    window._lastNativeBackPressAt = 0;
+    return true;
+  }
+
+  // 4. Navigate back through tab/subtab history when authenticated
+  const authOverlay = document.getElementById('authOverlay');
+  const isAuthScreen =
+    document.body.classList.contains('not-authenticated')
+    || (authOverlay && window.getComputedStyle(authOverlay).display !== 'none');
+  const mandatoryOtaModal = document.getElementById('modalAppUpdate');
+  const isMandatoryOtaOpen = !!(
+    mandatoryOtaModal
+    && window.getComputedStyle(mandatoryOtaModal).display !== 'none'
+    && document.getElementById('otaUpdateCloseBtn')?.style.display === 'none'
+  );
+
+  if (!isAuthScreen && !isMandatoryOtaOpen) {
+    if (Array.isArray(window._navHistory)) {
+      while (window._navHistory.length > 0) {
+        const prev = window._navHistory.pop();
+        if (!prev || !prev.tab) continue;
+        const navBtn = document.querySelector(`.nav-item[data-tab="${prev.tab}"]`);
+        if (navBtn && (navBtn.classList.contains('nav-item-disabled') || navBtn.getAttribute('aria-disabled') === 'true')) {
+          continue;
+        }
+        window._lastNativeBackPressAt = 0;
+        if (prev.tab === window.activeTabId) {
+          if (prev.tab === 'tab-admin' && prev.subtab && typeof window.switchAdminSubtab === 'function') {
+            window.switchAdminSubtab(prev.subtab, { pushHistory: false });
+            return true;
+          }
+          if (prev.tab === 'tab-reports' && prev.subtab && typeof window.switchReportSubtab === 'function') {
+            window.switchReportSubtab(prev.subtab, { pushHistory: false });
+            return true;
+          }
+          continue;
+        }
+        if (prev.tab === 'tab-admin' && prev.subtab) {
+          sessionStorage.setItem('sd_admin_subtab', prev.subtab);
+        }
+        if (typeof window.switchTab === 'function') {
+          window.switchTab(prev.tab, { pushHistory: false }).then((ok) => {
+            if (ok && prev.tab === 'tab-reports' && prev.subtab && typeof window.switchReportSubtab === 'function') {
+              window.switchReportSubtab(prev.subtab, { pushHistory: false });
+            }
+          }).catch(() => {});
+          return true;
+        }
+      }
+    }
+
+    if (window.activeTabId && window.activeTabId !== 'tab-dashboard' && typeof window.switchTab === 'function') {
+      window._lastNativeBackPressAt = 0;
+      window.switchTab('tab-dashboard', { pushHistory: false }).catch(() => {});
+      return true;
+    }
+  }
+
+  // 5. Double-back-to-exit guard on root screen
+  const now = Date.now();
+  if (now - (window._lastNativeBackPressAt || 0) < 2200) {
+    window._lastNativeBackPressAt = 0;
+    return false;
+  }
+  window._lastNativeBackPressAt = now;
+  if (typeof showToast === 'function') {
+    showToast('Натисніть «Назад» ще раз, щоб вийти з додатка', 'info');
+  }
+  return true;
 };

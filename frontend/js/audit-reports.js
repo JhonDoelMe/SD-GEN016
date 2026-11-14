@@ -1043,7 +1043,20 @@ window.onReportCustomDateChange = function() {
   presetButtons.forEach(btn => btn.classList.remove('active'));
 };
 
-window.switchReportSubtab = function(tabKey) {
+window.switchReportSubtab = function(tabKey, options = {}) {
+  const prevSub = window.activeReportSubtab || 'runs';
+  if (
+    options?.pushHistory !== false
+    && window.activeTabId === 'tab-reports'
+    && prevSub
+    && prevSub !== tabKey
+    && typeof window._pushNavHistory === 'function'
+  ) {
+    window._pushNavHistory({ tab: 'tab-reports', subtab: prevSub });
+  }
+  window._lastNativeBackPressAt = 0;
+  window.activeReportSubtab = tabKey;
+
   const tabs = ['runs', 'transfers', 'receipts', 'maint', 'measurements'];
   const tabBtnMap = {
     runs: 'btnRepTabRuns',
