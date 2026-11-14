@@ -97,7 +97,9 @@ function main() {
   );
 
   replaceFile('frontend/index.html', (txt) =>
-    txt.replace(/\?v=\d+\.\d+\.\d+/g, `?v=${nextName}`)
+    txt
+      .replace(/\?v=\d+\.\d+\.\d+/g, `?v=${nextName}`)
+      .replace(/SD-GEN016 • v\d+\.\d+\.\d+/g, `SD-GEN016 • v${nextName}`)
   );
 
   replaceFile('frontend/sw.js', (txt) =>

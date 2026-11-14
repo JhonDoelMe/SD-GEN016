@@ -1,4 +1,4 @@
-# AGENT.md - Інструкція та Архітектура для ШІ-Агентів (SD-GEN016 v5.4.0)
+# AGENT.md - Інструкція та Архітектура для ШІ-Агентів (SD-GEN016 v5.7.4)
 
 ## 1. Загальний опис проєкту
 **SD-GEN016** — це спеціалізований експлуатаційний веб-додаток (Service Desk / Fleet Management) для оперативного обліку роботи бензинових та дизельних генераторів на об'єктах інфраструктури (АЗС, склади, офіси, медичні пункти, резиденції тощо).
@@ -76,17 +76,29 @@
     - Безперервний календарний експорт звітів Excel із фіксацією днів простою (`BR-REPORT-05`).
     - Людинозрозумілий україномовний структурований аудит із фіксацією клієнтського IP.
     - Повностекова оптимізація: паралелізація API-запитів, винесення `bcrypt` у `asyncio.to_thread`, Gzip та кешування `/frontend/` у Nginx, оптимізація PNG-іконок, транзакційний `await connection.commit()` у `backend/alembic/env.py`.
-14. **Режим вимірювання витрат палива та комісійна інвентаризація (Measurement Mode v5.6.1):**
+14. **Режим вимірювання витрат палива та комісійна інвентаризація (Measurement Mode v5.6.0–v5.6.1):**
     - Виключний розділ для `SuperAdmin` («📏 Режим вимірювання» у меню, аварійне скасування, інвентаризація, PDF-відомість і погодження) з публічною для об'єкта індикаторною пігулкою `#headerMeasurementBadge` та модалкою проміжних лічильників `#modalMeasurementStatus`.
     - Метод **«від повного до повного»**: старт при зупиненому генераторі і повному баку; під час заміру (`MEASURING`) ігноруються попередження низького рівня (`LOW_FUEL`, `FUEL_DISCREPANCY`), дозволяється долив до `tank_capacity_l`, заборонені ручні корекції палива (`HTTP 423`), а вихід кнопкою «✅ Бак повний» (`finish-full`) можливий після заливки в бак щонайменше 100 л.
     - Після «Бак повний» (`PENDING_INVENTORY` / `PENDING_APPROVAL`) запуск і зупинка генератора працюють вільно (захист при блекауті), а блокуються лише склад ГСМ, дозаправки, каністри й корекції (`HTTP 423`); комісія (мін. 3 особи) вносить лише залишок складу (л), система сама розкладає його на каністри й резерв, формує незмінний **PDF А4 альбомного формату** (`fpdf2`) та після скачування і «Погоджено» оновлює `nominal_consumption_l_per_h`, залишки, аудит і 6-й аркуш Excel.
+15. **Облік пулів каністр та Offline Queue PWA (`IndexedDB` + Ідемпотентність, v5.4.2–v5.5.1):**
+    - Пули каністр (`CanisterPool` / `canister_transactions`, міграція `011`) із першочерговим списанням наземного резерву (`reserve_liters < canister_volume_l`), уніфікованим прийомом (`receive`) і автосинхронізацією `FuelStock`.
+    - Клієнтський рушій `IndexedDB` (`sd_gen016_offline`: `read_cache` + `mutation_queue` у `frontend/js/offline-queue.js`) та серверна ідемпотентність `idempotency_records` (міграція `012`, `Idempotency-Key` + SHA-256, `X-Idempotency-Replayed: true`, `HTTP 409` із UI вирішення конфліктів у `#modalOfflineQueue`).
+16. **Модульний Service Desk UI, Профілі/Аватари, Android APK, OTA та FCM Push (v5.6.2–v5.6.9):**
+    - Фронтенд розділено на 14 HTML-фрагментів (`frontend/views/`), 4 стилі (`frontend/css/`) та 16 модулів (`frontend/js/`) з динамічним `view-loader.js`, sticky-шапкою, кнопкою примусового оновлення та бічним меню `Drawer`.
+    - Особистий профіль користувача та `.webp` аватари (`avatar_service.py`, міграція `014`, захищений роут `/uploads/avatars/`).
+    - Нативний Android Capacitor APK (`android/`), Edge-to-Edge `WindowInsets`, автономний **OTA-сервіс** (`ota-server/`, шлях `/ota/`) та нативний мобільний **FCM HTTP v1 Push** (`fcm_service.py`).
+17. **Центр сповіщень (🔔), Фірмові Email + 1-Click відписка та Повна українізація аудиту (v5.7.0–v5.7.3):**
+    - Іконка дзвоника `#headerBellBtn` у шапці з лічильником непрочитаного та таблицею `notification_reads`.
+    - Фірмові адаптивні HTML-листи з логотипом та заголовками RFC 8058 (`List-Unsubscribe` + `/api/v1/email/unsubscribe`, `/resubscribe`).
+    - Повністю українізовані назви дій, сутностей та деталей в журналі аудиту і 2-аркушевому Excel-експорті.
 
 ---
 
 ## 2. Технологічний стек
-- **Бекенд:** Python 3.11+ / 3.14+, FastAPI, SQLAlchemy 2.0 (asyncio), SQLite (`aiosqlite`) / PostgreSQL (`asyncpg`), Alembic, OpenPyXL, fpdf2, Pydantic v2, PyJWT, bcrypt, pywebpush, httpx, BeautifulSoup4 (WOG та OKKO парсери).
-- **Фронтенд:** Vanilla JavaScript (ES6+), HTML5, CSS3 (CSS Variables, Flexbox, CSS Grid, Safe Area Insets), Service Worker PWA (`sw.js`).
-- **Тестування:** `pytest`, `pytest-asyncio`, `httpx` (набір із 180 повністю пройдених автоматизованих тестів, 100% успіху).
+- **Бекенд:** Python 3.11+ / 3.14+, FastAPI, SQLAlchemy 2.0 (asyncio), SQLite (`aiosqlite`) / PostgreSQL (`asyncpg`), Alembic, OpenPyXL, fpdf2, Pillow (аватари `.webp`), Pydantic v2, PyJWT, bcrypt, pywebpush, firebase-admin (FCM HTTP v1), httpx, BeautifulSoup4 (WOG та OKKO парсери).
+- **Фронтенд:** Vanilla JavaScript (ES6+ модульна архітектура), HTML5 (`frontend/views/` парціали), CSS3 (`frontend/css/`, Flexbox/Grid, Safe Area Insets), IndexedDB (`offline-queue.js`), Service Worker PWA (`sw.js`).
+- **Мобільний клієнт та OTA:** Capacitor Android APK (`android/`) + окремий FastAPI сервіс оновлень (`ota-server/`).
+- **Тестування:** `pytest`, `pytest-asyncio`, `httpx` (набір із **193** тестів у `backend/tests/` + **3** тести у `ota-server/tests/`).
 
 ---
 
@@ -94,40 +106,47 @@
 ```
 SD-GEN016/
 ├── backend/
-│   ├── alembic/              # Міграції бази даних (001–013)
+│   ├── alembic/              # Міграції бази даних (001–014)
 │   ├── app/
-│   │   ├── api/v1/           # REST контролери (auth, facilities, generator, fuel, maintenance, reports, users, system тощо)
+│   │   ├── api/v1/           # 15 REST контролерів (auth, users, facilities, generator, fuel, maintenance, faults, audit, adjustments, reports, system, notifications, backups, measurement, email_public)
 │   │   ├── core/             # Безпека (JWT, bcrypt), часовий пояс Києва (timezone.py)
-│   │   ├── models/           # SQLAlchemy ORM моделі
+│   │   ├── models/           # SQLAlchemy ORM моделі (вкл. canister, idempotency, measurement, user.avatar)
 │   │   ├── schemas/          # Pydantic схеми валідації
-│   │   ├── services/         # Бізнес-логіка (generator, fuel, report, alert, weather, yasno, notification, backup, email, operational_guard)
-│   │   ├── config.py         # Налаштування pydantic-settings
+│   │   ├── services/         # 22 модулі бізнес-логіки (generator, fuel, canister, measurement, idempotency, avatar, fcm, email, notification, report, alert, weather, yasno, backup, audit, operational_guard тощо)
+│   │   ├── config.py         # Налаштування pydantic-settings (24 змінні)
 │   │   ├── database.py       # Асинхронний рушій БД та сесії
-│   │   └── main.py           # Точка входу FastAPI додатку
-│   └── tests/                # Асинхронні інтеграційні тести (180 тестів)
+│   │   └── main.py           # Точка входу FastAPI додатку + /api/health/* + /uploads/*
+│   └── tests/                # Асинхронні інтеграційні та модульні тести (193 тести)
 ├── frontend/
-│   ├── index.html            # Головний односторінковий інтерфейс (PWA, політики та правила)
-│   ├── js/                   # Модульна клієнтська логіка (14 модулів: core, offline-queue, fuel, measurement, admin, yasno тощо)
-│   ├── styles.css            # Мобільна та десктопна моделі стилів
+│   ├── index.html            # Головна оболонка PWA (header, drawer, bottom nav, placeholder-и представлень)
+│   ├── views/                # 14 HTML-фрагментів (dashboard, runs, fuel, maintenance, faults, measurement, reports, audit, admin, modals-*)
+│   ├── css/                  # 4 модульні таблиці стилів (base.css, components.css, layout.css, views.css)
+│   ├── js/                   # 16 клієнтських модулів (view-loader, core, auth-nav, offline-queue, measurement, ota-updater, notifications, fuel, operations тощо)
+│   ├── styles.css            # Агрегований/додатковий файл стилів
 │   ├── manifest.json         # PWA Web App Manifest
 │   ├── sw.js                 # Service Worker (офлайн кеш, WebPush, pushsubscriptionchange)
-│   └── icons/                # Іконки PWA додатку
+│   └── icons/                # Іконки та логотип PWA
+├── ota-server/               # Автономний FastAPI сервіс OTA-оновлень Android APK (/ota/, тести у ota-server/tests/)
+├── android/                  # Capacitor проєкт нативного Android APK + Gradle конфігурація
+├── docker/                   # Nginx конфіг та docker/firebase/ для FCM ключів
+├── scripts/                  # Допоміжні скрипти (bump-version.js тощо)
 ├── docs/                     # Повна документація проєкту (13 документів)
 │   ├── API_REFERENCE.md      # Повний опис ендпоінтів REST API
-│   ├── ARCHITECTURE.md       # Архітектура бекенду, фронтенду та БД
+│   ├── ARCHITECTURE.md       # Архітектура бекенду, фронтенду, APK/OTA та БД
 │   ├── BACKUP_AND_RESTORE.md # Політика резервного копіювання та DR
 │   ├── BUSINESS_RULES.md     # Бізнес-правила та інваріанти
 │   ├── CANISTER_FUEL_ARCHITECTURE.md # Архітектурна специфікація обліку каністр (FUEL-10)
 │   ├── DATA_GOVERNANCE_AND_AUDIT.md # Політика аудиту, звірки та бекапів
-│   ├── DEPLOYMENT_VPS.md     # Інструкція з розгортання на VPS та PWA
+│   ├── DEPLOYMENT_VPS.md     # Інструкція з розгортання на VPS, Nginx, PWA та OTA
 │   ├── ENV_VARS.md           # Опис статичних та динамічних змінних
 │   ├── OPERATIONAL_SAFETY_POLICY.md # Політика безпеки експлуатації генераторів
 │   ├── PRIVACY_POLICY.md     # Політика конфіденційності (GDPR / Закон № 2297-VI)
 │   ├── RBAC_PERMISSIONS.md   # Матриця 25 дозволів та ролей
 │   ├── SLA_AND_SUPPORT.md    # Рівні обслуговування, SLA та інцидентний регламент
 │   └── TERMS_OF_SERVICE.md   # Умови надання сервісу та дисклеймер
-├── docker-compose.yml        # Конфігурація Docker
+├── docker-compose.yml        # Конфігурація Docker (app, db, nginx)
 ├── Dockerfile                # Складання Docker контейнера
+├── AGENTS.md                 # Стисле правило для ШІ-агентів (multi-remote push & GitLab pacing)
 └── AGENT.md                  # Цей документ
 ```
 
@@ -164,34 +183,34 @@ SD-GEN016/
 - При `remember_me=True` токен діє 60 днів, кукі `access_token` встановлюється з `max_age=5184000` (60 діб) та `samesite="lax"`, токен зберігається у `localStorage`.
 - При `remember_me=False` токен діє стандартний час (24 години), токен зберігається у `sessionStorage`.
 
-### 4.5. Тестування (180 тестів)
-- Завжди запускайте тести командою:
+### 4.5. Тестування (193 бекенд-тести + 3 тести OTA)
+- Завжди запускайте обидва набори тестів перед пушем:
   ```bash
   python -m pytest backend/tests
+  python -m pytest ota-server/tests
   ```
-  Це гарантує проходження всього комплексу модульних та інтеграційних перевірок (180/180 passed, 100% success rate).
+  Це гарантує проходження всього комплексу модульних та інтеграційних перевірок (193/193 бекенд + 3/3 OTA, 100% success rate).
 
-### 4.6. Стандарти безпеки та цілісності даних (Security Hardening v5.4.0)
-- **Docker Infrastructure Hardening:** Контейнер запускається виключно від непривілейованого користувача `appuser` (UID:GID 10001:10001). Заборонено надавати право запису у системні папки коду бекенду (`/app`). Запуск сервера виконується через `exec uvicorn` для гарантованої обробки сигналів SIGTERM/SIGINT. Двоетапні хелсчеки: `/health/live` (живучість процесу) та `/health/ready` (перевірка з'єднання з БД).
+### 4.6. Стандарти безпеки та цілісності даних (Security Hardening v5.7.4)
+- **Docker Infrastructure Hardening:** Контейнер запускається виключно від непривілейованого користувача `appuser` (UID:GID 10001:10001). Заборонено надавати право запису у системні папки коду бекенду (`/app`). Запуск сервера викорінюється через `exec uvicorn` для гарантованої обробки сигналів SIGTERM/SIGINT. Двоетапні хелсчеки: `/api/health/live` (`/health/live`, `/api/health/liveness`) та `/api/health/ready` (`/health/ready`, `/api/health/readiness`).
+- **Персистентний захист сесій та brute-force (`010_security_persistence.py`):** Відкликані JWT-токени (`revoked_tokens`) та лічильники невдалих спроб (`auth_attempts`) зберігаються у БД та перевіряються навіть на захищеному роуті завантаження медіа `/uploads/{file_path:path}` (чеки, дефекти, аватари `.webp`).
+- **Ідемпотентність офлайн-операцій (`012_offline_idempotency.py`):** Усі критичні мутації підтримують `idempotency_key` (`idempotency_records` + SHA-256 перевірка корисного навантаження); повтор повертає кешовану відповідь із `X-Idempotency-Replayed: true`, зміна payload відхиляється з `HTTP 409 Conflict`.
 - **Стійкість бекапів (Anti-Spurious Reboots Guard):** Планувальник щоденних бекапів перевіряє 15-хвилинне вікно запуску та зберігає дату останнього запуску (`backup_last_auto_run_date`) у таблиці налаштувань. Заборонено видаляти або ігнорувати цю перевірку, оскільки це спричиняє паразитичні бекапи при кожному перезавантаженні сервісу. Для кожного архіву обов'язково генерується файл цілісності `.sha256`.
 - **Двоканальний паливний провайдер (WOG/OKKO):** Всі моделі об'єктів (`Facility.default_fuel_provider`) та чеків (`FuelReceipt.fuel_provider`) підтримують значення `'wog'` та `'okko'`. Експорт Excel зобов'язаний містити інформацію про мережу АЗС. Ціни кешуються локально з можливістю примусового оновлення через `POST /api/v1/system/fuel-prices/refresh`.
-- **Fail-Closed SMTP TLS:** Обов'язкова перевірка STARTTLS перед автентифікацією; заборона передачі облікових даних при відсутності шифрування.
+- **Fail-Closed SMTP TLS & 1-Click Unsubscribe:** Обов'язкова перевірка STARTTLS перед автентифікацією; заборона передачі облікових даних при відсутності шифрування. Маркетингово-ділові/оперативні листи підтримують заголовки RFC 8058 (`List-Unsubscribe`, `List-Unsubscribe-Post`) та HMAC-підписані токени відписки (`/api/v1/email/unsubscribe`).
 - **Маскування секретів в аудиті (Audit Sanitization & Fail-Closed Boot):** Рекурсивне очищення паролів та ключів (`password`, `secret`, `token`, `credential`, `api_key`, `private_key`, `encryption_key`, `access_key`, `auth_key`, `signing_key`, `master_key`, `database_url`, `key`) до запису в БД (`sanitize_audit_details`), маскування на вихідних ендпоінтах та обов'язкова санітизація історичних рядків при запуску (`sanitize_historical_audit_logs`), при помилці якої запуск сервера блокується (`RuntimeError`).
-- **Персистентна однократність розсилки звітів:** Автоматичний щотижневий Excel-звіт фіксує дату відправки (`last_weekly_digest_date`) у БД (`system_settings` та `NotificationLog`), що унеможливлює повторні розсилки при перезавантаженні Docker-контейнера.
+- **Персистентна однократність розсилки звітів:** Автоматичний щотижневий Excel-звіт (6 аркушів) фіксує дату відправки (`last_weekly_digest_date`) у БД (`system_settings` та `NotificationLog`), що унеможливлює повторні розсилки при перезавантаженні Docker-контейнера.
 - **Жорстка Multi-site ізоляція:** Оператори без закріпленого об'єкта (`facility_id is None`) блокуються з кодом `403 Forbidden` та зрозумілим повідомленням; заборонено міжоб'єктні паливні переміщення (`generator.facility_id == stock.facility_id`).
-- **Виключні права SuperAdmin:** Видалення об'єктів (звичайне та каскадне), системні коригування та скидання БД дозволені виключно суперадміністратору.
+- **Виключні права SuperAdmin:** Видалення об'єктів (звичайне та каскадне), режим вимірювання витрат палива («від повного до повного»), системні коригування, експорт журналу аудиту та скидання БД дозволені виключно суперадміністратору.
 - **Production Boot-Lock:** Фатальна зупинка сервера (`RuntimeError`) при старті в режимі `APP_ENV=production`, якщо виявлено дефолтні або слабкі секрети (`APP_SECRET_KEY`, `INITIAL_ADMIN_PASSWORD`).
 - **Транзакційна атомарність конфігурації:** Перевірка доменної відповідності перед збереженням та оновлення in-memory кешу `RUNTIME_SETTINGS` лише після успішного підтвердження транзакції (`await db.commit()`).
-- **Захист від Brute-Force:** In-memory лімітер блокує IP/логін на 300 сек після 5 невдалих спроб (`429 Too Many Requests`). Одночасне блокування за парою `ip:{ip}:{login}` та за обліковим записом `acct:{login}`.
-- **Захист від Timing Enumeration:** `verify_dummy_password()` для вирівнювання часу відповіді bcrypt.
-- **Серверна валідація:** Регулярні вирази для логінів, перевірка складності паролів (`validate_password_complexity`).
-- **Захист від ін'єкцій:** Параметризовані ORM-запити, санітизація комірок Excel (`sanitize_spreadsheet_cell`), `escapeHtml()` на фронтенді.
-- **Захисні заголовки:** CSP, X-Content-Type-Options: nosniff, X-Frame-Options: DENY, Referrer-Policy: strict-origin-when-cross-origin.
+- **Захист від Brute-Force & Timing Enumeration:** Dual-Key Lockout у БД (`auth_attempts`, 5 невдалих спроб → `429 Too Many Requests` на 300 с за ключами `ip:{ip}:{login}` та `acct:{login}`) + `verify_dummy_password()`.
+- **Серверна валідація та захист від ін'єкцій:** Регулярні вирази для логінів, перевірка складності паролів (`validate_password_complexity`), параметризовані ORM-запити, санітизація комірок Excel (`sanitize_spreadsheet_cell`), `escapeHtml()` на фронтенді, захисні заголовки (`CSP`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`).
 
 ### 4.7. Git-процес та Релізи
-- Перед релізом перевірити проходження всіх тестів.
-- Документація повинна бути синхронізована в каталозі `docs/` та в модальних вікнах політик на сайті (`frontend/index.html`).
-- Версії мають відповідати SemVer (наприклад, `v5.4.0`), створюються відповідні теги та записи в `RELEASE_NOTES_v*.md`.
+- Перед релізом перевірити проходження всіх тестів (`pytest`) та синтаксису JS (`node --check`).
+- Документація повинна бути синхронізована в каталозі `docs/`, кореневих файлах та в модальних вікнах політик на сайті (`frontend/views/modals-legal.html`).
+- Версії синхронізуються через `node scripts/bump-version.js --set X.Y.Z` (оновлює `version.json`, `package.json`, `android/app/build.gradle`, `frontend/index.html`, `frontend/sw.js`, `backend/app/main.py`) і супроводжуються записами в `CHANGELOG.md` та `RELEASE_NOTES_v*.md`.
 - **Обов'язковий пуш у всі 3 репозиторії (`main`):** По завершенню кожної задачі завжди виконувати коміт та пушити зміни у гілку `main` усіх трьох віддалених репозиторіїв: `origin` (GitHub), `gitlab` (GitLab) та `codeberg` (Codeberg):
   ```bash
   git push origin HEAD:main

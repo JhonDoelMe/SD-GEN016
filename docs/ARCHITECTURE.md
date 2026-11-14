@@ -1,16 +1,16 @@
 # Архітектура системи: Service Desk Генератора (SD-GEN016)
 
-**Версія архітектури:** 5.4.0 (Dual-Provider Alert Fusion, WebPush Live Watcher, 5-Day Forecast, Full-Stack Perf & Security Hardening)  
-**Дата оновлення:** 11 листопада 2026 року  
+**Версія архітектури:** 5.7.4 (Modular Service Desk UI, Offline IndexedDB Queue, Measurement Mode, Android APK/OTA, FCM HTTP v1, Notification Bell, Branded Email & Full UA Audit)  
+**Дата оновлення:** 14 листопада 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 
 ---
 
 ## 1. Загальний огляд системи
 
-Програмний комплекс **SD-GEN016** спроектовано як високопродуктивну, відмовостійку, модульну багаторівневу систему промислового класу для оперативного обліку фактичної експлуатації генераторного обладнання критичної інфраструктури (АЗС, склади, медичні заклади, філії, автономні виробництва).
+Програмний комплекс **SD-GEN016** спроектовано як високопродуктивну, відмовостійку, модульну багаторівневу систему промислового класу для оперативного обліку фактичної експлуатації бензинових та дизельних генераторів критичної інфраструктури (АЗС, склади, медичні заклади, філії, автономні виробництва).
 
-Система працює за гібридною напівавтоматичною моделлю: оператор або сервісний технік фіксує фактичні події (пуск, стоп, прийом палива, заправка, ТО, дефекти), а бекенд-сервіси забезпечують валідацію, криптографічну безпеку, сувору ізоляцію об'єктів (Варіант Б), захист інваріантів мотогодин та паливних залишків, незмінний аудит, Web Push сповіщення та звітність за стандартами **ДСТУ 4163:2020**.
+Система працює за гібридною напівавтоматичною моделлю (онлайн + офлайн): оператор або сервісний технік фіксує фактичні події (пуск, стоп, прийом/переміщення палива, рух каністр, ТО, дефекти), а бекенд-сервіси забезпечують валідацію, ідемпотентність, криптографічну безпеку, сувору ізоляцію об'єктів (Варіант Б), захист інваріантів мотогодин і паливних залишків, повністю українізований незмінний аудит, багатоканальні сповіщення (Web Push, Android FCM, Центр сповіщень `🔔`, Email з 1-click відпискою RFC 8058) та звітність за стандартами **ДСТУ 4163:2020**.
 
 ---
 
@@ -19,20 +19,21 @@
 ```
 +------------------------------------------------------------------------------------+
 |                                    КЛІЄНТИ                                         |
-|  - ПК (Сучасні браузери Chrome, Edge, Firefox, Safari)                             |
-|  - Мобільні пристрої (iOS Safari, Android Chrome)                                  |
-|  - Встановлений автономний PWA додаток (Standalone PWA v5.4.0, Service Worker)      |
-|  - Live Browser Watcher + автосинхронізація підписок pushsubscriptionchange       |
+|  - ПК та смартфони (Chrome, Edge, Firefox, Safari) — Модульний UI (14 views/16 js) |
+|  - Встановлений автономний PWA додаток (Standalone PWA v5.7.4 + IndexedDB Offline) |
+|  - Нативний мобільний клієнт Android APK (Capacitor + FCM HTTP v1 + OTA Updater)   |
+|  - Live Browser Watcher + pushsubscriptionchange + Центр сповіщень («🔔»)         |
 +------------------------------------------------------------------------------------+
                                           │
-                                          ▼ HTTPS / TLS 1.3
+                                          ▼ HTTPS / TLS 1.2–1.3
 +------------------------------------------------------------------------------------+
 |                                NGINX REVERSE PROXY                                 |
 |  - Термінація SSL/TLS (користувацькі сертифікати або автогенерація fallback)       |
 |  - Gzip (level 5) + кешування версіонованої статики /frontend/ (max-age=604800)    |
 |  - Повна заборона кешування Service Worker (sw.js)                                 |
+|  - Проксі /ota/ -> ota_server (порт 8090) для дистрибуції та оновлення Android APK |
 |  - Заголовки безпеки (HSTS, CSP, X-Frame-Options: DENY, Referrer-Policy)           |
-|  - Обмеження тіла запитів (client_max_body_size 100M для безпечних бекапів)        |
+|  - Обмеження тіла запитів (client_max_body_size 100M для бекапів та APK)           |
 |  - Передача надійного IP-клієнта (X-Real-IP)                                       |
 +------------------------------------------------------------------------------------+
                                           │
@@ -41,20 +42,22 @@
 |                        BACKEND (FastAPI / Python 3.14+ / ASGI)                     |
 |                                                                                    |
 |  +-------------------------------------------------------------------------------+ |
-|  |                            API ROUTERS (/api/v1)                              | |
-|  |  /auth         - Автентифікація, bcrypt у asyncio.to_thread, JWT (pwd_sig)    | |
-|  |  /users        - Список ролей/юзерів (users:manage), CRUD лише SuperAdmin     | |
+|  |                         15 API ROUTERS (/api/v1)                              | |
+|  |  /auth         - Логін, профіль, .webp аватар, зміна/скидання пароля, logout  | |
+|  |  /users        - Список ролей/юзерів, CRUD (SuperAdmin), керування аватарами  | |
 |  |  /facilities   - Об'єкти, YASNO, OpenWeather 5-day, Dual-Provider Alerts      | |
 |  |  /generator    - Генератори, архів, перенесення, reconcile, пакетний cooldown | |
-|  |  /fuel         - Склади (архівування), чеки (WOG/OKKO/інше), заправки         | |
+|  |  /fuel         - Склади, чеки (WOG/OKKO/інше), заправки, пули каністр         | |
 |  |  /maintenance  - Регламентне та проміжне ТО, графіки, перерахунок              | |
 |  |  /faults       - Журнал аварій та дефектів, автостоп при CRITICAL             | |
-|  |  /notifications- Web Push (VAPID, ttl=14400, High Urgency, YASNO & Air Alerts)| |
+|  |  /measurement  - Режим вимірювання витрат «від повного до повного», PDF А4    | |
+|  |  /notifications- Web Push VAPID, Android FCM v1, налаштування, 🔔 feed/read   | |
+|  |  /email        - Публічна 1-click відписка/поновлення розсилки (RFC 8058)     | |
 |  |  /backups      - Бекап-центр (маскування секретів, Zip Slip/Bomb, SHA-256)    | |
 |  |  /system       - Динамічні налаштування, парсер WOG/OKKO, SMTP, Clean DB      | |
-|  |  /adjustments  - Офіційні системні коригування залишків (SuperAdmin)          | |
-|  |  /audit        - Незмінний журнал аудиту дій + SuperAdmin Excel експорт       | |
-|  |  /reports      - Зведення показників, експорт 5-сторінкового Excel (.xlsx)    | |
+|  |  /adjustments  - Офіційні системні коригування залишків та пулів каністр      | |
+|  |  /audit        - Незмінний українізований аудит + SuperAdmin Excel експорт    | |
+|  |  /reports      - Зведення показників, експорт 6-сторінкового Excel (.xlsx)    | |
 |  +-------------------------------------------------------------------------------+ |
 |                                         │                                          |
 |  +-------------------------------------------------------------------------------+ |
@@ -63,39 +66,25 @@
 |  |  - Audit Log Redaction: sanitize_audit_details + startup historical scrub   | |
 |  |  - Production Boot-Lock: фатальна помилка при дефолтних секретах у production| |
 |  |  - Strict Multi-site Lockdown: 403 Forbidden для незакріплених операторів    | |
-|  |  - Exclusive SuperAdmin Facility Deletion Guard                             | |
-|  |  - Dual-Key Rate Limiter: блокування за ip:{ip}:{login} та acct:{login}       | |
-|  |  - X-Forwarded-For Anti-Spoofing & X-Real-IP Resolution                       | |
-|  |  - JWT Password Signature (pwd_sig): миттєва інвалідація сесій при зміні пароля| |
-|  |  - In-memory Token Revocation Registry (_REVOKED_TOKENS) при logout          | |
-|  |  - Web Push SSRF Allowlist: перевірка офіційних доменів FCM/Apple/Mozilla/WNS | |
-|  |  - Backup Security: _copy_env_redacted, _safe_extract_zip (Zip Slip/Bomb)     | |
-|  |  - Timing Attack Mitigation (verify_dummy_password)                           | |
+|  |  - Auth Protected Media (/uploads/*): перевірка JWT та revoked_tokens у БД    | |
+|  |  - Persistent Security (010): revoked_tokens & auth_attempts у PostgreSQL     | |
+|  |  - Idempotency Guard (012): idempotency_records + SHA-256 перевірка payload   | |
+|  |  - Dual-Key Rate Limiter & X-Forwarded-For Anti-Spoofing                      | |
+|  |  - Web Push SSRF Allowlist & RFC 8058 HMAC Email Unsubscribe Tokens           | |
 |  |  - Захист від SQLi (SQLAlchemy ORM), XSS (escapeHtml), Formula Injection      | |
 |  +-------------------------------------------------------------------------------+ |
 |                                         │                                          |
 |  +-------------------------------------------------------------------------------+ |
-|  |                                БІЗНЕС-СЕРВІСИ                                 | |
-|  |  - FacilityService        : баланси філій, прив'язка ресурсів, SuperAdmin del | |
-|  |  - GeneratorService       : життєвий цикл, 60с cooldown, архівування, sync    | |
-|  |  - FuelService            : Decimal рух палива, WOG/OKKO/універсальні склади  | |
-|  |  - OperationalGuardService: автостоп (12г/зміна), пульс 4г, живий low-fuel/ТО | |
-|  |  - EmailService           : SMTP Failover (Gmail/Ukr.net), Fail-Closed TLS    | |
-|  |  - WeatherService         : OpenWeather поточна + 5-денний прогноз, поради    | |
-|  |  - AlertService           : Dual-Provider Fusion, Worst-Case Hold, Push loop  | |
-|  |  - YasnoService           : графіки відключень, готовність палива, Push 30 хв | |
-|  |  - MaintenanceService     : регламентні інтервали, адмін-скидання лічильника  | |
-|  |  - FaultService           : інциденти, автостоп при CRITICAL, статус FAULTY   | |
-|  |  - NotificationService    : VAPID Web Push, анти-спам ТО, Air Alert & YASNO   | |
-|  |  - BackupService          : повні/часткові бекапи, .sha256, Zip Slip/Bomb     | |
-|  |  - SettingsService        : доменна валідація ланцюжка, транзакційний кеш     | |
-|  |  - ReportService          : мультигенераторна агрегація, безперервний календар| |
-|  |  - AuditService           : незмінний аудит, укр. описи, санітизація секретів | |
+|  |                            22 БІЗНЕС-СЕРВІСИ                                  | |
+|  |  Facility, Generator, Fuel, Canister, Measurement, Idempotency, Avatar,       | |
+|  |  OperationalGuard, Email, FCM, Notification, Weather, Alert, Yasno,           | |
+|  |  Maintenance, Fault, Backup, Settings, Report (6 аркушів), Audit (UA),        | |
+|  |  AuthSecurity, InitService (25 RBAC дозволів)                                 | |
 |  +-------------------------------------------------------------------------------+ |
 |                                         │                                          |
 |  +-------------------------------------------------------------------------------+ |
 |  |                           ORM & DATABASE ACCESS                               | |
-|  |  SQLAlchemy 2.0 (AsyncSession) + Alembic Migrations                            | |
+|  |  SQLAlchemy 2.0 (AsyncSession) + Alembic Migrations (001–014)                 | |
 |  +-------------------------------------------------------------------------------+ |
 +------------------------------------------------------------------------------------+
                                           │
@@ -122,38 +111,40 @@
 9. **MaintenanceSchedule (`maintenance_schedules`)**: регламентний інтервал ТО генератора та контрольні лічильники напрацювання.
 10. **MaintenanceRecord (`maintenance_records`)**: журнал проведеного обслуговування (регламентне або проміжне).
 11. **Fault (`faults`)**: інциденти та дефекти обладнання.
-12. **PushSubscription (`push_subscriptions`) та NotificationLog (`notification_logs`)**: зареєстровані Web Push підписки клієнтських браузерів із прив'язкою до `user_id`/`facility_id` та історія надісланих push/email сповіщень (включно з `AIR_ALERT_START`, `AIR_ALERT_END`, `YASNO_OUTAGE_ALERT`).
-13. **AuditLog (`audit_logs`)**, **SystemAdjustment (`system_adjustments`)** та **PasswordResetToken (`password_resets`)**: незмінні реєстри аудиту, інвентаризаційних коригувань і одноразових SHA-256 токенів відновлення пароля.
-14. **Міграції Alembic (`001`–`009`)**: розширення `facilities` (YASNO, `default_fuel_provider`, `city`), паливне зміцнення (`NUMERIC`, `idempotency_key`, `is_active`), м'яке архівування генераторів (`ARCHIVED`) та транзакційний `await connection.commit()` у `backend/alembic/env.py`.
+12. **PushSubscription (`push_subscriptions`), FcmSubscription (`fcm_subscriptions`), NotificationLog (`notification_logs`) та NotificationRead (`notification_reads`)**: підписки Web Push (VAPID) і Android FCM, журнал сповіщень та персональні відмітки прочитання в Центрі сповіщень (`🔔`).
+13. **CanisterPool (`canister_pools`) та CanisterTransaction (`canister_transactions`)**: поштучний облік пулів каністр об'єктів, резервна ємність та аудит переміщень тари (міграція `011`).
+14. **IdempotencyRecord (`idempotency_records`)**: реєстр ідемпотентних записів для безпечної офлайн-синхронізації без дублювання (міграція `012`).
+15. **FuelMeasurement (`fuel_measurements`)**: життєвий цикл вимірювання витрат палива «від повного до повного» та комісійних інвентаризацій (міграція `013`).
+16. **AuditLog (`audit_logs`)**, **SystemAdjustment (`system_adjustments`)**, **PasswordResetToken (`password_resets`)**, **RevokedToken (`revoked_tokens`)**, **AuthAttempt (`auth_attempts`)**: незмінні реєстри українізованого аудиту, коригувань, відновлення паролів та персистентної безпеки (`010`).
+17. **Міграції Alembic (`001`–`014`)**: включаючи `010_security_persistence`, `011_canister_pools`, `012_offline_idempotency`, `013_fuel_measurements` та `014_user_avatar` (`User.avatar_url` + `.webp` аватари).
 
-## 4. Фонові служби, інтеграції та оптимізації продуктивності (v5.4.0)
+## 4. Фонові служби, інтеграції та оптимізації продуктивності (v5.7.4)
 
-- **`wog_service.py` та парсер АЗК OKKO**: асинхронні парсери роздрібних цін мереж WOG та OKKO з автоматичним фоновим кешуванням на сервері (TTL 12 годин), підтримкою ручної актуалізації через REST API та аварійним кешем (Fallback Cache) на випадок недоступності сайтів постачальників.
-- **`backup_service.py` та планувальник автобекапів (`run_backup_scheduler`)**: фоновий сервіс резервного копіювання із 15-хвилинним вікном запуску (`0 <= diff_minutes <= 15`) та персистентною фіксацією дати останнього успішного запуску (`backup_last_auto_run_date`). Автоматично розраховує контрольні суми `.sha256` та створює pre-restore snapshot.
-- **`operational_guard_service.py` (`run_operational_guard_loop`)**: фоновий вартовий, що контролює 12-годинну безперервну роботу, автостоп наприкінці зміни, 4-годинне пульс-нагадування, а також живий моніторинг низького палива та наближення ТО під час активного циклу.
-- **`yasno_service.py` та `run_yasno_checker_loop`**: асинхронний клієнт API YASNO (`planned-outages`) із 15-хв кешем, `is_outage_now`, `current_outage`, `checked_at`/`yasno_updated_on` і проактивними Web Push за 20–35 хв до відключення.
-- **`alert_service.py` та `run_air_alert_checker_loop`**: паралельний dual-provider моніторинг (`alerts.in.ua` з HTTP 304 + `api.ukrainealarm.com` із 60s кешем) за правилом найгіршого сценарію («Страхування відбою»), відновленням історії станів із `NotificationLog` при рестарті та миттєвими Web Push при переході `GREEN ↔ YELLOW/RED` (кожні 45 с).
-- **`weather_service.py`**: паралельне завантаження поточної погоди та 5-денного прогнозу OpenWeatherMap (`WEATHER_CACHE_MINUTES=20`), авторезолв локації без дублювання міста/області та проактивні заморозкові підказки.
-- **Продуктивність (v5.2–v5.4)**: паралелізація фронтенд-водоспадів (`Promise.all`), пакетний підрахунок cooldown генераторів (`get_generators_cooldown_map`), винесення `bcrypt` у `asyncio.to_thread`, оптимізовані PNG-іконки PWA, Gzip + cache-control для `/frontend/` та клієнтська пагінація по 10 записів.
-- **Експорт аудиту**: `GET /api/v1/audit/export-excel` (SuperAdmin) формує окрему книгу Excel з аркушами «Журнал дій аудиту» та «Системні коригування»; загальний звіт `GET /api/v1/reports/export-excel` містить 5 аркушів без таблиці аудиту.
+- **`settings_service.py` (парсери WOG/OKKO)**: асинхронні `httpx` парсери роздрібних цін мереж WOG та OKKO з автоматичним фоновим кешуванням (TTL 12 годин), ручним оновленням через API та аварійним Fallback-кешем.
+- **`backup_service.py` та `run_backup_scheduler`**: автобекапи із 15-хвилинним вікном (`0 <= diff_minutes <= 15`) та `backup_last_auto_run_date`, контрольними сумами `.sha256` та pre-restore snapshot.
+- **`operational_guard_service.py` (`run_operational_guard_loop`)**: контроль 12-годинного безперервного прогону, автостоп наприкінці зміни, 4-годинне пульс-нагадування, живий моніторинг низького палива й наближення ТО (із урахуванням режиму заміру палива).
+- **`yasno_service.py` та `run_yasno_checker_loop`**: графіки відключень YASNO (`15 хв` кеш), блок «Паливо в баку ↔ YASNO» у всіх станах і сповіщення за 20–35 хв.
+- **`alert_service.py` та `run_air_alert_checker_loop`**: паралельний dual-provider моніторинг (`alerts.in.ua` HTTP 304 + `api.ukrainealarm.com` 60s кеш), Worst-Case Hold, переходи `GREEN ↔ YELLOW/RED` кожні 45 с.
+- **`weather_service.py`**: поточна погода + 5-денний прогноз OpenWeatherMap (`20 хв` кеш) та проактивні заморозкові рекомендації для ДП.
+- **`fcm_service.py`, `email_service.py`, `notification_service.py`**: мультиканальна доставка (Web Push VAPID, Firebase Cloud Messaging HTTP v1 для Android APK, фірмові HTML-листи з RFC 8058 1-click відпискою).
+- **Модульний фронтенд & Продуктивність (`frontend/views/`, `frontend/css/`, `frontend/js/`)**: 14 HTML-парціалів, 4 CSS-файли, 16 JS-модулів, динамічний `view-loader.js`, паралелізація API (`Promise.all`), пакетний cooldown (`get_generators_cooldown_map`), `bcrypt` у `asyncio.to_thread`, Gzip + кеш Nginx, пагінація по 10 записів.
+- **Експорт звітності та аудиту**: `GET /api/v1/reports/export-excel` формує **6-аркушеву книгу Excel** (вкл. «Заміри та інвентаризація»); `GET /api/v1/audit/export-excel` (SuperAdmin) формує окремий **2-аркушевий українізований звіт** («Журнал дій аудиту» та «Системні коригування»).
 
 ---
 
-## 5. Безпека інфраструктури та контейнеризація (Docker Hardening v4.6.0)
+## 5. Безпека інфраструктури, Контейнеризація та OTA-дистрибуція Android APK
 
 1. **Непривілейований режим (Non-root user `appuser`)**:
    - Контейнер виконується під виділеним непривілейованим системним користувачем `appuser` (UID: 10001, GID: 10001);
-   - Каталоги з вихідним кодом бекенду (`/app/backend`) монтуються в режимі read-only для процесів додатку;
-   - Права на запис обмежені виключно робочими підкаталогами сховищ: `/app/data`, `/app/uploads`, `/app/backups`, `/app/alembic/versions`.
+   - Каталоги з вихідним кодом бекенду (`/app/backend`) монтуються без прав запису для процесів додатку;
+   - Права на запис обмежені робочими підкаталогами сховищ: `/app/data`, `/app/uploads` (включно з `avatars/`), `/app/backups`, `/app/alembic/versions`; секрети Firebase монтуються read-only у `/app/firebase`.
 2. **Graceful Process Management (`exec uvicorn`)**:
-   - Точка входу `docker-entrypoint.sh` заміщує процес оболонки через команду `exec uvicorn`;
-   - Сигнали зупинки Docker (SIGTERM, SIGINT) транслюються безпосередньо у веб-сервер, забезпечуючи плавне завершення активних HTTP-запитів і фонових задач.
+   - Точка входу `docker-entrypoint.sh` заміщує процес оболонки через `exec uvicorn`, коректно обробляючи `SIGTERM`/`SIGINT`.
 3. **Двоетапні Healthcheck-зонди**:
-   - `/api/health/liveness`: зонд живучості веб-сервера без навантаження на БД;
-   - `/api/health/readiness` (та `/api/health`): зонд готовності бекенду з верифікацією підключення до PostgreSQL через тестовий запит `SELECT 1`.
-4. **Контроль залежностей контейнерів**:
-   - `docker-compose.yml` використовує `condition: service_healthy` для запуску веб-сервера виключно після повної готовності PostgreSQL;
-   - Змінна `FORWARDED_ALLOW_IPS` розкривається оболонкою з безпечним обмеженням довірених IP-адрес проксі.
+   - `/api/health/liveness` (та `/health/live`) і `/api/health/readiness` (та `/health/ready`, `/api/health`).
+4. **Автономний OTA-сервер (`ota-server/`) та Android APK (`android/`)**:
+   - Підписаний Capacitor APK взаємодіє з Nginx `/api/` та перевіряє оновлення через проксі `/ota/api/latest` (`ota-updater.js`);
+   - На сервері розгорнуто ізольований FastAPI сервіс [`ota-server/`](../ota-server/app.py) на порту `8090` (`upstream ota_server` у `docker/nginx.conf`), який віддає APK-білди, метадані версій (`version_code`, `force_update`) та адмін-панель релізів `/ota/admin` (доступ до адмін-API захищено токеном `OTA_ADMIN_TOKEN`).
 
 ---
 

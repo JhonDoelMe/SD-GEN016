@@ -5,7 +5,42 @@
 
 ---
 
-## [Unreleased — Режим вимірювання витрат палива («від повного до повного», v5.6.1)] — 2026-11-12
+## [v5.7.4] — 2026-11-14
+### 📚 Повна синхронізація документації, політик та вбудованих правил продукту
+- **Вбудовані юридичні й експлуатаційні модалки та API-метадані ([`frontend/views/modals-legal.html`](frontend/views/modals-legal.html), [`backend/app/main.py`](backend/app/main.py), [`scripts/bump-version.js`](scripts/bump-version.js))**:
+  - Актуалізовано всі 4 вбудовані модальні документи (`modalPrivacyPolicy`, `modalTermsOfService`, `modalOperationalSafety`, `modalDataGovernance`) до версії **`v5.7.4`** (`14 листопада 2026 року`): додано опис Offline IndexedDB черги + `idempotency_records`, Android Capacitor APK + OTA (`/ota/`) + FCM HTTP v1, Центру сповіщень (`🔔`) + `notification_reads`, фірмових Email з 1-click відпискою (RFC 8058), профілів/аватарів (`.webp`), Режиму вимірювання витрат «від повного до повного», пулів каністр (`CanisterPool`), 6-аркушевих звітів Excel, А4 PDF та повної українізації аудиту.
+  - Оновлено `description` FastAPI додатку у `backend/app/main.py` для мультиоб'єктного флоту бензинових та дизельних генераторів.
+  - Виправлено `scripts/bump-version.js`, щоб автоматично оновлювати також мітку `SD-GEN016 • vX.Y.Z` у футері навігаційного меню (`frontend/index.html`).
+- **Репозитарна та експлуатаційна документація ([`README.md`](README.md), [`AGENT.md`](AGENT.md), `docs/*`, [`RELEASE_NOTES_v5.7.4.md`](RELEASE_NOTES_v5.7.4.md))**:
+  - Оновлено всі **13 документів** у `docs/` (`API_REFERENCE.md`, `ARCHITECTURE.md`, `BACKUP_AND_RESTORE.md`, `BUSINESS_RULES.md`, `CANISTER_FUEL_ARCHITECTURE.md`, `DATA_GOVERNANCE_AND_AUDIT.md`, `DEPLOYMENT_VPS.md`, `ENV_VARS.md`, `OPERATIONAL_SAFETY_POLICY.md`, `PRIVACY_POLICY.md`, `RBAC_PERMISSIONS.md`, `SLA_AND_SUPPORT.md`, `TERMS_OF_SERVICE.md`), `CHANGELOG.md`, `README.md` та `AGENT.md` відповідно до фактичного коду (`014` міграцій Alembic, 15 роутерів v1, 22 сервісів, 14 views / 16 js / 4 css, `ota-server/`, `android/`, 193 бекенд + 3 OTA тести).
+
+## [v5.7.0 — v5.7.3] — 2026-11-13 — 2026-11-14
+### 🔔 Центр сповіщень у шапці, фірмовий Email + 1-Click відписка та Повна українізація аудиту
+- **Центр сповіщень у верхній панелі (`#headerBellBtn`, `frontend/js/notifications.js`, `GET /api/v1/notifications/feed`, `POST /api/v1/notifications/read`)**:
+  - Додано іконку дзвоника в шапці з бейджем непрочитаних сповіщень, випадаючою стрічкою, персистентною таблицею `notification_reads`, дедуплікацією емодзі та паралельним завантаженням (`v5.7.1`).
+- **Фірмовий Email та RFC 8058 відписка (`email_service.py`, `api/v1/email_public.py`)**:
+  - Усі операційні та дайджест-листи переведено на адаптивний HTML-шаблон із круглим логотипом продукту `SD-GEN016`; додано заголовки `List-Unsubscribe` / `List-Unsubscribe-Post` та 1-click ендпоінти `/api/v1/email/unsubscribe`, `/resubscribe`.
+- **Повна українізація журналу аудиту (`v5.6.11`, `v5.7.3`)**:
+  - Перекладено всі англомовні назви дій, сутностей, `snake_case`-ключів деталей та значень у журналі аудиту і 2-аркушевому Excel-експорті.
+- **Виправлення стабільності (`v5.7.2`)**:
+  - Усунено нескінченну рекурсію `openModal` при експорті аудиту / системних коригуваннях та виправлено ORM-запит `Facility` у фоновому циклі повітряних тривог.
+
+## [v5.6.7 — v5.6.10] — 2026-11-13
+### 🧩 Модульний Service Desk інтерфейс, Профілі та Аватари (`014_user_avatar.py`)
+- **Модульна архітектура фронтенду (`frontend/views/`, `frontend/css/`, `frontend/js/view-loader.js`)**:
+  - Розбито монолітний HTML/CSS на 14 HTML-парціалів (`views/*.html`), 4 CSS-файли (`css/*.css`) та динамічний завантажувач представлень; додано `sticky` верхню панель, бічний навігаційний ящик (`Drawer`), уніфіковану панель налаштувань адміністратора та кнопку примусового очищення кешу PWA (`v5.6.8`–`v5.6.10`).
+- **Профіль користувача та `.webp` аватари (`services/avatar_service.py`, `014_user_avatar.py`)**:
+  - Додано особистий профіль (`PUT /api/v1/auth/me`, `POST/DELETE /api/v1/auth/me/avatar`) та адміністративне керування аватарами (`/api/v1/users/{id}/avatar`) з оптимізацією у `.webp` (`Pillow`) та авторизованим доступом `/uploads/avatars/*`.
+
+## [v5.6.2 — v5.6.6] — 2026-11-12 — 2026-11-13
+### 📱 Android Capacitor APK, Автономний OTA-сервер (`/ota/`) та FCM HTTP v1 Push
+- **Нативний мобільний клієнт (`android/`)**: зібрано підписаний Android Capacitor APK із підтримкою динамічної маршрутизації сервера та коректних системних відступів Edge-to-Edge (`WindowInsets`, `v5.6.4`).
+- **Автономний OTA-сервіс (`ota-server/`, `frontend/js/ota-updater.js`)**: розгорнуто окремий FastAPI сервіс роздачі оновлень APK через Nginx `/ota/` із перевіркою мінімальної обов'язкової версії та адмін-керуванням релізами.
+- **Native Android Push (`services/fcm_service.py`, `/api/v1/notifications/fcm/*`)**: інтегровано Firebase Cloud Messaging (HTTP v1 через `firebase-admin`) паралельно з браузерним Web Push VAPID.
+- **Флагманська дизайн-система (`v5.6.2`)**: оновлено адаптивні сітки, контрастність і перенесення довгих кнопок `.btn-primary` на вузьких екранах.
+
+## [v5.6.0 — v5.6.1] — 2026-11-12
+### 📏 Режим вимірювання витрат палива («від повного до повного»)
 - **Серверна логіка та міграція БД ([`models/measurement.py`](backend/app/models/measurement.py), [`alembic/versions/013_fuel_measurements.py`](backend/alembic/versions/013_fuel_measurements.py), [`services/measurement_service.py`](backend/app/services/measurement_service.py), [`api/v1/measurement.py`](backend/app/api/v1/measurement.py))**:
   - Додано таблицю `fuel_measurements` (машина станів `MEASURING` → `PENDING_INVENTORY` → `PENDING_APPROVAL` → `APPROVED` / `CANCELLED`), інтегровану з бекапами (`backup_service.py`) та очищенням БД (`settings_service.py`).
   - Метод **«від повного до повного»**: старт (`POST /api/v1/measurement/start`, **виключно SuperAdmin**) можливий при зупиненому генераторі і 100% повному баку.
@@ -16,7 +51,8 @@
 - **PWA-інтерфейс (`sd-gen016-v5.6.1`, [`frontend/js/measurement.js`](frontend/js/measurement.js), [`frontend/js/fuel.js`](frontend/js/fuel.js), [`frontend/index.html`](frontend/index.html), [`core.js`](frontend/js/core.js), [`dashboard.js`](frontend/js/dashboard.js), [`audit-reports.js`](frontend/js/audit-reports.js), [`sw.js`](frontend/sw.js))**:
   - Додано кнопку меню «📏 Режим вимірювання» (лише для `SuperAdmin`), статус-пігулку `#headerMeasurementBadge`, банер `#measurementLockBanner`, модалку проміжних результатів `#modalMeasurementStatus`, авторозрахунок каністр на льоту, скачування PDF, погодження та підвкладку у «Звітах».
 
-## [Unreleased — Етап 4: Справжній Offline-режим PWA (`IndexedDB` + Ідемпотентність + Ручні конфлікти)] — 2026-11-12
+## [v5.5.0 — v5.5.1] — 2026-11-12
+### 📡 Справжній Offline-режим PWA (`IndexedDB` + Ідемпотентність + Ручні конфлікти)
 - **Універсальна ідемпотентність операцій на бекенді ([`models/idempotency.py`](backend/app/models/idempotency.py), [`alembic/versions/012_offline_idempotency.py`](backend/alembic/versions/012_offline_idempotency.py), [`services/idempotency_service.py`](backend/app/services/idempotency_service.py))**:
   - Додано таблицю `idempotency_records` (ключ `idempotency_key` через тіло запиту або заголовок `Idempotency-Key` + SHA-256 хеш тіла запиту).
   - Повторна відправка вже виконаної офлайн-операції повертає збережену відповідь із заголовком `X-Idempotency-Replayed: true` без дублювання (покрито `/generator/stop`, `/fuel/canisters/{id}/dispatch|return-empty|receive`, `/maintenance/record`, `/faults`, на додачу до `/generator/start`, `/generator/manual-run`, `/fuel/receipt`, `/fuel/transfer`); зміна даних при старому ключі відхиляється як `HTTP 409`.
@@ -26,7 +62,8 @@
 - **Індикатор зв'язку та ручне вирішення конфліктів ([`frontend/index.html`](frontend/index.html), [`frontend/styles.css`](frontend/styles.css))**:
   - У шапці додано статус-пігулку `#headerOfflineSyncBadge` та банер `#offlineSyncBanner`; у модалці `#modalOfflineQueue` реалізовано зведені плитки статусу, вирівняні кнопки дій (`.btn-secondary`, `.btn-oq-chip`), перегляд черги, завантаження актуального стану з сервера при конфлікті (`HTTP 400/404/409/422`), вбудоване редагування полів із генерацією нового `idempotency_key` і повторною відправкою, повтор «як є» або видалення застарілого запису (`sd-gen016-v5.5.1`).
 
-## [Unreleased — Уніфікація прийому палива в каністрах, коригування аудиту та виправлення UI форм] — 2026-11-11
+## [v5.4.4] — 2026-11-11
+### 🛢️ Уніфікація прийому палива в каністрах, коригування аудиту та виправлення UI форм
 - **Єдина логіка оприбуткування палива ([`schemas/fuel.py`](backend/app/schemas/fuel.py), [`canister_service.py`](backend/app/services/canister_service.py), [`frontend/index.html`](frontend/index.html), [`frontend/js/fuel.js`](frontend/js/fuel.js))**:
   - Усунено дублювання «+ Оприбуткувати (Бензовоз)» vs «Привезли каністри»: усі кнопки прийому палива (Дашборд, вкладка «Паливо», рядок пулу каністр) відкривають єдину уніфіковану форму прийому каністр (`POST /api/v1/fuel/canisters/{id}/receive`, `source="auto"`).
   - Списання вільної тари при прийомі виконується автоматично: спершу каністри зі статусу «На АЗС», далі з «Порожніх»; система сама обчислює літри (`N × номінал`) та вартість (авторозрахунок WOG/OKKO або сума чека), залишаючи обов'язковими поля «Хто доставив» і «Номер чека» для звітності; при створенні нового пулу лічильники каністр автоматично попередньо заповнюються із поточного залишку складу.
@@ -36,14 +73,16 @@
 - **Виправлення верстки модальних вікон ([`frontend/styles.css`](frontend/styles.css), [`frontend/index.html`](frontend/index.html), [`frontend/sw.js`](frontend/sw.js))**:
   - Додано `.modal-compact`, вирівнювання `.form-row-2` / `.form-row-3` (`align-items: end`, колапс у 1 колонку на вузьких екранах), фіксований `.modal-header` при прокрутці, стилі `.checkbox-row` та оновлено Service Worker кеш до `sd-gen016-v5.4.4`.
 
-## [Unreleased — Етап 3: Єдиний блок оцінки та запасу палива на Дашборді] — 2026-11-11
+## [v5.4.3] — 2026-11-11
+### 📊 Етап 3: Єдиний блок оцінки та запасу палива на Дашборді
 - **Виділений блок «⛽ Оцінка та запас палива» (`#fuelAssessmentPanel`, [`index.html`](frontend/index.html), [`dashboard.js`](frontend/js/dashboard.js), [`styles.css`](frontend/styles.css))**:
   - Відображає в одному місці автономність у баку генератора (`~год`), сукупний запас об'єкта (бак + повні каністри + резервна ємність / склад ГСМ) та готовність до поточного/найближчого відключення і сумарного добового навантаження YASNO (залишок сьогодні + завтра).
 - **Усунення дублювання в інших картках ([`dashboard.js`](frontend/js/dashboard.js), [`yasno.js`](frontend/js/yasno.js), [`fuel.js`](frontend/js/fuel.js), [`sw.js`](frontend/sw.js))**:
   - У картці «Бак генератора» залишено лише фактичний рівень і відсоток заповнення (`#cardTankCapSub`) без повтору прогнозних годин;
   - З картки «Графік відключень YASNO» винесено банер оцінки палива до єдиного блоку `#fuelAssessmentPanel` (`sd-gen016-v5.4.3`).
 
-## [Unreleased — Етап 2: Облік каністр та резервної ємності] — 2026-11-11
+## [v5.4.2] — 2026-11-11
+### 🛢️ Етап 2: Облік пулів каністр та резервної ємності (`011_canister_pools.py`)
 - **Модель пулів каністр та журнал руху ([`models/canister.py`](backend/app/models/canister.py), [`alembic/versions/011_canister_pools.py`](backend/alembic/versions/011_canister_pools.py))**:
   - Додано таблиці `canister_pools` (`total_count`, `full_count`, `empty_count`, `away_refill_count`, `reserve_liters < canister_volume_l`) та `canister_transactions` (історія кожної операції зі знімком до/після).
 - **Бізнес-логіка резервування першим ([`services/canister_service.py`](backend/app/services/canister_service.py), [`services/fuel_service.py`](backend/app/services/fuel_service.py))**:
@@ -53,7 +92,8 @@
 - **PWA-інтерфейс каністр ([`frontend/index.html`](frontend/index.html), [`frontend/js/fuel.js`](frontend/js/fuel.js), [`frontend/sw.js`](frontend/sw.js))**:
   - У вкладці «Паливо» додано панель керування пулами каністр, кнопки швидких операцій (`📤 На АЗС`, `📥 Привезли`, `↩️ Повернути`), живий передперегляд списання резерву й каністр у модалці заправки бака та журнал руху каністр (`sd-gen016-v5.4.2`).
 
-## [Unreleased — Етап 1 технічного фундаменту] — 2026-11-11
+## [v5.4.1] — 2026-11-11
+### 🔐 Етап 1 технічного фундаменту: Персистентна безпека, Async I/O та Модуляризація JS (`010_security_persistence.py`)
 - **Персистентний захист сесій та brute-force у БД (`models/security.py`, `alembic/versions/010_security_persistence.py`, `auth_security_service.py`)**:
   - Відкликані JWT-токени (`/logout`, таблиця `revoked_tokens`) та лічильники невдалих спроб входу / відновлення пароля (таблиця `auth_attempts`) тепер зберігаються в PostgreSQL/SQLite, не скидаються при рестарті контейнера та перевіряються також на захищеному роуті `/uploads/{file_path:path}`.
 - **Неблокуючий async I/O та усунення deprecation-попереджень Python 3.14**:

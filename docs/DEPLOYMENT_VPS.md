@@ -1,9 +1,9 @@
-# Розгортання на VPS та налаштування PWA
+# Розгортання на VPS, Налаштування PWA, Android APK (OTA) та FCM Push
 
-**Версія документа:** 5.4.0 (Docker Infrastructure Hardened, Gzip & Static Caching, Alembic Commit Fix)  
-**Дата набрання чинності:** 11 листопада 2026 року  
+**Версія документа:** 5.7.4 (Docker Hardened, Nginx OTA Proxy, Firebase FCM HTTP v1 & Modular PWA)  
+**Дата набрання чинності:** 14 листопада 2026 року  
 
-Цей документ описує покроковий процес розгортання **SD-GEN016** на окремому віртуальному сервері (VPS) під керуванням Ubuntu/Debian із власним доменом та сертифікатом HTTPS.
+Цей документ описує покроковий процес розгортання **SD-GEN016** на окремому віртуальному сервері (VPS) під керуванням Ubuntu/Debian із власним доменом, сертифікатом HTTPS, мобільним push-шлюзом Firebase FCM HTTP v1 та сервером OTA-оновлень Android APK (`/ota/`).
 
 ---
 
@@ -45,6 +45,8 @@ nano .env
 - `INITIAL_ADMIN_PASSWORD`: надійний пароль первинного адміністратора (буде збережено у БД при першому старті).
 - `POSTGRES_PASSWORD`: надійний пароль для бази даних.
 - **Зовнішня телеметрія (рекомендовано):** `OPENWEATHER_API_KEY` (поточна погода та 5-денний прогноз), `ALERTS_IN_UA_TOKEN` та `UKRAINE_ALARM_API_KEY` (паралельний двоканальний моніторинг повітряних тривог зі «Страхуванням відбою»).
+- **Нативні Push Android APK (опційно для FCM):** змонтуйте файл сервісного акаунта Firebase у `docker/firebase/firebase-service-account.json` (read-only том `/app/firebase`) або задайте `FIREBASE_SERVICE_ACCOUNT_JSON`.
+- **CORS / Capacitor:** для підписаного Android APK додайте схеми `https://localhost,capacitor://localhost` до `CORS_ORIGINS` (у production за потреби поруч із доменом `https://sdgen.pp.ua`).
 
 ---
 
@@ -106,4 +108,18 @@ docker compose logs -f app
 2. Авторизуйтесь у системі.
 3. **Android (Chrome)**: У правому верхньому меню (три крапки) оберіть: **«Встановити додаток»** (або «Додати на головний екран»).
 4. **iOS (Safari)**: Натисніть кнопку «Поділитися» (іконка зі стрілкою) та оберіть: **«На екран „Додому“»**.
-5. Додаток з'явиться на робочому столі смартфона з власною іконкою. При запуску він відкривається в автономному повноекранному режимі (`standalone`) без адресного рядка браузера.
+5. Додаток з'явиться на робочому столі смартфона з власною іконкою. При запуску він відкривається в автономному повноекранному режимі (`standalone`) без адресного рядка браузера та з автоматичним офлайн-кешуванням в `IndexedDB`.
+
+---
+
+## 6. Автономний OTA-сервіс оновлень Android APK (`ota-server/`)
+
+1. Конфігурація `docker/nginx.conf` автоматично проксіює маршрут `/ota/` на `upstream ota_server` (`host.docker.internal:8090`).
+2. Для запуску сервісу оновлень APK на хості або в окремому контейнері:
+   ```bash
+   cd ota-server
+   cp .env.example .env
+   # Задайте безпечний OTA_ADMIN_TOKEN та за потреби підключіть том releases/
+   docker compose up -d --build
+   ```
+3. Завантажте зібраний APK через вебінтерфейс `/ota/admin` (захищено `OTA_ADMIN_TOKEN`) або за API `POST /ota/api/releases`. Клієнти Android APK автоматично перевіряють `/ota/api/latest` через `frontend/js/ota-updater.js`.
