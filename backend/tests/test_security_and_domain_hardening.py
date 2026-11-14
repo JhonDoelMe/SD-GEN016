@@ -346,3 +346,28 @@ async def test_avatar_decompression_bomb_rejected(client, superadmin_auth, tmp_p
         files={"file": ("huge.png", buf, "image/png")},
     )
     assert res.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_production_disables_swagger_and_openapi():
+    """Production mode hides /docs, /redoc and /openapi.json endpoints."""
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+    from backend.app.config import Settings
+    from backend.app.main import fastapi_docs_kwargs
+
+    assert Settings(APP_ENV="production").is_production is True
+    assert Settings(APP_ENV=" PROD ").is_production is True
+    assert Settings(APP_ENV="development").is_production is False
+
+    prod_app = FastAPI(**fastapi_docs_kwargs(True))
+    transport = ASGITransport(app=prod_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as test_client:
+        for path in ("/docs", "/redoc", "/openapi.json"):
+            res = await test_client.get(path)
+            assert res.status_code == 404
+
+    dev_kwargs = fastapi_docs_kwargs(False)
+    assert dev_kwargs["docs_url"] == "/docs"
+    assert dev_kwargs["redoc_url"] == "/redoc"
+    assert dev_kwargs["openapi_url"] == "/openapi.json"

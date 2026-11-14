@@ -77,6 +77,10 @@ class Settings(BaseSettings):
         return "sqlite" in self.DATABASE_URL
 
     @property
+    def is_production(self) -> bool:
+        return self.APP_ENV.strip().lower() in ("production", "prod")
+
+    @property
     def has_insecure_defaults(self) -> bool:
         return (
             self.APP_SECRET_KEY in (DEFAULT_SECRET_KEY, "change_this_to_a_secure_random_secret_key_minimum_32_chars")
@@ -85,7 +89,7 @@ class Settings(BaseSettings):
         )
 
     def check_security_warnings(self) -> None:
-        is_prod = self.APP_ENV.strip().lower() in ("production", "prod")
+        is_prod = self.is_production
         insecure_key = (
             self.APP_SECRET_KEY in (DEFAULT_SECRET_KEY, "change_this_to_a_secure_random_secret_key_minimum_32_chars")
             or len(self.APP_SECRET_KEY) < 32

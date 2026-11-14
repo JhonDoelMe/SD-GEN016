@@ -299,11 +299,19 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
+def fastapi_docs_kwargs(is_production: bool) -> dict[str, str | None]:
+    """Disable interactive API schema/docs endpoints in production."""
+    if is_production:
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+
+
 app = FastAPI(
     title="Service Desk Генератора (SD-GEN016)",
     description="Система оперативного диспетчерського обліку експлуатації мережі бензинових та дизельних генераторів (Multi-site, ПММ, ТО, інвентаризація, Push/Email)",
     version="5.7.5",
-    lifespan=lifespan
+    **fastapi_docs_kwargs(settings.is_production),
+    lifespan=lifespan,
 )
 
 # 1. Restrict trusted hosts (prevents Host header attacks, rogue clone domains and unauthorized proxies)
