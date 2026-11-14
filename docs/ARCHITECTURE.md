@@ -1,6 +1,6 @@
 # Архітектура системи: Service Desk Генератора (SD-GEN016)
 
-**Версія архітектури:** 5.7.4 (Modular Service Desk UI, Offline IndexedDB Queue, Measurement Mode, Android APK/OTA, FCM HTTP v1, Notification Bell, Branded Email & Full UA Audit)  
+**Версія архітектури:** 5.7.8 (Modular Service Desk UI, Offline IndexedDB Queue, Measurement Mode, Android APK/OTA/Back Navigation, FCM HTTP v1, Notification Bell, Branded Email & Production Hardening)  
 **Дата оновлення:** 14 листопада 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 
@@ -20,19 +20,19 @@
 +------------------------------------------------------------------------------------+
 |                                    КЛІЄНТИ                                         |
 |  - ПК та смартфони (Chrome, Edge, Firefox, Safari) — Модульний UI (14 views/16 js) |
-|  - Встановлений автономний PWA додаток (Standalone PWA v5.7.4 + IndexedDB Offline) |
-|  - Нативний мобільний клієнт Android APK (Capacitor + FCM HTTP v1 + OTA Updater)   |
-|  - Live Browser Watcher + pushsubscriptionchange + Центр сповіщень («🔔»)         |
+|  - Встановлений автономний PWA додаток (Standalone PWA v5.7.8 + IndexedDB Offline + SW Auto-Reload) |
+|  - Нативний мобільний клієнт Android APK (Capacitor + SystemBars IME + Back Stack + FCM + OTA) |
+|  - Live Browser Watcher + pushsubscriptionchange + Центр сповіщень («🔔»)                  |
 +------------------------------------------------------------------------------------+
                                           │
                                           ▼ HTTPS / TLS 1.2–1.3
 +------------------------------------------------------------------------------------+
 |                                NGINX REVERSE PROXY                                 |
 |  - Термінація SSL/TLS (користувацькі сертифікати або автогенерація fallback)       |
-|  - Gzip (level 5) + кешування версіонованої статики /frontend/ (max-age=604800)    |
+|  - server_tokens off + Gzip (level 5) + кешування статики /frontend/ (604800 с)   |
 |  - Повна заборона кешування Service Worker (sw.js)                                 |
 |  - Проксі /ota/ -> ota_server (порт 8090) для дистрибуції та оновлення Android APK |
-|  - Заголовки безпеки (HSTS, CSP, X-Frame-Options: DENY, Referrer-Policy)           |
+|  - Єдині заголовки безпеки (HSTS, CSP, X-Frame-Options: DENY, без дублювання)      |
 |  - Обмеження тіла запитів (client_max_body_size 100M для бекапів та APK)           |
 |  - Передача надійного IP-клієнта (X-Real-IP)                                       |
 +------------------------------------------------------------------------------------+
@@ -118,7 +118,7 @@
 16. **AuditLog (`audit_logs`)**, **SystemAdjustment (`system_adjustments`)**, **PasswordResetToken (`password_resets`)**, **RevokedToken (`revoked_tokens`)**, **AuthAttempt (`auth_attempts`)**: незмінні реєстри українізованого аудиту, коригувань, відновлення паролів та персистентної безпеки (`010`).
 17. **Міграції Alembic (`001`–`014`)**: включаючи `010_security_persistence`, `011_canister_pools`, `012_offline_idempotency`, `013_fuel_measurements` та `014_user_avatar` (`User.avatar_url` + `.webp` аватари).
 
-## 4. Фонові служби, інтеграції та оптимізації продуктивності (v5.7.4)
+## 4. Фонові служби, інтеграції та оптимізації продуктивності (v5.7.8)
 
 - **`settings_service.py` (парсери WOG/OKKO)**: асинхронні `httpx` парсери роздрібних цін мереж WOG та OKKO з автоматичним фоновим кешуванням (TTL 12 годин), ручним оновленням через API та аварійним Fallback-кешем.
 - **`backup_service.py` та `run_backup_scheduler`**: автобекапи із 15-хвилинним вікном (`0 <= diff_minutes <= 15`) та `backup_last_auto_run_date`, контрольними сумами `.sha256` та pre-restore snapshot.
@@ -142,9 +142,10 @@
    - Точка входу `docker-entrypoint.sh` заміщує процес оболонки через `exec uvicorn`, коректно обробляючи `SIGTERM`/`SIGINT`.
 3. **Двоетапні Healthcheck-зонди**:
    - `/api/health/liveness` (та `/health/live`) і `/api/health/readiness` (та `/health/ready`, `/api/health`).
-4. **Автономний OTA-сервер (`ota-server/`) та Android APK (`android/`)**:
-   - Підписаний Capacitor APK взаємодіє з Nginx `/api/` та перевіряє оновлення через проксі `/ota/api/latest` (`ota-updater.js`);
-   - На сервері розгорнуто ізольований FastAPI сервіс [`ota-server/`](../ota-server/app.py) на порту `8090` (`upstream ota_server` у `docker/nginx.conf`), який віддає APK-білди, метадані версій (`version_code`, `force_update`) та адмін-панель релізів `/ota/admin` (доступ до адмін-API захищено токеном `OTA_ADMIN_TOKEN`).
+5. **Автономний OTA-сервер (`ota-server/`) та Android APK (`android/`, v5.7.5–v5.7.8)**:
+   - Підписаний Capacitor APK взаємодіє з Nginx `/api/`, має брендовані іконки й splash-екрани `SD-GEN016`, CSS-керування відступами клавіатури IME через `SystemBars`, нативну навігацію системною кнопкою «Назад» (`OnBackPressedCallback` + `window.__handleNativeBack()`) та надійно ініціалізує перевірку оновлень через `/ota/api/latest` (`initOtaUpdater()` в `ota-updater.js` + пункт меню «🔄 Оновити застосунок»);
+   - На сервері розгорнуто ізольований FastAPI сервіс [`ota-server/`](../ota-server/app.py) на порту `8090` (`upstream ota_server` у `docker/nginx.conf`), який віддає APK-білди, метадані версій (`version_code`, `force_update`, `sha256`) та адмін-панель релізів `/ota/admin` (доступ до адмін-API захищено токеном `OTA_ADMIN_TOKEN`).
+   - У виробничому режимі `APP_ENV=production` інтерактивні маршрути `/docs`, `/redoc` та `/openapi.json` вимкнено (`main.py`), а Nginx приховує версію сервера (`server_tokens off`).
 
 ---
 

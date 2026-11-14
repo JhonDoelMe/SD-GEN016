@@ -1,4 +1,4 @@
-# AGENT.md - Інструкція та Архітектура для ШІ-Агентів (SD-GEN016 v5.7.4)
+# AGENT.md - Інструкція та Архітектура для ШІ-Агентів (SD-GEN016 v5.7.8)
 
 ## 1. Загальний опис проєкту
 **SD-GEN016** — це спеціалізований експлуатаційний веб-додаток (Service Desk / Fleet Management) для оперативного обліку роботи бензинових та дизельних генераторів на об'єктах інфраструктури (АЗС, склади, офіси, медичні пункти, резиденції тощо).
@@ -91,6 +91,10 @@
     - Іконка дзвоника `#headerBellBtn` у шапці з лічильником непрочитаного та таблицею `notification_reads`.
     - Фірмові адаптивні HTML-листи з логотипом та заголовками RFC 8058 (`List-Unsubscribe` + `/api/v1/email/unsubscribe`, `/resubscribe`).
     - Повністю українізовані назви дій, сутностей та деталей в журналі аудиту і 2-аркушевому Excel-експорті.
+18. **Посилення Production-безпеки, Допуск заправки 60 л та Нативна довершеність Android (v5.7.5–v5.7.8):**
+    - У `APP_ENV=production` вимкнено `/docs`, `/redoc`, `/openapi.json`; у Nginx увімкнено `server_tokens off` та усунено дублювання CSP/безпекових заголовків; посилено SSRF, SHA-256 OTA-перевірки та санітизацію.
+    - Додано допуск округлення `0.050 л` при дозаправці бака до повної ємності (`fuel_service.py`, `fuel.js`, `step="any" min="0.01"` у `#transLiters`), щоб залишок на кшталт `59.944 л` не блокував повне заповнення 60 л.
+    - В Android APK: фірмові іконки й splash-екрани `SD-GEN016`, коректний IME відступ через `SystemBars` (`insetsHandling: "css"`), надійна ініціалізація `ota-updater.js` (`initOtaUpdater()`) і кнопка «🔄 Оновити застосунок» у меню/сервері, а також навігація системною кнопкою «Назад» (`OnBackPressedCallback` + `window.__handleNativeBack()` із закриттям меню/модалок, історією вкладок/підвкладок та подвійним натисканням для виходу).
 
 ---
 
@@ -98,7 +102,7 @@
 - **Бекенд:** Python 3.11+ / 3.14+, FastAPI, SQLAlchemy 2.0 (asyncio), SQLite (`aiosqlite`) / PostgreSQL (`asyncpg`), Alembic, OpenPyXL, fpdf2, Pillow (аватари `.webp`), Pydantic v2, PyJWT, bcrypt, pywebpush, firebase-admin (FCM HTTP v1), httpx, BeautifulSoup4 (WOG та OKKO парсери).
 - **Фронтенд:** Vanilla JavaScript (ES6+ модульна архітектура), HTML5 (`frontend/views/` парціали), CSS3 (`frontend/css/`, Flexbox/Grid, Safe Area Insets), IndexedDB (`offline-queue.js`), Service Worker PWA (`sw.js`).
 - **Мобільний клієнт та OTA:** Capacitor Android APK (`android/`) + окремий FastAPI сервіс оновлень (`ota-server/`).
-- **Тестування:** `pytest`, `pytest-asyncio`, `httpx` (набір із **193** тестів у `backend/tests/` + **3** тести у `ota-server/tests/`).
+- **Тестування:** `pytest`, `pytest-asyncio`, `httpx` (набір із **203** тестів у `backend/tests/` + **5** тестів у `ota-server/tests/`).
 
 ---
 
@@ -116,7 +120,7 @@ SD-GEN016/
 │   │   ├── config.py         # Налаштування pydantic-settings (24 змінні)
 │   │   ├── database.py       # Асинхронний рушій БД та сесії
 │   │   └── main.py           # Точка входу FastAPI додатку + /api/health/* + /uploads/*
-│   └── tests/                # Асинхронні інтеграційні та модульні тести (193 тести)
+│   └── tests/                # Асинхронні інтеграційні та модульні тести (203 тести)
 ├── frontend/
 │   ├── index.html            # Головна оболонка PWA (header, drawer, bottom nav, placeholder-и представлень)
 │   ├── views/                # 14 HTML-фрагментів (dashboard, runs, fuel, maintenance, faults, measurement, reports, audit, admin, modals-*)
@@ -183,15 +187,15 @@ SD-GEN016/
 - При `remember_me=True` токен діє 60 днів, кукі `access_token` встановлюється з `max_age=5184000` (60 діб) та `samesite="lax"`, токен зберігається у `localStorage`.
 - При `remember_me=False` токен діє стандартний час (24 години), токен зберігається у `sessionStorage`.
 
-### 4.5. Тестування (193 бекенд-тести + 3 тести OTA)
+### 4.5. Тестування (203 бекенд-тести + 5 тестів OTA)
 - Завжди запускайте обидва набори тестів перед пушем:
   ```bash
   python -m pytest backend/tests
   python -m pytest ota-server/tests
   ```
-  Це гарантує проходження всього комплексу модульних та інтеграційних перевірок (193/193 бекенд + 3/3 OTA, 100% success rate).
+  Це гарантує проходження всього комплексу модульних та інтеграційних перевірок (203/203 бекенд + 5/5 OTA, 100% success rate).
 
-### 4.6. Стандарти безпеки та цілісності даних (Security Hardening v5.7.4)
+### 4.6. Стандарти безпеки та цілісності даних (Security Hardening v5.7.8)
 - **Docker Infrastructure Hardening:** Контейнер запускається виключно від непривілейованого користувача `appuser` (UID:GID 10001:10001). Заборонено надавати право запису у системні папки коду бекенду (`/app`). Запуск сервера викорінюється через `exec uvicorn` для гарантованої обробки сигналів SIGTERM/SIGINT. Двоетапні хелсчеки: `/api/health/live` (`/health/live`, `/api/health/liveness`) та `/api/health/ready` (`/health/ready`, `/api/health/readiness`).
 - **Персистентний захист сесій та brute-force (`010_security_persistence.py`):** Відкликані JWT-токени (`revoked_tokens`) та лічильники невдалих спроб (`auth_attempts`) зберігаються у БД та перевіряються навіть на захищеному роуті завантаження медіа `/uploads/{file_path:path}` (чеки, дефекти, аватари `.webp`).
 - **Ідемпотентність офлайн-операцій (`012_offline_idempotency.py`):** Усі критичні мутації підтримують `idempotency_key` (`idempotency_records` + SHA-256 перевірка корисного навантаження); повтор повертає кешовану відповідь із `X-Idempotency-Replayed: true`, зміна payload відхиляється з `HTTP 409 Conflict`.
@@ -205,7 +209,7 @@ SD-GEN016/
 - **Production Boot-Lock:** Фатальна зупинка сервера (`RuntimeError`) при старті в режимі `APP_ENV=production`, якщо виявлено дефолтні або слабкі секрети (`APP_SECRET_KEY`, `INITIAL_ADMIN_PASSWORD`).
 - **Транзакційна атомарність конфігурації:** Перевірка доменної відповідності перед збереженням та оновлення in-memory кешу `RUNTIME_SETTINGS` лише після успішного підтвердження транзакції (`await db.commit()`).
 - **Захист від Brute-Force & Timing Enumeration:** Dual-Key Lockout у БД (`auth_attempts`, 5 невдалих спроб → `429 Too Many Requests` на 300 с за ключами `ip:{ip}:{login}` та `acct:{login}`) + `verify_dummy_password()`.
-- **Серверна валідація та захист від ін'єкцій:** Регулярні вирази для логінів, перевірка складності паролів (`validate_password_complexity`), параметризовані ORM-запити, санітизація комірок Excel (`sanitize_spreadsheet_cell`), `escapeHtml()` на фронтенді, захисні заголовки (`CSP`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`).
+- **Серверна валідація та захист від ін'єкцій:** Регулярні вирази для логінів, перевірка складності паролів (`validate_password_complexity`), параметризовані ORM-запити, санітизація комірок Excel (`sanitize_spreadsheet_cell`), `escapeHtml()` на фронтенді, вимкнення `/docs`, `/redoc` і `/openapi.json` при `APP_ENV=production`, `server_tokens off` у Nginx та єдині захисні заголовки (`CSP`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`).
 
 ### 4.7. Git-процес та Релізи
 - Перед релізом перевірити проходження всіх тестів (`pytest`) та синтаксису JS (`node --check`).

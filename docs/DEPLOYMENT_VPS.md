@@ -1,6 +1,6 @@
 # Розгортання на VPS, Налаштування PWA, Android APK (OTA) та FCM Push
 
-**Версія документа:** 5.7.4 (Docker Hardened, Nginx OTA Proxy, Firebase FCM HTTP v1 & Modular PWA)  
+**Версія документа:** 5.7.8 (Docker Hardened, Nginx OTA Proxy, Android APK Release Pipeline, Firebase FCM HTTP v1 & Modular PWA)  
 **Дата набрання чинності:** 14 листопада 2026 року  
 
 Цей документ описує покроковий процес розгортання **SD-GEN016** на окремому віртуальному сервері (VPS) під керуванням Ubuntu/Debian із власним доменом, сертифікатом HTTPS, мобільним push-шлюзом Firebase FCM HTTP v1 та сервером OTA-оновлень Android APK (`/ota/`).
@@ -97,7 +97,7 @@ docker compose logs -f app
 1. Автоматично підніметься PostgreSQL 16 із перевіркою працездатності (healthcheck).
 2. Alembic автоматично застосує міграції схеми БД.
 3. Сервіс ініціалізації створить суперкористувача `superadmin`, стандартні ролі та матрицю прав.
-4. Nginx налаштує безпечні HTTP-заголовки (`HSTS`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, ліміт тіла `client_max_body_size 100M`), Gzip-стиснення (`gzip_comp_level 5`) та кешування версіонованої статики `/frontend/` (з негайним оновленням `/sw.js`).
+4. Nginx приховує версію сервера (`server_tokens off`), налаштовує єдині безпечні HTTP-заголовки без дублювання (`HSTS`, `CSP`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, ліміт тіла `client_max_body_size 100M`), Gzip-стиснення (`gzip_comp_level 5`) та кешування версіонованої статики `/frontend/` (з негайним оновленням `/sw.js`), тоді як при `APP_ENV=production` маршрути `/docs`, `/redoc` та `/openapi.json` автоматично вимикаються.
 5. Застосунок стане доступним за захищеним протоколом `https://your-domain`.
 
 ---
@@ -122,4 +122,4 @@ docker compose logs -f app
    # Задайте безпечний OTA_ADMIN_TOKEN та за потреби підключіть том releases/
    docker compose up -d --build
    ```
-3. Завантажте зібраний APK через вебінтерфейс `/ota/admin` (захищено `OTA_ADMIN_TOKEN`) або за API `POST /ota/api/releases`. Клієнти Android APK автоматично перевіряють `/ota/api/latest` через `frontend/js/ota-updater.js`.
+3. Збірка та автоматична публікація підписаного Android APK виконується скриптом [`scripts/release_android.ps1`](../scripts/release_android.ps1) (піднімає версію, синхронізує Web-асети через `cap copy android` та `sync-android-assets.js`, збирає release APK, перевіряє `apksigner` і публікує на `/ota/`). Ручне завантаження також доступне через `/ota/admin` (захищено `OTA_ADMIN_TOKEN`) або `POST /ota/api/releases`. Клієнти Android APK перевіряють `/ota/api/latest` автоматично або через меню «🔄 Оновити застосунок» (`frontend/js/ota-updater.js`).

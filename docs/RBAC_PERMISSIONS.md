@@ -1,7 +1,7 @@
 # Система ролей та дозволів (RBAC)
 **SD-GEN016: Role-Based Access Control Specification**
 
-**Версія документа:** 5.7.4 (Multi-site Scoped RBAC, Measurement Mode, Canister Pools, User Avatars & Offline Idempotency — 25 дозволів)  
+**Версія документа:** 5.7.8 (Multi-site Scoped RBAC, Measurement Mode, Canister Pools, User Avatars & Offline Idempotency — 25 дозволів)  
 **Дата набрання чинності:** 14 листопада 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 

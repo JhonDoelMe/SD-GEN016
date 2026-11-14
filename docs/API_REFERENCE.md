@@ -1,10 +1,10 @@
 # Документація REST API (/api/v1 та /ota/)
 
-**Версія API:** 5.7.4 (Offline Idempotency, Full-to-Full Measurement, Canister Pools, Avatars, FCM Push, Bell Feed, RFC 8058 Email Unsubscribe & OTA)  
+**Версія API:** 5.7.8 (Offline Idempotency, Full-to-Full Measurement, Canister Pools, Avatars, FCM Push, Bell Feed, RFC 8058 Email Unsubscribe, OTA & Production Hardening)  
 **Дата набрання чинності:** 14 листопада 2026 року  
 
 Усі маршрути API згруповані за доменними модулями та захищені за допомогою JWT Bearer токенів або HTTP-only Cookie.
-Інтерактивна документація OpenAPI/Swagger доступна за адресою: `http://localhost:8000/docs` (або `http://localhost:8000/redoc`).
+Інтерактивна документація OpenAPI/Swagger доступна за адресою: `http://localhost:8000/docs` (або `http://localhost:8000/redoc`) у режимах розробки/тестування; у бойовому оточенні (`APP_ENV=production`) `/docs`, `/redoc` та `/openapi.json` вимкнені з міркувань безпеки (`v5.7.5`).
 
 > [!NOTE]
 > - **Час та стандарти**: Усі тимчасові позначки передаються та повертаються в форматі ISO 8601 (UTC або Europe/Kyiv). Форматування для користувача у звітах та інтерфейсі відповідає **ДСТУ 4163:2020**.

@@ -4,13 +4,13 @@
 
 # SERVICE DESK ДЛЯ ЕКСПЛУАТАЦІЇ БЕНЗИНОВИХ ТА ДИЗЕЛЬНИХ ГЕНЕРАТОРІВ (SD-GEN016)
 
-[![Release](https://img.shields.io/badge/Release-v5.7.4-blue.svg)](https://github.com/JhonDoelMe/SD-GEN016/releases)
+[![Release](https://img.shields.io/badge/Release-v5.7.8-blue.svg)](https://github.com/JhonDoelMe/SD-GEN016/releases)
 [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg)](https://www.sqlalchemy.org/)
-[![Tests](https://img.shields.io/badge/Tests-193%20Backend%20%2B%203%20OTA%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-203%20Backend%20%2B%205%20OTA%20Passed-brightgreen.svg)]()
 [![Email](https://img.shields.io/badge/Email-SMTP%20Failover%20%2B%20RFC%208058%20Unsubscribe-blue.svg)]()
-[![PWA](https://img.shields.io/badge/PWA-v5.7.4%20(Offline%20IndexedDB)-purple.svg)]()
+[![PWA](https://img.shields.io/badge/PWA-v5.7.8%20(Offline%20IndexedDB)-purple.svg)]()
 [![Android APK](https://img.shields.io/badge/Android%20APK-Capacitor%20%2B%20OTA%20%2B%20FCM-3DDC84.svg)]()
 [![Web Push](https://img.shields.io/badge/Push-VAPID%20Web%20%2B%20FCM%20v1-blue.svg)]()
 [![Compliance](https://img.shields.io/badge/Compliance-DSTU%204163%3A2020%20%7C%20GDPR-success.svg)]()
@@ -44,7 +44,7 @@
 - Єдина уніфікована форма оприбуткування та прийому каністр (`POST /api/v1/fuel/canisters/{id}/receive`) з автоматичним розрахунком літрів (`N × номінал`), фіксацією постачальника/водія, номера чека та інтегрованих цін АЗК.
 - **Облік пулів каністр (`CanisterPool`) та наземного резерву**: поштучний баланс тари (`total_count`, `full_count`, `empty_count`, `away_refill_count`), першочергове списання наземної резервної ємності (`reserve_liters < canister_volume_l`), швидкі операції (`📤 На АЗС`, `📥 Привезли`, `↩️ Повернути`) та синхронізація зі складом `FuelStock`. Детально: [`docs/CANISTER_FUEL_ARCHITECTURE.md`](docs/CANISTER_FUEL_ARCHITECTURE.md).
 - **Двоканальний моніторинг роздрібних цін АЗК (WOG та OKKO)**: асинхронні парсери роздрібних цін мереж WOG ([https://wog.ua/ua/fuels/](https://wog.ua/ua/fuels/)) та OKKO ([https://www.okko.ua/fuels](https://www.okko.ua/fuels)) із фоновим кешуванням, індивідуальним провайдером на рівні об'єкта та кольоровими бейджами `АЗК WOG` / `АЗК OKKO`.
-- Переміщення палива (заправка) зі складу/каністр у бак конкретного генератора із захистом від від'ємних залишків та контролем місткості бака в межах закріпленого об'єкта.
+- Переміщення палива (заправка) зі складу/каністр у бак конкретного генератора із захистом від від'ємних залишків, контролем місткості бака (включно з допуском округлення `0.050 л` при доливці до 100%, `v5.7.7`) та строго в межах закріпленого об'єкта.
 
 ### 3.1. Режим вимірювання витрат палива («від повного до повного», v5.6.0–v5.6.1)
 - Ініціюється виключно **SuperAdmin** при зупиненому генераторі й 100% повному баку (`MEASURING → PENDING_INVENTORY → PENDING_APPROVAL → APPROVED`).
@@ -131,14 +131,15 @@
 - **А4 PDF-відомість інвентаризації** (`GET /api/v1/measurement/{id}/statement-pdf`): альбомний офіційний документ для підпису комісією (`fpdf2`).
 - Окремий звіт операційного аудиту та системних коригувань (`GET /api/v1/audit/export-excel`, **лише SuperAdmin**) із двома аркушами: «Журнал дій аудиту» (повна українська локалізація `v5.7.3`) та «Системні коригування».
 
-### 15. Модульний Service Desk інтерфейс, Профілі/Аватари, PWA та Offline Queue (`IndexedDB`) (v5.5.0–v5.7.4)
-- **Модульна архітектура фронтенду**: UI розділено на **14 HTML-фрагментів** (`frontend/views/`), **16 ES-модулів** (`frontend/js/`) та **4 таблиці стилів** (`frontend/css/`) із динамічним завантажувачем (`view-loader.js`), фіксованою шапкою (`sticky`), гарячою кнопкою примусового оновлення кешу та бічним ящиком навігації (`Drawer`) + нижньою мобільною панеллю.
+### 15. Модульний Service Desk інтерфейс, Профілі/Аватари, PWA, Offline Queue (`IndexedDB`) та Android APK (v5.5.0–v5.7.8)
+- **Модульна архітектура фронтенду**: UI розділено на **14 HTML-фрагментів** (`frontend/views/`), **16 ES-модулів** (`frontend/js/`) та **4 таблиці стилів** (`frontend/css/`) із динамічним завантажувачем (`view-loader.js`), фіксованою шапкою (`sticky`), автооновленням SW при зміні контролера (`v5.7.5`), гарячою кнопкою примусового оновлення кешу та бічним ящиком навігації (`Drawer`) + нижньою мобільною панеллю.
 - **Профілі користувачів та власні аватари (v5.6.7)**: перегляд і редагування власного ПІБ, посади, пароля та завантаження фото профілю (`.webp` на сервері через `avatar_service.py` із захищеним роутом `/uploads/avatars/`).
 - **Повноцінний Offline-режим PWA (`IndexedDB` + Ідемпотентність, v5.5.0)**:
   - Локальна БД `sd_gen016_offline` зберігає актуальний знімок об'єкта, генераторів, складів, пулів каністр та сесії (`read_cache`), а також ставить мутації (`start`, `stop`, `manual-run`, `transfer`, `canisters/*`, `maintenance`, `faults`) у чергу `mutation_queue` з ключами `idempotency_key`;
   - Серверна таблиця `idempotency_records` (міграція `012`) гарантує відсутність дублів (`X-Idempotency-Replayed: true`) та виявлення конфліктів (`HTTP 409`) із UI ручного вирішення конфліктів у модалці «📡 Черга PWA».
-- **Мобільний додаток Android APK (Capacitor) та OTA-сервер (`/ota/`, v5.6.3–v5.6.6)**:
-  - Збірка нативного Android APK (`android/`) з коректними `WindowInsets` (Edge-to-Edge), нативним оновленням (`ota-updater.js`) через окремий сервіс [`ota-server/`](ota-server/) та пуш-сповіщеннями **FCM HTTP v1**.
+- **Мобільний додаток Android APK (Capacitor) та OTA-сервер (`/ota/`, v5.6.3–v5.7.8)**:
+  - Підписаний Capacitor APK (`android/`) із фірмовими іконками та splash-екранами `SD-GEN016` (`v5.7.5`), коректними CSS-відступами `SystemBars` для клавіатури IME (`v5.7.6`), надійною автоініціалізацією OTA й ручною перевіркою з меню профілю (`v5.7.7`), нативною навігацією кнопкою «Назад» по меню, модалках і вкладках із захистом подвійним натисканням від випадкового виходу (`v5.7.8`), а також push-сповіщеннями **FCM HTTP v1**.
+  - У режимі `APP_ENV=production` інтерактивні Swagger/OpenAPI маршрути (`/docs`, `/redoc`, `/openapi.json`) вимкнені, а Nginx приховує версію сервера (`server_tokens off`, `v5.7.5`).
 - **Повна українізація аудиту (`v5.7.3`)**: усі дії, сутності та деталі операцій в журналі аудиту та Excel-експорті відображаються виключно українською мовою.
 - **Клієнтська пагінація (10 записів на сторінку)** та оптимізовані світла/темна теми.
 
@@ -267,7 +268,7 @@ uvicorn backend.app.main:app --reload --port 8000
 
 ## 🧪 Тестування
 
-Для запуску повного набору тестів бекенду та OTA-сервісу (`193` тести бекенду + `3` тести OTA-сервера):
+Для запуску повного набору тестів бекенду та OTA-сервісу (`203` тести бекенду + `5` тестів OTA-сервера):
 
 ```bash
 python -m pytest backend/tests -v
@@ -279,6 +280,7 @@ python -m pytest ota-server/tests -v
 ## 📄 Документація проєкту
 
 Повний комплект документації доступний у директорії [`docs/`](docs/) та релізних нотатках:
+- [`RELEASE_NOTES_v5.7.8.md`](RELEASE_NOTES_v5.7.8.md) — **Реліз v5.7.5–v5.7.8: навігація кнопкою «Назад» на Android, виправлення OTA-ініціалізації й допуску повної заправки 60 л (`0.050 л`), SystemBars IME, фірмові іконки Android, посилення production-безпеки та 208 автотестів**;
 - [`RELEASE_NOTES_v5.7.4.md`](RELEASE_NOTES_v5.7.4.md) — **Консолідований реліз v5.5.0–v5.7.4: Offline IndexedDB черга, Режим вимірювання витрат, Модульний Service Desk UI, Профілі/Аватари, Android APK/OTA/FCM Push, Центр сповіщень (🔔), Фірмові Email + 1-click відписка, Повна українізація аудиту та актуалізація всієї документації (v5.7.4)**;
 - [`RELEASE_NOTES_v5.4.0.md`](RELEASE_NOTES_v5.4.0.md) — **WebPush сповіщення тривог/відбоїв, Live Browser Watcher, 5-денний прогноз, готовність палива YASNO, оптимізація продуктивності та актуалізація політик (v5.4.0)**;
 - [`RELEASE_NOTES_v5.0.0.md`](RELEASE_NOTES_v5.0.0.md) — **Повітряна безпека, метеорологічна телеметрія, таймер охолодження 60с, уніфікований склад ГСМ та мобільна довершеність (v5.0.0)**;

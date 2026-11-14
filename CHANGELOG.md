@@ -5,6 +5,42 @@
 
 ---
 
+## [v5.7.8] — 2026-11-14
+### 🔙 Нативна навігація кнопкою «Назад» на Android (`versionCode 15`)
+- **Нативне перехоплення системної кнопки/жесту «Назад» ([`MainActivity.java`](android/app/src/main/java/ua/pp/sdgen/app/MainActivity.java))**:
+  - Зареєстровано `OnBackPressedCallback`, який передає подію у WebView через `window.__handleNativeBack()` з fallback на `webView.goBack()` та нативний вихід.
+- **Пріоритетна навігація інтерфейсу ([`frontend/js/auth-nav.js`](frontend/js/auth-nav.js), [`frontend/js/core.js`](frontend/js/core.js), [`frontend/js/audit-reports.js`](frontend/js/audit-reports.js))**:
+  - Пріоритет 1: закриття відкритого бокового меню (`#navDrawer`), меню профілю (`#accountDropdown`) та стрічки сповіщень (`#notificationsDropdown`).
+  - Пріоритет 2: закриття найвищого відкритого модального вікна (`window.getTopOpenModalId()` із урахуванням `z-index` і стеку `_openModalStack`), не зачіпаючи `#authOverlay` та обов'язкове оновлення `#modalAppUpdate`; додатково підтримано закриття верхньої модалки клавішею `Escape`.
+  - Пріоритет 3: покрокове повернення за історією переходів (`window._navHistory`) між розділами (`switchTab`), підвкладками адміністрування (`switchAdminSubtab`) та підвкладками звітів (`switchReportSubtab`), а з порожнім стеком — повернення на Головну (`tab-dashboard`).
+  - Пріоритет 4: захист від випадкового закриття — подвійне натискання «Назад» на кореневому екрані протягом `2.2 с` із підказкою-тостом.
+
+## [v5.7.7] — 2026-11-14
+### 🔄 Виправлення OTA-оновлень Android та заправки бака до повної ємності (`versionCode 14`)
+- **Ініціалізація та ручний запуск OTA в Android ([`frontend/js/ota-updater.js`](frontend/js/ota-updater.js), [`frontend/js/core.js`](frontend/js/core.js), [`frontend/js/auth-nav.js`](frontend/js/auth-nav.js))**:
+  - Виправлено життєвий цикл `ota-updater.js`: оскільки модуль підвантажується ліниво через `view-loader.js` уже після `DOMContentLoaded`, ініціалізацію переведено на `initOtaUpdater()`, яка запускається негайно при `document.readyState !== 'loading'`.
+  - Функцію `showUpdateModal()` переведено на `async` із гарантованим довантаженням `await ViewLoader.ensureModal('modalAppUpdate')`.
+  - У вікні налаштувань сервера (`openServerSettingsModal()`) підвантажується `ota-updater.js` на нативному Android і оновлюється бейдж поточної версії (`window.refreshOtaVersionBadge()`), а пункт меню **«🔄 Оновити застосунок»** (`hardRefreshApp()`) на Android запускає перевірку OTA (`window.checkForAppUpdates({ manual: true })`).
+- **Усунення обмеження `59,9 л` при заправці 60-літрового бака ([`backend/app/services/fuel_service.py`](backend/app/services/fuel_service.py), [`frontend/js/fuel.js`](frontend/js/fuel.js), [`frontend/views/modals-ops.html`](frontend/views/modals-ops.html), [`backend/tests/test_fuel_management.py`](backend/tests/test_fuel_management.py))**:
+  - Усунено конфлікт між точністю БД (`0.001 л`) та округленням UI (`0.1 л`), через який при залишку на зразок `59.944 л` долив `0.1 л` відхилявся сервером із `HTTP 400`.
+  - Додано допуск округлення `rounding_slack = Decimal("0.050")` на сервері (`tank_before < tank_cap` і `tank_after <= tank_cap + 0.050` ➔ фіксація `tank_after = tank_cap`), переведено `#transLiters` на `step="any" min="0.01"` і уніфіковано клієнтські розрахунки меж через `_computeTransferBounds()`.
+
+## [v5.7.6] — 2026-11-14
+### ⌨️ Виправлення відступів клавіатури IME на Android (`versionCode 13`)
+- **Усунення подвійного блоку над клавіатурою ([`capacitor.config.json`](capacitor.config.json), [`MainActivity.java`](android/app/src/main/java/ua/pp/sdgen/app/MainActivity.java), [`AndroidManifest.xml`](android/app/src/main/AndroidManifest.xml), [`styles.xml`](android/app/src/main/res/values/styles.xml), [`frontend/css/layout.css`](frontend/css/layout.css))**:
+  - Налаштовано плагін `SystemBars` (`insetsHandling: "css"`, `style: "DARK"`, `initialViewportFitValueHint: "cover"`) та прибрано дублюючий слухач IME на `android.R.id.content` у `MainActivity.java`, щоб відступ клавіатури не застосовувався двічі.
+
+## [v5.7.5] — 2026-11-14
+### 🛡️ Посилення безпеки, Production-жорсткість, SW Cache-Busting та Фірмові іконки Android
+- **Production & Nginx Hardening ([`backend/app/main.py`](backend/app/main.py), [`backend/app/config.py`](backend/app/config.py), [`docker/nginx.conf`](docker/nginx.conf))**:
+  - Вимкнено `/docs`, `/redoc` та `/openapi.json` коли `APP_ENV=production`.
+  - Додано `server_tokens off` у всі блоки Nginx і прибрано дублювання безпекових/CSP заголовків між FastAPI та Nginx.
+- **Аудит безпеки, цілісності й тестування (`backend/`, `ota-server/`, `android/`, `frontend/`, **203 backend + 5 OTA тестів**)**:
+  - Посилено захист автентифікації, SSRF (поштовий/webhook/URL перевірки), OTA-завантажень і перевірки підпису/SHA-256 (`OtaUpdaterPlugin.java`, `ota-server/storage.py`), безпеку архівів бекапів, фронтенд-PWA/XSS санітизацію та доменні інваріанти (`canister_service.py`, `measurement_service.py`, `offline-queue.js`).
+  - Додано автоматичний релоад клієнтів PWA при зміні контролера Service Worker (`controllerchange` у `frontend/index.html`) і автоматичний bump версії cache-busting у `scripts/bump-version.js`.
+- **Фірмова айдентика Android (`scripts/generate-android-icons.py`, `android/app/src/main/res/`)**:
+  - Згенеровано та встановлено брендовані іконки запуску (`ic_launcher`, адаптивні та round) і splash-екрани `SD-GEN016` для всіх щільностей екрана.
+
 ## [v5.7.4] — 2026-11-14
 ### 📚 Повна синхронізація документації, політик та вбудованих правил продукту
 - **Вбудовані юридичні й експлуатаційні модалки та API-метадані ([`frontend/views/modals-legal.html`](frontend/views/modals-legal.html), [`backend/app/main.py`](backend/app/main.py), [`scripts/bump-version.js`](scripts/bump-version.js))**:
