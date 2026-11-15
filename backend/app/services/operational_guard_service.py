@@ -9,7 +9,7 @@ from backend.app.database import AsyncSessionLocal
 from backend.app.models.generator import Generator, GeneratorRun, GeneratorSchedule
 from backend.app.models.maintenance import MaintenanceSchedule
 from backend.app.models.notification import NotificationLog
-from backend.app.core.timezone import now_utc, now_facility, is_within_work_schedule
+from backend.app.core.timezone import now_utc, now_facility, to_facility_time, is_within_work_schedule
 from backend.app.models.user import User
 from backend.app.services.settings_service import get_runtime_setting
 from backend.app.services.audit_service import log_audit
@@ -180,6 +180,17 @@ async def check_operational_guardrails(db: AsyncSession) -> Dict[str, Any]:
                             context_text=f"Генератор працює {elapsed_hours:.1f} год поза робочим графіком (автостоп вимкнено).",
                         )
 
+            # Обчислюємо живі показники витрати пального та мотогодин для активного циклу
+            nom_cons = float(gen.nominal_consumption_l_per_h or 0.0)
+            est_consumed_l = elapsed_hours * nom_cons
+            start_fuel = float(
+                run.start_fuel_level_l
+                if run.start_fuel_level_l is not None
+                else (gen.fuel_tank_level_l or 0.0)
+            )
+            live_fuel_l = max(0.0, start_fuel - est_consumed_l)
+            live_hours = float(gen.current_operating_hours or 0.0) + elapsed_hours
+
             # -------------------------------------------------------------
             # 3. Guardrail: Heartbeat Reminder ('Генератор досі працює?')
             # OPG-10, OPG-11: Ensure notification log commit
@@ -205,10 +216,11 @@ async def check_operational_guardrails(db: AsyncSession) -> Dict[str, Any]:
 
                 if should_send:
                     hours_int = int(elapsed_hours)
+                    start_local = to_facility_time(run.start_time, tz_name=gen.timezone)
                     title = f"⚠️ Генератор {gen.name} досі працює ({hours_int} год)"
                     body = (
-                        f"Генератор безперервно працює вже {elapsed_hours:.1f} год (з {run.start_time.strftime('%H:%M')}). "
-                        f"Перевірте рівень палива (залишок: ~{gen.fuel_tank_level_l:.1f} л) та чи не забули його зупинити."
+                        f"Генератор безперервно працює вже {elapsed_hours:.1f} год (з {start_local.strftime('%H:%M')}). "
+                        f"Перевірте рівень палива (залишок: ~{live_fuel_l:.1f} л) та чи не забули його зупинити."
                     )
 
                     await send_push_notification(
@@ -231,10 +243,6 @@ async def check_operational_guardrails(db: AsyncSession) -> Dict[str, Any]:
                 check_and_notify_maintenance_due,
             )
             from backend.app.services.measurement_service import is_generator_in_measurement_mode
-            nom_cons = float(gen.nominal_consumption_l_per_h or 0.0)
-            est_consumed_l = elapsed_hours * nom_cons
-            live_fuel_l = max(0.0, float(gen.fuel_tank_level_l or 0.0) - est_consumed_l)
-            live_hours = float(gen.current_operating_hours or 0.0) + elapsed_hours
             if not await is_generator_in_measurement_mode(db, gen.id):
                 await check_and_notify_low_fuel(db, gen, live_fuel_l)
             await check_and_notify_maintenance_due(db, gen.id, current_hours=live_hours)

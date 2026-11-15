@@ -5,6 +5,12 @@
 
 ---
 
+## [v5.7.12] — 2026-11-15
+### ⏱️ Коректний час запуску та живий залишок пального у сповіщенні heartbeat (`operational_guard_service`)
+- **Локальний час запуску та живий розрахунковий залишок ([`operational_guard_service.py`](backend/app/services/operational_guard_service.py), [`test_operational_safeguards.py`](backend/tests/test_operational_safeguards.py))**:
+  - У періодичному сповіщенні `⚠️ Генератор ... досі працює` час старту тепер форматується через `to_facility_time(run.start_time, tz_name=gen.timezone)` у часовому поясі об'єкта/генератора (`Europe/Kyiv`) замість сирого UTC.
+  - Залишок пального в тексті сповіщення тепер показує живий розрахунковий залишок `live_fuel_l` (з урахуванням витрат за фактичний час роботи), узгоджений із дашбордом і вкладкою «Паливо», а не статичне значення на момент запуску.
+
 ## [v5.7.11] — 2026-11-15
 ### ⛽ Живий залишок пального у «Паливо» та блокування заправки під час роботи (`versionCode 18`)
 - **Узгоджений розрахунок залишку в баку ([`fuel_service.py`](backend/app/services/fuel_service.py), [`schemas/fuel.py`](backend/app/schemas/fuel.py), [`schemas/generator.py`](backend/app/schemas/generator.py), [`api/v1/generator.py`](backend/app/api/v1/generator.py), [`frontend/views/fuel.html`](frontend/views/fuel.html), [`frontend/js/dashboard.js`](frontend/js/dashboard.js))**:

@@ -5,7 +5,7 @@ from sqlalchemy import select
 from backend.app.models.generator import Generator, GeneratorRun, GeneratorSchedule
 from backend.app.models.notification import NotificationLog
 from backend.app.services.operational_guard_service import check_operational_guardrails
-from backend.app.core.timezone import now_utc
+from backend.app.core.timezone import now_utc, to_facility_time
 
 
 @pytest.mark.asyncio
@@ -324,3 +324,10 @@ async def test_operational_guardrail_heartbeat_reminder(client, superadmin_auth,
     hb_log = log_res.scalars().first()
     assert hb_log is not None
     assert "досі працює" in hb_log.title
+
+    expected_local_start = to_facility_time(run.start_time, "Europe/Kyiv").strftime("%H:%M")
+    utc_start = run.start_time.strftime("%H:%M")
+    assert f"з {expected_local_start}" in hb_log.body
+    assert f"з {utc_start}" not in hb_log.body
+    assert "~15.0 л" in hb_log.body
+    assert "~25.0 л" not in hb_log.body
