@@ -61,16 +61,161 @@ window.toggleAccountMenu = function (e) {
   } else {
     window.toggleNavDrawer(false);
     if (typeof window.closeNotificationsBell === 'function') window.closeNotificationsBell();
+    if (typeof window.closeHeaderTray === 'function') window.closeHeaderTray();
     dd.style.display = 'block';
     if (btn) btn.setAttribute('aria-expanded', 'true');
   }
 };
+
+window.closeHeaderTray = function () {
+  const dd = document.getElementById('headerTrayDropdown');
+  const btn = document.getElementById('headerTrayBtn');
+  if (dd) dd.style.display = 'none';
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+};
+
+window.toggleHeaderTray = function (e) {
+  if (e) e.stopPropagation();
+  const dd = document.getElementById('headerTrayDropdown');
+  const btn = document.getElementById('headerTrayBtn');
+  if (!dd) return;
+  const isVisible = dd.style.display === 'block';
+  if (isVisible) {
+    window.closeHeaderTray();
+  } else {
+    if (typeof window.syncHeaderTray === 'function') window.syncHeaderTray();
+    window.toggleNavDrawer(false);
+    window.closeAccountMenu();
+    if (typeof window.closeNotificationsBell === 'function') window.closeNotificationsBell();
+    dd.style.display = 'block';
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+  }
+};
+
+window.syncHeaderTray = function () {
+  const trayWrap = document.getElementById('headerTrayWrap');
+  const trayItems = document.getElementById('headerTrayItems');
+  const weatherPill = document.getElementById('headerWeatherBadge');
+  const alertPill = document.getElementById('headerAlertBadge');
+  const offlinePill = document.getElementById('headerOfflineSyncBadge');
+  if (!trayWrap || !trayItems) return;
+
+  const isMobileViewport = window.innerWidth <= 768;
+  const entries = [];
+
+  if (weatherPill) {
+    const isVisible = weatherPill.style.display !== 'none';
+    const toTray = isMobileViewport && isVisible;
+    weatherPill.classList.toggle('pill-in-tray', toTray);
+    if (toTray) {
+      const iconText = document.getElementById('weatherPillIcon')?.innerText || '⛅';
+      const tempText = document.getElementById('weatherPillTemp')?.innerText || '';
+      const cityText = document.getElementById('weatherPillCity')?.innerText || '';
+      entries.push({
+        iconText,
+        label: `Погода${tempText ? `: ${tempText}` : ''}`,
+        sub: cityText || 'Деталі погоди на об\'єкті',
+        onClick: () => { if (typeof window.openWeatherModal === 'function') window.openWeatherModal(); },
+      });
+    }
+  }
+
+  if (alertPill) {
+    const isVisible = alertPill.style.display !== 'none';
+    const isCalmGreen = alertPill.classList.contains('pill-alert-green');
+    // Only tuck calm all-clear status into tray; red/yellow alerts stay outside immediately!
+    const toTray = isMobileViewport && isVisible && isCalmGreen;
+    alertPill.classList.toggle('pill-in-tray', toTray);
+    if (toTray) {
+      const iconText = document.getElementById('alertPillIcon')?.innerText || '🟢';
+      const statusText = document.getElementById('alertPillText')?.innerText || 'Відбій';
+      const regionText = document.getElementById('alertPillRegion')?.innerText || '';
+      entries.push({
+        iconText,
+        label: `Тривога: ${statusText}`,
+        sub: regionText || 'Повітряна обстановка в регіоні',
+        onClick: () => { if (typeof window.openAlertModal === 'function') window.openAlertModal(); },
+      });
+    }
+  }
+
+  if (offlinePill) {
+    const isOnlineCalm = offlinePill.classList.contains('pill-sync-online');
+    // Offline, pending queue, or sync conflict always stay visible in the main header
+    const toTray = isMobileViewport && isOnlineCalm;
+    offlinePill.classList.toggle('pill-in-tray', toTray);
+    if (toTray) {
+      const iconNode = document.getElementById('offlinePillIcon');
+      const statusText = document.getElementById('offlinePillText')?.innerText || 'Онлайн';
+      entries.push({
+        iconClone: iconNode ? iconNode.cloneNode(true) : null,
+        label: `Зв'язок: ${statusText}`,
+        sub: 'Офлайн-черга PWA порожня',
+        onClick: () => { if (typeof window.openOfflineQueueModal === 'function') window.openOfflineQueueModal(); },
+      });
+    }
+  }
+
+  trayItems.replaceChildren();
+  entries.forEach((entry) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'header-tray-item';
+    btn.setAttribute('role', 'menuitem');
+
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'header-tray-item-icon';
+    if (entry.iconClone) {
+      iconSpan.replaceChildren(entry.iconClone.firstChild ? entry.iconClone.firstChild.cloneNode(true) : document.createTextNode('📶'));
+    } else {
+      iconSpan.textContent = entry.iconText || '•';
+    }
+
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'header-tray-item-meta';
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'header-tray-item-label';
+    labelSpan.textContent = entry.label;
+    const subSpan = document.createElement('span');
+    subSpan.className = 'header-tray-item-sub';
+    subSpan.textContent = entry.sub;
+    metaDiv.appendChild(labelSpan);
+    metaDiv.appendChild(subSpan);
+
+    btn.appendChild(iconSpan);
+    btn.appendChild(metaDiv);
+    btn.addEventListener('click', () => {
+      window.closeHeaderTray();
+      entry.onClick();
+    });
+    trayItems.appendChild(btn);
+  });
+
+  if (isMobileViewport && entries.length > 0) {
+    trayWrap.style.display = 'inline-flex';
+  } else {
+    trayWrap.style.display = 'none';
+    window.closeHeaderTray();
+  }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof window.syncHeaderTray === 'function') window.syncHeaderTray();
+});
+window.addEventListener('resize', () => {
+  if (typeof window.syncHeaderTray === 'function') window.syncHeaderTray();
+});
 
 document.addEventListener('click', (e) => {
   const wrap = document.getElementById('accountMenuWrap');
   const dd = document.getElementById('accountDropdown');
   if (dd && dd.style.display === 'block' && wrap && !wrap.contains(e.target)) {
     window.closeAccountMenu();
+  }
+  const trayWrap = document.getElementById('headerTrayWrap');
+  const trayDd = document.getElementById('headerTrayDropdown');
+  if (trayDd && trayDd.style.display === 'block' && trayWrap && !trayWrap.contains(e.target)) {
+    window.closeHeaderTray();
   }
 });
 
@@ -79,10 +224,12 @@ document.addEventListener('keydown', (e) => {
     const drawerOpen = document.getElementById('navDrawer')?.classList.contains('open');
     const accOpen = document.getElementById('accountDropdown')?.style.display === 'block';
     const bellOpen = document.getElementById('notificationsDropdown')?.style.display === 'block';
-    if (drawerOpen || accOpen || bellOpen) {
+    const trayOpen = document.getElementById('headerTrayDropdown')?.style.display === 'block';
+    if (drawerOpen || accOpen || bellOpen || trayOpen) {
       window.closeAccountMenu();
       window.toggleNavDrawer(false);
       if (typeof window.closeNotificationsBell === 'function') window.closeNotificationsBell();
+      window.closeHeaderTray();
       return;
     }
     const topModalId = typeof window.getTopOpenModalId === 'function' ? window.getTopOpenModalId() : null;
@@ -419,6 +566,8 @@ window.toggleNavDrawer = function (forceState) {
 
   if (next) {
     window.closeAccountMenu();
+    if (typeof window.closeNotificationsBell === 'function') window.closeNotificationsBell();
+    if (typeof window.closeHeaderTray === 'function') window.closeHeaderTray();
     drawer.classList.add('open');
     backdrop.classList.add('open');
     document.body.style.overflow = 'hidden';
@@ -972,6 +1121,12 @@ window.__handleNativeBack = function () {
     } else {
       notificationsDropdown.style.display = 'none';
     }
+    window._lastNativeBackPressAt = 0;
+    return true;
+  }
+  const trayDropdown = document.getElementById('headerTrayDropdown');
+  if (trayDropdown && trayDropdown.style.display === 'block') {
+    window.closeHeaderTray();
     window._lastNativeBackPressAt = 0;
     return true;
   }

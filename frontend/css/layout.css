@@ -23,6 +23,7 @@
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -63,6 +64,7 @@
   gap: 0.55rem;
   cursor: pointer;
   min-width: 0;
+  overflow: hidden;
   user-select: none;
 }
 
@@ -79,6 +81,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow: hidden;
   line-height: 1.15;
 }
 
@@ -87,6 +90,8 @@
   font-weight: 700;
   color: var(--text-primary);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   letter-spacing: -0.01em;
 }
 
@@ -812,12 +817,164 @@
   }
 
   .btn-header-install {
-    padding: 0 0.45rem;
-    height: 34px;
+    display: none !important;
   }
 
   .desktop-only-inline {
     display: none !important;
+  }
+
+  /* Windows-style smart status tray (<= 768px): calm indicators live inside tray popover */
+  #headerStatusPills .header-pill.pill-in-tray {
+    display: none !important;
+  }
+
+  .header-tray-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .pill-tray-toggle {
+    background: rgba(148, 163, 184, 0.14);
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+  }
+
+  [data-theme="light"] .pill-tray-toggle {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #475569;
+  }
+
+  .pill-tray-toggle[aria-expanded="true"] {
+    background: rgba(56, 189, 248, 0.16);
+    border-color: rgba(56, 189, 248, 0.48);
+    color: var(--accent-cyan);
+  }
+
+  .tray-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.18s ease;
+  }
+
+  .tray-chevron svg {
+    width: 15px;
+    height: 15px;
+    display: block;
+  }
+
+  .pill-tray-toggle[aria-expanded="true"] .tray-chevron {
+    transform: rotate(180deg);
+  }
+
+  .tray-status-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 1.5px var(--bg-secondary);
+  }
+
+  .header-tray-dropdown {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: -38px;
+    width: min(260px, calc(100vw - 1.5rem));
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.45);
+    z-index: 1290;
+    overflow: hidden;
+    animation: fadeSlideDown 0.16s ease-out;
+  }
+
+  [data-theme="light"] .header-tray-dropdown {
+    box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16);
+  }
+
+  .header-tray-title {
+    padding: 0.55rem 0.85rem;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .header-tray-items {
+    padding: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .header-tray-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.58rem 0.72rem;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.14s ease, border-color 0.14s ease;
+  }
+
+  .header-tray-item:hover,
+  .header-tray-item:active {
+    background: rgba(56, 189, 248, 0.12);
+    border-color: rgba(56, 189, 248, 0.25);
+  }
+
+  .header-tray-item-icon {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.05rem;
+    flex-shrink: 0;
+  }
+
+  .header-tray-item-icon svg {
+    width: 17px;
+    height: 17px;
+    display: block;
+    color: #16a34a;
+  }
+
+  .header-tray-item-meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .header-tray-item-label {
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .header-tray-item-sub {
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* PWA Banner on Mobile */

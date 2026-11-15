@@ -5,6 +5,12 @@
 
 ---
 
+## [v5.7.10] — 2026-11-15
+### 🪟 «Розумний трей» індикаторів у мобільній шапці (`versionCode 17`)
+- **Розвантаження верхньої панелі на смартфонах ([`frontend/index.html`](frontend/index.html), [`frontend/css/layout.css`](frontend/css/layout.css), [`frontend/js/auth-nav.js`](frontend/js/auth-nav.js), [`frontend/js/weather-alerts.js`](frontend/js/weather-alerts.js), [`frontend/js/offline-queue.js`](frontend/js/offline-queue.js))**:
+  - На екранах `<= 768px` приховано кнопку `#headerInstallBtn` у шапці (встановлення PWA / APK доступне з бокового меню `#navDrawer`) та захищено `.header-brand` (`overflow: hidden` + `text-overflow: ellipsis`) від перекриття тексту `SD-GEN016`.
+  - Додано системний трей індикаторів (`#headerTrayWrap` / `window.syncHeaderTray()`): спокійні/довідкові стани (`☀️` Погода, `🟢` Відбій тривоги, `📶` Онлайн) згортаються в розгортаємий поповер трею з повними підписами, тоді як **активні або критичні події** (`🔴`/`🟡` Тривога/БПЛА, `🟠`/`🔄`/`⚠️` Офлайн/Черга/Конфлікт, `📏` Активний замір, `🔔` Дзвіночок) залишаються видимими безпосередньо в шапці.
+
 ## [v5.7.9] — 2026-11-15
 ### 📲 Встановлення з браузера, іконка Wi-Fi, швидке оновлення Android та сповіщення (`versionCode 16`)
 - **Пункт встановлення застосунку в боковому меню ([`frontend/index.html`](frontend/index.html), [`frontend/views/modals-utility.html`](frontend/views/modals-utility.html), [`frontend/js/notifications.js`](frontend/js/notifications.js), [`frontend/js/view-loader.js`](frontend/js/view-loader.js))**:

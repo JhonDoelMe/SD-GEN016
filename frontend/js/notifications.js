@@ -1177,6 +1177,7 @@ window.toggleNotificationsBell = function(e) {
     window.closeNotificationsBell();
   } else {
     if (typeof window.closeAccountMenu === 'function') window.closeAccountMenu();
+    if (typeof window.closeHeaderTray === 'function') window.closeHeaderTray();
     if (typeof window.toggleNavDrawer === 'function') window.toggleNavDrawer(false);
     dd.style.display = 'block';
     if (btn) btn.setAttribute('aria-expanded', 'true');

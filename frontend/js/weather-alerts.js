@@ -10,6 +10,7 @@ window.loadFacilityIndicators = async function(facilityId, force = false) {
     const ab = document.getElementById('headerAlertBadge');
     if (wb) wb.style.display = 'none';
     if (ab) ab.style.display = 'none';
+    if (typeof window.syncHeaderTray === 'function') window.syncHeaderTray();
     return;
   }
   try {
@@ -71,6 +72,9 @@ window.loadFacilityIndicators = async function(facilityId, force = false) {
     }
     if (typeof window.updateOperationalSafetyBanners === 'function') {
       window.updateOperationalSafetyBanners();
+    }
+    if (typeof window.syncHeaderTray === 'function') {
+      window.syncHeaderTray();
     }
   } catch (err) {
     console.warn("Не вдалося завантажити індикатори погоди та тривог:", err);

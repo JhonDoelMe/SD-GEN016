@@ -515,6 +515,9 @@
         pill.title = 'З\'єднання активне. Натисніть, щоб відкрити статус черги PWA.';
       }
     }
+    if (typeof window.syncHeaderTray === 'function') {
+      window.syncHeaderTray();
+    }
 
     const banner = document.getElementById('offlineSyncBanner');
     const bannerMsg = document.getElementById('offlineSyncBannerText');

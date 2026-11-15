@@ -39,10 +39,10 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
   <!-- Modular Stylesheets (Loaded in Parallel) -->
-  <link rel="stylesheet" href="/frontend/css/base.css?v=5.7.9">
-  <link rel="stylesheet" href="/frontend/css/components.css?v=5.7.9">
-  <link rel="stylesheet" href="/frontend/css/views.css?v=5.7.9">
-  <link rel="stylesheet" href="/frontend/css/layout.css?v=5.7.9">
+  <link rel="stylesheet" href="/frontend/css/base.css?v=5.7.10">
+  <link rel="stylesheet" href="/frontend/css/components.css?v=5.7.10">
+  <link rel="stylesheet" href="/frontend/css/views.css?v=5.7.10">
+  <link rel="stylesheet" href="/frontend/css/layout.css?v=5.7.10">
 </head>
 <body>
 
@@ -134,7 +134,7 @@
       <button type="button" class="nav-item nav-item-install" id="navDrawerInstallApp" style="display: none;" onclick="toggleNavDrawer(false); openInstallAppModal();">📲 Встановити застосунок</button>
     </nav>
     <div class="nav-drawer-footer">
-      <span>SD-GEN016 • v5.7.9</span>
+      <span>SD-GEN016 • v5.7.10</span>
       <button type="button" class="footer-link-btn" style="padding: 0; font-size: 0.76rem;" onclick="toggleNavDrawer(false); openModal('modalOfflineQueue');">📡 Черга PWA</button>
     </div>
   </aside>
@@ -193,6 +193,17 @@
           <span class="pill-icon" id="offlinePillIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg></span>
           <span class="pill-text" id="offlinePillText">Онлайн</span>
         </button>
+
+        <div class="header-tray-wrap" id="headerTrayWrap" style="display: none;">
+          <button type="button" id="headerTrayBtn" class="header-pill pill-tray-toggle" onclick="toggleHeaderTray(event)" aria-haspopup="true" aria-expanded="false" aria-label="Системні індикатори" title="Приховані індикатори стану">
+            <span class="pill-icon tray-chevron" id="trayChevronIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></span>
+            <span class="tray-status-dot" id="trayStatusDot"></span>
+          </button>
+          <div id="headerTrayDropdown" class="header-tray-dropdown" style="display: none;" role="menu">
+            <div class="header-tray-title">Системні індикатори</div>
+            <div id="headerTrayItems" class="header-tray-items"></div>
+          </div>
+        </div>
       </div>
 
       <button id="headerInstallBtn" class="btn-header-install" style="display: none;" title="Встановити додаток на екран">
@@ -354,15 +365,15 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Core Application Scripts (Heavy Modules Lazy-Loaded via ViewLoader) -->
-  <script src="/frontend/js/core.js?v=5.7.9"></script>
-  <script src="/frontend/js/view-loader.js?v=5.7.9"></script>
-  <script src="/frontend/js/offline-queue.js?v=5.7.9"></script>
-  <script src="/frontend/js/theme-format.js?v=5.7.9"></script>
-  <script src="/frontend/js/auth-nav.js?v=5.7.9"></script>
-  <script src="/frontend/js/dashboard.js?v=5.7.9"></script>
-  <script src="/frontend/js/weather-alerts.js?v=5.7.9"></script>
-  <script src="/frontend/js/yasno.js?v=5.7.9"></script>
-  <script src="/frontend/js/notifications.js?v=5.7.9"></script>
+  <script src="/frontend/js/core.js?v=5.7.10"></script>
+  <script src="/frontend/js/view-loader.js?v=5.7.10"></script>
+  <script src="/frontend/js/offline-queue.js?v=5.7.10"></script>
+  <script src="/frontend/js/theme-format.js?v=5.7.10"></script>
+  <script src="/frontend/js/auth-nav.js?v=5.7.10"></script>
+  <script src="/frontend/js/dashboard.js?v=5.7.10"></script>
+  <script src="/frontend/js/weather-alerts.js?v=5.7.10"></script>
+  <script src="/frontend/js/yasno.js?v=5.7.10"></script>
+  <script src="/frontend/js/notifications.js?v=5.7.10"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>
