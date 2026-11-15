@@ -285,6 +285,8 @@ async def send_push_notification(
         "GENERATOR_SAFETY_STOP": "notify_generator_stop",
         "GENERATOR_AUTO_STOP": "notify_generator_stop",
         "GENERATOR_HEARTBEAT": "notify_running_heartbeat",
+        "GENERATOR_WARMUP_DONE": "warmup_reminder_enabled",
+        "GENERATOR_WARMUP_DUE": "warmup_reminder_enabled",
         "OUTSIDE_WORK_HOURS": "notify_outside_schedule",
         "EMPTY_TANK": "notify_low_fuel",
         "LOW_FUEL": "notify_low_fuel",
@@ -546,9 +548,14 @@ async def notify_generator_start(
     generator: Generator,
     user_name: str,
     start_fuel: float,
-    start_hours: float
+    start_hours: float,
+    is_warmup: bool = False,
 ):
-    title = f"🟢 Запуск генератора — {generator.name}"
+    title = (
+        f"🔥 Профілактичний прогрів — {generator.name}"
+        if is_warmup
+        else f"🟢 Запуск генератора — {generator.name}"
+    )
     body = f"Оператор: {user_name}. Мотогодини: {start_hours:.1f} год. Рівень у баку: {start_fuel:.1f} л."
     await send_push_notification(
         db=db,

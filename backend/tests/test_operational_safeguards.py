@@ -331,3 +331,200 @@ async def test_operational_guardrail_heartbeat_reminder(client, superadmin_auth,
     assert f"з {utc_start}" not in hb_log.body
     assert "~15.0 л" in hb_log.body
     assert "~25.0 л" not in hb_log.body
+
+
+@pytest.mark.asyncio
+async def test_preventive_warmup_start_stop_and_idle_recommendation(client, superadmin_auth, operator_auth, db_session):
+    """
+    Test Preventive Warmup lifecycle: admin settings, idle detection, warmup start/stop note preservation.
+    """
+    # 1. Configure warmup settings via admin API
+    put_res = await client.put(
+        "/api/v1/system/settings",
+        headers=superadmin_auth,
+        json={
+            "warmup_reminder_enabled": True,
+            "warmup_idle_days": 7,
+            "warmup_duration_minutes": 10,
+        },
+    )
+    assert put_res.status_code == 200
+
+    # 2. Setup configured generator created 10 days ago with no runs yet
+    wiz_res = await client.post(
+        "/api/v1/generator/wizard",
+        headers=superadmin_auth,
+        json={
+            "name": "Генератор Прогрів Тест",
+            "model": "TG-WARMUP",
+            "manufacturer": "PG",
+            "serial_number": "SN-WU-01",
+            "rated_power_kw": 5.0,
+            "tank_capacity_l": 25.0,
+            "fuel_type": "А-95",
+            "nominal_consumption_l_per_h": 2.0,
+            "initial_operating_hours": 50.0,
+            "initial_fuel_tank_level_l": 20.0,
+            "work_schedule_start": "00:00",
+            "work_schedule_end": "23:59",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv",
+        },
+    )
+    assert wiz_res.status_code == 200
+    gen_id = wiz_res.json()["id"]
+
+    q_gen = select(Generator).where(Generator.id == gen_id)
+    gen = (await db_session.execute(q_gen)).scalars().first()
+    gen.created_at = now_utc() - datetime.timedelta(days=10)
+    await db_session.commit()
+
+    # 3. Verify generator endpoint flags warmup_recommended
+    get_res = await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=operator_auth)
+    assert get_res.status_code == 200
+    gen_data = get_res.json()
+    assert gen_data["days_since_last_run"] >= 10
+    assert gen_data["warmup_recommended"] is True
+    assert gen_data["warmup_duration_minutes"] == 10
+
+    # 4. Start warmup run and confirm active note + stop note preservation
+    start_res = await client.post(
+        "/api/v1/generator/start",
+        headers=operator_auth,
+        json={"generator_id": gen_id, "is_warmup": True},
+    )
+    assert start_res.status_code == 200
+    active_run = start_res.json()
+    assert active_run["note"].startswith("Профілактичний прогрів")
+
+    stop_res = await client.post(
+        "/api/v1/generator/stop",
+        headers=operator_auth,
+        json={
+            "generator_id": gen_id,
+            "end_hours": 50.2,
+            "note": "Успішно прогріто 10 хв",
+        },
+    )
+    assert stop_res.status_code == 200
+    stopped_run = stop_res.json()
+    assert stopped_run["note"] == "Профілактичний прогрів — Успішно прогріто 10 хв"
+
+    # 5. After warmup run, idle days resets to 0 and warmup is no longer recommended
+    after_res = await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=operator_auth)
+    assert after_res.status_code == 200
+    after_data = after_res.json()
+    assert after_data["days_since_last_run"] == 0
+    assert after_data["warmup_recommended"] is False
+
+
+@pytest.mark.asyncio
+async def test_preventive_warmup_guardrails_done_and_due_notifications(client, superadmin_auth, operator_auth, db_session):
+    """
+    Test guardrails send GENERATOR_WARMUP_DONE after warmup duration and GENERATOR_WARMUP_DUE after idle threshold without spamming.
+    """
+    await client.put(
+        "/api/v1/system/settings",
+        headers=superadmin_auth,
+        json={
+            "warmup_reminder_enabled": True,
+            "warmup_idle_days": 5,
+            "warmup_duration_minutes": 15,
+        },
+    )
+
+    # Idle stopped generator (8 days old, no runs)
+    wiz_due = await client.post(
+        "/api/v1/generator/wizard",
+        headers=superadmin_auth,
+        json={
+            "name": "Генератор Простій Прогрів",
+            "model": "TG-DUE",
+            "manufacturer": "PG",
+            "serial_number": "SN-WU-DUE",
+            "rated_power_kw": 5.0,
+            "tank_capacity_l": 25.0,
+            "fuel_type": "А-95",
+            "nominal_consumption_l_per_h": 2.0,
+            "initial_operating_hours": 10.0,
+            "initial_fuel_tank_level_l": 20.0,
+            "work_schedule_start": "00:00",
+            "work_schedule_end": "23:59",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv",
+        },
+    )
+    due_gen_id = wiz_due.json()["id"]
+    due_gen = (await db_session.execute(select(Generator).where(Generator.id == due_gen_id))).scalars().first()
+    due_gen.created_at = now_utc() - datetime.timedelta(days=8)
+    await db_session.commit()
+
+    # Active warmup generator started 20 minutes ago (created as distinct second generator)
+    wiz_done = await client.post(
+        "/api/v1/generator",
+        headers=superadmin_auth,
+        json={
+            "name": "Генератор Завершення Прогріву",
+            "model": "TG-DONE",
+            "manufacturer": "PG",
+            "serial_number": "SN-WU-DONE",
+            "rated_power_kw": 5.0,
+            "tank_capacity_l": 25.0,
+            "fuel_type": "А-95",
+            "nominal_consumption_l_per_h": 2.0,
+            "initial_operating_hours": 15.0,
+            "initial_fuel_tank_level_l": 20.0,
+            "work_schedule_start": "00:00",
+            "work_schedule_end": "23:59",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv",
+        },
+    )
+    assert wiz_done.status_code == 201
+    done_gen_id = wiz_done.json()["id"]
+    assert done_gen_id != due_gen_id
+    await client.post(
+        "/api/v1/generator/start",
+        headers=operator_auth,
+        json={"generator_id": done_gen_id, "is_warmup": True},
+    )
+    done_run = (
+        await db_session.execute(
+            select(GeneratorRun).where(
+                GeneratorRun.generator_id == done_gen_id,
+                GeneratorRun.status == "RUNNING",
+            )
+        )
+    ).scalars().first()
+    done_run.start_time = now_utc() - datetime.timedelta(minutes=20)
+    await db_session.commit()
+
+    # First guardrails pass: both notifications should be sent once
+    first_guard = await check_operational_guardrails(db_session)
+    assert first_guard["warmup_due_sent"] >= 1
+    assert first_guard["warmup_done_sent"] >= 1
+
+    due_logs = (
+        await db_session.execute(
+            select(NotificationLog).where(
+                NotificationLog.generator_id == due_gen_id,
+                NotificationLog.event_type == "GENERATOR_WARMUP_DUE",
+            )
+        )
+    ).scalars().all()
+    assert len(due_logs) == 1
+
+    done_logs = (
+        await db_session.execute(
+            select(NotificationLog).where(
+                NotificationLog.generator_id == done_gen_id,
+                NotificationLog.event_type == "GENERATOR_WARMUP_DONE",
+            )
+        )
+    ).scalars().all()
+    assert len(done_logs) == 1
+
+    # Immediate second pass: cooldown/one-shot guard prevents duplicates
+    second_guard = await check_operational_guardrails(db_session)
+    assert second_guard["warmup_due_sent"] == 0
+    assert second_guard["warmup_done_sent"] == 0

@@ -1120,6 +1120,9 @@ async function loadAdminSystemSettings() {
     if (document.getElementById('sysEnforceSchedule')) document.getElementById('sysEnforceSchedule').checked = s.enforce_work_schedule !== false;
     if (document.getElementById('sysAutoFetchPrices')) document.getElementById('sysAutoFetchPrices').checked = s.auto_fetch_fuel_prices !== false;
     if (document.getElementById('sysApplyAllGens')) document.getElementById('sysApplyAllGens').checked = s.apply_to_all_generators !== false;
+    if (document.getElementById('sysWarmupReminderEnabled')) document.getElementById('sysWarmupReminderEnabled').checked = s.warmup_reminder_enabled !== false;
+    if (document.getElementById('sysWarmupIdleDays')) document.getElementById('sysWarmupIdleDays').value = s.warmup_idle_days ?? 14;
+    if (document.getElementById('sysWarmupDurationMinutes')) document.getElementById('sysWarmupDurationMinutes').value = s.warmup_duration_minutes ?? 15;
 
     // Default Chain & Weekly Options (parallelized & deduplicated facilities request)
     const sharedFacilities = await api('/facilities').catch(() => []);
@@ -1371,6 +1374,9 @@ document.addEventListener('submit', async (e) => {
     enforce_work_schedule: document.getElementById('sysEnforceSchedule').checked,
     auto_fetch_fuel_prices: document.getElementById('sysAutoFetchPrices').checked,
     apply_to_all_generators: document.getElementById('sysApplyAllGens').checked,
+    warmup_reminder_enabled: document.getElementById('sysWarmupReminderEnabled')?.checked ?? true,
+    warmup_idle_days: Math.max(1, Math.min(90, parseInt(document.getElementById('sysWarmupIdleDays')?.value || '14', 10) || 14)),
+    warmup_duration_minutes: Math.max(5, Math.min(60, parseInt(document.getElementById('sysWarmupDurationMinutes')?.value || '15', 10) || 15)),
     // SMTP & Failover Settings
     smtp_enabled: document.getElementById('sysSmtpEnabled')?.checked ?? false,
     email_notify_password_change: document.getElementById('sysEmailNotifyPwdChange')?.checked ?? true,

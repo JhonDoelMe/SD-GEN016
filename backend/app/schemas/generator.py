@@ -86,6 +86,10 @@ class GeneratorOut(BaseModel):
     updated_at: datetime.datetime
     schedules: List[GeneratorScheduleOut] = []
     cooldown_remaining_seconds: int = 0
+    days_since_last_run: Optional[float] = None
+    last_run_at: Optional[datetime.datetime] = None
+    warmup_recommended: bool = False
+    warmup_duration_minutes: int = 15
 
     model_config = {"from_attributes": True}
 
@@ -97,6 +101,7 @@ class GeneratorStartRequest(BaseModel):
     force_start_reason: Optional[str] = Field(None, max_length=500, description="Обов'язкова причина примусового запуску при простроченому ТО")
     idempotency_key: Optional[str] = Field(None, max_length=64, description="Ключ ідемпотентності для захисту від дублювання")
     skip_cooldown: bool = Field(False, description="Пропуск 60-секундного кулдауну (для адміністраторів або тестів)")
+    is_warmup: bool = Field(False, description="Запуск у режимі профілактичного прогріву")
 
 
 class GeneratorStopRequest(BaseModel):

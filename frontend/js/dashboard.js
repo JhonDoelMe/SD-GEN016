@@ -202,6 +202,12 @@ async function loadGeneratorData() {
       btn.innerHTML = '<span>➕</span><span>ДОДАЙТЕ ГЕНЕРАТОР В АДМІНЦІ</span>';
       btn.title = "Перейдіть у меню ⚙️ Адміністрування → Об'єкти та Генератори";
     }
+    const warmupBanner = document.getElementById('genWarmupDueBanner');
+    if (warmupBanner) warmupBanner.style.display = 'none';
+    const warmupBtn = document.getElementById('btnWarmupStart');
+    if (warmupBtn) warmupBtn.style.display = 'none';
+    const warmupBadge = document.getElementById('activeRunWarmupBadge');
+    if (warmupBadge) warmupBadge.style.display = 'none';
     return;
   }
   try {
@@ -357,6 +363,45 @@ async function loadGeneratorData() {
       }
     }
 
+    // Preventive Warmup banner & start button visibility
+    const warmupBanner = document.getElementById('genWarmupDueBanner');
+    const warmupBtn = document.getElementById('btnWarmupStart');
+    const warmupBtnLabel = document.getElementById('btnWarmupStartLabel');
+    const warmupDurationMin = Number(currentGenerator.warmup_duration_minutes) || 15;
+    if (warmupBtnLabel) {
+      warmupBtnLabel.innerText = `Профілактичний прогрів (${warmupDurationMin} хв)`;
+    }
+
+    const canStartWarmup = (
+      currentGenerator
+      && currentGenerator.status !== 'RUNNING'
+      && currentGenerator.status !== 'FAULTY'
+      && currentGenerator.status !== 'BLOCKED'
+      && canStartOrStop
+    );
+    if (warmupBtn) {
+      if (canStartWarmup) {
+        warmupBtn.style.display = 'inline-flex';
+        warmupBtn.disabled = currentCooldownSeconds > 0;
+        warmupBtn.title = currentCooldownSeconds > 0
+          ? `Очікування завершення технологічної паузи (${currentCooldownSeconds} с)`
+          : `Запустити короткий профілактичний прогрів (${warmupDurationMin} хв)`;
+      } else {
+        warmupBtn.style.display = 'none';
+      }
+    }
+
+    if (warmupBanner) {
+      if (canStartWarmup && currentGenerator.warmup_recommended) {
+        const idleDays = currentGenerator.days_since_last_run;
+        const idleText = idleDays != null ? `простій <b>${idleDays} дн.</b>` : 'генератор давно не запускався';
+        warmupBanner.innerHTML = `🔥 <span><b>Рекомендовано профілактичний прогрів</b> (${idleText}). Запустіть генератор на <b>${warmupDurationMin} хв</b> без критичного навантаження для підтримки АКБ, паливної та мастильної систем.</span>`;
+        warmupBanner.style.display = 'flex';
+      } else {
+        warmupBanner.style.display = 'none';
+      }
+    }
+
     // Active Run Check
     const btnManual = document.getElementById('btnOpenManualRun');
     if (btnManual) {
@@ -364,13 +409,19 @@ async function loadGeneratorData() {
     }
 
     activeRun = activeRunData;
+    const warmupBadge = document.getElementById('activeRunWarmupBadge');
     if (activeRun) {
       banner.style.display = 'block';
+      if (warmupBadge) {
+        const isWarmupActive = typeof activeRun.note === 'string' && activeRun.note.startsWith('Профілактичний прогрів');
+        warmupBadge.style.display = isWarmupActive ? 'inline-block' : 'none';
+      }
       document.getElementById('activeRunStart').innerText = formatTime(activeRun.start_time);
       document.getElementById('activeRunHours').innerText = activeRun.start_hours.toFixed(1).replace('.', ',');
       startRunStopwatch();
     } else {
       banner.style.display = 'none';
+      if (warmupBadge) warmupBadge.style.display = 'none';
       stopRunStopwatch();
     }
     if (typeof window.updateOperationalSafetyBanners === 'function') {
@@ -406,11 +457,13 @@ function startCooldownTimer(seconds) {
       currentCooldownSeconds = 0;
       return;
     }
+    const warmupBtn = document.getElementById('btnWarmupStart');
     if (currentCooldownSeconds > 0) {
       btn.disabled = true;
       btn.className = 'btn-hero btn-cooldown';
       btn.innerHTML = `<span>⏳</span><span>ОХОЛОДЖЕННЯ: ${currentCooldownSeconds} с</span>`;
       btn.title = `Захист від випадкового/передчасного запуску. Повторний запуск буде доступний через ${currentCooldownSeconds} с (технологічна пауза 60 с).`;
+      if (warmupBtn) warmupBtn.disabled = true;
     } else {
       if (cooldownTimerInterval) {
         clearInterval(cooldownTimerInterval);
@@ -419,6 +472,9 @@ function startCooldownTimer(seconds) {
       currentCooldownSeconds = 0;
       btn.disabled = false;
       btn.removeAttribute('title');
+      if (warmupBtn) {
+        warmupBtn.disabled = !(hasPermission('generator:start') && !isViewerOnly());
+      }
       if (currentGenerator) {
         const isFuelDeficit = (currentGenerator.fuel_tank_level_l <= 0);
         if (currentGenerator.status === 'MAINTENANCE_REQUIRED') {
@@ -466,7 +522,7 @@ function updateRunStopwatchDisplay() {
   if (modalDur) modalDur.innerText = durFormatted;
 
   const elapsedHours = elapsedSeconds / 3600.0;
-  const nominal = (currentGenerator && currentGenerator.nominal_consumption_l_per_h) || 2.2;
+  const nominal = _getNominalConsumption(currentGenerator);
   const estConsumed = elapsedHours * nominal;
 
   const modalEstFuel = document.getElementById('stopEstFuelDisplay');
@@ -550,12 +606,45 @@ function updateRunStopwatchDisplay() {
   }
 }
 
+function _getNominalConsumption(gen) {
+  const raw = gen ? gen.nominal_consumption_l_per_h : null;
+  if (raw !== null && raw !== undefined && raw !== '') {
+    const val = Number(raw);
+    if (Number.isFinite(val) && val >= 0) return val;
+  }
+  return 2.2;
+}
+
+function _getFacilityCurrentMinutes() {
+  const tz = (currentGenerator && currentGenerator.timezone) || 'Europe/Kyiv';
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date());
+    const hh = Number(parts.find(p => p.type === 'hour')?.value || 0) % 24;
+    const mm = Number(parts.find(p => p.type === 'minute')?.value || 0);
+    if (Number.isFinite(hh) && Number.isFinite(mm)) {
+      return hh * 60 + mm;
+    }
+  } catch (_) {}
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+function _isYasnoOutageSlotType(slotType) {
+  const norm = String(slotType || '').trim().toUpperCase();
+  return norm === 'DEFINITE' || norm === 'PROBABLE';
+}
+
 function _sumYasnoTodayRemMinutes(data) {
   if (!data) return 0;
-  const now = new Date();
-  const curMin = now.getHours() * 60 + now.getMinutes();
+  const curMin = _getFacilityCurrentMinutes();
   if (Array.isArray(data.slots_today) && data.slots_today.length > 0) {
     return data.slots_today.reduce((acc, s) => {
+      if (!_isYasnoOutageSlotType(s.type)) return acc;
       const end = Number(s.end);
       const start = Number(s.start);
       if (end > curMin) return acc + Math.max(0, end - Math.max(start, curMin));
@@ -563,9 +652,9 @@ function _sumYasnoTodayRemMinutes(data) {
     }, 0);
   }
   if (Array.isArray(data.timeline_today)) {
-    const curHour = now.getHours();
+    const curHour = Math.floor(curMin / 60);
     return data.timeline_today.reduce((acc, h) => {
-      if (Number(h.hour) >= curHour && h.status === 'DEFINITE') return acc + 60;
+      if (Number(h.hour) >= curHour && (h.status === 'DEFINITE' || h.status === 'PROBABLE')) return acc + 60;
       return acc;
     }, 0);
   }
@@ -575,10 +664,13 @@ function _sumYasnoTodayRemMinutes(data) {
 function _sumYasnoTomorrowMinutes(data) {
   if (!data) return 0;
   if (Array.isArray(data.slots_tomorrow) && data.slots_tomorrow.length > 0) {
-    return data.slots_tomorrow.reduce((acc, s) => acc + Math.max(0, Number(s.end) - Number(s.start)), 0);
+    return data.slots_tomorrow.reduce((acc, s) => {
+      if (!_isYasnoOutageSlotType(s.type)) return acc;
+      return acc + Math.max(0, Number(s.end) - Number(s.start));
+    }, 0);
   }
   if (Array.isArray(data.timeline_tomorrow)) {
-    return data.timeline_tomorrow.reduce((acc, h) => acc + (h.status === 'DEFINITE' ? 60 : 0), 0);
+    return data.timeline_tomorrow.reduce((acc, h) => acc + ((h.status === 'DEFINITE' || h.status === 'PROBABLE') ? 60 : 0), 0);
   }
   return 0;
 }
@@ -600,13 +692,13 @@ window.updateFuelAssessmentBlock = function (liveTankOverride = null) {
     const startDt = parseUTCDate(activeRun.start_time);
     if (startDt) {
       const elapsedH = Math.max(0, (Date.now() - startDt.getTime()) / 3600000);
-      const nom = Number(currentGenerator.nominal_consumption_l_per_h || 2.2);
+      const nom = _getNominalConsumption(currentGenerator);
       const startFuel = activeRun.start_fuel_level_l ?? activeRun.start_fuel ?? fuelL;
       fuelL = startFuel - elapsedH * nom;
     }
   }
 
-  const nominal = Number(currentGenerator.nominal_consumption_l_per_h || 2.2);
+  const nominal = _getNominalConsumption(currentGenerator);
   const cap = Number(currentGenerator.tank_capacity_l || 25.0);
   const effTankL = Math.max(0, fuelL);
   const tankHours = nominal > 0 ? (effTankL / nominal) : 0;
@@ -682,9 +774,10 @@ window.updateFuelAssessmentBlock = function (liveTankOverride = null) {
     slot = data.current_outage;
     isCurrentOutage = true;
   } else if ((data.status === 'DEFINITE' || data.status === 'PROBABLE') && Array.isArray(data.slots_today)) {
-    const now = new Date();
-    const curMin = now.getHours() * 60 + now.getMinutes();
-    const matchSlot = data.slots_today.find(s => Number(s.start) <= curMin && curMin < Number(s.end));
+    const curMin = _getFacilityCurrentMinutes();
+    const matchSlot = data.slots_today.find(
+      s => _isYasnoOutageSlotType(s.type) && Number(s.start) <= curMin && curMin < Number(s.end)
+    );
     if (matchSlot) {
       const fmtMin = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
       slot = { start: fmtMin(Number(matchSlot.start)), end: fmtMin(Number(matchSlot.end)) };
@@ -734,8 +827,7 @@ window.updateFuelAssessmentBlock = function (liveTankOverride = null) {
 
   let slotMin = endMin - startMin;
   if (isCurrentOutage) {
-    const now = new Date();
-    let nowMin = now.getHours() * 60 + now.getMinutes();
+    let nowMin = _getFacilityCurrentMinutes();
     if (nowMin < startMin && endMin > 1440) nowMin += 1440;
     if (nowMin >= startMin && nowMin < endMin) slotMin = Math.max(5, endMin - nowMin);
   }
@@ -838,50 +930,79 @@ document.addEventListener('click', async (e) => {
     }
     openModal('modalStopGen');
   } else {
-    let forceStart = false;
-    if (currentGenerator.status === 'MAINTENANCE_REQUIRED') {
-      const confirmStart = confirm(
-        '⚠️ УВАГА: Регламент технічного обслуговування (ТО) цього генератора прострочено!\n\nВи впевнені, що хочете запустити генератор до виконання регламентних робіт?'
-      );
-      if (!confirmStart) return;
-      forceStart = true;
-    }
-
-    btn.disabled = true;
-    btn.dataset.busy = 'true';
-    const oldText = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Запуск...';
-
-    try {
-      const startRes = await api('/generator/start', {
-        method: 'POST',
-        body: JSON.stringify({
-          generator_id: currentGeneratorId,
-          fuel_level_l: currentGenerator.fuel_tank_level_l,
-          force_start: forceStart
-        }),
-        offlineMeta: {
-          action_type: 'gen_start',
-          title: 'Запуск генератора',
-          summary: `${currentGenerator.name || 'Генератор'} (бак ${Number(currentGenerator.fuel_tank_level_l || 0).toFixed(1)} л)`,
-          facility_id: currentFacilityId,
-          generator_id: currentGeneratorId,
-        }
-      });
-      if (startRes && startRes._queuedOffline) {
-        showToast('📥 Запуск генератора збережено в офлайн-чергу (буде надіслано при появі мережі)', 'warning');
-      } else {
-        showToast('Генератор успішно запущено!', 'success');
-      }
-      await loadAllData();
-    } catch (_) {
-      btn.innerHTML = oldText;
-    } finally {
-      btn.disabled = false;
-      btn.dataset.busy = 'false';
-    }
+    await executeGeneratorStart(btn, { isWarmup: false });
   }
 });
+
+async function executeGeneratorStart(triggerBtn, { isWarmup = false } = {}) {
+  if (!currentGenerator || !triggerBtn || triggerBtn.dataset.busy === 'true') return;
+  if (isViewerOnly() || !hasPermission('generator:start')) {
+    showToast('Керування генератором недоступне для поточної ролі', 'warning');
+    return;
+  }
+  if (currentGenerator.status === 'FAULTY' || currentGenerator.status === 'BLOCKED' || currentGenerator.status === 'RUNNING') {
+    showToast('Генератор зараз недоступний для запуску', 'warning');
+    return;
+  }
+
+  let forceStart = false;
+  if (currentGenerator.status === 'MAINTENANCE_REQUIRED') {
+    const confirmStart = confirm(
+      '⚠️ УВАГА: Регламент технічного обслуговування (ТО) цього генератора прострочено!\n\nВи впевнені, що хочете запустити генератор до виконання регламентних робіт?'
+    );
+    if (!confirmStart) return;
+    forceStart = true;
+  } else if (isWarmup) {
+    const warmupMins = Number(currentGenerator.warmup_duration_minutes) || 15;
+    const okWarmup = confirm(
+      `🔥 Запустити профілактичний прогрів генератора (${warmupMins} хв)?\n\nСистема зафіксує сеанс як «Профілактичний прогрів» та надішле нагадування через ${warmupMins} хв, щоб ви не забули його зупинити.`
+    );
+    if (!okWarmup) return;
+  }
+
+  triggerBtn.disabled = true;
+  triggerBtn.dataset.busy = 'true';
+  const oldHtml = triggerBtn.innerHTML;
+  triggerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Запуск...';
+
+  try {
+    const startRes = await api('/generator/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        generator_id: currentGeneratorId,
+        fuel_level_l: currentGenerator.fuel_tank_level_l,
+        force_start: forceStart,
+        is_warmup: Boolean(isWarmup),
+      }),
+      offlineMeta: {
+        action_type: 'gen_start',
+        title: isWarmup ? 'Профілактичний прогрів генератора' : 'Запуск генератора',
+        summary: `${currentGenerator.name || 'Генератор'} (бак ${Number(currentGenerator.fuel_tank_level_l || 0).toFixed(1)} л${isWarmup ? ' • прогрів' : ''})`,
+        facility_id: currentFacilityId,
+        generator_id: currentGeneratorId,
+      }
+    });
+    if (startRes && startRes._queuedOffline) {
+      showToast('📥 Запуск генератора збережено в офлайн-чергу (буде надіслано при появі мережі)', 'warning');
+    } else {
+      showToast(
+        isWarmup ? '🔥 Профілактичний прогрів запущено!' : 'Генератор успішно запущено!',
+        'success'
+      );
+    }
+    await loadAllData();
+  } catch (_) {
+    triggerBtn.innerHTML = oldHtml;
+  } finally {
+    triggerBtn.disabled = false;
+    triggerBtn.dataset.busy = 'false';
+  }
+}
+
+window.startWarmupRun = async function () {
+  const btn = document.getElementById('btnWarmupStart');
+  await executeGeneratorStart(btn, { isWarmup: true });
+};
 
 // Manual Run Entry (Offline/Paper Log)
 window.openManualRunModal = async function () {

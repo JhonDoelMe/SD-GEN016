@@ -14,7 +14,11 @@ from backend.app.models.user import User
 from backend.app.services.settings_service import get_runtime_setting
 from backend.app.services.audit_service import log_audit
 from backend.app.services.notification_service import send_push_notification, check_and_notify_low_fuel, check_and_notify_maintenance_due
-from backend.app.services.generator_service import stop_generator
+from backend.app.services.generator_service import (
+    stop_generator,
+    WARMUP_NOTE_PREFIX,
+    get_generators_idle_info_map,
+)
 from backend.app.services.fuel_service import compute_generator_live_fuel_l
 
 # Guard health monitoring registry (OPG-18)
@@ -38,6 +42,8 @@ async def check_operational_guardrails(db: AsyncSession) -> Dict[str, Any]:
         "auto_stopped_schedule": 0,
         "safety_stopped_max_run": 0,
         "heartbeats_sent": 0,
+        "warmup_done_sent": 0,
+        "warmup_due_sent": 0,
         "active_runs_checked": 0
     }
 
@@ -230,6 +236,43 @@ async def check_operational_guardrails(db: AsyncSession) -> Dict[str, Any]:
                     results["heartbeats_sent"] += 1
 
             # -------------------------------------------------------------
+            # 3.1 Preventive Warmup Completion Reminder
+            # -------------------------------------------------------------
+            if str(run.note or "").startswith(WARMUP_NOTE_PREFIX):
+                try:
+                    warmup_minutes = max(5, int(get_runtime_setting("warmup_duration_minutes", 15)))
+                except Exception:
+                    warmup_minutes = 15
+                if elapsed_seconds >= warmup_minutes * 60:
+                    warmup_done_q = (
+                        select(NotificationLog.id)
+                        .where(
+                            and_(
+                                NotificationLog.event_type == "GENERATOR_WARMUP_DONE",
+                                NotificationLog.generator_id == gen.id,
+                                NotificationLog.created_at >= run.start_time,
+                            )
+                        )
+                        .limit(1)
+                    )
+                    if (await db.execute(warmup_done_q)).scalar() is None:
+                        elapsed_mins = int(elapsed_seconds // 60)
+                        await send_push_notification(
+                            db=db,
+                            title=f"🔥 Профілактичний прогрів завершено — {gen.name}",
+                            body=(
+                                f"Генератор пропрацював {elapsed_mins} хв (план: {warmup_minutes} хв). "
+                                f"Перевірте роботу та зупиніть обладнання."
+                            ),
+                            event_type="GENERATOR_WARMUP_DONE",
+                            generator_id=gen.id,
+                            facility_id=gen.facility_id,
+                            url="/?tab=tab-dashboard",
+                        )
+                        await db.commit()
+                        results["warmup_done_sent"] += 1
+
+            # -------------------------------------------------------------
             # 4. Live Low Fuel & Maintenance Due Checks During Active Run
             # -------------------------------------------------------------
             from backend.app.services.notification_service import (
@@ -244,11 +287,88 @@ async def check_operational_guardrails(db: AsyncSession) -> Dict[str, Any]:
             print(f"[GUARD] Error processing generator run {getattr(run, 'id', None)}: {run_err}", flush=True)
             continue
 
+    # -------------------------------------------------------------
+    # 5. Preventive Warmup Idle Check for Stopped Generators
+    # -------------------------------------------------------------
+    results["warmup_due_sent"] = await _check_preventive_warmup_due_notifications(db, current_time)
+
     # Update health monitoring registry on successful check (OPG-18)
     guard_health_status["last_successful_check"] = now_utc().isoformat()
     guard_health_status["consecutive_failures"] = 0
     guard_health_status["last_error"] = None
     return results
+
+
+async def _check_preventive_warmup_due_notifications(
+    db: AsyncSession,
+    current_time: datetime.datetime,
+) -> int:
+    """Надсилає сповіщення про необхідність профілактичного прогріву при тривалому простої."""
+    if not bool(get_runtime_setting("warmup_reminder_enabled", True)):
+        return 0
+    try:
+        warmup_minutes = max(5, int(get_runtime_setting("warmup_duration_minutes", 15)))
+    except Exception:
+        warmup_minutes = 15
+
+    gens_res = await db.execute(
+        select(Generator).where(
+            Generator.is_active == True,  # noqa: E712
+            Generator.is_configured == True,  # noqa: E712
+            Generator.status.notin_(["RUNNING", "FAULTY", "BLOCKED"]),
+        )
+    )
+    stopped_gens = list(gens_res.scalars().all())
+    if not stopped_gens:
+        return 0
+
+    idle_map = await get_generators_idle_info_map(db, stopped_gens)
+    sent_count = 0
+    for gen in stopped_gens:
+        info = idle_map.get(gen.id, {})
+        if not info.get("warmup_recommended"):
+            continue
+        last_activity_at = info.get("last_run_at") or gen.created_at
+        if last_activity_at is not None and last_activity_at.tzinfo is not None:
+            last_activity_at = last_activity_at.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+
+        last_due_q = (
+            select(NotificationLog.created_at)
+            .where(
+                and_(
+                    NotificationLog.event_type == "GENERATOR_WARMUP_DUE",
+                    NotificationLog.generator_id == gen.id,
+                )
+            )
+            .order_by(NotificationLog.created_at.desc())
+            .limit(1)
+        )
+        last_due_at = (await db.execute(last_due_q)).scalar()
+        if last_due_at is not None and last_due_at.tzinfo is not None:
+            last_due_at = last_due_at.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+
+        if last_due_at is not None:
+            since_notif = (current_time - last_due_at).total_seconds()
+            notified_after_last_run = (last_activity_at is None) or (last_due_at >= last_activity_at)
+            if notified_after_last_run and since_notif < 7 * 86400:
+                continue
+
+        days_idle = int(info.get("days_since_last_run") or 0)
+        await send_push_notification(
+            db=db,
+            title=f"🔥 Потрібен профілактичний прогрів — {gen.name}",
+            body=(
+                f"Генератор не запускався вже {days_idle} дн. "
+                f"Рекомендовано провести {warmup_minutes}-хвилинний прогрів для збереження АКБ та паливної системи."
+            ),
+            event_type="GENERATOR_WARMUP_DUE",
+            generator_id=gen.id,
+            facility_id=gen.facility_id,
+            url="/?tab=tab-dashboard",
+        )
+        await db.commit()
+        sent_count += 1
+    return sent_count
 
 
 

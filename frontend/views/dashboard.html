@@ -13,15 +13,22 @@
           <!-- Diesel Frost / Winter Fuel Notice (< 0°C, Diesel only) -->
           <div id="genDieselFrostBanner" class="diesel-frost-banner" style="display: none;"></div>
 
+          <!-- Preventive Warmup Due Reminder Banner -->
+          <div id="genWarmupDueBanner" class="warmup-due-banner" style="display: none;"></div>
+
           <!-- Big Operator Action Button -->
           <button id="mainActionBtn" class="btn-hero btn-start">
             <span style="font-size: 1.5rem;">▶</span>
             <span>ЗАПУСТИТИ ГЕНЕРАТОР</span>
           </button>
 
-          <!-- Manual Run Entry Button (Separated to prevent accidental clicks) -->
-          <div style="display: flex; justify-content: flex-end; margin-top: 0.65rem;">
-            <button type="button" id="btnOpenManualRun" class="btn-action" style="padding: 0.4rem 0.85rem; font-size: 0.82rem; min-height: auto; color: var(--text-muted); border: 1px dashed var(--border-color); background: var(--bg-card); display: inline-flex; align-items: center; gap: 0.4rem;" onclick="openManualRunModal()" title="Внести сеанс роботи генератора з паперового журналу (якщо не було зв'язку)">
+          <!-- Warmup Start & Manual Run Entry Buttons (Separated to prevent accidental clicks) -->
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.65rem;">
+            <button type="button" id="btnWarmupStart" class="btn-action" style="padding: 0.4rem 0.85rem; font-size: 0.82rem; min-height: auto; color: #fb923c; border: 1px dashed rgba(249, 115, 22, 0.45); background: rgba(249, 115, 22, 0.08); display: none; align-items: center; gap: 0.4rem;" onclick="startWarmupRun()" title="Запустити генератор у режимі короткого профілактичного прогріву">
+              <span>🔥</span>
+              <span id="btnWarmupStartLabel">Профілактичний прогрів (15 хв)</span>
+            </button>
+            <button type="button" id="btnOpenManualRun" class="btn-action" style="padding: 0.4rem 0.85rem; font-size: 0.82rem; min-height: auto; margin-left: auto; color: var(--text-muted); border: 1px dashed var(--border-color); background: var(--bg-card); display: inline-flex; align-items: center; gap: 0.4rem;" onclick="openManualRunModal()" title="Внести сеанс роботи генератора з паперового журналу (якщо не було зв'язку)">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-cyan); flex-shrink: 0;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
               <span>Внести сеанс роботи вручну</span>
             </button>
@@ -29,6 +36,7 @@
 
           <!-- Live Running Timer (if active) -->
           <div id="activeRunBanner" style="display: none; background: rgba(34, 197, 94, 0.1); border: 1px dashed #22c55e; border-radius: 0.5rem; padding: 0.75rem; font-size: 0.95rem; text-align: center;">
+            <span id="activeRunWarmupBadge" style="display: none; margin-right: 0.35rem; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.78rem; font-weight: 700; background: rgba(249, 115, 22, 0.22); color: #fb923c;">🔥 ПРОГРІВ</span>
             ⚡ Триває робочий цикл. Початок: <b id="activeRunStart">-</b> | Початкові години: <b id="activeRunHours">-</b> | Фактичний час: <b id="activeRunDuration" style="font-family: monospace; color: #4ade80;">00:00:00</b>
           </div>
 

@@ -2025,6 +2025,25 @@
   color: #075985;
 }
 
+.warmup-due-banner {
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.16), rgba(234, 88, 12, 0.08));
+  border: 1px solid rgba(249, 115, 22, 0.42);
+  border-radius: 0.6rem;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: #fed7aa;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+[data-theme="light"] .warmup-due-banner {
+  background: linear-gradient(135deg, rgba(251, 146, 60, 0.16), rgba(255, 247, 237, 0.96));
+  border-color: rgba(234, 88, 12, 0.38);
+  color: #9a3412;
+}
+
 .red-alert-safety-info {
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.14), rgba(185, 28, 28, 0.08));
   border: 1px solid rgba(239, 68, 68, 0.42);

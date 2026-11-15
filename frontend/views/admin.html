@@ -400,6 +400,24 @@
                   <span class="settings-toggle-desc">При збереженні налаштувань автоматично застосовувати обраний часовий пояс, години початку/кінця зміни та базовий інтервал ТО до всіх існуючих об'єктів та генераторів у системі.</span>
                 </div>
               </label>
+
+              <label class="settings-toggle-item" style="border-color: rgba(249, 115, 22, 0.35);">
+                <input type="checkbox" id="sysWarmupReminderEnabled" checked>
+                <div class="settings-toggle-content">
+                  <span class="settings-toggle-title" style="color: #fb923c;">🔥 Нагадування про профілактичний прогрів генератора</span>
+                  <span class="settings-toggle-desc">Повідомляти операторів при тривалому простої без запусків та нагадувати зупинити обладнання після завершення прогріву.</span>
+                </div>
+              </label>
+            </div>
+            <div class="form-row-2" style="margin-top: 0.85rem;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Поріг простою для прогріву (днів)</label>
+                <input type="number" min="1" max="90" step="1" id="sysWarmupIdleDays" value="14">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Рекомендований час прогріву (хв)</label>
+                <input type="number" min="5" max="60" step="1" id="sysWarmupDurationMinutes" value="15">
+              </div>
             </div>
           </div>
 

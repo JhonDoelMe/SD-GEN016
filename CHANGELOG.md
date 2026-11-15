@@ -5,6 +5,17 @@
 
 ---
 
+## [v5.7.14] — 2026-11-15
+### 🔥 Профілактичний прогрів генератора та виправлення калькулятора автономності YASNO
+- **Виправлено розрахунок плану відключень YASNO та витрати пального ([`dashboard.js`](frontend/js/dashboard.js))**:
+  - У функціях `_sumYasnoTodayRemMinutes()` і `_sumYasnoTomorrowMinutes()`, а також у резервному пошуку слота в `updateFuelAssessmentBlock()` додано фільтрацію слотів строго за типами відключень (`Definite` / `Probable`). Раніше враховувалися й зелені інтервали `"NotPlanned"`, що завищувало добовий план до 24–38 год.
+  - Поточний час доби для слотів YASNO тепер обчислюється у таймзоні об'єкта/генератора (`Europe/Kyiv` через `Intl.DateTimeFormat`), а не за локальним годинником браузера.
+  - Замінено `|| 2.2` у калькуляторі автономності та таймері на `_getNominalConsumption()`, щоб явне нульове значення номінальної витрати не підмінялося на `2,2 л/год`.
+- **Новий функціонал «Профілактичний прогрів» ([`settings_service.py`](backend/app/services/settings_service.py), [`system.py`](backend/app/api/v1/system.py), [`generator.py`](backend/app/api/v1/generator.py), [`generator_service.py`](backend/app/services/generator_service.py), [`operational_guard_service.py`](backend/app/services/operational_guard_service.py), [`notification_service.py`](backend/app/services/notification_service.py), [`dashboard.html`](frontend/views/dashboard.html), [`admin.html`](frontend/views/admin.html), [`admin.js`](frontend/js/admin.js), [`views.css`](frontend/css/views.css), [`test_operational_safeguards.py`](backend/tests/test_operational_safeguards.py))**:
+  - Відстеження днів простою (`days_since_last_run`, `last_run_at`, `warmup_recommended`, `warmup_duration_minutes` у `GeneratorOut`) без зміни структури БД (`ALTER TABLE` не виконувався).
+  - Кнопка запуску профілактичного прогріву (`#btnWarmupStart`), банер рекомендації при простої (`#genWarmupDueBanner`), бейдж активного прогріву (`#activeRunWarmupBadge`) та збереження тегу `Профілактичний прогрів` у примітці робочого циклу після зупинки.
+  - Налаштування в Адмін-панелі Блок 4 (`warmup_reminder_enabled`, `warmup_idle_days`, `warmup_duration_minutes`) + push-сповіщення `GENERATOR_WARMUP_DONE` (по завершенні заданих хвилин) і `GENERATOR_WARMUP_DUE` (при простої з 7-денним захистом від спаму).
+
 ## [v5.7.13] — 2026-11-15
 ### 🛠️ Узгодження часового поясу в Email/експорті, єдиний розрахунок живого пального та `--no-code` версіонування
 - **Локальний час (`now_facility()`) замість сирого UTC ([`email_service.py`](backend/app/services/email_service.py), [`audit.py`](backend/app/api/v1/audit.py), [`backups.py`](backend/app/api/v1/backups.py), [`reports.py`](backend/app/api/v1/reports.py), [`system.py`](backend/app/api/v1/system.py), [`test_email_system.py`](backend/tests/test_email_system.py))**:

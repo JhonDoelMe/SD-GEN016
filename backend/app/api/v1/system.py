@@ -74,6 +74,9 @@ class SystemSettingsUpdateRequest(BaseModel):
     auto_stop_on_schedule_end: Optional[bool] = None
     notify_running_heartbeat: Optional[bool] = None
     heartbeat_interval_hours: Optional[float] = Field(default=None, ge=1.0, le=24.0)
+    warmup_reminder_enabled: Optional[bool] = None
+    warmup_idle_days: Optional[int] = Field(default=None, ge=1, le=90)
+    warmup_duration_minutes: Optional[int] = Field(default=None, ge=5, le=60)
     fuel_receipt_max_liters_warning: Optional[float] = Field(default=None, gt=0)
     fuel_receipt_min_price: Optional[float] = Field(default=None, ge=0)
     fuel_receipt_max_price: Optional[float] = Field(default=None, gt=0)
@@ -328,6 +331,9 @@ async def update_admin_system_settings(
         "auto_stop_on_schedule_end",
         "notify_running_heartbeat",
         "heartbeat_interval_hours",
+        "warmup_reminder_enabled",
+        "warmup_idle_days",
+        "warmup_duration_minutes",
         "fuel_receipt_max_liters_warning",
         "fuel_receipt_min_price",
         "fuel_receipt_max_price",

@@ -26,6 +26,9 @@ from backend.app.services.fuel_service import (
 )
 
 
+WARMUP_NOTE_PREFIX = "Профілактичний прогрів"
+
+
 def _normalize_to_utc_naive(dt: datetime.datetime, tz_name: Optional[str] = None) -> datetime.datetime:
     """
     GEN-09: Єдина політика нормалізації часу до naive UTC для збереження в БД.
@@ -456,6 +459,75 @@ async def get_generators_cooldown_map(db: AsyncSession, generator_ids: List[int]
     return cooldown_map
 
 
+async def get_generators_idle_info_map(
+    db: AsyncSession,
+    generators: List[Generator],
+) -> Dict[int, Dict[str, Any]]:
+    """
+    Пакетний розрахунок тривалості простою та необхідності профілактичного прогріву
+    для списку генераторів одним SQL-запитом.
+    """
+    if not generators:
+        return {}
+
+    gen_ids = [int(g.id) for g in generators]
+    q = (
+        select(
+            GeneratorRun.generator_id,
+            func.max(func.coalesce(GeneratorRun.end_time, GeneratorRun.start_time)),
+        )
+        .where(GeneratorRun.generator_id.in_(gen_ids))
+        .group_by(GeneratorRun.generator_id)
+    )
+    res = await db.execute(q)
+    last_run_map: Dict[int, Optional[datetime.datetime]] = {
+        int(gid): last_dt for gid, last_dt in res.all()
+    }
+
+    now = utc_now()
+    if now.tzinfo is not None:
+        now = now.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+
+    try:
+        warmup_enabled = bool(get_runtime_setting("warmup_reminder_enabled", True))
+        idle_limit_days = max(1, int(get_runtime_setting("warmup_idle_days", 14)))
+        warmup_minutes = max(5, int(get_runtime_setting("warmup_duration_minutes", 15)))
+    except Exception:
+        warmup_enabled, idle_limit_days, warmup_minutes = True, 14, 15
+
+    idle_map: Dict[int, Dict[str, Any]] = {}
+    for g in generators:
+        gid = int(g.id)
+        last_dt = last_run_map.get(gid)
+        status_upper = str(g.status or "").upper()
+        if status_upper == "RUNNING":
+            days_since: Optional[float] = 0.0
+        else:
+            ref_dt = last_dt or g.created_at
+            if ref_dt is not None:
+                if ref_dt.tzinfo is not None:
+                    ref_dt = ref_dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+                days_since = round(max(0.0, (now - ref_dt).total_seconds() / 86400.0), 1)
+            else:
+                days_since = None
+
+        warmup_rec = bool(
+            warmup_enabled
+            and getattr(g, "is_active", True)
+            and getattr(g, "is_configured", False)
+            and status_upper not in ("RUNNING", "FAULTY", "BLOCKED")
+            and days_since is not None
+            and days_since >= idle_limit_days
+        )
+        idle_map[gid] = {
+            "last_run_at": last_dt,
+            "days_since_last_run": days_since,
+            "warmup_recommended": warmup_rec,
+            "warmup_duration_minutes": warmup_minutes,
+        }
+    return idle_map
+
+
 async def start_generator(
     db: AsyncSession,
     generator_id: int,
@@ -466,7 +538,8 @@ async def start_generator(
     force_start_reason: Optional[str] = None,
     idempotency_key: Optional[str] = None,
     facility_id: Optional[int] = None,
-    skip_cooldown: bool = False
+    skip_cooldown: bool = False,
+    is_warmup: bool = False
 ) -> GeneratorRun:
     """
     GEN-01, GEN-04, GEN-06, GEN-09, GEN-11, GEN-12, GEN-15:
@@ -648,6 +721,7 @@ async def start_generator(
         start_hours=generator.current_operating_hours,
         start_fuel_level_l=current_fuel,
         status="RUNNING",
+        note=(WARMUP_NOTE_PREFIX if is_warmup else None),
         idempotency_key=clean_idem_key
     )
     db.add(run)
@@ -698,7 +772,8 @@ async def start_generator(
             "start_hours": run.start_hours,
             "start_fuel": current_fuel,
             "run_id": run.id,
-            "forced_with_maintenance": bool(is_maintenance_overdue and force_start_with_maintenance)
+            "forced_with_maintenance": bool(is_maintenance_overdue and force_start_with_maintenance),
+            "is_warmup": bool(is_warmup),
         },
         ip_address=ip_address
     )
@@ -714,7 +789,8 @@ async def start_generator(
             generator=generator,
             user_name=u_name,
             start_fuel=current_fuel or 0.0,
-            start_hours=run.start_hours
+            start_hours=run.start_hours,
+            is_warmup=bool(is_warmup),
         )
     except Exception as ex:
         print(f"[NOTIF] Failed to send start notification: {ex}", flush=True)
@@ -848,6 +924,7 @@ async def stop_generator(
     fuel_shortage_l = 0.0 if in_measurement else fuel_res["fuel_shortage_l"]
 
     # Оновлюємо сеанс та генератор після успішного списання пального
+    was_warmup = str(run.note or "").startswith(WARMUP_NOTE_PREFIX)
     run.end_time = end_time
     run.end_hours = end_hours
     run.duration_seconds = duration_seconds
@@ -855,7 +932,15 @@ async def stop_generator(
     run.calculated_consumption_l = calculated_consumption
     run.end_fuel_level_l = fuel_res["end_fuel_l"]
     run.status = "COMPLETED"
-    run.note = (stop_data.note if (stop_data and stop_data.note) else system_note)
+    user_note = stop_data.note.strip() if (stop_data and stop_data.note) else ""
+    base_stop_note = user_note or system_note
+    if was_warmup:
+        if base_stop_note and not base_stop_note.startswith(WARMUP_NOTE_PREFIX):
+            run.note = f"{WARMUP_NOTE_PREFIX} — {base_stop_note}"
+        else:
+            run.note = base_stop_note or WARMUP_NOTE_PREFIX
+    else:
+        run.note = stop_data.note if (stop_data and stop_data.note) else system_note
 
     generator.current_operating_hours = end_hours
     generator.updated_at = end_time
@@ -897,7 +982,8 @@ async def stop_generator(
         "fuel_shortage_l": fuel_shortage_l,
         "fuel_discrepancy": (fuel_shortage_l > 0),
         "run_id": run.id,
-        "status_after": generator.status
+        "status_after": generator.status,
+        "is_warmup": was_warmup
     }
     if system_note:
         audit_details["system_note"] = system_note

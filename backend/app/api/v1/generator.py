@@ -25,7 +25,8 @@ from backend.app.services.generator_service import (
     start_generator, stop_generator, get_generators_list,
     create_generator, delete_generator, update_generator, add_manual_run,
     restore_generator, transfer_generator_facility, reconcile_generator_state,
-    get_generator_cooldown_remaining, get_generators_cooldown_map
+    get_generator_cooldown_remaining, get_generators_cooldown_map,
+    get_generators_idle_info_map
 )
 from backend.app.services.fuel_service import compute_live_tank_levels_map
 from backend.app.services.idempotency_service import resolve_idempotency_key, run_idempotent_endpoint
@@ -68,6 +69,24 @@ def run_to_out(run: GeneratorRun, user_name: Optional[str] = None) -> GeneratorR
 router = APIRouter(prefix="/generator", tags=["Генератор"])
 
 
+def _build_generator_out(
+    gen: Generator,
+    live_map: dict,
+    idle_map: dict,
+    cooldown_seconds: int,
+) -> GeneratorOut:
+    """Формує схему GeneratorOut із живими обчислюваними показниками."""
+    idle_info = idle_map.get(gen.id, {})
+    out = GeneratorOut.model_validate(gen)
+    out.live_fuel_tank_level_l = live_map.get(gen.id, gen.fuel_tank_level_l)
+    out.cooldown_remaining_seconds = cooldown_seconds
+    out.days_since_last_run = idle_info.get("days_since_last_run")
+    out.last_run_at = idle_info.get("last_run_at")
+    out.warmup_recommended = bool(idle_info.get("warmup_recommended", False))
+    out.warmup_duration_minutes = int(idle_info.get("warmup_duration_minutes", 15))
+    return out
+
+
 @router.get("", response_model=GeneratorOut)
 async def get_generator(
     generator_id: Optional[int] = None,
@@ -85,12 +104,9 @@ async def get_generator(
         include_archived=include_archived
     )
     live_map = await compute_live_tank_levels_map(db, [gen])
-    out = GeneratorOut.model_validate(gen)
-    out.live_fuel_tank_level_l = live_map.get(gen.id, gen.fuel_tank_level_l)
-    out.cooldown_remaining_seconds = (
-        0 if gen.status == "RUNNING" else await get_generator_cooldown_remaining(db, gen.id)
-    )
-    return out
+    idle_map = await get_generators_idle_info_map(db, [gen])
+    cooldown_sec = 0 if gen.status == "RUNNING" else await get_generator_cooldown_remaining(db, gen.id)
+    return _build_generator_out(gen, live_map, idle_map, cooldown_sec)
 
 
 @router.get("/list", response_model=List[GeneratorOut])
@@ -106,13 +122,11 @@ async def list_all_generators(
     stopped_ids = [g.id for g in gens if g.status != "RUNNING"]
     cooldown_map = await get_generators_cooldown_map(db, stopped_ids) if stopped_ids else {}
     live_map = await compute_live_tank_levels_map(db, gens)
-    res = []
-    for g in gens:
-        item = GeneratorOut.model_validate(g)
-        item.live_fuel_tank_level_l = live_map.get(g.id, g.fuel_tank_level_l)
-        item.cooldown_remaining_seconds = cooldown_map.get(g.id, 0)
-        res.append(item)
-    return res
+    idle_map = await get_generators_idle_info_map(db, gens)
+    return [
+        _build_generator_out(g, live_map, idle_map, cooldown_map.get(g.id, 0))
+        for g in gens
+    ]
 
 
 @router.post("", response_model=GeneratorOut, status_code=status.HTTP_201_CREATED)
@@ -246,7 +260,8 @@ async def api_start_generator(
         force_start_reason=data.force_start_reason,
         idempotency_key=idem_key,
         facility_id=eff_fac_id,
-        skip_cooldown=getattr(data, "skip_cooldown", False)
+        skip_cooldown=getattr(data, "skip_cooldown", False),
+        is_warmup=getattr(data, "is_warmup", False)
     )
     return run_to_out(run, user_name=current_user.full_name)
 
