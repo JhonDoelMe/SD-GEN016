@@ -5,6 +5,14 @@
 
 ---
 
+## [v5.7.11] — 2026-11-15
+### ⛽ Живий залишок пального у «Паливо» та блокування заправки під час роботи (`versionCode 18`)
+- **Узгоджений розрахунок залишку в баку ([`fuel_service.py`](backend/app/services/fuel_service.py), [`schemas/fuel.py`](backend/app/schemas/fuel.py), [`schemas/generator.py`](backend/app/schemas/generator.py), [`api/v1/generator.py`](backend/app/api/v1/generator.py), [`frontend/views/fuel.html`](frontend/views/fuel.html), [`frontend/js/dashboard.js`](frontend/js/dashboard.js))**:
+  - Додано функцію `compute_live_tank_levels_map()`, яка для генераторів зі статусом `RUNNING` розраховує живий залишок пального у реальному часі без передчасного псування облікового стовпця в БД.
+  - `GET /api/v1/fuel/summary` повертає живий `tank_balance_l`, синхронний з дашбордом оператора, разом із `tank_accounting_balance_l` та `has_running_generators` (на картці вкладки «Паливо» відображається також рівень на старті циклу); `GET /api/v1/generator` і `/list` передають `live_fuel_tank_level_l`.
+- **Категорична заборона заправки під час роботи генератора ([`fuel_service.py`](backend/app/services/fuel_service.py), [`frontend/js/fuel.js`](frontend/js/fuel.js), [`test_fuel_management.py`](backend/tests/test_fuel_management.py))**:
+  - На бекенді (`POST /api/v1/fuel/transfer`) та в інтерфейсі модалки «Заправити бак» заправка генератора у статусі `RUNNING` блокується з чітким попередженням про небезпеку та вимогою спочатку зупинити генератор для фіксації витрати.
+
 ## [v5.7.10] — 2026-11-15
 ### 🪟 «Розумний трей» індикаторів у мобільній шапці (`versionCode 17`)
 - **Розвантаження верхньої панелі на смартфонах ([`frontend/index.html`](frontend/index.html), [`frontend/css/layout.css`](frontend/css/layout.css), [`frontend/js/auth-nav.js`](frontend/js/auth-nav.js), [`frontend/js/weather-alerts.js`](frontend/js/weather-alerts.js), [`frontend/js/offline-queue.js`](frontend/js/offline-queue.js))**:

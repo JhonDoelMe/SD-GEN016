@@ -27,6 +27,7 @@ from backend.app.services.generator_service import (
     restore_generator, transfer_generator_facility, reconcile_generator_state,
     get_generator_cooldown_remaining, get_generators_cooldown_map
 )
+from backend.app.services.fuel_service import compute_live_tank_levels_map
 from backend.app.services.idempotency_service import resolve_idempotency_key, run_idempotent_endpoint
 
 
@@ -83,7 +84,9 @@ async def get_generator(
         facility_id=eff_facility_id,
         include_archived=include_archived
     )
+    live_map = await compute_live_tank_levels_map(db, [gen])
     out = GeneratorOut.model_validate(gen)
+    out.live_fuel_tank_level_l = live_map.get(gen.id, gen.fuel_tank_level_l)
     out.cooldown_remaining_seconds = (
         0 if gen.status == "RUNNING" else await get_generator_cooldown_remaining(db, gen.id)
     )
@@ -102,9 +105,11 @@ async def list_all_generators(
     gens = await get_generators_list(db, facility_id=eff_facility_id, include_archived=include_archived)
     stopped_ids = [g.id for g in gens if g.status != "RUNNING"]
     cooldown_map = await get_generators_cooldown_map(db, stopped_ids) if stopped_ids else {}
+    live_map = await compute_live_tank_levels_map(db, gens)
     res = []
     for g in gens:
         item = GeneratorOut.model_validate(g)
+        item.live_fuel_tank_level_l = live_map.get(g.id, g.fuel_tank_level_l)
         item.cooldown_remaining_seconds = cooldown_map.get(g.id, 0)
         res.append(item)
     return res

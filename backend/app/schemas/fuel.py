@@ -121,6 +121,8 @@ class FuelTransferOut(BaseModel):
 class FuelBalancesSummary(BaseModel):
     warehouse_balance_l: float
     tank_balance_l: float
+    tank_accounting_balance_l: Optional[float] = None
+    has_running_generators: bool = False
     tank_capacity_l: float
     total_received_l: float
     total_spent_uah: float

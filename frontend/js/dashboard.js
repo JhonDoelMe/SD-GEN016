@@ -75,7 +75,21 @@ window.loadFuelSummary = async function () {
     const fuelStockBal = document.getElementById('fuelStockBal');
     if (fuelStockBal) fuelStockBal.innerText = formatLiters(s.warehouse_balance_l);
     const fuelTankBal = document.getElementById('fuelTankBal');
-    if (fuelTankBal) fuelTankBal.innerText = formatLiters(s.tank_balance_l);
+    if (fuelTankBal) {
+      fuelTankBal.innerText = formatLiters(s.tank_balance_l);
+      fuelTankBal.style.color = (s.has_running_generators && Number(s.tank_balance_l) <= 0) ? '#ef4444' : '';
+    }
+    const fuelTankBalSub = document.getElementById('fuelTankBalSub');
+    if (fuelTankBalSub) {
+      if (s.has_running_generators && s.tank_accounting_balance_l != null) {
+        fuelTankBalSub.style.display = 'block';
+        fuelTankBalSub.style.color = '#38bdf8';
+        fuelTankBalSub.innerText = `⚡ в роботі • на старті: ${formatLiters(s.tank_accounting_balance_l)}`;
+      } else {
+        fuelTankBalSub.style.display = 'none';
+        fuelTankBalSub.innerText = '';
+      }
+    }
     const fuelTotalBought = document.getElementById('fuelTotalBought');
     if (fuelTotalBought) fuelTotalBought.innerText = formatLiters(s.total_received_l);
     const fuelTotalSpent = document.getElementById('fuelTotalSpent');

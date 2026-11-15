@@ -275,7 +275,16 @@ async function setupTransferModal() {
       if (!gens || gens.length === 0) {
         genSel.innerHTML = '<option value="">(Немає генераторів)</option>';
       } else {
-        genSel.innerHTML = gens.map(g => { const cap = Number(g.tank_capacity_l || 25.0); const cur = Number(g.fuel_tank_level_l || 0); const free = Math.max(0, cap - cur); return `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)}, в баку: ${cur.toFixed(1)} / ${cap.toFixed(1)} л • вільно: ${free.toFixed(1)} л)</option>`; }).join('');
+        genSel.innerHTML = gens.map(g => {
+          const cap = Number(g.tank_capacity_l || 25.0);
+          const cur = Number(g.live_fuel_tank_level_l ?? g.fuel_tank_level_l ?? 0);
+          const free = Math.max(0, cap - cur);
+          const isRun = String(g.status || '').toUpperCase() === 'RUNNING';
+          const statusPart = isRun
+            ? `⚡ ПРАЦЮЄ, в баку: ~${cur.toFixed(1)} / ${cap.toFixed(1)} л`
+            : `в баку: ${cur.toFixed(1)} / ${cap.toFixed(1)} л • вільно: ${free.toFixed(1)} л`;
+          return `<option value="${Number(g.id)}">${escapeHtml(g.name)} (${escapeHtml(g.model)}, ${statusPart})</option>`;
+        }).join('');
         if (currentGeneratorId && gens.some(g => g.id === currentGeneratorId)) genSel.value = currentGeneratorId;
         if (typeof window.updateTransferCapacityHint === 'function') window.updateTransferCapacityHint();
       }
@@ -719,7 +728,8 @@ window._getSelectedTransferEntities = function() {
 
 window._computeTransferBounds = function(stock, gen) {
   const cap = Number(gen.tank_capacity_l || 25.0);
-  const inTank = Number(gen.fuel_tank_level_l || 0);
+  const isRunning = String(gen.status || '').toUpperCase() === 'RUNNING';
+  const inTank = Number(gen.live_fuel_tank_level_l ?? gen.fuel_tank_level_l ?? 0);
   const inMeas = !!(window._measurementState?.is_measuring && Number(window._measurementState.active?.generator_id) === Number(gen.id));
   const exactFree = Math.max(0, Number((cap - inTank).toFixed(3)));
   // Match backend 0.05 L display-rounding tolerance so fractional tank residue never traps at 59.9 L
@@ -737,7 +747,7 @@ window._computeTransferBounds = function(stock, gen) {
   const stockBal = stock ? Math.max(0, Number(Number(stock.current_balance_l || 0).toFixed(3))) : 0;
   const maxAllowed = stock ? Math.max(0, Number(Math.min(effTankSpace, stockBal).toFixed(3))) : effTankSpace;
   const fillMax = stock ? Math.max(0, Number(Math.min(fillSpace, stockBal).toFixed(2))) : Number(fillSpace.toFixed(2));
-  return { cap, inTank, inMeas, exactFree, freeInTank, effTankSpace, stockBal, maxAllowed, fillMax };
+  return { cap, inTank, isRunning, inMeas, exactFree, freeInTank, effTankSpace, stockBal, maxAllowed, fillMax };
 };
 
 window.formatTransferLitersLabel = function(val) {
@@ -760,20 +770,28 @@ window.updateTransferCapacityHint = function() {
     return;
   }
 
-  const { exactFree, fillMax, maxAllowed, inMeas } = window._computeTransferBounds(stock, gen);
+  const { isRunning, exactFree, fillMax, maxAllowed, inMeas } = window._computeTransferBounds(stock, gen);
   const fillLabel = window.formatTransferLitersLabel(fillMax);
 
-  inputEl.max = String(maxAllowed > 0 ? Math.max(maxAllowed, fillMax) : 0);
-  inputEl.placeholder = maxAllowed > 0 ? `макс. ${fillLabel} л` : 'бак повний (0.0 л)';
+  if (isRunning) {
+    inputEl.disabled = true;
+    inputEl.value = '';
+    inputEl.placeholder = 'Спочатку зупиніть генератор';
+    if (fillBtn) fillBtn.style.display = 'none';
+  } else {
+    inputEl.disabled = false;
+    inputEl.max = String(maxAllowed > 0 ? Math.max(maxAllowed, fillMax) : 0);
+    inputEl.placeholder = maxAllowed > 0 ? `макс. ${fillLabel} л` : 'бак повний (0.0 л)';
 
-  if (fillBtn) {
-    if (fillMax > 0) {
-      fillBtn.style.display = 'inline-block';
-      fillBtn.innerText = inMeas && exactFree <= 0
-        ? `⚡ До повної ємності (${fillLabel} л)`
-        : `⚡ До повного (+${fillLabel} л)`;
-    } else {
-      fillBtn.style.display = 'none';
+    if (fillBtn) {
+      if (fillMax > 0) {
+        fillBtn.style.display = 'inline-block';
+        fillBtn.innerText = inMeas && exactFree <= 0
+          ? `⚡ До повної ємності (${fillLabel} л)`
+          : `⚡ До повного (+${fillLabel} л)`;
+      } else {
+        fillBtn.style.display = 'none';
+      }
     }
   }
 
@@ -784,7 +802,8 @@ window.fillTransferTankMax = function() {
   const { stock, gen } = window._getSelectedTransferEntities();
   const inputEl = document.getElementById('transLiters');
   if (!gen || !inputEl) return;
-  const { fillMax } = window._computeTransferBounds(stock, gen);
+  const { isRunning, fillMax } = window._computeTransferBounds(stock, gen);
+  if (isRunning) return;
   if (fillMax > 0) {
     inputEl.value = window.formatTransferLitersLabel(fillMax);
     window.validateTransferLitersInput();
@@ -798,7 +817,18 @@ window.validateTransferLitersInput = function() {
   const submitBtn = document.querySelector('#transferForm button[type="submit"]');
   if (!inputEl || !hintEl || !gen) return true;
 
-  const { cap, inTank, inMeas, exactFree, effTankSpace, stockBal, maxAllowed, fillMax } = window._computeTransferBounds(stock, gen);
+  const { cap, inTank, isRunning, inMeas, exactFree, effTankSpace, stockBal, maxAllowed, fillMax } = window._computeTransferBounds(stock, gen);
+  const canHintEl = document.getElementById('transCanisterBreakdownHint');
+  if (isRunning) {
+    hintEl.innerHTML = `<div style="padding: 0.6rem 0.75rem; border-radius: 0.5rem; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; font-weight: 600; line-height: 1.45;">⛔ Заправка під час роботи генератора заборонена з міркувань безпеки!<br><span style="font-weight: 400;">Зараз у баку орієнтовно <b>${inTank.toFixed(1)} л</b> з ${cap.toFixed(1)} л. Спочатку зупиніть генератор, щоб зафіксувати витрату пального.</span></div>`;
+    if (submitBtn) submitBtn.disabled = true;
+    if (canHintEl) {
+      canHintEl.style.display = 'none';
+      canHintEl.innerHTML = '';
+    }
+    return false;
+  }
+
   const freeLabel = window.formatTransferLitersLabel(fillMax || exactFree);
   const rawVal = inputEl.value.trim();
   const val = rawVal !== '' ? parseFloat(rawVal) : null;
@@ -839,7 +869,6 @@ window.validateTransferLitersInput = function() {
     : '';
   hintEl.innerHTML = `Місткість бака: <b>${cap.toFixed(1)} л</b> • Зараз у баку: <b>${inTank.toFixed(1)} л</b> • Вільно за обліком: <b style="color: var(--accent-cyan);">${freeLabel} л</b> (макс. до заправки: <b>${window.formatTransferLitersLabel(Math.max(maxAllowed, fillMax))} л</b>)${afterText}${measNote}`;
 
-  const canHintEl = document.getElementById('transCanisterBreakdownHint');
   if (canHintEl) {
     const stockPool = stock && Array.isArray(window._cachedCanisterPools)
       ? window._cachedCanisterPools.find(p => Number(p.stock_id) === Number(stock.id) && p.is_active)
@@ -1232,7 +1261,11 @@ window.checkTransferClientBounds = function() {
   const inputEl = document.getElementById('transLiters');
   if (!gen || !inputEl) return true;
   const val = parseFloat(inputEl.value);
-  const { cap, inTank, inMeas, effTankSpace, stockBal, fillMax } = window._computeTransferBounds(stock, gen);
+  const { cap, inTank, isRunning, inMeas, effTankSpace, stockBal, fillMax } = window._computeTransferBounds(stock, gen);
+  if (isRunning) {
+    showToast('Заправка під час роботи генератора заборонена! Спочатку зупиніть генератор.', 'error');
+    return false;
+  }
   const allowedTankMax = inMeas ? cap : Math.max(effTankSpace, fillMax);
 
   if (Number.isNaN(val) || val <= 0) {

@@ -76,6 +76,7 @@ class GeneratorOut(BaseModel):
     nominal_consumption_l_per_h: float
     current_operating_hours: float
     fuel_tank_level_l: float
+    live_fuel_tank_level_l: Optional[float] = None
     status: str
     is_configured: bool
     is_active: bool = True

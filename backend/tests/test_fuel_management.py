@@ -225,3 +225,104 @@ async def test_fuel_transfer_allows_0_05l_rounding_tolerance_to_fill_full_60l_ta
     )
     assert over.status_code == 400
     assert "Перевищення місткості бака" in over.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_running_generator_blocks_refuel_and_exposes_live_tank_balance(
+    client, superadmin_auth, operator_auth, db_session
+):
+    """
+    Перевіряє два інваріанти під час роботи генератора (RUNNING):
+    1) Заправка працюючого генератора категорично блокується з HTTP 400 (міркування безпеки та коректність списання).
+    2) GET /fuel/summary, GET /generator і GET /generator/list повертають узгоджений розрахунковий live-залишок,
+       який збігається з показником на головному дашборді, без передчасного псування облікового fuel_tank_level_l у БД.
+    """
+    import datetime
+    from sqlalchemy import update
+    from backend.app.models.generator import GeneratorRun
+
+    fac_res = await client.get("/api/v1/facilities", headers=superadmin_auth)
+    assert fac_res.status_code == 200, fac_res.text
+    fac_id = fac_res.json()[0]["id"]
+
+    gen_res = await client.post(
+        "/api/v1/generator/wizard",
+        headers=superadmin_auth,
+        json={
+            "facility_id": fac_id,
+            "name": "LIVE-GEN-01",
+            "model": "Test-60",
+            "manufacturer": "Vulkan",
+            "serial_number": "LIVE-001",
+            "rated_power_kw": 15.0,
+            "tank_capacity_l": 60.0,
+            "fuel_type": "А-95",
+            "nominal_consumption_l_per_h": 6.0,
+            "initial_operating_hours": 100.0,
+            "initial_fuel_tank_level_l": 50.0,
+            "work_schedule_start": "00:00",
+            "work_schedule_end": "23:59",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv",
+        },
+    )
+    assert gen_res.status_code == 200, gen_res.text
+    gen_id = gen_res.json()["id"]
+
+    rec_res = await client.post(
+        "/api/v1/fuel/receipt",
+        headers=superadmin_auth,
+        json={
+            "facility_id": fac_id,
+            "liters": 40.0,
+            "cost_total": 3600.0,
+            "fuel_type": "А-95",
+            "driver_name": "Тестовий водій",
+            "receipt_number": "CHK-LIVE-1",
+        },
+    )
+    assert rec_res.status_code == 201, rec_res.text
+    stock_id = rec_res.json()["stock_id"]
+
+    # Запускаємо генератор
+    start_res = await client.post(
+        "/api/v1/generator/start",
+        headers=operator_auth,
+        json={"generator_id": gen_id, "skip_cooldown": True},
+    )
+    assert start_res.status_code == 200, start_res.text
+
+    # Зсуваємо start_time активного циклу на 2.5 години назад => спалено ~15.0 л, у баку ~35.0 л із 50.0 л
+    two_and_half_hours_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=2.5)
+    await db_session.execute(
+        update(GeneratorRun)
+        .where(GeneratorRun.generator_id == gen_id, GeneratorRun.status == "RUNNING")
+        .values(start_time=two_and_half_hours_ago)
+    )
+    await db_session.commit()
+
+    # 1. Спроба заправки під час роботи блокується з HTTP 400
+    blocked_tr = await client.post(
+        "/api/v1/fuel/transfer",
+        headers=operator_auth,
+        json={"facility_id": fac_id, "stock_id": stock_id, "generator_id": gen_id, "liters": 5.0},
+    )
+    assert blocked_tr.status_code == 400
+    assert "заборонена з міркувань безпеки" in blocked_tr.json()["detail"]
+
+    # 2. Зведений баланс ГСМ показує живий залишок ~35.0 л і зберігає стартовий обліковий залишок 50.0 л
+    summary = (
+        await client.get(f"/api/v1/fuel/summary?facility_id={fac_id}&generator_id={gen_id}", headers=operator_auth)
+    ).json()
+    assert summary["has_running_generators"] is True
+    assert summary["tank_accounting_balance_l"] == pytest.approx(50.0, abs=0.05)
+    assert summary["tank_balance_l"] == pytest.approx(35.0, abs=0.1)
+
+    # 3. GET /generator та GET /generator/list повертають узгоджений live_fuel_tank_level_l (~35.0 л)
+    gen_get = (await client.get(f"/api/v1/generator?facility_id={fac_id}&generator_id={gen_id}", headers=operator_auth)).json()
+    assert gen_get["fuel_tank_level_l"] == pytest.approx(50.0, abs=0.05)
+    assert gen_get["live_fuel_tank_level_l"] == pytest.approx(35.0, abs=0.1)
+
+    gens_list = (await client.get(f"/api/v1/generator/list?facility_id={fac_id}", headers=operator_auth)).json()
+    assert len(gens_list) == 1
+    assert gens_list[0]["live_fuel_tank_level_l"] == pytest.approx(35.0, abs=0.1)

@@ -1,6 +1,6 @@
 import datetime
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Optional, List
+from typing import Optional, List, Dict
 from fastapi import HTTPException, status
 from sqlalchemy import select, func, or_, update, delete
 from sqlalchemy.orm import selectinload
@@ -740,6 +740,15 @@ async def transfer_fuel_to_tank(
 
     facility_id = stock.facility_id
 
+    if str(generator.status or "").upper() == "RUNNING":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Заправка під час роботи генератора '{generator.name}' заборонена з міркувань безпеки! "
+                f"Спочатку зупиніть генератор, щоб зафіксувати витрату пального."
+            ),
+        )
+
     from backend.app.services.measurement_service import (
         ensure_facility_not_locked_by_measurement,
         increment_active_measurement_added_fuel,
@@ -867,6 +876,64 @@ async def transfer_fuel_to_tank(
     return transfer
 
 
+async def compute_live_tank_levels_map(
+    db: AsyncSession,
+    generators: List[Generator],
+) -> Dict[int, float]:
+    """
+    Розраховує актуальний (live) рівень пального у баку для кожного генератора.
+    Для генераторів зі статусом RUNNING віднімає розрахункове споживання від стартового рівня
+    активного циклу без передчасної зміни збереженого значення в БД.
+    """
+    if not generators:
+        return {}
+
+    live_map: Dict[int, float] = {
+        int(g.id): round(float(g.fuel_tank_level_l or 0.0), 3)
+        for g in generators
+    }
+    running_gens = [g for g in generators if str(g.status or "").upper() == "RUNNING"]
+    if not running_gens:
+        return live_map
+
+    running_ids = [int(g.id) for g in running_gens]
+    run_res = await db.execute(
+        select(GeneratorRun)
+        .where(
+            GeneratorRun.generator_id.in_(running_ids),
+            GeneratorRun.status == "RUNNING",
+        )
+        .order_by(GeneratorRun.id.desc())
+    )
+    active_runs: Dict[int, GeneratorRun] = {}
+    for r in run_res.scalars().all():
+        gid = int(r.generator_id)
+        if gid not in active_runs:
+            active_runs[gid] = r
+
+    now_dt = utc_now()
+    if now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=datetime.timezone.utc)
+    for g in running_gens:
+        gid = int(g.id)
+        run = active_runs.get(gid)
+        if not run or not run.start_time:
+            continue
+        start_dt = run.start_time
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=datetime.timezone.utc)
+        elapsed_hours = max(0.0, (now_dt - start_dt).total_seconds() / 3600.0)
+        start_fuel = float(
+            run.start_fuel_level_l
+            if run.start_fuel_level_l is not None
+            else (g.fuel_tank_level_l or 0.0)
+        )
+        nominal = float(g.nominal_consumption_l_per_h or 0.0)
+        live_map[gid] = round(start_fuel - (elapsed_hours * nominal), 3)
+
+    return live_map
+
+
 async def get_fuel_balances_summary(
     db: AsyncSession,
     facility_id: Optional[int] = None,
@@ -876,6 +943,8 @@ async def get_fuel_balances_summary(
     FUEL-09: Розрахунок зведених залишків пального.
     - Для конкретного об'єкта повертає суму складів цього об'єкта та агрегат усіх його генераторів (без .first()).
     - Для глобального адміністративного запиту підсумовує всі склади та всі генератори системи.
+    - Під час активної роботи генератора tank_balance_l відображає живий розрахунковий залишок у баку,
+      узгоджений із головним дашбордом.
     - Агрегати надходжень, витрат та середньої ціни розраховуються суворо за обраним масштабом.
     """
     if facility_id is not None:
@@ -886,19 +955,16 @@ async def get_fuel_balances_summary(
         )
         warehouse_balance = (await db.execute(stock_sum_q)).scalar_one()
 
-        # 2. Залишки баків генераторів об'єкта
+        # 2. Залишки баків генераторів об'єкта (живий розрахунковий + обліковий)
+        gen_q = select(Generator).where(Generator.facility_id == facility_id)
         if generator_id:
-            gen_q = select(Generator).where(Generator.id == generator_id, Generator.facility_id == facility_id)
-            gen = (await db.execute(gen_q)).scalars().first()
-            tank_balance = gen.fuel_tank_level_l if gen else 0.0
-            tank_capacity = gen.tank_capacity_l if gen else 0.0
-        else:
-            gen_agg_q = select(
-                func.coalesce(func.sum(Generator.fuel_tank_level_l), 0.0),
-                func.coalesce(func.sum(Generator.tank_capacity_l), 0.0)
-            ).where(Generator.facility_id == facility_id)
-            gen_agg = (await db.execute(gen_agg_q)).first()
-            tank_balance, tank_capacity = gen_agg if gen_agg else (0.0, 0.0)
+            gen_q = gen_q.where(Generator.id == generator_id)
+        gens = list((await db.execute(gen_q)).scalars().all())
+        live_map = await compute_live_tank_levels_map(db, gens)
+        tank_balance = sum(live_map.get(int(g.id), float(g.fuel_tank_level_l or 0.0)) for g in gens)
+        accounting_balance = sum(float(g.fuel_tank_level_l or 0.0) for g in gens)
+        tank_capacity = sum(float(g.tank_capacity_l or 0.0) for g in gens)
+        has_running = any(str(g.status or "").upper() == "RUNNING" for g in gens)
 
         # 3. Агрегат надходжень
         rec_query = select(
@@ -934,17 +1000,15 @@ async def get_fuel_balances_summary(
         )
         warehouse_balance = (await db.execute(stock_sum_q)).scalar_one()
 
+        gen_q = select(Generator)
         if generator_id:
-            gen = await db.get(Generator, generator_id)
-            tank_balance = gen.fuel_tank_level_l if gen else 0.0
-            tank_capacity = gen.tank_capacity_l if gen else 0.0
-        else:
-            gen_agg_q = select(
-                func.coalesce(func.sum(Generator.fuel_tank_level_l), 0.0),
-                func.coalesce(func.sum(Generator.tank_capacity_l), 0.0)
-            )
-            gen_agg = (await db.execute(gen_agg_q)).first()
-            tank_balance, tank_capacity = gen_agg if gen_agg else (0.0, 0.0)
+            gen_q = gen_q.where(Generator.id == generator_id)
+        gens = list((await db.execute(gen_q)).scalars().all())
+        live_map = await compute_live_tank_levels_map(db, gens)
+        tank_balance = sum(live_map.get(int(g.id), float(g.fuel_tank_level_l or 0.0)) for g in gens)
+        accounting_balance = sum(float(g.fuel_tank_level_l or 0.0) for g in gens)
+        tank_capacity = sum(float(g.tank_capacity_l or 0.0) for g in gens)
+        has_running = any(str(g.status or "").upper() == "RUNNING" for g in gens)
 
         rec_query = select(
             func.coalesce(func.sum(FuelReceipt.liters), 0.0),
@@ -978,6 +1042,8 @@ async def get_fuel_balances_summary(
     return FuelBalancesSummary(
         warehouse_balance_l=to_float(warehouse_balance, 3),
         tank_balance_l=to_float(tank_balance, 3),
+        tank_accounting_balance_l=to_float(accounting_balance, 3),
+        has_running_generators=has_running,
         tank_capacity_l=to_float(tank_capacity, 3),
         total_received_l=to_float(total_received_l, 3),
         total_spent_uah=to_float(total_spent_uah, 2),
