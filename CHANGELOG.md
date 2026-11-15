@@ -5,6 +5,16 @@
 
 ---
 
+## [v5.7.15] — 2026-11-15
+### 📱 Мобільна сітка прогріву (50%/50%) та умовний показ по простою / морозу
+- **Мобільний та десктопний макет блоку дій ([`dashboard.html`](frontend/views/dashboard.html), [`views.css`](frontend/css/views.css))**:
+  - Замінено `.btn-action` для кнопок `#btnWarmupStart` та `#btnOpenManualRun` на окремий компактний клас `.btn-hero-sec` у контейнері `#heroSecondaryActions` (`.hero-secondary-actions`).
+  - На мобільних екранах (`<= 640px`), коли видимі обидві кнопки, блок автоматично перемикається на рівну 2-колонкову сітку `50% / 50%` в один рядок (`.has-warmup`), усуваючи перекіс «сходинкою».
+- **Умовне відображення та авто-зникнення після прогріву ([`settings_service.py`](backend/app/services/settings_service.py), [`system.py`](backend/app/api/v1/system.py), [`generator.py`](backend/app/schemas/generator.py), [`generator_service.py`](backend/app/services/generator_service.py), [`api/v1/generator.py`](backend/app/api/v1/generator.py), [`operational_guard_service.py`](backend/app/services/operational_guard_service.py), [`dashboard.js`](frontend/js/dashboard.js), [`weather-alerts.js`](frontend/js/weather-alerts.js), [`admin.html`](frontend/views/admin.html), [`admin.js`](frontend/js/admin.js), [`test_operational_safeguards.py`](backend/tests/test_operational_safeguards.py))**:
+  - Додано налаштування `warmup_cold_temp_c` (за замовчуванням `-10.0°C`) та `warmup_trigger_mode` (`any` — «Простій або мороз», `idle`, `cold`, `both`) у Блоці 4 Адмін-панелі та системних налаштуваннях.
+  - Кнопка `#btnWarmupStart` і банер `#genWarmupDueBanner` з'являються виключно за обраною умовою (простій або мороз ≤ порогу) та автоматично приховуються на 12 годин (`warmup_recently_done`) одразу після виконаного прогріву або робочого циклу.
+  - Фонова перевірка `GENERATOR_WARMUP_DUE` враховує погоду об'єкта та обраний режим тригера, а також поважає 12-годинну паузу після запуску.
+
 ## [v5.7.14] — 2026-11-15
 ### 🔥 Профілактичний прогрів генератора та виправлення калькулятора автономності YASNO
 - **Виправлено розрахунок плану відключень YASNO та витрати пального ([`dashboard.js`](frontend/js/dashboard.js))**:

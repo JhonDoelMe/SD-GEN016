@@ -410,12 +410,15 @@ async def test_preventive_warmup_start_stop_and_idle_recommendation(client, supe
     stopped_run = stop_res.json()
     assert stopped_run["note"] == "Профілактичний прогрів — Успішно прогріто 10 хв"
 
-    # 5. After warmup run, idle days resets to 0 and warmup is no longer recommended
+    # 5. After warmup run, idle days resets to 0 and warmup_recently_done suppresses button even in cold
     after_res = await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=operator_auth)
     assert after_res.status_code == 200
     after_data = after_res.json()
     assert after_data["days_since_last_run"] == 0
     assert after_data["warmup_recommended"] is False
+    assert after_data["warmup_recently_done"] is True
+    assert after_data["warmup_cold_temp_c"] == -10.0
+    assert after_data["warmup_trigger_mode"] == "any"
 
 
 @pytest.mark.asyncio
@@ -528,3 +531,82 @@ async def test_preventive_warmup_guardrails_done_and_due_notifications(client, s
     second_guard = await check_operational_guardrails(db_session)
     assert second_guard["warmup_due_sent"] == 0
     assert second_guard["warmup_done_sent"] == 0
+
+
+@pytest.mark.asyncio
+async def test_preventive_warmup_cold_weather_trigger_and_recent_suppression(
+    client, superadmin_auth, operator_auth, db_session, monkeypatch
+):
+    """
+    Test cold-weather warmup trigger (<= -10C): triggers push when last run > 12h ago,
+    and suppresses recommendation/notification right after warmup/run (< 12h ago).
+    """
+    put_res = await client.put(
+        "/api/v1/system/settings",
+        headers=superadmin_auth,
+        json={
+            "warmup_reminder_enabled": True,
+            "warmup_idle_days": 30,
+            "warmup_duration_minutes": 10,
+            "warmup_cold_temp_c": -10.0,
+            "warmup_trigger_mode": "cold",
+        },
+    )
+    assert put_res.status_code == 200
+
+    wiz_res = await client.post(
+        "/api/v1/generator/wizard",
+        headers=superadmin_auth,
+        json={
+            "name": "Генератор Мороз Тест",
+            "model": "TG-COLD",
+            "manufacturer": "PG",
+            "serial_number": "SN-COLD-01",
+            "rated_power_kw": 5.0,
+            "tank_capacity_l": 25.0,
+            "fuel_type": "А-95",
+            "nominal_consumption_l_per_h": 2.0,
+            "initial_operating_hours": 100.0,
+            "initial_fuel_tank_level_l": 20.0,
+            "work_schedule_start": "00:00",
+            "work_schedule_end": "23:59",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv",
+        },
+    )
+    assert wiz_res.status_code == 200
+    gen_id = wiz_res.json()["id"]
+
+    # Brand new generator without runs is NOT marked recently_done
+    before_res = await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=operator_auth)
+    assert before_res.status_code == 200
+    assert before_res.json()["warmup_recently_done"] is False
+    assert before_res.json()["warmup_trigger_mode"] == "cold"
+
+    async def fake_cold_weather(db, facility_id, force=False):
+        return {"is_available": True, "temp_c": -12.4, "city": "Самар", "forecast": []}
+
+    import backend.app.services.weather_service as weather_svc
+    monkeypatch.setattr(weather_svc, "get_facility_weather", fake_cold_weather)
+
+    cold_guard = await check_operational_guardrails(db_session)
+    assert cold_guard["warmup_due_sent"] >= 1
+
+    due_logs = (
+        await db_session.execute(
+            select(NotificationLog).where(
+                NotificationLog.generator_id == gen_id,
+                NotificationLog.event_type == "GENERATOR_WARMUP_DUE",
+            )
+        )
+    ).scalars().all()
+    assert len(due_logs) == 1
+    assert "-12" in due_logs[0].body
+
+    # Complete a warmup run -> warmup_recently_done becomes True so UI/guard suppresses during cold
+    await client.post("/api/v1/generator/start", headers=operator_auth, json={"generator_id": gen_id, "is_warmup": True})
+    await client.post("/api/v1/generator/stop", headers=operator_auth, json={"generator_id": gen_id, "end_hours": 100.2})
+
+    after_res = await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=operator_auth)
+    assert after_res.status_code == 200
+    assert after_res.json()["warmup_recently_done"] is True

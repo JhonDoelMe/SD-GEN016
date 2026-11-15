@@ -82,8 +82,12 @@ def _build_generator_out(
     out.cooldown_remaining_seconds = cooldown_seconds
     out.days_since_last_run = idle_info.get("days_since_last_run")
     out.last_run_at = idle_info.get("last_run_at")
+    out.warmup_enabled = bool(idle_info.get("warmup_enabled", True))
     out.warmup_recommended = bool(idle_info.get("warmup_recommended", False))
     out.warmup_duration_minutes = int(idle_info.get("warmup_duration_minutes", 15))
+    out.warmup_cold_temp_c = float(idle_info.get("warmup_cold_temp_c", -10.0))
+    out.warmup_trigger_mode = str(idle_info.get("warmup_trigger_mode", "any"))
+    out.warmup_recently_done = bool(idle_info.get("warmup_recently_done", False))
     return out
 
 

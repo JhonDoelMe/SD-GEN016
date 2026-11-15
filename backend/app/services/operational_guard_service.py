@@ -308,8 +308,12 @@ async def _check_preventive_warmup_due_notifications(
         return 0
     try:
         warmup_minutes = max(5, int(get_runtime_setting("warmup_duration_minutes", 15)))
+        cold_temp_c = float(get_runtime_setting("warmup_cold_temp_c", -10.0))
+        trigger_mode = str(get_runtime_setting("warmup_trigger_mode", "any") or "any").lower()
+        if trigger_mode not in ("any", "idle", "cold", "both"):
+            trigger_mode = "any"
     except Exception:
-        warmup_minutes = 15
+        warmup_minutes, cold_temp_c, trigger_mode = 15, -10.0, "any"
 
     gens_res = await db.execute(
         select(Generator).where(
@@ -322,11 +326,40 @@ async def _check_preventive_warmup_due_notifications(
     if not stopped_gens:
         return 0
 
+    facility_temps: Dict[int, Optional[float]] = {}
+    if trigger_mode in ("any", "cold", "both"):
+        from backend.app.services.weather_service import get_facility_weather
+        unique_fids = {int(g.facility_id) for g in stopped_gens if g.facility_id is not None}
+        for fid in unique_fids:
+            try:
+                w = await get_facility_weather(db, fid)
+                if w and w.get("is_available") and w.get("temp_c") is not None:
+                    facility_temps[fid] = float(w["temp_c"])
+                else:
+                    facility_temps[fid] = None
+            except Exception:
+                facility_temps[fid] = None
+
     idle_map = await get_generators_idle_info_map(db, stopped_gens)
     sent_count = 0
     for gen in stopped_gens:
         info = idle_map.get(gen.id, {})
-        if not info.get("warmup_recommended"):
+        if info.get("warmup_recently_done"):
+            continue
+        idle_due = bool(info.get("warmup_recommended"))
+        cur_temp = facility_temps.get(int(gen.facility_id)) if gen.facility_id is not None else None
+        cold_due = bool(cur_temp is not None and cur_temp <= cold_temp_c)
+
+        if trigger_mode == "idle":
+            should_notify = idle_due
+        elif trigger_mode == "cold":
+            should_notify = cold_due
+        elif trigger_mode == "both":
+            should_notify = idle_due and cold_due
+        else:
+            should_notify = idle_due or cold_due
+
+        if not should_notify:
             continue
         last_activity_at = info.get("last_run_at") or gen.created_at
         if last_activity_at is not None and last_activity_at.tzinfo is not None:
@@ -354,11 +387,17 @@ async def _check_preventive_warmup_due_notifications(
                 continue
 
         days_idle = int(info.get("days_since_last_run") or 0)
+        reasons = []
+        if idle_due:
+            reasons.append(f"не запускався вже {days_idle} дн.")
+        if cold_due and cur_temp is not None:
+            reasons.append(f"температура на об'єкті {cur_temp:.0f}°C (поріг ≤ {cold_temp_c:.0f}°C)")
+        reason_text = "Генератор " + " та ".join(reasons) + "."
         await send_push_notification(
             db=db,
             title=f"🔥 Потрібен профілактичний прогрів — {gen.name}",
             body=(
-                f"Генератор не запускався вже {days_idle} дн. "
+                f"{reason_text} "
                 f"Рекомендовано провести {warmup_minutes}-хвилинний прогрів для збереження АКБ та паливної системи."
             ),
             event_type="GENERATOR_WARMUP_DUE",

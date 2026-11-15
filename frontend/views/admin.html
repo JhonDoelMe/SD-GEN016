@@ -419,6 +419,21 @@
                 <input type="number" min="5" max="60" step="1" id="sysWarmupDurationMinutes" value="15">
               </div>
             </div>
+            <div class="form-row-2" style="margin-top: 0.75rem;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Поріг морозу для прогріву (°C)</label>
+                <input type="number" min="-40" max="10" step="1" id="sysWarmupColdTempC" value="-10">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Умова показу кнопки прогріву</label>
+                <select id="sysWarmupTriggerMode">
+                  <option value="any">Простій або мороз (за замовч.)</option>
+                  <option value="idle">Лише тривалий простій</option>
+                  <option value="cold">Лише низька температура</option>
+                  <option value="both">Обидві умови разом</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           <!-- Блок 5: Поштовий шлюз (Email / SMTP) та Резервування (Failover) -->

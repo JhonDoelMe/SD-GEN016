@@ -492,27 +492,47 @@ async def get_generators_idle_info_map(
         warmup_enabled = bool(get_runtime_setting("warmup_reminder_enabled", True))
         idle_limit_days = max(1, int(get_runtime_setting("warmup_idle_days", 14)))
         warmup_minutes = max(5, int(get_runtime_setting("warmup_duration_minutes", 15)))
+        cold_temp_c = float(get_runtime_setting("warmup_cold_temp_c", -10.0))
+        trigger_mode = str(get_runtime_setting("warmup_trigger_mode", "any") or "any").lower()
+        if trigger_mode not in ("any", "idle", "cold", "both"):
+            trigger_mode = "any"
     except Exception:
         warmup_enabled, idle_limit_days, warmup_minutes = True, 14, 15
+        cold_temp_c, trigger_mode = -10.0, "any"
 
+    suppression_seconds = 12 * 3600
     idle_map: Dict[int, Dict[str, Any]] = {}
     for g in generators:
         gid = int(g.id)
         last_dt = last_run_map.get(gid)
+        last_dt_naive = None
+        if last_dt is not None:
+            last_dt_naive = (
+                last_dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+                if last_dt.tzinfo is not None
+                else last_dt
+            )
+
         status_upper = str(g.status or "").upper()
         if status_upper == "RUNNING":
             days_since: Optional[float] = 0.0
+            recently_done = True
         else:
-            ref_dt = last_dt or g.created_at
+            ref_dt = last_dt_naive or g.created_at
             if ref_dt is not None:
                 if ref_dt.tzinfo is not None:
                     ref_dt = ref_dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
                 days_since = round(max(0.0, (now - ref_dt).total_seconds() / 86400.0), 1)
             else:
                 days_since = None
+            recently_done = bool(
+                last_dt_naive is not None
+                and max(0.0, (now - last_dt_naive).total_seconds()) < suppression_seconds
+            )
 
         warmup_rec = bool(
             warmup_enabled
+            and not recently_done
             and getattr(g, "is_active", True)
             and getattr(g, "is_configured", False)
             and status_upper not in ("RUNNING", "FAULTY", "BLOCKED")
@@ -522,8 +542,12 @@ async def get_generators_idle_info_map(
         idle_map[gid] = {
             "last_run_at": last_dt,
             "days_since_last_run": days_since,
+            "warmup_enabled": warmup_enabled,
             "warmup_recommended": warmup_rec,
             "warmup_duration_minutes": warmup_minutes,
+            "warmup_cold_temp_c": cold_temp_c,
+            "warmup_trigger_mode": trigger_mode,
+            "warmup_recently_done": recently_done,
         }
     return idle_map
 

@@ -107,6 +107,11 @@ window.updateOperationalSafetyBanners = function() {
     }
   }
 
+  // 1.5 Preventive Warmup button & banner depend on live temperature
+  if (typeof window.updateWarmupAvailabilityUI === 'function') {
+    window.updateWarmupAvailabilityUI();
+  }
+
   // 2. Operator Safety Notice during Red Alert while Generator is RUNNING (strictly informational, zero blocking)
   const alertData = window._currentAlertData;
   const isRedAlert = Boolean(alertData && alertData.level === 'red');

@@ -88,8 +88,12 @@ class GeneratorOut(BaseModel):
     cooldown_remaining_seconds: int = 0
     days_since_last_run: Optional[float] = None
     last_run_at: Optional[datetime.datetime] = None
+    warmup_enabled: bool = True
     warmup_recommended: bool = False
     warmup_duration_minutes: int = 15
+    warmup_cold_temp_c: float = -10.0
+    warmup_trigger_mode: str = "any"
+    warmup_recently_done: bool = False
 
     model_config = {"from_attributes": True}
 

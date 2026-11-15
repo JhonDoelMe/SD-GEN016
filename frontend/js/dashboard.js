@@ -206,6 +206,11 @@ async function loadGeneratorData() {
     if (warmupBanner) warmupBanner.style.display = 'none';
     const warmupBtn = document.getElementById('btnWarmupStart');
     if (warmupBtn) warmupBtn.style.display = 'none';
+    const secondaryWrap = document.getElementById('heroSecondaryActions');
+    if (secondaryWrap) {
+      secondaryWrap.classList.remove('has-warmup');
+      secondaryWrap.style.display = 'none';
+    }
     const warmupBadge = document.getElementById('activeRunWarmupBadge');
     if (warmupBadge) warmupBadge.style.display = 'none';
     return;
@@ -363,49 +368,20 @@ async function loadGeneratorData() {
       }
     }
 
-    // Preventive Warmup banner & start button visibility
-    const warmupBanner = document.getElementById('genWarmupDueBanner');
-    const warmupBtn = document.getElementById('btnWarmupStart');
-    const warmupBtnLabel = document.getElementById('btnWarmupStartLabel');
-    const warmupDurationMin = Number(currentGenerator.warmup_duration_minutes) || 15;
-    if (warmupBtnLabel) {
-      warmupBtnLabel.innerText = `Профілактичний прогрів (${warmupDurationMin} хв)`;
-    }
-
-    const canStartWarmup = (
-      currentGenerator
-      && currentGenerator.status !== 'RUNNING'
-      && currentGenerator.status !== 'FAULTY'
-      && currentGenerator.status !== 'BLOCKED'
-      && canStartOrStop
-    );
-    if (warmupBtn) {
-      if (canStartWarmup) {
-        warmupBtn.style.display = 'inline-flex';
-        warmupBtn.disabled = currentCooldownSeconds > 0;
-        warmupBtn.title = currentCooldownSeconds > 0
-          ? `Очікування завершення технологічної паузи (${currentCooldownSeconds} с)`
-          : `Запустити короткий профілактичний прогрів (${warmupDurationMin} хв)`;
-      } else {
-        warmupBtn.style.display = 'none';
-      }
-    }
-
-    if (warmupBanner) {
-      if (canStartWarmup && currentGenerator.warmup_recommended) {
-        const idleDays = currentGenerator.days_since_last_run;
-        const idleText = idleDays != null ? `простій <b>${idleDays} дн.</b>` : 'генератор давно не запускався';
-        warmupBanner.innerHTML = `🔥 <span><b>Рекомендовано профілактичний прогрів</b> (${idleText}). Запустіть генератор на <b>${warmupDurationMin} хв</b> без критичного навантаження для підтримки АКБ, паливної та мастильної систем.</span>`;
-        warmupBanner.style.display = 'flex';
-      } else {
-        warmupBanner.style.display = 'none';
-      }
+    // Preventive Warmup banner & conditional start button visibility
+    if (typeof window.updateWarmupAvailabilityUI === 'function') {
+      window.updateWarmupAvailabilityUI();
     }
 
     // Active Run Check
     const btnManual = document.getElementById('btnOpenManualRun');
+    const secondaryWrap = document.getElementById('heroSecondaryActions');
+    const isRunningNow = Boolean(currentGenerator && currentGenerator.status === 'RUNNING');
     if (btnManual) {
-      btnManual.style.display = (currentGenerator && currentGenerator.status === 'RUNNING' ? 'none' : 'inline-flex');
+      btnManual.style.display = isRunningNow ? 'none' : 'inline-flex';
+    }
+    if (secondaryWrap) {
+      secondaryWrap.style.display = isRunningNow ? 'none' : '';
     }
 
     activeRun = activeRunData;
@@ -433,6 +409,85 @@ async function loadGeneratorData() {
     applyRolePermissionsUI();
   } catch (_) {}
 }
+
+window.updateWarmupAvailabilityUI = function () {
+  const warmupBanner = document.getElementById('genWarmupDueBanner');
+  const warmupBtn = document.getElementById('btnWarmupStart');
+  const warmupBtnLabel = document.getElementById('btnWarmupStartLabel');
+  const secondaryWrap = document.getElementById('heroSecondaryActions');
+
+  if (!currentGenerator) {
+    if (warmupBanner) warmupBanner.style.display = 'none';
+    if (warmupBtn) warmupBtn.style.display = 'none';
+    if (secondaryWrap) secondaryWrap.classList.remove('has-warmup');
+    return;
+  }
+
+  const warmupDurationMin = Number(currentGenerator.warmup_duration_minutes) || 15;
+  if (warmupBtnLabel) {
+    warmupBtnLabel.innerHTML = `<span class="label-desktop">Профілактичний прогрів (${warmupDurationMin} хв)</span><span class="label-mobile">Прогрів (${warmupDurationMin} хв)</span>`;
+  }
+
+  const canStart = hasPermission('generator:start') && !isViewerOnly();
+  const canStartWarmup = Boolean(
+    canStart
+    && currentGenerator.is_active !== false
+    && currentGenerator.is_configured !== false
+    && currentGenerator.status !== 'RUNNING'
+    && currentGenerator.status !== 'FAULTY'
+    && currentGenerator.status !== 'BLOCKED'
+  );
+
+  const warmupEnabled = currentGenerator.warmup_enabled !== false;
+  const recentlyDone = Boolean(currentGenerator.warmup_recently_done);
+  const idleDue = Boolean(currentGenerator.warmup_recommended);
+  const coldThreshold = currentGenerator.warmup_cold_temp_c != null ? Number(currentGenerator.warmup_cold_temp_c) : -10;
+  const w = window._currentWeatherData;
+  const curTemp = (w && w.is_available && typeof w.temp_c === 'number') ? w.temp_c : null;
+  const coldDue = (curTemp !== null && curTemp <= coldThreshold);
+  const triggerMode = String(currentGenerator.warmup_trigger_mode || 'any').toLowerCase();
+
+  let conditionMet = false;
+  if (triggerMode === 'idle') conditionMet = idleDue;
+  else if (triggerMode === 'cold') conditionMet = coldDue;
+  else if (triggerMode === 'both') conditionMet = idleDue && coldDue;
+  else conditionMet = idleDue || coldDue;
+
+  const shouldShowWarmup = canStartWarmup && warmupEnabled && !recentlyDone && conditionMet;
+
+  if (warmupBtn) {
+    if (shouldShowWarmup) {
+      warmupBtn.style.display = 'inline-flex';
+      warmupBtn.disabled = currentCooldownSeconds > 0;
+      warmupBtn.title = currentCooldownSeconds > 0
+        ? `Очікування завершення технологічної паузи (${currentCooldownSeconds} с)`
+        : `Запустити короткий профілактичний прогрів (${warmupDurationMin} хв)`;
+    } else {
+      warmupBtn.style.display = 'none';
+    }
+  }
+  if (secondaryWrap) {
+    secondaryWrap.classList.toggle('has-warmup', shouldShowWarmup);
+  }
+
+  if (warmupBanner) {
+    if (shouldShowWarmup) {
+      const reasons = [];
+      if (idleDue) {
+        const idleDays = currentGenerator.days_since_last_run;
+        reasons.push(idleDays != null ? `простій <b>${idleDays} дн.</b>` : 'тривалий простій');
+      }
+      if (coldDue && curTemp !== null) {
+        reasons.push(`мороз <b>${Math.round(curTemp)}°C</b> (≤ ${Math.round(coldThreshold)}°C)`);
+      }
+      const reasonStr = reasons.length > 0 ? ` (${reasons.join(', ')})` : '';
+      warmupBanner.innerHTML = `🔥 <span><b>Рекомендовано профілактичний прогрів</b>${reasonStr}. Запустіть генератор на <b>${warmupDurationMin} хв</b> без критичного навантаження для підтримки АКБ, паливної та мастильної систем.</span>`;
+      warmupBanner.style.display = 'flex';
+    } else {
+      warmupBanner.style.display = 'none';
+    }
+  }
+};
 
 let runTimerInterval = null;
 let cooldownTimerInterval = null;

@@ -143,6 +143,8 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "warmup_reminder_enabled": True,
     "warmup_idle_days": 14,
     "warmup_duration_minutes": 15,
+    "warmup_cold_temp_c": -10.0,
+    "warmup_trigger_mode": "any",
     "fuel_receipt_max_liters_warning": 1000.0,
     "fuel_receipt_min_price": 15.0,
     "fuel_receipt_max_price": 250.0,

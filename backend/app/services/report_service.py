@@ -489,6 +489,8 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
             "warmup_reminder_enabled": "Нагадування про профілактичний прогрів",
             "warmup_idle_days": "Поріг простою для прогріву (дн.)",
             "warmup_duration_minutes": "Тривалість прогріву (хв)",
+            "warmup_cold_temp_c": "Поріг температури для прогріву (°C)",
+            "warmup_trigger_mode": "Умова показу прогріву",
             "email_weekly_report_enabled": "Щотижневий email-звіт",
             "email_weekly_recipients": "Отримувачі email-звіту",
             "email_weekly_send_day": "День відправлення email-звіту",

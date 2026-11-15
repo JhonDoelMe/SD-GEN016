@@ -1123,6 +1123,8 @@ async function loadAdminSystemSettings() {
     if (document.getElementById('sysWarmupReminderEnabled')) document.getElementById('sysWarmupReminderEnabled').checked = s.warmup_reminder_enabled !== false;
     if (document.getElementById('sysWarmupIdleDays')) document.getElementById('sysWarmupIdleDays').value = s.warmup_idle_days ?? 14;
     if (document.getElementById('sysWarmupDurationMinutes')) document.getElementById('sysWarmupDurationMinutes').value = s.warmup_duration_minutes ?? 15;
+    if (document.getElementById('sysWarmupColdTempC')) document.getElementById('sysWarmupColdTempC').value = s.warmup_cold_temp_c ?? -10;
+    if (document.getElementById('sysWarmupTriggerMode')) document.getElementById('sysWarmupTriggerMode').value = s.warmup_trigger_mode || 'any';
 
     // Default Chain & Weekly Options (parallelized & deduplicated facilities request)
     const sharedFacilities = await api('/facilities').catch(() => []);
@@ -1377,6 +1379,11 @@ document.addEventListener('submit', async (e) => {
     warmup_reminder_enabled: document.getElementById('sysWarmupReminderEnabled')?.checked ?? true,
     warmup_idle_days: Math.max(1, Math.min(90, parseInt(document.getElementById('sysWarmupIdleDays')?.value || '14', 10) || 14)),
     warmup_duration_minutes: Math.max(5, Math.min(60, parseInt(document.getElementById('sysWarmupDurationMinutes')?.value || '15', 10) || 15)),
+    warmup_cold_temp_c: (() => {
+      const v = parseFloat(document.getElementById('sysWarmupColdTempC')?.value);
+      return Number.isFinite(v) ? Math.max(-40, Math.min(10, v)) : -10;
+    })(),
+    warmup_trigger_mode: document.getElementById('sysWarmupTriggerMode')?.value || 'any',
     // SMTP & Failover Settings
     smtp_enabled: document.getElementById('sysSmtpEnabled')?.checked ?? false,
     email_notify_password_change: document.getElementById('sysEmailNotifyPwdChange')?.checked ?? true,

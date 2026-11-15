@@ -3,7 +3,7 @@ import sys
 import asyncio
 import platform
 import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select, func, text
@@ -77,6 +77,8 @@ class SystemSettingsUpdateRequest(BaseModel):
     warmup_reminder_enabled: Optional[bool] = None
     warmup_idle_days: Optional[int] = Field(default=None, ge=1, le=90)
     warmup_duration_minutes: Optional[int] = Field(default=None, ge=5, le=60)
+    warmup_cold_temp_c: Optional[float] = Field(default=None, ge=-40.0, le=10.0)
+    warmup_trigger_mode: Optional[Literal["any", "idle", "cold", "both"]] = None
     fuel_receipt_max_liters_warning: Optional[float] = Field(default=None, gt=0)
     fuel_receipt_min_price: Optional[float] = Field(default=None, ge=0)
     fuel_receipt_max_price: Optional[float] = Field(default=None, gt=0)
@@ -334,6 +336,8 @@ async def update_admin_system_settings(
         "warmup_reminder_enabled",
         "warmup_idle_days",
         "warmup_duration_minutes",
+        "warmup_cold_temp_c",
+        "warmup_trigger_mode",
         "fuel_receipt_max_liters_warning",
         "fuel_receipt_min_price",
         "fuel_receipt_max_price",
