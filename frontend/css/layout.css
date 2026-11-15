@@ -467,6 +467,24 @@
   border-color: #7dd3fc;
 }
 
+.nav-item.nav-item-install {
+  margin-top: 0.35rem;
+  border-color: rgba(56, 189, 248, 0.28);
+  background: rgba(56, 189, 248, 0.08);
+  color: var(--accent-cyan);
+}
+
+.nav-item.nav-item-install:hover {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: rgba(56, 189, 248, 0.48);
+}
+
+[data-theme="light"] .nav-item.nav-item-install {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #0284c7;
+}
+
 .nav-drawer-footer {
   padding: 0.75rem 1rem;
   border-top: 1px solid var(--border-color);

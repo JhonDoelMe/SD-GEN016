@@ -7,6 +7,9 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.os.Build;
 
 import androidx.annotation.NonNull;
@@ -91,6 +94,7 @@ public class SdgenFirebaseMessagingService extends FirebaseMessagingService {
             || "CRITICAL_FAULT".equals(eventType)
             || "GENERATOR_SAFETY_STOP".equals(eventType)
             || "GENERATOR_AUTO_STOP".equals(eventType)
+            || "EMPTY_TANK".equals(eventType)
             || "LOW_FUEL".equals(eventType)
             || "TEST".equals(eventType);
 
@@ -113,17 +117,25 @@ public class SdgenFirebaseMessagingService extends FirebaseMessagingService {
             notifId = (int) (System.currentTimeMillis() & 0x7fffffff);
         }
 
+        Bitmap largeIcon = BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher_round);
+        int accentColor = Color.parseColor(isHigh ? "#EF4444" : "#38BDF8");
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(
             this,
             isHigh ? CHANNEL_ALERTS : CHANNEL_EVENTS
         )
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_sdgen)
+            .setColor(accentColor)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(isHigh ? NotificationCompat.PRIORITY_HIGH : NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent);
+
+        if (largeIcon != null) {
+            builder.setLargeIcon(largeIcon);
+        }
 
         NotificationManagerCompat.from(this).notify(notifId, builder.build());
     }

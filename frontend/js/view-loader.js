@@ -4,7 +4,7 @@
 (function initViewLoader() {
   const selfSrc = document.currentScript?.src || '';
   const vMatch = selfSrc.match(/[?&]v=([^&]+)/);
-  const ASSET_VERSION = vMatch ? vMatch[1] : '5.7.8';
+  const ASSET_VERSION = vMatch ? vMatch[1] : '5.7.9';
 
   const loadedViews = new Set();
   const viewPromises = new Map();
@@ -73,6 +73,7 @@
     modalMeasurementCancel:  { view: 'modals-admin.html', scripts: ['measurement.js'] },
 
     // Utility & Info Modals
+    modalAppInstall:         { view: 'modals-utility.html', scripts: [] },
     modalIosInstall:         { view: 'modals-utility.html', scripts: [] },
     modalForgotPassword:     { view: 'modals-utility.html', scripts: [] },
     modalResetPassword:      { view: 'modals-utility.html', scripts: [] },

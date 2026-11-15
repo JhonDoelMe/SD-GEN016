@@ -5,6 +5,22 @@
 
 ---
 
+## [v5.7.9] — 2026-11-15
+### 📲 Встановлення з браузера, іконка Wi-Fi, швидке оновлення Android та сповіщення (`versionCode 16`)
+- **Пункт встановлення застосунку в боковому меню ([`frontend/index.html`](frontend/index.html), [`frontend/views/modals-utility.html`](frontend/views/modals-utility.html), [`frontend/js/notifications.js`](frontend/js/notifications.js), [`frontend/js/view-loader.js`](frontend/js/view-loader.js))**:
+  - У боковому меню навігації (`#navDrawer`) додано кнопку **«📲 Встановити застосунок»** (`#navDrawerInstallApp`), видиму лише у веббраузері (приховано в нативному APK та standalone PWA).
+  - Додано універсальне модальне вікно `#modalAppInstall` з двома варіантами: швидке встановлення веб-додатку (PWA через `beforeinstallprompt` або покрокові інструкції для iOS/Chrome/Edge) та пряме завантаження офіційного Android APK (`/ota/download/latest.apk`).
+- **Тематична іконка Wi-Fi замість зеленої крапки онлайн-режиму ([`frontend/index.html`](frontend/index.html), [`frontend/js/offline-queue.js`](frontend/js/offline-queue.js), [`frontend/css/components.css`](frontend/css/components.css))**:
+  - Іконку статусу підключення (`#offlinePillIcon`) замінено на тематичний векторний SVG-значок Wi-Fi (активний сигнал для онлайн, перекреслений Wi-Fi для офлайну) з контрастним оформленням для світлої й темної тем — тепер статус мережі чітко відрізняється від зеленого індикатора відбою тривоги.
+- **Швидше оновлення UI та подій в Android APK ([`MainActivity.java`](android/app/src/main/java/ua/pp/sdgen/app/MainActivity.java), [`frontend/js/notifications.js`](frontend/js/notifications.js))**:
+  - У `MainActivity` додано виклик `window.__onNativeResume()` у `onResume()` та `onNewIntent()` (відкриття з фону або за натисканням push-сповіщення).
+  - Розширено обробник `fcmPushReceived` для всіх типів оперативних подій та створено `window.refreshActiveAppState()`, що оновлює дзвіночок сповіщень, індикатори об'єкта, дані генератора й поточну активну оперативну вкладку без ручного оновлення (фоновий інтервал скорочено до `10 с`, поріг `visibilitychange` — до `1 с`).
+- **Монохромна та кольорова іконки для сповіщень Android ([`ic_stat_sdgen.xml`](android/app/src/main/res/drawable/ic_stat_sdgen.xml), [`colors.xml`](android/app/src/main/res/values/colors.xml), [`AndroidManifest.xml`](android/app/src/main/AndroidManifest.xml), [`SdgenFirebaseMessagingService.java`](android/app/src/main/java/ua/pp/sdgen/app/SdgenFirebaseMessagingService.java))**:
+  - Додано векторний монохромний силует `ic_stat_sdgen` для системного статус-бару та `default_notification_icon` / `default_notification_color` у маніфесті.
+  - У картці сповіщення Android налаштовано кольорову круглу емблему `SD-GEN016` (`setLargeIcon(ic_launcher_round)`) разом із тематичним акцентним кольором (`#EF4444` для тривог/аварій, `#38BDF8` для звичайних подій).
+- **Конфігурація GitGuardian ([`.gitguardian.yml`](.gitguardian.yml))**:
+  - Додано `.gitguardian.yml` з виключенням синтетичних тестових фікстур (`backend/tests/**`, `ota-server/tests/**`), щоб уникнути хибних спрацьовувань на тестових паролях.
+
 ## [v5.7.8] — 2026-11-14
 ### 🔙 Нативна навігація кнопкою «Назад» на Android (`versionCode 15`)
 - **Нативне перехоплення системної кнопки/жесту «Назад» ([`MainActivity.java`](android/app/src/main/java/ua/pp/sdgen/app/MainActivity.java))**:

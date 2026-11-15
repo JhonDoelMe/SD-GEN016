@@ -74,9 +74,14 @@ function bindNativeFcmListeners(fcmPlugin) {
     const evType = p.eventType ? String(p.eventType) : '';
     const tType = getToastTypeForNotificationEvent(evType);
     showToast(`${p.title || 'Сповіщення'} — ${p.body || ''}`, tType, 7500);
-    if (currentFacilityId && (evType.startsWith('AIR_ALERT') || evType.startsWith('YASNO') || evType.startsWith('GENERATOR'))) {
-      loadFacilityIndicators(currentFacilityId, true);
-      loadGeneratorData();
+    if (token && currentUser && typeof window.refreshActiveAppState === 'function') {
+      window.refreshActiveAppState(`push:${evType || 'event'}`, true);
+    } else {
+      if (currentFacilityId && typeof loadFacilityIndicators === 'function') {
+        loadFacilityIndicators(currentFacilityId, true);
+      }
+      if (typeof loadGeneratorData === 'function') loadGeneratorData();
+      if (typeof window.loadBellFeed === 'function') window.loadBellFeed(false);
     }
   });
 }
@@ -753,18 +758,105 @@ window.clearNotificationLogs = async function() {
 // PWA Installation & First-Visit Prompt Logic (kept in core/notifications so it binds at boot)
 let deferredInstallPrompt = null;
 
+function isNativeCapacitorRuntime() {
+  return !!(
+    window.Capacitor
+    && typeof window.Capacitor.isNativePlatform === 'function'
+    && window.Capacitor.isNativePlatform()
+  );
+}
+
+function populateInstallAppModalState() {
+  const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
+  const pwaHint = document.getElementById('installModalPwaHint');
+  const pwaBtn = document.getElementById('installModalPwaBtn');
+  const manualBox = document.getElementById('installModalManualSteps');
+  if (!pwaBtn) return;
+
+  if (deferredInstallPrompt) {
+    if (pwaHint) {
+      pwaHint.textContent = 'Браузер готовий встановити SD-GEN016 як окремий веб-додаток із ярликом на головному екрані.';
+    }
+    pwaBtn.style.display = 'inline-flex';
+    pwaBtn.textContent = '⚡ Встановити веб-додаток зараз';
+    if (manualBox) {
+      manualBox.style.display = 'none';
+      manualBox.innerHTML = '';
+    }
+    pwaBtn.onclick = async () => {
+      if (!deferredInstallPrompt) {
+        populateInstallAppModalState();
+        return;
+      }
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      if (choice && choice.outcome === 'accepted') {
+        const banner = document.getElementById('pwaInstallBanner');
+        const headerInstallBtn = document.getElementById('headerInstallBtn');
+        const navDrawerInstallBtn = document.getElementById('navDrawerInstallApp');
+        if (banner) banner.style.display = 'none';
+        if (headerInstallBtn) headerInstallBtn.style.display = 'none';
+        if (navDrawerInstallBtn) navDrawerInstallBtn.style.display = 'none';
+        localStorage.setItem('pwa_installed', 'true');
+        closeModal('modalAppInstall');
+      }
+      deferredInstallPrompt = null;
+    };
+    return;
+  }
+
+  pwaBtn.style.display = 'none';
+  if (manualBox) {
+    manualBox.style.display = 'block';
+    if (isIos) {
+      if (pwaHint) {
+        pwaHint.textContent = 'На iPhone та iPad веб-додаток додається через системне меню Safari:';
+      }
+      manualBox.innerHTML =
+        '<div>1. У нижній панелі Safari натисніть <b>«Поділитися»</b> (⎋ або квадрат зі стрілкою вгору).</div>' +
+        '<div>2. Оберіть пункт <b>«На початковий екран»</b> (➕ Add to Home Screen).</div>' +
+        '<div>3. Натисніть <b>«Додати»</b> у верхньому правому куті.</div>';
+    } else {
+      if (pwaHint) {
+        pwaHint.textContent = 'Якщо браузер не показує кнопку автоустановки, додайте веб-додаток через меню браузера:';
+      }
+      manualBox.innerHTML =
+        '<div><b>Android (Chrome / Edge / Samsung):</b> відкрийте меню браузера <b>⋮</b> та натисніть <b>«Додати на головний екран»</b> або <b>«Встановити застосунок»</b>.</div>' +
+        '<div style="margin-top: 0.35rem;"><b>ПК (Chrome / Edge):</b> натисніть іконку встановлення в правій частині адресного рядка або меню <b>⋮ → Встановити SD-GEN016</b>.</div>';
+    }
+  }
+}
+
+window.openInstallAppModal = async function () {
+  await openModal('modalAppInstall');
+  populateInstallAppModalState();
+};
+
 function setupPwaInstall() {
+  const isCapacitorNative = isNativeCapacitorRuntime();
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
   const banner = document.getElementById('pwaInstallBanner');
   const headerInstallBtn = document.getElementById('headerInstallBtn');
   const installBtn = document.getElementById('pwaInstallBtn');
   const dismissBtn = document.getElementById('pwaDismissBtn');
+  const navDrawerInstallBtn = document.getElementById('navDrawerInstallApp');
 
-  if (isStandalone || localStorage.getItem('pwa_installed') === 'true') {
+  if (isCapacitorNative || isStandalone) {
     if (banner) banner.style.display = 'none';
     if (headerInstallBtn) headerInstallBtn.style.display = 'none';
+    if (navDrawerInstallBtn) navDrawerInstallBtn.style.display = 'none';
     return;
+  }
+
+  // Always allow installing PWA / downloading APK from the side drawer in regular browser tabs
+  if (navDrawerInstallBtn) {
+    navDrawerInstallBtn.style.display = '';
+  }
+
+  if (localStorage.getItem('pwa_installed') === 'true') {
+    if (banner) banner.style.display = 'none';
+    if (headerInstallBtn) headerInstallBtn.style.display = 'none';
   }
 
   const dismissedTime = localStorage.getItem('pwa_install_dismissed_at');
@@ -774,12 +866,16 @@ function setupPwaInstall() {
     e.preventDefault();
     deferredInstallPrompt = e;
     if (headerInstallBtn) headerInstallBtn.style.display = 'inline-flex';
-    if (shouldShowPrompt && banner) {
+    if (shouldShowPrompt && banner && localStorage.getItem('pwa_installed') !== 'true') {
       banner.style.display = 'flex';
+    }
+    const modal = document.getElementById('modalAppInstall');
+    if (modal && modal.style.display === 'flex') {
+      populateInstallAppModalState();
     }
   });
 
-  if (isIos && shouldShowPrompt && banner) {
+  if (isIos && shouldShowPrompt && banner && localStorage.getItem('pwa_installed') !== 'true') {
     setTimeout(() => {
       const activeStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
       if (!activeStandalone) {
@@ -787,7 +883,7 @@ function setupPwaInstall() {
         if (headerInstallBtn) headerInstallBtn.style.display = 'inline-flex';
       }
     }, 1200);
-  } else if (isIos && headerInstallBtn) {
+  } else if (isIos && headerInstallBtn && localStorage.getItem('pwa_installed') !== 'true') {
     headerInstallBtn.style.display = 'inline-flex';
   }
 
@@ -798,13 +894,12 @@ function setupPwaInstall() {
       if (choice.outcome === 'accepted') {
         if (banner) banner.style.display = 'none';
         if (headerInstallBtn) headerInstallBtn.style.display = 'none';
+        if (navDrawerInstallBtn) navDrawerInstallBtn.style.display = 'none';
         localStorage.setItem('pwa_installed', 'true');
       }
       deferredInstallPrompt = null;
-    } else if (isIos) {
-      openModal('modalIosInstall');
     } else {
-      showToast('Натисніть на значок встановлення в адресному рядку браузера або меню ⋮ -> "Встановити додаток"', 'info');
+      window.openInstallAppModal();
     }
   };
 
@@ -819,6 +914,7 @@ function setupPwaInstall() {
   window.addEventListener('appinstalled', () => {
     if (banner) banner.style.display = 'none';
     if (headerInstallBtn) headerInstallBtn.style.display = 'none';
+    if (navDrawerInstallBtn) navDrawerInstallBtn.style.display = 'none';
     localStorage.setItem('pwa_installed', 'true');
     showToast('Додаток успішно встановлено!', 'success');
   });
@@ -862,41 +958,77 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (_) {}
   }
 
-  // Periodic background refresh for active dashboard & header indicators
+  // Periodic background refresh for active screen, secondary operational tabs & header indicators
   let _isBgRefreshRunning = false;
   let _lastBgRefreshAt = Date.now();
-  const runDashboardBackgroundRefresh = async () => {
+  let _lastNativeResumeAt = 0;
+
+  const isUserEditingFormOrModal = () => {
+    const activeEl = document.activeElement;
+    if (activeEl && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName)) {
+      return true;
+    }
+    return !!(typeof window.getTopOpenModalId === 'function' && window.getTopOpenModalId());
+  };
+
+  window.refreshActiveAppState = async (_reason = 'interval', force = false) => {
     if (_isBgRefreshRunning || document.hidden || !token || !currentUser) return;
     _isBgRefreshRunning = true;
     _lastBgRefreshAt = Date.now();
     try {
       const tasks = [
-        loadFacilityIndicators(currentFacilityId),
-        window.pollRecentNotifications(false),
-        window.loadBellFeed(false)
+        typeof loadFacilityIndicators === 'function' ? loadFacilityIndicators(currentFacilityId, force) : Promise.resolve(),
+        typeof window.pollRecentNotifications === 'function' ? window.pollRecentNotifications(false) : Promise.resolve(),
+        typeof window.loadBellFeed === 'function' ? window.loadBellFeed(false) : Promise.resolve()
       ];
-      if (!window.activeTabId || window.activeTabId === 'tab-dashboard') {
-        tasks.push(loadGeneratorData());
-        tasks.push(loadFacilityOutageSchedule(currentFacilityId));
+
+      const activeTab = window.activeTabId || 'tab-dashboard';
+      if (activeTab === 'tab-dashboard') {
+        if (typeof loadGeneratorData === 'function') tasks.push(loadGeneratorData());
+        if (typeof loadFacilityOutageSchedule === 'function') tasks.push(loadFacilityOutageSchedule(currentFacilityId));
         if (!isViewerOnly() && hasPermission('fuel:view') && typeof loadFuelSummary === 'function') {
           tasks.push(loadFuelSummary());
         }
         if (!isViewerOnly() && hasPermission('maintenance:view') && typeof loadMaintenanceSummary === 'function') {
           tasks.push(loadMaintenanceSummary());
         }
+      } else if (!isUserEditingFormOrModal()) {
+        if (activeTab === 'tab-fuel' && typeof loadFuelData === 'function') {
+          tasks.push(loadFuelData());
+        } else if (activeTab === 'tab-maintenance' && typeof loadMaintenanceData === 'function') {
+          tasks.push(loadMaintenanceData());
+        } else if (activeTab === 'tab-faults' && typeof loadFaultsData === 'function') {
+          tasks.push(loadFaultsData());
+        } else if (activeTab === 'tab-runs' && typeof loadRunsData === 'function') {
+          tasks.push(loadRunsData());
+        } else if (activeTab === 'tab-audit' && typeof loadAuditData === 'function') {
+          tasks.push(loadAuditData());
+        } else if (activeTab === 'tab-measurement' && typeof window.loadMeasurementTab === 'function') {
+          tasks.push(window.loadMeasurementTab());
+        }
       }
+
       await Promise.allSettled(tasks);
     } finally {
       _isBgRefreshRunning = false;
     }
   };
 
-  setInterval(runDashboardBackgroundRefresh, 15000);
+  window.__onNativeResume = (reason = 'resume') => {
+    const now = Date.now();
+    if (now - _lastNativeResumeAt < 800) return;
+    _lastNativeResumeAt = now;
+    if (!token || !currentUser) return;
+    if (typeof refreshServerStatus === 'function') refreshServerStatus();
+    window.refreshActiveAppState(`native:${reason}`, true);
+  };
+
+  setInterval(() => window.refreshActiveAppState('interval', false), 10000);
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && token && currentUser && (Date.now() - _lastBgRefreshAt > 5000)) {
-      refreshServerStatus();
-      runDashboardBackgroundRefresh();
+    if (!document.hidden && token && currentUser && (Date.now() - _lastBgRefreshAt > 1000)) {
+      if (typeof refreshServerStatus === 'function') refreshServerStatus();
+      window.refreshActiveAppState('visibility', true);
     }
   });
 });

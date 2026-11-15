@@ -1,0 +1,10 @@
+# GitGuardian configuration: ignore synthetic test credentials & example/documentation files
+version: 2
+
+secret:
+  ignored-paths:
+    - "backend/tests/**"
+    - "ota-server/tests/**"
+    - "**/.env.example"
+    - "**/*.md"
+    - "**/conftest.py"

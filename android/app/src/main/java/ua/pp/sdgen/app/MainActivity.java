@@ -1,5 +1,6 @@
 package ua.pp.sdgen.app;
 
+import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.View;
@@ -62,6 +63,26 @@ public class MainActivity extends BridgeActivity {
         if (backCallback != null) {
             backCallback.setEnabled(true);
         }
+        notifyWebViewResume("resume");
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        notifyWebViewResume("intent");
+    }
+
+    private void notifyWebViewResume(String reason) {
+        WebView webView = (bridge != null) ? bridge.getWebView() : null;
+        if (webView == null) {
+            return;
+        }
+        String safeReason = "intent".equals(reason) ? "intent" : "resume";
+        webView.post(() -> webView.evaluateJavascript(
+            "if (typeof window.__onNativeResume === 'function') { window.__onNativeResume('" + safeReason + "'); }",
+            null
+        ));
     }
 
     private void performSystemBack() {
