@@ -20,10 +20,16 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.config import settings
+from backend.app.core.timezone import now_facility
 from backend.app.services.settings_service import get_runtime_setting
 from backend.app.models.notification import NotificationLog
 
 logger = logging.getLogger("email_service")
+
+
+def _now_email_str() -> str:
+    """Повертає поточну дату й час у часовому поясі об'єкта для тексту email-сповіщень."""
+    return now_facility().strftime("%d.%m.%Y о %H:%M")
 
 PRODUCT_BRAND_NAME = "SD-GEN016 — Service Desk Генератора"
 PRODUCT_SENDER_NAME = "SD-GEN016"
@@ -278,7 +284,7 @@ def _wrap_html_template(
     </div>
     <div class="email-footer">
       <p style="margin: 0 0 4px 0;">Це автоматичне системне сповіщення. Будь ласка, не відповідайте на цей лист.</p>
-      <p style="margin: 0;">© {datetime.datetime.now().year} {html.escape(PRODUCT_BRAND_NAME)}.</p>
+      <p style="margin: 0;">© {now_facility().year} {html.escape(PRODUCT_BRAND_NAME)}.</p>
       {unsub_html}
     </div>
   </div>
@@ -933,7 +939,7 @@ async def send_password_changed_email(
 ) -> Dict[str, Any]:
     """Sends a security alert email after password change."""
     subject = f"Безпека: Пароль змінено — {PRODUCT_SENDER_NAME}"
-    now_str = datetime.datetime.now().strftime("%d.%m.%Y о %H:%M")
+    now_str = _now_email_str()
 
     content = f"""
     <p>Вітаємо, <strong>{html.escape(user_name)}</strong>!</p>
@@ -969,7 +975,7 @@ async def send_safety_stop_email(
 ) -> Dict[str, Any]:
     """Sends an urgent email notification when an operational safety fuse triggers."""
     subject = f"🛑 Аварійна зупинка генератора — {generator_name}"
-    now_str = datetime.datetime.now().strftime("%d.%m.%Y о %H:%M")
+    now_str = _now_email_str()
 
     content = f"""
     <div class="alert-box">
@@ -1007,7 +1013,7 @@ async def send_schedule_auto_stop_email(
 ) -> Dict[str, Any]:
     """Sends notification email when generator is automatically stopped at end of shift schedule."""
     subject = f"⏱️ Автостоп за графіком — {generator_name}"
-    now_str = datetime.datetime.now().strftime("%d.%m.%Y о %H:%M")
+    now_str = _now_email_str()
 
     content = f"""
     <div class="warning-box">
@@ -1043,7 +1049,7 @@ async def send_outside_work_hours_email(
 ) -> Dict[str, Any]:
     """Sends email alert when generator is running or attempted to run outside work hours."""
     subject = f"🕒 Робота поза робочим часом — {generator_name}"
-    now_str = datetime.datetime.now().strftime("%d.%m.%Y о %H:%M")
+    now_str = _now_email_str()
 
     content = f"""
     <div class="warning-box">
@@ -1078,7 +1084,7 @@ async def send_empty_tank_email(
 ) -> Dict[str, Any]:
     """Sends urgent email when generator fuel tank reaches 0 L (empty tank)."""
     subject = f"⛽ ПОРОЖНІЙ БАК (0 л) — {generator_name}"
-    now_str = datetime.datetime.now().strftime("%d.%m.%Y о %H:%M")
+    now_str = _now_email_str()
 
     content = f"""
     <div class="alert-box">
@@ -1113,7 +1119,7 @@ async def send_low_fuel_email(
 ) -> Dict[str, Any]:
     """Sends warning email when tank fuel drops below threshold."""
     subject = f"⚠️ Критичний рівень палива — {generator_name}"
-    now_str = datetime.datetime.now().strftime("%d.%m.%Y о %H:%M")
+    now_str = _now_email_str()
 
     content = f"""
     <div class="warning-box">
@@ -1148,7 +1154,7 @@ async def send_fuel_discrepancy_email(
 ) -> Dict[str, Any]:
     """Sends warning email when calculated fuel consumption exceeds recorded tank level."""
     subject = f"⚠️ Розбіжність паливного балансу — {generator_name}"
-    now_str = datetime.datetime.now().strftime("%d.%m.%Y о %H:%M")
+    now_str = _now_email_str()
 
     content = f"""
     <div class="warning-box">
@@ -1177,7 +1183,7 @@ async def send_critical_fault_email(
 ) -> Dict[str, Any]:
     """Sends urgent email notification on CRITICAL fault report."""
     subject = f"🚨 Критична несправність — {generator_name}"
-    now_str = datetime.datetime.now().strftime("%d.%m.%Y о %H:%M")
+    now_str = _now_email_str()
 
     content = f"""
     <div class="alert-box">

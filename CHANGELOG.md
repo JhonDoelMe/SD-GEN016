@@ -5,6 +5,16 @@
 
 ---
 
+## [v5.7.13] — 2026-11-15
+### 🛠️ Узгодження часового поясу в Email/експорті, єдиний розрахунок живого пального та `--no-code` версіонування
+- **Локальний час (`now_facility()`) замість сирого UTC ([`email_service.py`](backend/app/services/email_service.py), [`audit.py`](backend/app/api/v1/audit.py), [`backups.py`](backend/app/api/v1/backups.py), [`reports.py`](backend/app/api/v1/reports.py), [`system.py`](backend/app/api/v1/system.py), [`test_email_system.py`](backend/tests/test_email_system.py))**:
+  - У всіх системних email-сповіщеннях (зміна пароля, автостоп, порожній/низький бак, критична несправність тощо) додано єдиний хелпер `_now_email_str()` через `now_facility()`, щоб листи завжди показували локальний час об'єкта (`Europe/Kyiv`) незалежно від таймзони Docker-контейнера.
+  - Мітки часу у назвах завантажуваних Excel-звітів, бекапів та періоді ручного щотижневого звіту переведено на `now_facility()`.
+- **Єдина функція живого розрахунку пального ([`fuel_service.py`](backend/app/services/fuel_service.py), [`operational_guard_service.py`](backend/app/services/operational_guard_service.py))**:
+  - Винесено спільний хелпер `compute_generator_live_fuel_l()` (з уніфікованою UTC-нормалізацією naive/aware datetime і врахуванням `start_fuel_level_l`), який використовується як для API залишків (`compute_live_tank_levels_map()`), так і для фонових перевірок (`check_operational_guardrails()`).
+- **Інструмент версіонування ([`bump-version.js`](scripts/bump-version.js))**:
+  - Додано прапорець `--no-code` для чисто серверних/веб патчів без інкременту Android `versionCode`.
+
 ## [v5.7.12] — 2026-11-15
 ### ⏱️ Коректний час запуску та живий залишок пального у сповіщенні heartbeat (`operational_guard_service`)
 - **Локальний час запуску та живий розрахунковий залишок ([`operational_guard_service.py`](backend/app/services/operational_guard_service.py), [`test_operational_safeguards.py`](backend/tests/test_operational_safeguards.py))**:

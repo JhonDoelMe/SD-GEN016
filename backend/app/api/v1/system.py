@@ -559,7 +559,7 @@ async def send_weekly_digest_manual(
     target_fac = facility_id or get_runtime_setting("email_weekly_facility_id") or get_runtime_setting("default_facility_id")
     target_gen = generator_id or get_runtime_setting("email_weekly_generator_id") or get_runtime_setting("default_generator_id")
     excel_bytes = await generate_excel_report(db=db, facility_id=target_fac, generator_id=target_gen)
-    now_dt = datetime.datetime.now()
+    now_dt = now_facility()
     week_ago = now_dt - datetime.timedelta(days=7)
     period_label = f"{week_ago.strftime('%d.%m.%Y')} — {now_dt.strftime('%d.%m.%Y')}"
 

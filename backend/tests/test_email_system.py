@@ -391,3 +391,30 @@ async def test_weekly_digest_persistent_deduplication_across_container_restarts(
                 sent2 = await guard_svc.check_and_send_weekly_digest(db_session)
                 assert sent2 is False
                 assert mock_send.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_email_notifications_use_facility_timezone():
+    """
+    Перевіряє, що email-сповіщення форматують час через now_facility(), а не сирий UTC/OS-час.
+    """
+    from zoneinfo import ZoneInfo
+    from backend.app.services import email_service
+
+    fake_kyiv_now = datetime.datetime(2026, 11, 15, 17, 45, tzinfo=ZoneInfo("Europe/Kyiv"))
+    captured = {}
+
+    async def fake_send_personalized(**kwargs):
+        captured.update(kwargs)
+        return {"status": "ok"}
+
+    with patch("backend.app.services.email_service.now_facility", return_value=fake_kyiv_now):
+        with patch("backend.app.services.email_service._send_personalized_email", side_effect=fake_send_personalized):
+            res = await email_service.send_empty_tank_email(
+                recipients="ops@example.com",
+                generator_name="VULKAN",
+                fuel_level_l=0.0,
+            )
+
+    assert res["status"] == "ok"
+    assert "15.11.2026 о 17:45" in captured["content_html"]

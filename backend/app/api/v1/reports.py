@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Response, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
+from backend.app.core.timezone import now_facility
 from backend.app.models.user import User
 from backend.app.schemas.report import OperationalReportOut
 from backend.app.api.deps import (
@@ -78,7 +79,7 @@ async def export_excel_report(
         end_date=end_dt
     )
 
-    date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    date_str = now_facility().strftime("%Y%m%d_%H%M%S")
     filename = f"ServiceDesk_Report_{date_str}.xlsx"
 
     return Response(

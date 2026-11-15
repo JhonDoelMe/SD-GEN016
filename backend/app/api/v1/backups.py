@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
+from backend.app.core.timezone import now_facility
 from backend.app.api.deps import get_current_superadmin, get_client_ip
 from backend.app.models.user import User
 from backend.app.services.audit_service import log_audit
@@ -326,7 +327,7 @@ async def upload_and_restore_backup(
         )
 
     backup_dir = get_backup_dir()
-    timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp_str = now_facility().strftime("%Y%m%d_%H%M%S")
     clean_base = Path(raw_filename).name.replace(" ", "_")
     target_name = f"uploaded_{timestamp_str}_{clean_base}"
     if not target_name.endswith(".zip"):

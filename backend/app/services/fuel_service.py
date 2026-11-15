@@ -876,6 +876,44 @@ async def transfer_fuel_to_tank(
     return transfer
 
 
+def compute_generator_live_fuel_l(
+    generator: Generator,
+    active_run: Optional[GeneratorRun],
+    now_dt: Optional[datetime.datetime] = None,
+    clamp_zero: bool = False,
+) -> float:
+    """
+    Обчислює живий розрахунковий залишок пального у баку одного генератора.
+    Використовує стартовий рівень активного циклу та номінальну витрату за фактичний час.
+    """
+    base_fuel = float(generator.fuel_tank_level_l or 0.0)
+    if (
+        str(generator.status or "").upper() != "RUNNING"
+        or not active_run
+        or not active_run.start_time
+    ):
+        return round(max(0.0, base_fuel) if clamp_zero else base_fuel, 3)
+
+    ref_now = now_dt or utc_now()
+    if ref_now.tzinfo is None:
+        ref_now = ref_now.replace(tzinfo=datetime.timezone.utc)
+    start_dt = active_run.start_time
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=datetime.timezone.utc)
+
+    elapsed_hours = max(0.0, (ref_now - start_dt).total_seconds() / 3600.0)
+    start_fuel = float(
+        active_run.start_fuel_level_l
+        if active_run.start_fuel_level_l is not None
+        else base_fuel
+    )
+    nominal = float(generator.nominal_consumption_l_per_h or 0.0)
+    live_val = start_fuel - (elapsed_hours * nominal)
+    if clamp_zero:
+        live_val = max(0.0, live_val)
+    return round(live_val, 3)
+
+
 async def compute_live_tank_levels_map(
     db: AsyncSession,
     generators: List[Generator],
@@ -912,24 +950,12 @@ async def compute_live_tank_levels_map(
             active_runs[gid] = r
 
     now_dt = utc_now()
-    if now_dt.tzinfo is None:
-        now_dt = now_dt.replace(tzinfo=datetime.timezone.utc)
     for g in running_gens:
         gid = int(g.id)
         run = active_runs.get(gid)
         if not run or not run.start_time:
             continue
-        start_dt = run.start_time
-        if start_dt.tzinfo is None:
-            start_dt = start_dt.replace(tzinfo=datetime.timezone.utc)
-        elapsed_hours = max(0.0, (now_dt - start_dt).total_seconds() / 3600.0)
-        start_fuel = float(
-            run.start_fuel_level_l
-            if run.start_fuel_level_l is not None
-            else (g.fuel_tank_level_l or 0.0)
-        )
-        nominal = float(g.nominal_consumption_l_per_h or 0.0)
-        live_map[gid] = round(start_fuel - (elapsed_hours * nominal), 3)
+        live_map[gid] = compute_generator_live_fuel_l(g, run, now_dt=now_dt, clamp_zero=False)
 
     return live_map
 

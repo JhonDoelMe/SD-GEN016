@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
+from backend.app.core.timezone import now_facility
 from backend.app.models.user import User
 from backend.app.models.audit import AuditLog
 from backend.app.schemas.audit import AuditLogOut
@@ -87,7 +88,7 @@ async def export_audit_excel(
         entity_type=entity_type
     )
 
-    date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    date_str = now_facility().strftime("%Y%m%d_%H%M%S")
     filename = f"Audit_Report_{date_str}.xlsx"
 
     return Response(

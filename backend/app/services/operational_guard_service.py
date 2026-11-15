@@ -15,6 +15,7 @@ from backend.app.services.settings_service import get_runtime_setting
 from backend.app.services.audit_service import log_audit
 from backend.app.services.notification_service import send_push_notification, check_and_notify_low_fuel, check_and_notify_maintenance_due
 from backend.app.services.generator_service import stop_generator
+from backend.app.services.fuel_service import compute_generator_live_fuel_l
 
 # Guard health monitoring registry (OPG-18)
 guard_health_status = {
@@ -181,14 +182,7 @@ async def check_operational_guardrails(db: AsyncSession) -> Dict[str, Any]:
                         )
 
             # Обчислюємо живі показники витрати пального та мотогодин для активного циклу
-            nom_cons = float(gen.nominal_consumption_l_per_h or 0.0)
-            est_consumed_l = elapsed_hours * nom_cons
-            start_fuel = float(
-                run.start_fuel_level_l
-                if run.start_fuel_level_l is not None
-                else (gen.fuel_tank_level_l or 0.0)
-            )
-            live_fuel_l = max(0.0, start_fuel - est_consumed_l)
+            live_fuel_l = compute_generator_live_fuel_l(gen, run, now_dt=current_time, clamp_zero=True)
             live_hours = float(gen.current_operating_hours or 0.0) + elapsed_hours
 
             # -------------------------------------------------------------

@@ -8,12 +8,14 @@ const ROOT = path.resolve(__dirname, '..');
 const VERSION_FILE = path.join(ROOT, 'version.json');
 
 function parseArgs(argv) {
-  const opts = { bump: 'patch', set: null, code: null, syncOnly: false };
+  const opts = { bump: 'patch', set: null, code: null, syncOnly: false, noCode: false };
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--sync-only') {
       opts.syncOnly = true;
       opts.bump = 'none';
+    } else if (arg === '--no-code') {
+      opts.noCode = true;
     } else if (arg === '--bump' && argv[i + 1]) {
       opts.bump = argv[++i];
     } else if (arg === '--set' && argv[i + 1]) {
@@ -66,10 +68,10 @@ function main() {
       throw new Error(`Invalid --set version "${opts.set}". Expected X.Y.Z`);
     }
     nextName = opts.set.trim();
-    nextCode = opts.code !== null ? opts.code : nextCode + 1;
+    nextCode = opts.code !== null ? opts.code : (opts.noCode ? nextCode : nextCode + 1);
   } else if (!opts.syncOnly && opts.bump !== 'none') {
     nextName = bumpSemver(current.versionName, opts.bump);
-    nextCode = opts.code !== null ? opts.code : nextCode + 1;
+    nextCode = opts.code !== null ? opts.code : (opts.noCode ? nextCode : nextCode + 1);
   } else if (opts.code !== null) {
     nextCode = opts.code;
   }
