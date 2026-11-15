@@ -720,15 +720,32 @@ window.switchAdminSubtab = async function (subtab, options = {}) {
     p.classList.toggle('active', p.id === `adminPane-${subtab}`);
   });
 
-  if (subtab === 'facilities' && typeof window.renderAdminFacilitiesAndGenerators === 'function') {
-    await window.renderAdminFacilitiesAndGenerators();
-  } else if (subtab === 'fuel-admin' && typeof loadFuelData === 'function') {
-    await loadFuelData();
+  const canManageSysSettings =
+    (typeof isAdmin === 'function' && isAdmin()) ||
+    (typeof hasPermission === 'function' && hasPermission('settings:manage'));
+
+  if (subtab === 'facilities') {
+    if (typeof window.renderAdminFacilitiesAndGenerators === 'function') {
+      await window.renderAdminFacilitiesAndGenerators();
+    }
+    if (canManageSysSettings && typeof loadAdminSystemSettings === 'function') {
+      await loadAdminSystemSettings();
+    }
+  } else if (subtab === 'fuel-admin') {
+    if (typeof loadFuelData === 'function') {
+      await loadFuelData();
+    }
+    if (canManageSysSettings && typeof loadAdminSystemSettings === 'function') {
+      await loadAdminSystemSettings();
+    }
   } else if (subtab === 'notifications') {
     if (typeof loadNotificationSettings === 'function') loadNotificationSettings();
+    if (canManageSysSettings && typeof loadAdminSystemSettings === 'function') {
+      await loadAdminSystemSettings();
+    }
     if (typeof loadNotificationLogs === 'function') loadNotificationLogs();
   } else if (subtab === 'system' && typeof loadAdminSystemSettings === 'function') {
-    await loadAdminSystemSettings();
+    if (canManageSysSettings) await loadAdminSystemSettings();
   } else if (subtab === 'users' && typeof loadUsersData === 'function') {
     await loadUsersData();
   } else if (subtab === 'backups' && isSuperAdmin() && typeof loadBackupsList === 'function') {

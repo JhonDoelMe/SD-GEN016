@@ -5,6 +5,19 @@
 
 ---
 
+## [v5.7.16] — 2026-11-15
+### ⚙️ Реорганізація параметрів Адмін-панелі за доменами, частотою змін та спойлерами
+- **Модульна архітектура Адмін-панелі ([`admin.html`](frontend/views/admin.html), [`views.css`](frontend/css/views.css))**:
+  - Скасовано монолітну 6-екранну форму `#systemSettingsForm` із єдиною кнопкою збереження внизу: тепер кожна картка та спойлер мають власну кнопку збереження без побічних записів у сусідні розділи.
+  - **🏢 Об'єкти та Генератори** (`facilities`): додано згорнутий спойлер `#spoilerDefaultChain` («Стартовий ланцюжок за замовчуванням») з живим бейджем `#badgeDefaultChain` та кнопкою `#btnSaveDefaultChain`.
+  - **🛢️ ГСМ і Тарифи** (`fuel-admin`): перенесено табло цін АЗК WOG / OKKO, фіксовані ціни пального (`#sysPriceA95`, `#sysPriceDP`, `#sysPriceA92`) та автооновлення `#sysAutoFetchPrices` у картку `#fuelTariffsAdminCard` із кнопкою `#btnSaveFuelTariffs`.
+  - **🔔 Сповіщення та Пошта** (`notifications`): поруч із Push-правилами винесено картку `#emailReportsAdminCard` (компактна 2-колонкова сітка `.settings-toggle-grid-2` та параметри щотижневого Excel-звіту) і згорнутий спойлер `#spoilerSmtpGateways` («Поштові шлюзи Primary & Fallback SMTP») із живим статусом `#badgeSmtpStatus`.
+  - **⚙️ Регламент та Система** (`system`): залишено розгорнуту картку `#regulationSettingsCard` (графік зміни, інтервал ТО, режим 24/7 та налаштування профілактичного прогріву) і згорнутий спойлер `#spoilerOrgPassport` («Паспорт підприємства та Часовий пояс») із бейджем `#badgeOrgPassport`.
+  - Додано стилі `.admin-spoiler`, `.admin-spoiler-badge`, `.settings-toggle-grid-2` та `.settings-card-actions` для темної й світлої тем.
+- **Незалежне часткове збереження та RBAC ([`admin.js`](frontend/js/admin.js), [`auth-nav.js`](frontend/js/auth-nav.js), [`core.js`](frontend/js/core.js))**:
+  - Замінено загальний `submit`-обробник `#systemSettingsForm` на `saveSystemSection(sectionKey, btnEl)`, що надсилає часткові `PUT /api/v1/system/settings` лише для відповідної секції та оновлює живі бейджі через `updateAdminSpoilerBadges()`.
+  - Оновлено `switchAdminSubtab()` для завантаження системних налаштувань на підвкладках `facilities`, `fuel-admin`, `notifications` і `system` (лише за наявності адмін-прав), а `applyRolePermissionsUI()` тепер приховує адмін-картки `#spoilerDefaultChain`, `#fuelTariffsAdminCard`, `#emailReportsAdminCard`, `#spoilerSmtpGateways` від користувачів без `settings:manage`.
+
 ## [v5.7.15] — 2026-11-15
 ### 📱 Мобільна сітка прогріву (50%/50%) та умовний показ по простою / морозу
 - **Мобільний та десктопний макет блоку дій ([`dashboard.html`](frontend/views/dashboard.html), [`views.css`](frontend/css/views.css))**:

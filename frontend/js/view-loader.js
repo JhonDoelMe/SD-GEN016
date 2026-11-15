@@ -4,7 +4,7 @@
 (function initViewLoader() {
   const selfSrc = document.currentScript?.src || '';
   const vMatch = selfSrc.match(/[?&]v=([^&]+)/);
-  const ASSET_VERSION = vMatch ? vMatch[1] : '5.7.15';
+  const ASSET_VERSION = vMatch ? vMatch[1] : '5.7.16';
 
   const loadedViews = new Set();
   const viewPromises = new Map();

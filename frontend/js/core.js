@@ -525,6 +525,13 @@ function applyRolePermissionsUI() {
   setBtnState('btnOpenUserCreateModal', superadmin, 'Створення користувачів доступне виключно Головному Суперадміністратору 🔒', '+ Створити користувача 🔒');
   setBtnState('btnRefreshFuelPrices', hasPermission('settings:manage'), 'Оновлення цін доступне лише Адміністратору 🔒', '🔄 Оновити ціни 🔒');
 
+  // Admin-only settings cards placed inside domain subtabs
+  const canManageSettings = isAdmin() || hasPermission('settings:manage');
+  ['spoilerDefaultChain', 'fuelTariffsAdminCard', 'emailReportsAdminCard', 'spoilerSmtpGateways'].forEach((cardId) => {
+    const el = document.getElementById(cardId);
+    if (el) el.style.display = canManageSettings ? '' : 'none';
+  });
+
   // Backup panel and buttons (SuperAdmin only!)
   const panelBackups = document.getElementById('panelBackups');
   if (panelBackups) {

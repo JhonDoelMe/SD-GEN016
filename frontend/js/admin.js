@@ -1181,6 +1181,7 @@ async function loadAdminSystemSettings() {
     if (document.getElementById('sysEmailWeeklyTime')) document.getElementById('sysEmailWeeklyTime').value = s.email_weekly_send_time || '08:00';
 
     renderAdminFuelPricesHints(fp);
+    updateAdminSpoilerBadges(s);
   } catch (_) {}
 }
 
@@ -1217,6 +1218,7 @@ window.onAdminDefaultFacilityChange = async function(preselectGenId = null, pres
   if (!facId) {
     genSel.innerHTML = '<option value="">(Авто / Перший генератор)</option>';
     stockSel.innerHTML = '<option value="">(Авто / Перший склад)</option>';
+    updateAdminSpoilerBadges();
     return;
   }
 
@@ -1250,6 +1252,7 @@ window.onAdminDefaultFacilityChange = async function(preselectGenId = null, pres
     } else {
       stockSel.value = '';
     }
+    updateAdminSpoilerBadges();
   } catch (err) {
     console.warn('onAdminDefaultFacilityChange error:', err);
   }
@@ -1352,96 +1355,188 @@ window.refreshFuelPricesFromInternet = async function () {
   } catch (_) {}
 };
 
-document.addEventListener('submit', async (e) => {
-  if (!e.target || e.target.id !== 'systemSettingsForm') return;
-  e.preventDefault();
-  const submitBtn = e.target.querySelector('button[type="submit"]');
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.innerText = '💾 Збереження налаштувань...';
+function updateAdminSpoilerBadges(settings = null) {
+  const s = settings || window.systemSettingsCache || {};
+
+  // 1. Default Chain spoiler badge
+  const badgeChain = document.getElementById('badgeDefaultChain');
+  if (badgeChain) {
+    const facSel = document.getElementById('sysDefaultFacilityId');
+    const genSel = document.getElementById('sysDefaultGeneratorId');
+    const facVal = facSel?.value || '';
+    const genVal = genSel?.value || '';
+    const facText = facVal && facSel.selectedOptions?.[0] ? facSel.selectedOptions[0].textContent.trim() : '';
+    const genText = genVal && genSel.selectedOptions?.[0] ? genSel.selectedOptions[0].textContent.split('(')[0].trim() : '';
+
+    badgeChain.classList.remove('badge-ok', 'badge-warn', 'badge-muted');
+    if (facText && genText) {
+      badgeChain.textContent = `${facText} ➔ ${genText}`;
+      badgeChain.classList.add('badge-ok');
+    } else if (facText) {
+      badgeChain.textContent = `${facText} (Авто ген.)`;
+      badgeChain.classList.add('badge-ok');
+    } else {
+      badgeChain.textContent = 'Автовибір';
+      badgeChain.classList.add('badge-muted');
+    }
   }
 
-  const pPass = document.getElementById('sysSmtpPrimaryPassword')?.value;
-  const fbPass = document.getElementById('sysSmtpFallbackPassword')?.value;
+  // 2. SMTP Gateways spoiler badge
+  const badgeSmtp = document.getElementById('badgeSmtpStatus');
+  if (badgeSmtp) {
+    const smtpOn = document.getElementById('sysSmtpEnabled')?.checked ?? (s.smtp_enabled === true);
+    const primUser = (document.getElementById('sysSmtpPrimaryUser')?.value ?? s.smtp_primary_user ?? '').trim();
+    const fbEnabled = document.getElementById('sysSmtpFallbackEnabled')?.checked ?? (s.smtp_fallback_enabled === true);
 
-  const body = {
-    organization_name: document.getElementById('sysOrgName').value.trim() || 'MAXI-UA LLC',
-    facility_timezone: document.getElementById('sysTimezone').value,
-    work_schedule_start: document.getElementById('sysWorkStart').value,
-    work_schedule_end: document.getElementById('sysWorkEnd').value,
-    default_maintenance_interval_hours: parseFloat(document.getElementById('sysMaintInterval').value) || 300.0,
-    fuel_price_a95: parseFloat(document.getElementById('sysPriceA95').value) || 0.0,
-    fuel_price_a92: parseFloat(document.getElementById('sysPriceA92').value) || 0.0,
-    fuel_price_dp: parseFloat(document.getElementById('sysPriceDP').value) || 0.0,
-    enforce_work_schedule: document.getElementById('sysEnforceSchedule').checked,
-    auto_fetch_fuel_prices: document.getElementById('sysAutoFetchPrices').checked,
-    apply_to_all_generators: document.getElementById('sysApplyAllGens').checked,
-    warmup_reminder_enabled: document.getElementById('sysWarmupReminderEnabled')?.checked ?? true,
-    warmup_idle_days: Math.max(1, Math.min(90, parseInt(document.getElementById('sysWarmupIdleDays')?.value || '14', 10) || 14)),
-    warmup_duration_minutes: Math.max(5, Math.min(60, parseInt(document.getElementById('sysWarmupDurationMinutes')?.value || '15', 10) || 15)),
-    warmup_cold_temp_c: (() => {
-      const v = parseFloat(document.getElementById('sysWarmupColdTempC')?.value);
-      return Number.isFinite(v) ? Math.max(-40, Math.min(10, v)) : -10;
-    })(),
-    warmup_trigger_mode: document.getElementById('sysWarmupTriggerMode')?.value || 'any',
-    // SMTP & Failover Settings
-    smtp_enabled: document.getElementById('sysSmtpEnabled')?.checked ?? false,
-    email_notify_password_change: document.getElementById('sysEmailNotifyPwdChange')?.checked ?? true,
-    email_notify_safety_stop: document.getElementById('sysEmailNotifySafetyStop')?.checked ?? true,
-    email_notify_empty_tank: document.getElementById('sysEmailNotifyEmptyTank')?.checked ?? true,
-    email_notify_low_fuel: document.getElementById('sysEmailNotifyLowFuel')?.checked ?? true,
-    email_notify_outside_schedule: document.getElementById('sysEmailNotifyOutsideSchedule')?.checked ?? true,
-    email_notify_critical_fault: document.getElementById('sysEmailNotifyCriticalFault')?.checked ?? true,
-    email_notify_maintenance_due: document.getElementById('sysEmailNotifyMaintenance')?.checked ?? true,
-    email_weekly_report_enabled: document.getElementById('sysEmailWeeklyEnabled')?.checked ?? false,
-    smtp_primary_host: document.getElementById('sysSmtpPrimaryHost')?.value.trim() || 'smtp.gmail.com',
-    smtp_primary_port: parseInt(document.getElementById('sysSmtpPrimaryPort')?.value || '587', 10),
-    smtp_primary_user: document.getElementById('sysSmtpPrimaryUser')?.value.trim() || '',
-    smtp_primary_ssl: document.getElementById('sysSmtpPrimarySsl')?.checked ?? false,
-    smtp_primary_from: document.getElementById('sysSmtpPrimaryFrom')?.value.trim() || '',
-    smtp_fallback_enabled: document.getElementById('sysSmtpFallbackEnabled')?.checked ?? false,
-    smtp_fallback_host: document.getElementById('sysSmtpFallbackHost')?.value.trim() || 'smtp.ukr.net',
-    smtp_fallback_port: parseInt(document.getElementById('sysSmtpFallbackPort')?.value || '465', 10),
-    smtp_fallback_user: document.getElementById('sysSmtpFallbackUser')?.value.trim() || '',
-    smtp_fallback_ssl: document.getElementById('sysSmtpFallbackSsl')?.checked ?? true,
-    smtp_fallback_from: document.getElementById('sysSmtpFallbackFrom')?.value.trim() || '',
-    email_weekly_recipients: document.getElementById('sysEmailWeeklyRecipients')?.value.trim() || '',
-    email_weekly_send_day: parseInt(document.getElementById('sysEmailWeeklyDay')?.value || '0', 10),
-    email_weekly_send_time: document.getElementById('sysEmailWeeklyTime')?.value || '08:00',
-    // Default Chain & Weekly target bindings
-    default_facility_id: parseInt(document.getElementById('sysDefaultFacilityId')?.value || '0', 10) || null,
-    default_generator_id: parseInt(document.getElementById('sysDefaultGeneratorId')?.value || '0', 10) || null,
-    default_fuel_stock_id: parseInt(document.getElementById('sysDefaultFuelStockId')?.value || '0', 10) || null,
-    email_weekly_facility_id: parseInt(document.getElementById('sysEmailWeeklyFacilityId')?.value || '0', 10) || null,
-    email_weekly_generator_id: parseInt(document.getElementById('sysEmailWeeklyGeneratorId')?.value || '0', 10) || null
-  };
-
-  // Only pass password if user entered a new string; otherwise keep existing in DB
-  if (pPass && pPass.trim() !== '') {
-    body.smtp_primary_password = pPass;
+    badgeSmtp.classList.remove('badge-ok', 'badge-warn', 'badge-muted');
+    if (!primUser) {
+      badgeSmtp.textContent = 'Не налаштовано';
+      badgeSmtp.classList.add('badge-muted');
+    } else if (smtpOn) {
+      badgeSmtp.textContent = fbEnabled ? `${primUser} + Failover` : `Primary: ${primUser}`;
+      badgeSmtp.classList.add('badge-ok');
+    } else {
+      badgeSmtp.textContent = `${primUser} (Вимкнено)`;
+      badgeSmtp.classList.add('badge-warn');
+    }
   }
-  if (fbPass && fbPass.trim() !== '') {
-    body.smtp_fallback_password = fbPass;
+
+  // 3. Enterprise Passport spoiler badge
+  const badgeOrg = document.getElementById('badgeOrgPassport');
+  if (badgeOrg) {
+    const orgName = (document.getElementById('sysOrgName')?.value ?? s.organization_name ?? 'MAXI-UA LLC').trim() || 'MAXI-UA LLC';
+    const tz = document.getElementById('sysTimezone')?.value ?? s.facility_timezone ?? 'Europe/Kyiv';
+    badgeOrg.textContent = `${orgName} • ${tz}`;
+  }
+}
+
+window.saveSystemSection = async function (sectionKey, btnEl = null) {
+  let body = {};
+  let successMsg = 'Налаштування успішно збережено!';
+
+  if (sectionKey === 'fuel_tariffs') {
+    body = {
+      fuel_price_a95: parseFloat(document.getElementById('sysPriceA95')?.value) || 0.0,
+      fuel_price_a92: parseFloat(document.getElementById('sysPriceA92')?.value) || 0.0,
+      fuel_price_dp: parseFloat(document.getElementById('sysPriceDP')?.value) || 0.0,
+      auto_fetch_fuel_prices: document.getElementById('sysAutoFetchPrices')?.checked ?? true
+    };
+    successMsg = 'Тарифи пального збережено!';
+  } else if (sectionKey === 'email_reports') {
+    body = {
+      smtp_enabled: document.getElementById('sysSmtpEnabled')?.checked ?? false,
+      email_notify_password_change: document.getElementById('sysEmailNotifyPwdChange')?.checked ?? true,
+      email_notify_safety_stop: document.getElementById('sysEmailNotifySafetyStop')?.checked ?? true,
+      email_notify_empty_tank: document.getElementById('sysEmailNotifyEmptyTank')?.checked ?? true,
+      email_notify_low_fuel: document.getElementById('sysEmailNotifyLowFuel')?.checked ?? true,
+      email_notify_outside_schedule: document.getElementById('sysEmailNotifyOutsideSchedule')?.checked ?? true,
+      email_notify_critical_fault: document.getElementById('sysEmailNotifyCriticalFault')?.checked ?? true,
+      email_notify_maintenance_due: document.getElementById('sysEmailNotifyMaintenance')?.checked ?? true,
+      email_weekly_report_enabled: document.getElementById('sysEmailWeeklyEnabled')?.checked ?? false,
+      email_weekly_recipients: document.getElementById('sysEmailWeeklyRecipients')?.value.trim() || '',
+      email_weekly_send_day: parseInt(document.getElementById('sysEmailWeeklyDay')?.value || '0', 10),
+      email_weekly_send_time: document.getElementById('sysEmailWeeklyTime')?.value || '08:00',
+      email_weekly_facility_id: parseInt(document.getElementById('sysEmailWeeklyFacilityId')?.value || '0', 10) || null,
+      email_weekly_generator_id: parseInt(document.getElementById('sysEmailWeeklyGeneratorId')?.value || '0', 10) || null
+    };
+    successMsg = 'Параметри Email та звітів збережено!';
+  } else if (sectionKey === 'smtp') {
+    body = {
+      smtp_primary_host: document.getElementById('sysSmtpPrimaryHost')?.value.trim() || 'smtp.gmail.com',
+      smtp_primary_port: parseInt(document.getElementById('sysSmtpPrimaryPort')?.value || '587', 10) || 587,
+      smtp_primary_user: document.getElementById('sysSmtpPrimaryUser')?.value.trim() || '',
+      smtp_primary_ssl: document.getElementById('sysSmtpPrimarySsl')?.checked ?? false,
+      smtp_primary_from: document.getElementById('sysSmtpPrimaryFrom')?.value.trim() || '',
+      smtp_fallback_enabled: document.getElementById('sysSmtpFallbackEnabled')?.checked ?? false,
+      smtp_fallback_host: document.getElementById('sysSmtpFallbackHost')?.value.trim() || 'smtp.ukr.net',
+      smtp_fallback_port: parseInt(document.getElementById('sysSmtpFallbackPort')?.value || '465', 10) || 465,
+      smtp_fallback_user: document.getElementById('sysSmtpFallbackUser')?.value.trim() || '',
+      smtp_fallback_ssl: document.getElementById('sysSmtpFallbackSsl')?.checked ?? true,
+      smtp_fallback_from: document.getElementById('sysSmtpFallbackFrom')?.value.trim() || ''
+    };
+    const pPass = document.getElementById('sysSmtpPrimaryPassword')?.value;
+    const fbPass = document.getElementById('sysSmtpFallbackPassword')?.value;
+    if (pPass && pPass.trim() !== '') body.smtp_primary_password = pPass;
+    if (fbPass && fbPass.trim() !== '') body.smtp_fallback_password = fbPass;
+    successMsg = 'Налаштування SMTP-шлюзів збережено!';
+  } else if (sectionKey === 'regulation') {
+    const startEl = document.getElementById('sysWorkStart');
+    const endEl = document.getElementById('sysWorkEnd');
+    const maintEl = document.getElementById('sysMaintInterval');
+    const workStart = startEl?.value || '';
+    const workEnd = endEl?.value || '';
+    const maintVal = parseFloat(maintEl?.value);
+    if (!workStart) {
+      showToast('Вкажіть час початку робочої зміни', 'error');
+      startEl?.focus();
+      return;
+    }
+    if (!workEnd) {
+      showToast('Вкажіть час завершення робочої зміни', 'error');
+      endEl?.focus();
+      return;
+    }
+    if (!Number.isFinite(maintVal) || maintVal < 10) {
+      showToast('Інтервал ТО має бути не менше 10 мотогодин', 'error');
+      maintEl?.focus();
+      return;
+    }
+    const coldRaw = parseFloat(document.getElementById('sysWarmupColdTempC')?.value);
+    body = {
+      work_schedule_start: workStart,
+      work_schedule_end: workEnd,
+      default_maintenance_interval_hours: maintVal,
+      enforce_work_schedule: document.getElementById('sysEnforceSchedule')?.checked ?? true,
+      apply_to_all_generators: document.getElementById('sysApplyAllGens')?.checked ?? false,
+      warmup_reminder_enabled: document.getElementById('sysWarmupReminderEnabled')?.checked ?? true,
+      warmup_idle_days: Math.max(1, Math.min(90, parseInt(document.getElementById('sysWarmupIdleDays')?.value || '14', 10) || 14)),
+      warmup_duration_minutes: Math.max(5, Math.min(60, parseInt(document.getElementById('sysWarmupDurationMinutes')?.value || '15', 10) || 15)),
+      warmup_cold_temp_c: Number.isFinite(coldRaw) ? Math.max(-40, Math.min(10, coldRaw)) : -10,
+      warmup_trigger_mode: document.getElementById('sysWarmupTriggerMode')?.value || 'any'
+    };
+    successMsg = 'Робочий регламент та параметри прогріву збережено!';
+  } else if (sectionKey === 'org_passport') {
+    const orgEl = document.getElementById('sysOrgName');
+    const orgName = orgEl?.value.trim() || '';
+    if (!orgName) {
+      showToast('Вкажіть назву організації', 'error');
+      orgEl?.focus();
+      return;
+    }
+    body = {
+      organization_name: orgName,
+      facility_timezone: document.getElementById('sysTimezone')?.value || 'Europe/Kyiv',
+      apply_to_all_generators: document.getElementById('sysApplyAllGens')?.checked ?? false
+    };
+    successMsg = 'Паспорт підприємства збережено!';
+  } else {
+    return;
+  }
+
+  const origText = btnEl ? btnEl.innerText : '';
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.innerText = '💾 Збереження...';
   }
 
   try {
     const res = await api('/system/settings', { method: 'PUT', body: JSON.stringify(body) });
-    renderAdminFuelPricesHints(res.fuel_prices);
+    if (res.fuel_prices) renderAdminFuelPricesHints(res.fuel_prices);
     if (document.getElementById('sysApplyAllGens') && res.settings) {
       document.getElementById('sysApplyAllGens').checked = res.settings.apply_to_all_generators !== false;
     }
-    showToast(res.message || 'Системні налаштування успішно збережено!', 'success');
+    showToast(successMsg, 'success');
     await loadAdminSystemSettings();
-    loadAllData();
+    if (typeof loadAllData === 'function') loadAllData();
   } catch (err) {
     showToast('Помилка збереження налаштувань: ' + (err.message || 'Невідома помилка'), 'error');
   } finally {
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.innerText = '💾 Зберегти системні налаштування';
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.innerText = origText;
     }
   }
-});
+};
 
 window.toggleResetFacilitySelect = function () {
   const mode = document.getElementById('resetModeSelect')?.value;
