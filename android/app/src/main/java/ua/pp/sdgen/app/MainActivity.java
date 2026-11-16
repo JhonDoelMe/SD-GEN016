@@ -19,6 +19,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(OtaUpdaterPlugin.class);
         registerPlugin(FcmPushPlugin.class);
+        registerPlugin(FileDownloadPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Capacitor 8 SystemBars handles WindowInsets (system bars + IME) on decorView;

@@ -589,30 +589,22 @@ window.submitMeasurementInventoryForm = async function (e, measurementId) {
 window.downloadMeasurementPdf = async function (measurementId) {
   try {
     showToast('Формування PDF-відомості (А4 Альбом)...', 'info');
-    const headers = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(`/api/v1/measurement/${encodeURIComponent(measurementId)}/statement-pdf`, {
-      headers,
-      credentials: 'same-origin',
+    const dl = await window.downloadAuthorizedFile({
+      url: `/api/v1/measurement/${encodeURIComponent(measurementId)}/statement-pdf`,
+      fallbackFilename: `Inventory_Statement_${measurementId}.pdf`,
+      mimeType: 'application/pdf',
+      defaultErrorMessage: 'Помилка генерації PDF',
     });
-    if (!res.ok) {
-      let msg = `Помилка генерації PDF (${res.status})`;
-      try {
-        const j = await res.json();
-        msg = extractErrorMessage(j, msg);
-      } catch (_) {}
-      throw new Error(msg);
+    if (dl?.native) {
+      showToast(
+        dl.savedToDownloads
+          ? `📥 PDF-відомість збережено у ${dl.displayPath || 'Завантаження'}! Кнопка «Погоджено» активна.`
+          : '📥 PDF-відомість сформовано та відкрито! Кнопка «Погоджено» активна.',
+        'success'
+      );
+    } else {
+      showToast('📥 PDF-відомість завантажено! Кнопка «Погоджено» тепер активна.', 'success');
     }
-    const blob = await res.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Inventory_Statement_${measurementId}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
-    showToast('📥 PDF-відомість завантажено! Кнопка «Погоджено» тепер активна.', 'success');
     await loadMeasurementTab();
   } catch (err) {
     showToast(err.message || 'Помилка завантаження PDF', 'error');

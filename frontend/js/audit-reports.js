@@ -684,28 +684,23 @@ window.handleExportAuditExcel = async function (e) {
 
   try {
     showToast('Формування аудиторського Excel звіту (.xlsx)...', 'info');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    const res = await fetch(url, { headers, credentials: 'same-origin' });
-    if (!res.ok) {
-      let errMsg = `Помилка сервера при створенні Excel аудиту (${res.status})`;
-      try {
-        const errJson = await res.json();
-        errMsg = extractErrorMessage(errJson, errMsg);
-      } catch (_) {}
-      throw new Error(errMsg);
-    }
-    const blob = await res.blob();
-    const a = document.createElement('a');
-    a.href = window.URL.createObjectURL(blob);
     const dateStr = new Date().toISOString().slice(0, 10);
-    a.download = `Audit_Report_${dateStr}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    showToast('Аудиторський звіт Excel (.xlsx) успішно згенеровано та завантажено!', 'success');
+    const dl = await window.downloadAuthorizedFile({
+      url,
+      fallbackFilename: `Audit_Report_${dateStr}.xlsx`,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      defaultErrorMessage: 'Помилка сервера при створенні Excel аудиту',
+    });
+    if (dl?.native) {
+      showToast(
+        dl.savedToDownloads
+          ? `Аудиторський Excel звіт збережено у ${dl.displayPath || 'Завантаження'}!`
+          : 'Аудиторський Excel звіт (.xlsx) сформовано та відкрито!',
+        'success'
+      );
+    } else {
+      showToast('Аудиторський звіт Excel (.xlsx) успішно згенеровано та завантажено!', 'success');
+    }
     closeModal('modalExportAudit');
   } catch (err) {
     showToast(err.message || 'Помилка завантаження аудиторського звіту Excel', 'error');
@@ -1336,28 +1331,23 @@ window.downloadReportExcel = async function () {
 
   try {
     showToast('Формування динамічного Excel звіту (.xlsx)...', 'info');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    const res = await fetch(url, { headers, credentials: 'same-origin' });
-    if (!res.ok) {
-      let errMsg = `Помилка сервера при створенні Excel (${res.status})`;
-      try {
-        const errJson = await res.json();
-        errMsg = extractErrorMessage(errJson, errMsg);
-      } catch (_) {}
-      throw new Error(errMsg);
-    }
-    const blob = await res.blob();
-    const a = document.createElement('a');
-    a.href = window.URL.createObjectURL(blob);
     const dateStr = new Date().toISOString().slice(0, 10);
-    a.download = `ServiceDesk_Report_${dateStr}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    showToast('Excel звіт (.xlsx) успішно згенеровано та завантажено!', 'success');
+    const dl = await window.downloadAuthorizedFile({
+      url,
+      fallbackFilename: `ServiceDesk_Report_${dateStr}.xlsx`,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      defaultErrorMessage: 'Помилка сервера при створенні Excel',
+    });
+    if (dl?.native) {
+      showToast(
+        dl.savedToDownloads
+          ? `Excel звіт збережено у ${dl.displayPath || 'Завантаження'}!`
+          : 'Excel звіт (.xlsx) сформовано та відкрито!',
+        'success'
+      );
+    } else {
+      showToast('Excel звіт (.xlsx) успішно згенеровано та завантажено!', 'success');
+    }
   } catch (err) {
     showToast(err.message || 'Помилка завантаження Excel звіту', 'error');
   }

@@ -971,3 +971,92 @@ try {
   }
 }
 
+function _parseFilenameFromDisposition(disposition) {
+  if (!disposition || typeof disposition !== 'string') return '';
+  const utfMatch = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(disposition);
+  if (utfMatch && utfMatch[1]) {
+    try {
+      return decodeURIComponent(utfMatch[1].trim().replace(/^["']|["']$/g, ''));
+    } catch (_) {}
+  }
+  const asciiMatch = /filename\s*=\s*"?([^";]+)"?/i.exec(disposition);
+  return asciiMatch && asciiMatch[1] ? asciiMatch[1].trim() : '';
+}
+
+function _blobToBase64Payload(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const commaIdx = result.indexOf(',');
+      resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+    };
+    reader.onerror = () => reject(new Error('Не вдалося прочитати завантажений файл'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+window.saveDownloadedBlob = async function (blob, filename, mimeType = '', openAfterSave = true) {
+  const safeName = (filename && String(filename).trim()) || 'sdgen_download.bin';
+  const filePlugin = (
+    window.Capacitor &&
+    typeof window.Capacitor.isNativePlatform === 'function' &&
+    window.Capacitor.isNativePlatform() &&
+    window.Capacitor.Plugins &&
+    window.Capacitor.Plugins.FileDownload
+  ) ? window.Capacitor.Plugins.FileDownload : null;
+
+  if (filePlugin) {
+    const base64Data = await _blobToBase64Payload(blob);
+    const nativeRes = await filePlugin.saveAndOpen({
+      fileName: safeName,
+      mimeType: mimeType || blob.type || '',
+      base64Data,
+      openAfterSave: openAfterSave !== false,
+    });
+    return { native: true, ...nativeRes };
+  }
+
+  const blobUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = safeName;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => {
+    try { window.URL.revokeObjectURL(blobUrl); } catch (_) {}
+  }, 1500);
+  return { native: false, fileName: safeName };
+};
+
+window.downloadAuthorizedFile = async function ({
+  url,
+  fallbackFilename,
+  mimeType = '',
+  defaultErrorMessage = 'Помилка завантаження файлу',
+  openAfterSave = true,
+} = {}) {
+  const headers = {};
+  if (typeof token !== 'undefined' && token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(url, { headers, credentials: 'same-origin' });
+  if (!res.ok) {
+    let errMsg = `${defaultErrorMessage} (${res.status})`;
+    try {
+      const errJson = await res.json();
+      errMsg = extractErrorMessage(errJson, errMsg);
+    } catch (_) {}
+    throw new Error(errMsg);
+  }
+
+  const dispositionName = _parseFilenameFromDisposition(res.headers.get('Content-Disposition'));
+  const finalFilename = dispositionName || fallbackFilename || 'sdgen_download.bin';
+
+  const blob = await res.blob();
+  return window.saveDownloadedBlob(blob, finalFilename, mimeType || blob.type || '', openAfterSave);
+};
+

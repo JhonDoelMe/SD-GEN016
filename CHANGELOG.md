@@ -5,6 +5,15 @@
 
 ---
 
+## [v5.7.18] — 2026-11-16
+### 📥 Нативне скачування та відкриття звітів у Android-додатку
+- **Нативний Capacitor-плагін `FileDownload` ([`FileDownloadPlugin.java`](android/app/src/main/java/ua/pp/sdgen/app/FileDownloadPlugin.java), [`MainActivity.java`](android/app/src/main/java/ua/pp/sdgen/app/MainActivity.java), [`AndroidManifest.xml`](android/app/src/main/AndroidManifest.xml), [`file_paths.xml`](android/app/src/main/res/xml/file_paths.xml))**:
+  - Усунуто обмеження Android WebView, через яке `<a download>` із `blob:` URL не зберігав файли на пристрій.
+  - На Android 10+ (API 29+) файли зберігаються напряму в публічну папку `Downloads/SD-GEN016` через `MediaStore.Downloads` без запиту зайвих дозволів; для Android 7–9 додано `WRITE_EXTERNAL_STORAGE` (`maxSdkVersion="28"`) із безпечним fallback через `FileProvider` (`cacheDir/exports/`).
+  - Після збереження автоматично запускається перегляд (`Intent.ACTION_VIEW`), а за відсутності переглядача — системне меню «Відкрити / Поділитися» (`Intent.ACTION_SEND`).
+- **Спільний JS-модуль завантаження ([`core.js`](frontend/js/core.js), [`audit-reports.js`](frontend/js/audit-reports.js), [`measurement.js`](frontend/js/measurement.js), [`backups.js`](frontend/js/backups.js))**:
+  - Додано `window.downloadAuthorizedFile()` та `window.saveDownloadedBlob()` для динамічних та аудиторських Excel-звітів (`.xlsx`), PDF-відомостей інвентаризації (`.pdf`) й архівів бекапів (`.zip`) із прозорим перемиканням між нативним Android-містком та веб-браузером.
+
 ## [v5.7.17] — 2026-11-15
 ### 📱 Адаптація спойлерів на мобільних та виправлення світлої теми в Адмінці
 - **Світла тема та мобільний touch-hover ([`views.css`](frontend/css/views.css), [`admin.html`](frontend/views/admin.html))**:

@@ -158,30 +158,22 @@ window.downloadBackup = async function (filename) {
 
   try {
     showToast(`Завантаження резервної копії ${filename}...`, 'info');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    const res = await fetch(`/api/v1/backups/${encodeURIComponent(filename)}/download`, {
-      headers,
-      credentials: 'same-origin'
+    const dl = await window.downloadAuthorizedFile({
+      url: `/api/v1/backups/${encodeURIComponent(filename)}/download`,
+      fallbackFilename: filename,
+      mimeType: 'application/zip',
+      defaultErrorMessage: 'Помилка сервера при завантаженні',
     });
-    if (!res.ok) {
-      let errMsg = `Помилка сервера при завантаженні (${res.status})`;
-      try {
-        const errJson = await res.json();
-        errMsg = extractErrorMessage(errJson, errMsg);
-      } catch (_) {}
-      throw new Error(errMsg);
+    if (dl?.native) {
+      showToast(
+        dl.savedToDownloads
+          ? `Файл збережено у ${dl.displayPath || 'Завантаження'}!`
+          : `Файл ${filename} підготовлено до збереження/відкриття!`,
+        'success'
+      );
+    } else {
+      showToast(`Файл ${filename} успішно завантажено!`, 'success');
     }
-    const blob = await res.blob();
-    const a = document.createElement('a');
-    a.href = window.URL.createObjectURL(blob);
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    showToast(`Файл ${filename} успішно завантажено!`, 'success');
   } catch (err) {
     showToast(err.message || 'Помилка завантаження резервної копії', 'error');
   }
