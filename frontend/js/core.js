@@ -171,6 +171,7 @@ window.saveServerSettings = async function() {
   let val = input.value.trim().replace(/\/+$/, '');
   if (!val) {
     localStorage.removeItem('sd_server_host');
+    window.OfflineQueue?.syncNativeSession?.().catch(() => {});
     if (typeof showNotification === 'function') {
       showNotification('Налаштування сервера скинуто', 'info');
     }
@@ -190,6 +191,7 @@ window.saveServerSettings = async function() {
     const res = await fetch(`${val}/api/health`, { method: 'GET' });
     if (res.ok) {
       localStorage.setItem('sd_server_host', val);
+      window.OfflineQueue?.syncNativeSession?.().catch(() => {});
       if (statusEl) {
         statusEl.textContent = '✅ З\'єднання успішне! Сервер активний.';
         statusEl.className = 'server-status-box status-success';

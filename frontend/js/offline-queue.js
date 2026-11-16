@@ -136,7 +136,50 @@
     });
   }
 
-  async function queueGetAll() {
+  function _getNativeSync() {
+    if (
+      window.Capacitor &&
+      typeof window.Capacitor.isNativePlatform === 'function' &&
+      window.Capacitor.isNativePlatform() &&
+      window.Capacitor.Plugins &&
+      window.Capacitor.Plugins.OfflineSync
+    ) {
+      return window.Capacitor.Plugins.OfflineSync;
+    }
+    return null;
+  }
+
+  function _resolveApiBaseForNative() {
+    if (typeof window.getApiBaseUrl === 'function') {
+      const b = window.getApiBaseUrl();
+      if (b) return b;
+    }
+    if (typeof window.getDefaultNativeServerUrl === 'function') {
+      return window.getDefaultNativeServerUrl();
+    }
+    return 'https://sdgen.pp.ua';
+  }
+
+  async function syncNativeSession(authTokenOverride = null, userScopeOverride = null) {
+    const native = _getNativeSync();
+    if (!native) return;
+    const authToken = authTokenOverride !== null
+      ? String(authTokenOverride || '')
+      : ((typeof token !== 'undefined' && token) || localStorage.getItem('sd_token') || sessionStorage.getItem('sd_token') || '');
+    let scope = userScopeOverride;
+    if (!scope) {
+      try { scope = localStorage.getItem(USER_SCOPE_KEY) || ''; } catch (_) { scope = ''; }
+    }
+    try {
+      await native.setSessionContext({
+        apiBaseUrl: _resolveApiBaseForNative(),
+        authToken,
+        userScope: String(scope || ''),
+      });
+    } catch (_) {}
+  }
+
+  async function _idbQueueGetAll() {
     const db = await _openDb();
     if (!db) {
       const arr = _readFallbackMap(FALLBACK_QUEUE_KEY, []);
@@ -158,7 +201,27 @@
     });
   }
 
+  async function queueGetAll() {
+    const native = _getNativeSync();
+    if (native) {
+      try {
+        const res = await native.queueGetAll();
+        const rows = Array.isArray(res?.items) ? res.items : [];
+        rows.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+        return rows;
+      } catch (_) {}
+    }
+    return _idbQueueGetAll();
+  }
+
   async function queuePut(item) {
+    const native = _getNativeSync();
+    if (native) {
+      try {
+        await native.queuePut({ item });
+        return item;
+      } catch (_) {}
+    }
     const db = await _openDb();
     if (!db) {
       const arr = _readFallbackMap(FALLBACK_QUEUE_KEY, []);
@@ -181,6 +244,13 @@
   }
 
   async function queueDelete(id) {
+    const native = _getNativeSync();
+    if (native) {
+      try {
+        await native.queueDelete({ id: String(id || '') });
+        return true;
+      } catch (_) {}
+    }
     const db = await _openDb();
     if (!db) {
       const arr = _readFallbackMap(FALLBACK_QUEUE_KEY, []).filter((x) => x.id !== id);
@@ -620,53 +690,74 @@
     let authStopped = false;
 
     try {
-      const rows = await queueGetAll();
-      const pending = rows.filter((r) => r.status === 'pending');
-      if (pending.length === 0) {
-        _retryAttemptCount = 0;
-        clearAutoSyncTimer();
-        setOfflineMode(false);
-        return { synced: 0, conflicts: rows.filter((r) => r.status === 'conflict').length, deferred: 0 };
-      }
-
-      for (const item of pending) {
-        item.status = 'syncing';
-        await queuePut(item);
-
-        const result = await _sendSingleQueueItem(item);
-        if (result.outcome === 'network_error') {
-          item.status = 'pending';
-          item.updated_at = new Date().toISOString();
-          await queuePut(item);
-          setOfflineMode(true);
-          deferredCount += 1;
-          break;
-        }
-        if (result.outcome === 'auth_required') {
-          item.status = 'pending';
-          item.updated_at = new Date().toISOString();
-          await queuePut(item);
-          authStopped = true;
+      const native = _getNativeSync();
+      if (native) {
+        await syncNativeSession();
+        const nativeRes = await native.syncNow();
+        syncedCount = Number(nativeRes?.synced || 0);
+        conflictCount = Number(nativeRes?.conflicts || 0);
+        deferredCount = Number(nativeRes?.deferred || 0);
+        authStopped = !!nativeRes?.authRequired;
+        if (authStopped) {
           clearAutoSyncTimer();
           if (!silent && typeof showToast === 'function') {
-            showToast(result.message, 'warning');
+            showToast('Сесія закінчилась. Увійдіть знову для продовження синхронізації.', 'warning');
           }
           if (typeof showAuthScreen === 'function') showAuthScreen();
-          deferredCount += 1;
-          break;
-        }
-        if (result.outcome === 'synced') {
-          await queueDelete(item.id);
-          syncedCount += 1;
+        } else if (nativeRes?.offline || deferredCount > 0) {
+          setOfflineMode(true);
+        } else if (syncedCount > 0) {
           setOfflineMode(false);
-        } else {
-          item.status = 'conflict';
-          item.http_status = result.status || 400;
-          item.error_message = result.message || 'Сервер відхилив операцію.';
-          item.retry_count = Number(item.retry_count || 0) + 1;
-          item.updated_at = new Date().toISOString();
+        }
+      } else {
+        const rows = await queueGetAll();
+        const pending = rows.filter((r) => r.status === 'pending');
+        if (pending.length === 0) {
+          _retryAttemptCount = 0;
+          clearAutoSyncTimer();
+          setOfflineMode(false);
+          return { synced: 0, conflicts: rows.filter((r) => r.status === 'conflict').length, deferred: 0 };
+        }
+
+        for (const item of pending) {
+          item.status = 'syncing';
           await queuePut(item);
-          conflictCount += 1;
+
+          const result = await _sendSingleQueueItem(item);
+          if (result.outcome === 'network_error') {
+            item.status = 'pending';
+            item.updated_at = new Date().toISOString();
+            await queuePut(item);
+            setOfflineMode(true);
+            deferredCount += 1;
+            break;
+          }
+          if (result.outcome === 'auth_required') {
+            item.status = 'pending';
+            item.updated_at = new Date().toISOString();
+            await queuePut(item);
+            authStopped = true;
+            clearAutoSyncTimer();
+            if (!silent && typeof showToast === 'function') {
+              showToast(result.message, 'warning');
+            }
+            if (typeof showAuthScreen === 'function') showAuthScreen();
+            deferredCount += 1;
+            break;
+          }
+          if (result.outcome === 'synced') {
+            await queueDelete(item.id);
+            syncedCount += 1;
+            setOfflineMode(false);
+          } else {
+            item.status = 'conflict';
+            item.http_status = result.status || 400;
+            item.error_message = result.message || 'Сервер відхилив операцію.';
+            item.retry_count = Number(item.retry_count || 0) + 1;
+            item.updated_at = new Date().toISOString();
+            await queuePut(item);
+            conflictCount += 1;
+          }
         }
       }
     } finally {
@@ -1039,6 +1130,7 @@
       await updateOfflineUIStatus();
       if (typeof showToast === 'function') showToast('Сервер недоступний. Спробуйте ще раз пізніше.', 'warning');
     } else if (result.outcome === 'auth_required') {
+      _getNativeSync()?.clearAuthToken?.().catch(() => {});
       if (typeof showToast === 'function') showToast(result.message, 'warning');
       if (typeof showAuthScreen === 'function') showAuthScreen();
     }
@@ -1140,6 +1232,16 @@
   }
 
   async function _recoverStuckSyncingItems() {
+    const native = _getNativeSync();
+    if (native) {
+      try {
+        const res = await native.recoverStuckSyncing();
+        if (Number(res?.recovered || 0) > 0) {
+          await updateOfflineUIStatus();
+        }
+      } catch (_) {}
+      return;
+    }
     try {
       const rows = await queueGetAll();
       let recovered = false;
@@ -1157,8 +1259,29 @@
     } catch (_) {}
   }
 
+  async function _migrateIndexedDbQueueToNative() {
+    const native = _getNativeSync();
+    if (!native) return;
+    try {
+      const oldRows = await _idbQueueGetAll();
+      if (Array.isArray(oldRows) && oldRows.length > 0) {
+        for (const row of oldRows) {
+          if (row && row.id) {
+            await native.queuePut({ item: row });
+          }
+        }
+        await _clearStore(STORE_QUEUE);
+        try { localStorage.removeItem(FALLBACK_QUEUE_KEY); } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
   async function clearCacheOnly() {
     clearAutoSyncTimer();
+    const native = _getNativeSync();
+    if (native) {
+      try { await native.clearAuthToken(); } catch (_) {}
+    }
     await _clearStore(STORE_CACHE);
     try {
       localStorage.removeItem(FALLBACK_CACHE_KEY);
@@ -1172,6 +1295,10 @@
   async function clearAll() {
     clearAutoSyncTimer();
     _retryAttemptCount = 0;
+    const native = _getNativeSync();
+    if (native) {
+      try { await native.queueClear(); } catch (_) {}
+    }
     await Promise.all([
       _clearStore(STORE_CACHE),
       _clearStore(STORE_QUEUE),
@@ -1207,6 +1334,7 @@
     try {
       localStorage.setItem(USER_SCOPE_KEY, scope);
     } catch (_) {}
+    await syncNativeSession(null, scope);
   }
 
   function init() {
@@ -1233,10 +1361,30 @@
         }).catch(() => {});
       }
     });
-    _recoverStuckSyncingItems().then(() => {
-      updateOfflineUIStatus();
-      scheduleAutoSync(4000);
-    });
+
+    const native = _getNativeSync();
+    if (native && typeof native.addListener === 'function') {
+      try {
+        native.addListener('queueUpdated', (ev) => {
+          updateOfflineUIStatus();
+          renderQueueModal();
+          if (Number(ev?.synced || 0) > 0) {
+            if (typeof loadAllData === 'function') loadAllData().catch(() => {});
+            if (typeof loadFuelData === 'function' && document.getElementById('tab-fuel')?.style.display !== 'none') {
+              loadFuelData().catch(() => {});
+            }
+          }
+        });
+      } catch (_) {}
+    }
+
+    _migrateIndexedDbQueueToNative()
+      .then(() => _recoverStuckSyncingItems())
+      .then(() => syncNativeSession())
+      .then(() => {
+        updateOfflineUIStatus();
+        scheduleAutoSync(4000);
+      });
   }
 
   window.openOfflineQueueModal = function () {
@@ -1257,6 +1405,7 @@
     enqueueMutation,
     queueGetAll,
     syncOfflineQueue,
+    syncNativeSession,
     scheduleAutoSync,
     renderQueueModal,
     retryItem,

@@ -5,6 +5,15 @@
 
 ---
 
+## [v5.7.21] — 2026-11-16
+### 🤖 Офлайн-стійкість (Етап 2): фонова синхронізація Android `WorkManager` + SQLite
+- **Нативна фонова черга в APK ([`OfflineQueueStore.java`](android/app/src/main/java/ua/pp/sdgen/app/OfflineQueueStore.java), [`OfflineAuthVault.java`](android/app/src/main/java/ua/pp/sdgen/app/OfflineAuthVault.java), [`OfflineSyncEngine.java`](android/app/src/main/java/ua/pp/sdgen/app/OfflineSyncEngine.java), [`OfflineSyncWorker.java`](android/app/src/main/java/ua/pp/sdgen/app/OfflineSyncWorker.java), [`OfflineSyncPlugin.java`](android/app/src/main/java/ua/pp/sdgen/app/OfflineSyncPlugin.java), [`MainActivity.java`](android/app/src/main/java/ua/pp/sdgen/app/MainActivity.java), [`build.gradle`](android/app/build.gradle))**:
+  - Усередині Android APK черга мутацій (`mutation_queue`) зберігається в SQLite і синхронізується єдиним потокобезпечним рушієм `OfflineSyncEngine` під замком разом із `WorkManager` (`androidx.work:work-runtime:2.10.0`).
+  - Якщо оператор поставив дії в чергу без зв'язку й повністю закрив додаток, Android `WorkManager` автоматично прокинеться у фоні при появі мережі та доставить події на сервер (із системним сповіщенням про доставку, конфлікт або закінчення сесії).
+  - Токен доступу шифрується через `AndroidKeyStore` (`AES/GCM/NoPadding`).
+- **Єдиний адаптер черги та міграція ([`offline-queue.js`](frontend/js/offline-queue.js), [`auth-nav.js`](frontend/js/auth-nav.js), [`core.js`](frontend/js/core.js))**:
+  - На вебі/PWA черга продовжує працювати через `IndexedDB`, а в Android APK прозоро перемикається на нативний `OfflineSync` (з автоматичною міграцією попередніх `IndexedDB`-записів у SQLite при першому запуску).
+
 ## [v5.7.20] — 2026-11-16
 ### 🔄 Офлайн-стійкість (Етап 1): захист черги, автоповтор, таймаути та чесний час подій
 - **Захист черги, таймаути та авто-синхронізація ([`core.js`](frontend/js/core.js), [`offline-queue.js`](frontend/js/offline-queue.js), [`auth-nav.js`](frontend/js/auth-nav.js), [`notifications.js`](frontend/js/notifications.js))**:

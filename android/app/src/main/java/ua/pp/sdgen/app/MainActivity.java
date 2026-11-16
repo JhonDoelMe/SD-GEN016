@@ -20,6 +20,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OtaUpdaterPlugin.class);
         registerPlugin(FcmPushPlugin.class);
         registerPlugin(FileDownloadPlugin.class);
+        registerPlugin(OfflineSyncPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Capacitor 8 SystemBars handles WindowInsets (system bars + IME) on decorView;
@@ -61,10 +62,17 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        OfflineAuthVault.setAppInForeground(true);
         if (backCallback != null) {
             backCallback.setEnabled(true);
         }
         notifyWebViewResume("resume");
+    }
+
+    @Override
+    public void onPause() {
+        OfflineAuthVault.setAppInForeground(false);
+        super.onPause();
     }
 
     @Override

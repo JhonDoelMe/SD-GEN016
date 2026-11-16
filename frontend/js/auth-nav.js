@@ -489,6 +489,7 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
     if (typeof window.OfflineQueue === 'object') {
       await window.OfflineQueue.ensureUserScope?.(currentUser?.login || currentUser?.id);
       await window.OfflineQueue.cachePut('/auth/me', currentUser);
+      await window.OfflineQueue.syncNativeSession?.(token, currentUser?.login || currentUser?.id);
       window.OfflineQueue.updateOfflineUIStatus();
     }
     await Promise.allSettled([
