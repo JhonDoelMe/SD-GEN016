@@ -161,7 +161,9 @@ async def login(
         token_delta = datetime.timedelta(days=60)
         cookie_max_age = 60 * 86400  # 60 days
     else:
-        token_delta = datetime.timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        from backend.app.services.settings_service import get_effective_int_setting
+        exp_min = get_effective_int_setting("access_token_expire_minutes", "ACCESS_TOKEN_EXPIRE_MINUTES", settings.ACCESS_TOKEN_EXPIRE_MINUTES, min_value=5)
+        token_delta = datetime.timedelta(minutes=exp_min)
         cookie_max_age = None  # Session cookie
 
     token = create_access_token(
@@ -333,10 +335,12 @@ async def change_own_password(
     current_user.password_hash = await asyncio.to_thread(get_password_hash, payload.new_password)
     await db.flush()
 
+    from backend.app.services.settings_service import get_effective_int_setting
+    exp_min = get_effective_int_setting("access_token_expire_minutes", "ACCESS_TOKEN_EXPIRE_MINUTES", settings.ACCESS_TOKEN_EXPIRE_MINUTES, min_value=5)
     token_delta = (
         datetime.timedelta(days=60)
         if is_remember
-        else datetime.timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        else datetime.timedelta(minutes=exp_min)
     )
     # Issue a fresh access token with the new password signature so current session stays valid
     new_token = create_access_token(

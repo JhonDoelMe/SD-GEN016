@@ -762,6 +762,8 @@ window.switchAdminSubtab = async function (subtab, options = {}) {
     await loadUsersData();
   } else if (subtab === 'backups' && isSuperAdmin() && typeof loadBackupsList === 'function') {
     await loadBackupsList();
+  } else if (subtab === 'server' && isSuperAdmin() && typeof loadAdminServerConfig === 'function') {
+    await loadAdminServerConfig();
   }
 };
 

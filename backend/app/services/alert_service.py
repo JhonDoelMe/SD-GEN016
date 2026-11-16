@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.config import settings
 from backend.app.models.facility import Facility
 from backend.app.core.timezone import now_utc, now_facility
+from backend.app.services.settings_service import get_effective_str_setting, get_effective_int_setting
 
 logger = logging.getLogger("sd_gen016.alerts")
 
@@ -359,7 +360,7 @@ class AlertsInUaProvider(BaseAlertProvider):
         global _GLOBAL_ALERTS_IN_UA_CACHE
 
         now_ts = time.time()
-        cache_ttl = settings.ALERTS_CACHE_SECONDS
+        cache_ttl = get_effective_int_setting("alerts_cache_seconds", "ALERTS_CACHE_SECONDS", settings.ALERTS_CACHE_SECONDS, min_value=5)
         cached_alerts = _GLOBAL_ALERTS_IN_UA_CACHE.get("alerts", [])
         fetched_at = _GLOBAL_ALERTS_IN_UA_CACHE.get("fetched_at", 0.0)
 
@@ -596,7 +597,12 @@ class UkraineAlarmProvider(BaseAlertProvider):
 
         now_ts = time.time()
         # Ліміт api.ukrainealarm.com — суворо 1 запит на 60 секунд
-        cache_ttl = max(15, getattr(settings, "UKRAINE_ALARM_CACHE_SECONDS", 60))
+        cache_ttl = get_effective_int_setting(
+            "ukraine_alarm_cache_seconds",
+            "UKRAINE_ALARM_CACHE_SECONDS",
+            getattr(settings, "UKRAINE_ALARM_CACHE_SECONDS", 60),
+            min_value=15,
+        )
         fetched_at = _GLOBAL_UKRAINE_ALARM_CACHE.get("fetched_at", 0.0)
         blocked_until = _GLOBAL_UKRAINE_ALARM_CACHE.get("blocked_until", 0.0)
         cached_data = _GLOBAL_UKRAINE_ALARM_CACHE.get("data", [])
@@ -952,7 +958,7 @@ async def get_facility_alert(db: AsyncSession, facility_id: int, force: bool = F
     )
     cache_key = f"alert_fac_{facility_id}_{region_name.lower()}_{city_name.lower()}"
     now_ts = time.time()
-    cache_ttl = settings.ALERTS_CACHE_SECONDS
+    cache_ttl = get_effective_int_setting("alerts_cache_seconds", "ALERTS_CACHE_SECONDS", settings.ALERTS_CACHE_SECONDS, min_value=5)
 
     # Перевірка кешу об'єкта (якщо не запрошено примусове оновлення)
     cached = _ALERTS_CACHE.get(cache_key)
@@ -960,8 +966,8 @@ async def get_facility_alert(db: AsyncSession, facility_id: int, force: bool = F
         return cached[1]
 
     # Ініціалізація провайдерів
-    token_in_ua = settings.ALERTS_IN_UA_TOKEN.strip()
-    key_alarm = settings.UKRAINE_ALARM_API_KEY.strip()
+    token_in_ua = get_effective_str_setting("alerts_in_ua_token", "ALERTS_IN_UA_TOKEN", "")
+    key_alarm = get_effective_str_setting("ukraine_alarm_api_key", "UKRAINE_ALARM_API_KEY", "")
 
     res_in_ua: Optional[Dict[str, Any]] = None
     res_ua_alarm: Optional[Dict[str, Any]] = None

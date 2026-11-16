@@ -1915,4 +1915,279 @@ window.triggerManualWeeklyReportEmail = function () {
   openSendWeeklyReportModal();
 };
 
+// ==========================================
+// 🖥️ Server & Integrations Settings (SuperAdmin ONLY)
+// ==========================================
+
+const _SERVER_SOURCE_LABELS = {
+  db: { text: '🔒 БД (зашифровано)', cls: 'badge-ok' },
+  env: { text: '📄 .env (резерв)', cls: 'badge-warn' },
+  file: { text: '📁 Файл JSON', cls: 'badge-ok' },
+  default: { text: 'За замовчуванням', cls: 'badge-muted' }
+};
+
+function _applySourceBadge(elId, sourceKey, fallbackText = null) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const spec = _SERVER_SOURCE_LABELS[sourceKey] || _SERVER_SOURCE_LABELS.default;
+  el.textContent = fallbackText || spec.text;
+  el.className = `admin-spoiler-badge ${spec.cls}`;
+}
+
+function _renderServerConfigUI(res) {
+  const cfg = res?.config || {};
+  const src = res?.sources || {};
+  const rt = res?.runtime || {};
+
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val ?? '';
+  };
+
+  setVal('srvPrimaryDomain', cfg.primary_domain || '');
+  setVal('srvAllowedHosts', cfg.allowed_hosts || '');
+  setVal('srvCorsOrigins', cfg.cors_origins || '');
+  setVal('srvJwtExpireMinutes', cfg.access_token_expire_minutes ?? 1440);
+  setVal('srvLoginMaxAttempts', cfg.login_max_attempts ?? 5);
+  setVal('srvLoginLockoutSeconds', cfg.login_lockout_seconds ?? 300);
+  setVal('srvWeatherCacheMin', cfg.weather_cache_minutes ?? 20);
+  setVal('srvAlertsCacheSec', cfg.alerts_cache_seconds ?? 15);
+  setVal('srvUkraineAlarmCacheSec', cfg.ukraine_alarm_cache_seconds ?? 60);
+
+  // Secret password fields: never reveal existing secrets, show hint placeholder when active
+  const secretFields = [
+    ['srvOpenWeatherKey', cfg.openweather_api_key, 'API ключ OpenWeatherMap'],
+    ['srvAlertsInUaToken', cfg.alerts_in_ua_token, 'Токен Bearer alerts.in.ua'],
+    ['srvUkraineAlarmKey', cfg.ukraine_alarm_api_key, 'API ключ api.ukrainealarm.com']
+  ];
+  secretFields.forEach(([id, maskedVal, defaultPh]) => {
+    const inp = document.getElementById(id);
+    if (!inp) return;
+    inp.value = '';
+    inp.placeholder = maskedVal === '********'
+      ? '•••••••• (Збережено; залиште порожнім щоб не змінювати)'
+      : defaultPh;
+  });
+
+  const fbText = document.getElementById('srvFirebaseJsonText');
+  if (fbText) {
+    fbText.value = '';
+    fbText.placeholder = cfg.firebase_configured
+      ? `Сервісний обліковий запис активний (${cfg.firebase_project_id || 'Firebase'}). Вставте новий JSON щоб оновити.`
+      : '{"type": "service_account", "project_id": "...", "private_key": "...", "client_email": "..."}';
+  }
+
+  _applySourceBadge('srvDomainSourceBadge', src.primary_domain === 'db' ? 'db' : src.primary_domain, `Джерело: ${src.primary_domain || 'default'}`);
+  _applySourceBadge('srvSourceOpenWeather', cfg.openweather_api_key ? src.openweather_api_key : 'default', cfg.openweather_api_key ? (_SERVER_SOURCE_LABELS[src.openweather_api_key]?.text || 'Налаштовано') : 'Не задано');
+
+  const alertsSrc = cfg.alerts_in_ua_token ? src.alerts_in_ua_token : (cfg.ukraine_alarm_api_key ? src.ukraine_alarm_api_key : 'default');
+  const alertsActive = Boolean(cfg.alerts_in_ua_token || cfg.ukraine_alarm_api_key);
+  _applySourceBadge('srvSourceAlerts', alertsSrc, alertsActive ? (_SERVER_SOURCE_LABELS[alertsSrc]?.text || 'Налаштовано') : 'Не задано');
+
+  const fbBadge = document.getElementById('badgeFirebaseStatus');
+  if (fbBadge) {
+    if (cfg.firebase_configured) {
+      fbBadge.textContent = `Підключено (${cfg.firebase_project_id || src.firebase_service_account_json})`;
+      fbBadge.className = 'admin-spoiler-badge badge-ok';
+    } else {
+      fbBadge.textContent = 'Не налаштовано';
+      fbBadge.className = 'admin-spoiler-badge badge-muted';
+    }
+  }
+
+  const fbMeta = document.getElementById('srvFirebaseMetaInfo');
+  if (fbMeta) {
+    if (cfg.firebase_configured) {
+      fbMeta.innerHTML = `✅ Активний проєкт: <b>${escapeHtml(cfg.firebase_project_id || '—')}</b> · Service Account: <code>${escapeHtml(cfg.firebase_client_email || '—')}</code> · Джерело: <b>${escapeHtml(src.firebase_service_account_json || '—')}</b>`;
+    } else {
+      fbMeta.textContent = '⚠️ Firebase Service Account ще не налаштований. Завантажте JSON-файл з Firebase Console або вставте його нижче.';
+    }
+  }
+
+  const rtBadge = document.getElementById('badgeRuntimeDialect');
+  if (rtBadge) {
+    rtBadge.textContent = `${rt.database_dialect || 'DB'} · ${rt.app_env || 'runtime'}`;
+    rtBadge.className = 'admin-spoiler-badge badge-ok';
+  }
+
+  const rtGrid = document.getElementById('srvRuntimeInfoGrid');
+  if (rtGrid) {
+    const items = [
+      ['Середовище (APP_ENV)', rt.app_env || '—'],
+      ['Рушій бази даних', rt.database_dialect || '—'],
+      ['Часовий пояс', rt.facility_timezone || 'Europe/Kyiv'],
+      ['Каталог завантажень', rt.upload_dir || '—'],
+      ['Каталог бекапів', rt.backup_dir || '—']
+    ];
+    rtGrid.innerHTML = items.map(([k, v]) => `
+      <div style="background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.65rem 0.8rem;">
+        <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.2rem;">${escapeHtml(k)}</div>
+        <div style="font-weight: 600; word-break: break-all;">${escapeHtml(String(v))}</div>
+      </div>
+    `).join('');
+  }
+}
+
+window.loadAdminServerConfig = async function () {
+  if (!isSuperAdmin()) return;
+  try {
+    const res = await api('/system/server-config');
+    _renderServerConfigUI(res);
+  } catch (err) {
+    showToast(`Помилка завантаження параметрів сервера: ${err.message}`, 'error');
+  }
+};
+
+window.saveAdminServerConfig = async function (btnEl = null) {
+  if (!isSuperAdmin()) {
+    showToast('Доступ дозволено лише Головному адміністратору (SuperAdmin)', 'warning');
+    return;
+  }
+
+  const origText = btnEl?.textContent || '';
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = '⏳ Збереження...';
+  }
+
+  const intOrUndef = (id) => {
+    const raw = document.getElementById(id)?.value?.trim();
+    if (!raw) return undefined;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : undefined;
+  };
+
+  const payload = {
+    primary_domain: document.getElementById('srvPrimaryDomain')?.value.trim() || '',
+    allowed_hosts: document.getElementById('srvAllowedHosts')?.value.trim() || '',
+    cors_origins: document.getElementById('srvCorsOrigins')?.value.trim() || '',
+    access_token_expire_minutes: intOrUndef('srvJwtExpireMinutes'),
+    login_max_attempts: intOrUndef('srvLoginMaxAttempts'),
+    login_lockout_seconds: intOrUndef('srvLoginLockoutSeconds'),
+    weather_cache_minutes: intOrUndef('srvWeatherCacheMin'),
+    alerts_cache_seconds: intOrUndef('srvAlertsCacheSec'),
+    ukraine_alarm_cache_seconds: intOrUndef('srvUkraineAlarmCacheSec')
+  };
+
+  const owm = document.getElementById('srvOpenWeatherKey')?.value.trim();
+  if (owm) payload.openweather_api_key = owm;
+  const aiu = document.getElementById('srvAlertsInUaToken')?.value.trim();
+  if (aiu) payload.alerts_in_ua_token = aiu;
+  const ual = document.getElementById('srvUkraineAlarmKey')?.value.trim();
+  if (ual) payload.ukraine_alarm_api_key = ual;
+  const fbJson = document.getElementById('srvFirebaseJsonText')?.value.trim();
+  if (fbJson) payload.firebase_service_account_json = fbJson;
+
+  try {
+    const res = await api('/system/server-config', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+    _renderServerConfigUI(res);
+    if (res?.config?.primary_domain) {
+      window.__APP_PRIMARY_DOMAIN__ = res.config.primary_domain;
+      const meta = document.querySelector('meta[name="app-primary-domain"]');
+      if (meta) meta.setAttribute('content', res.config.primary_domain);
+    }
+    showToast(res.message || 'Налаштування сервера збережено', 'success');
+  } catch (err) {
+    showToast(`Помилка збереження: ${err.message}`, 'error');
+  } finally {
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.textContent = origText;
+    }
+  }
+};
+
+window.clearServerSecretKey = async function (keyName, label) {
+  if (!isSuperAdmin()) return;
+  if (!confirm(`Очистити збережений у БД ключ "${label}"?\nЯкщо це резервне значення .env на диску, воно продовжить діяти до переходу на Zero-.env.`)) {
+    return;
+  }
+  try {
+    const res = await api('/system/server-config', {
+      method: 'PUT',
+      body: JSON.stringify({ clear_keys: [keyName] })
+    });
+    _renderServerConfigUI(res);
+    showToast(`Ключ "${label}" очищено в БД`, 'success');
+  } catch (err) {
+    showToast(`Помилка очищення: ${err.message}`, 'error');
+  }
+};
+
+window.testServerIntegration = async function (provider, btnEl = null) {
+  if (!isSuperAdmin()) return;
+  const inputMap = {
+    openweather: 'srvOpenWeatherKey',
+    alerts_in_ua: 'srvAlertsInUaToken',
+    ukraine_alarm: 'srvUkraineAlarmKey',
+    firebase: 'srvFirebaseJsonText'
+  };
+  const inputId = inputMap[provider];
+  const candidateVal = inputId ? (document.getElementById(inputId)?.value.trim() || '') : '';
+  const resBox = document.getElementById(`srvTestRes-${provider}`);
+  const origText = btnEl?.textContent || '';
+
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = '⏳...';
+  }
+  if (resBox) {
+    resBox.style.display = 'block';
+    resBox.style.color = 'var(--text-muted)';
+    resBox.textContent = 'Виконується перевірка з\'єднання...';
+  }
+
+  try {
+    const res = await api('/system/server-config/test-integration', {
+      method: 'POST',
+      body: JSON.stringify({ provider, value: candidateVal || null })
+    });
+    const ok = res.status === 'ok';
+    const msTxt = res.duration_ms ? ` (${res.duration_ms} мс)` : '';
+    if (resBox) {
+      resBox.style.color = ok ? '#4ade80' : '#f87171';
+      resBox.textContent = `${ok ? '✅' : '❌'} ${res.message || ''}${msTxt}`;
+    }
+    showToast(res.message || (ok ? 'Тест успішний' : 'Помилка тесту'), ok ? 'success' : 'error');
+  } catch (err) {
+    if (resBox) {
+      resBox.style.color = '#f87171';
+      resBox.textContent = `❌ ${err.message}`;
+    }
+    showToast(`Помилка тестування: ${err.message}`, 'error');
+  } finally {
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.textContent = origText;
+    }
+  }
+};
+
+window.handleFirebaseJsonFileUpload = function (inputEl) {
+  const file = inputEl?.files?.[0];
+  if (!file) return;
+  if (file.size > 65536) {
+    showToast('Файл занадто великий для Firebase Service Account JSON (макс. 64 КБ)', 'error');
+    inputEl.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const txt = String(reader.result || '').trim();
+    const ta = document.getElementById('srvFirebaseJsonText');
+    if (ta) ta.value = txt;
+    showToast(`Файл "${file.name}" завантажено у форму — натисніть "Зберегти Firebase JSON"`, 'info');
+    inputEl.value = '';
+  };
+  reader.onerror = () => {
+    showToast('Не вдалося прочитати файл JSON', 'error');
+    inputEl.value = '';
+  };
+  reader.readAsText(file, 'utf-8');
+};
+
+
 

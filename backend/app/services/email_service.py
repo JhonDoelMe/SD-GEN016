@@ -54,7 +54,8 @@ def get_public_base_url(request_base_url: Optional[str] = None) -> str:
     """Resolve external public base URL (HTTPS) for unsubscribe and reset links."""
     if request_base_url:
         return str(request_base_url).rstrip("/")
-    domain = (settings.PRIMARY_DOMAIN or "").strip().strip("/")
+    from backend.app.services.settings_service import get_effective_primary_domain
+    domain = get_effective_primary_domain().strip("/")
     if domain and domain.lower() not in ("localhost", "127.0.0.1"):
         if domain.startswith(("http://", "https://")):
             return domain.rstrip("/")

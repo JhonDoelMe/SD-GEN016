@@ -530,7 +530,15 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
         }
         update_parts = []
         for k, v in details["updates"].items():
-            if "password" in k.lower() or "secret" in k.lower() or "token" in k.lower() or v in ("***REDACTED***", "[REDACTED]"):
+            kl = k.lower()
+            if (
+                "password" in kl
+                or "secret" in kl
+                or "token" in kl
+                or "api_key" in kl
+                or "service_account" in kl
+                or v in ("***REDACTED***", "[REDACTED]", "********")
+            ):
                 continue
             k_name = setting_labels.get(k, k)
             if isinstance(v, bool):

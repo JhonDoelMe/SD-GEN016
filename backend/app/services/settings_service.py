@@ -1,5 +1,6 @@
 import json
 import re
+import sys
 import math
 import logging
 import asyncio
@@ -12,6 +13,9 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+from backend.app.config import settings
+from backend.app.core.secrets import encrypt_secret, decrypt_secret, is_encrypted_secret
 
 from backend.app.models.settings import SystemSetting
 from backend.app.models.facility import Facility
@@ -182,6 +186,58 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "default_fuel_stock_id": None,
     "email_weekly_facility_id": None,
     "email_weekly_generator_id": None,
+    # Server, Domain, Auth & Integration Settings (DB overrides .env fallback)
+    "primary_domain": "",
+    "allowed_hosts": "",
+    "cors_origins": "",
+    "access_token_expire_minutes": None,
+    "openweather_api_key": "",
+    "weather_cache_minutes": None,
+    "alerts_in_ua_token": "",
+    "ukraine_alarm_api_key": "",
+    "alerts_cache_seconds": None,
+    "ukraine_alarm_cache_seconds": None,
+    "firebase_service_account_json": "",
+}
+
+# Settings strictly restricted to SuperAdmin server-config endpoints/UI
+SERVER_ONLY_SETTING_KEYS: frozenset[str] = frozenset({
+    "primary_domain",
+    "allowed_hosts",
+    "cors_origins",
+    "access_token_expire_minutes",
+    "openweather_api_key",
+    "weather_cache_minutes",
+    "alerts_in_ua_token",
+    "ukraine_alarm_api_key",
+    "alerts_cache_seconds",
+    "ukraine_alarm_cache_seconds",
+    "firebase_service_account_json",
+})
+
+# Secret values encrypted at rest inside `system_settings` using Fernet (`enc:v1:`)
+SECRET_SETTING_KEYS: frozenset[str] = frozenset({
+    "smtp_primary_password",
+    "smtp_fallback_password",
+    "openweather_api_key",
+    "alerts_in_ua_token",
+    "ukraine_alarm_api_key",
+    "firebase_service_account_json",
+})
+
+# Mapping from DB key -> .env attribute name for seamless migration / fallback
+SERVER_ENV_ATTR_MAP: Dict[str, str] = {
+    "primary_domain": "PRIMARY_DOMAIN",
+    "allowed_hosts": "ALLOWED_HOSTS",
+    "cors_origins": "CORS_ORIGINS",
+    "access_token_expire_minutes": "ACCESS_TOKEN_EXPIRE_MINUTES",
+    "openweather_api_key": "OPENWEATHER_API_KEY",
+    "weather_cache_minutes": "WEATHER_CACHE_MINUTES",
+    "alerts_in_ua_token": "ALERTS_IN_UA_TOKEN",
+    "ukraine_alarm_api_key": "UKRAINE_ALARM_API_KEY",
+    "alerts_cache_seconds": "ALERTS_CACHE_SECONDS",
+    "ukraine_alarm_cache_seconds": "UKRAINE_ALARM_CACHE_SECONDS",
+    "firebase_service_account_json": "FIREBASE_SERVICE_ACCOUNT_JSON",
 }
 
 # In-memory cache of runtime settings for fast synchronous reads (e.g. timezone.py)
@@ -196,6 +252,113 @@ def get_runtime_setting(key: str, default: Any = None) -> Any:
 
 def set_runtime_setting(key: str, value: Any) -> None:
     RUNTIME_SETTINGS[key] = value
+
+
+def get_effective_str_setting(key: str, env_attr: Optional[str] = None, default: str = "") -> str:
+    """Resolve string setting with priority: runtime DB value -> .env attribute -> default."""
+    val = RUNTIME_SETTINGS.get(key)
+    if isinstance(val, str) and val.strip():
+        return val.strip()
+    attr = env_attr or SERVER_ENV_ATTR_MAP.get(key)
+    if attr:
+        env_val = getattr(settings, attr, None)
+        if isinstance(env_val, str) and env_val.strip():
+            return env_val.strip()
+    return default
+
+
+def get_effective_int_setting(
+    key: str,
+    env_attr: Optional[str] = None,
+    default: int = 0,
+    min_value: int = 1,
+) -> int:
+    """Resolve integer setting with priority: runtime DB value -> .env attribute -> default."""
+    val = RUNTIME_SETTINGS.get(key)
+    if val is not None and val != "":
+        try:
+            parsed = int(val)
+            if parsed >= min_value:
+                return parsed
+        except (TypeError, ValueError):
+            pass
+    attr = env_attr or SERVER_ENV_ATTR_MAP.get(key)
+    if attr:
+        env_val = getattr(settings, attr, None)
+        if env_val is not None and env_val != "":
+            try:
+                parsed = int(env_val)
+                if parsed >= min_value:
+                    return parsed
+            except (TypeError, ValueError):
+                pass
+    return default
+
+
+def get_effective_primary_domain() -> str:
+    """Return active primary domain from DB or .env fallback."""
+    return get_effective_str_setting("primary_domain", "PRIMARY_DOMAIN", "sdgen.pp.ua").strip("/") or "sdgen.pp.ua"
+
+
+def get_effective_allowed_hosts() -> list[str]:
+    """Derive trusted hosts dynamically from DB overrides or .env fallback."""
+    hosts_override = get_effective_str_setting("allowed_hosts", "ALLOWED_HOSTS", "")
+    if hosts_override:
+        hosts = [h.strip() for h in hosts_override.split(",") if h.strip()]
+    else:
+        domain = get_effective_primary_domain()
+        hosts = [
+            domain,
+            f"www.{domain}",
+            "sdgen.pp.ua",
+            "www.sdgen.pp.ua",
+            "generator-016.pp.ua",
+            "www.generator-016.pp.ua",
+            "localhost",
+            "127.0.0.1",
+        ]
+    for def_host in ("testserver", "test", "app", "nginx"):
+        if def_host not in hosts:
+            hosts.append(def_host)
+    return list(dict.fromkeys(hosts))
+
+
+def get_effective_cors_origins() -> list[str]:
+    """Derive allowed CORS origins dynamically from DB overrides or .env fallback."""
+    cors_override = get_effective_str_setting("cors_origins", "CORS_ORIGINS", "")
+    if cors_override:
+        return [o.strip() for o in cors_override.split(",") if o.strip()]
+    domain = get_effective_primary_domain()
+    origins = [
+        f"https://{domain}",
+        f"https://www.{domain}",
+        f"http://{domain}",
+        "https://sdgen.pp.ua",
+        "https://www.sdgen.pp.ua",
+        "http://sdgen.pp.ua",
+        "https://generator-016.pp.ua",
+        "https://www.generator-016.pp.ua",
+        "http://generator-016.pp.ua",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+    return list(dict.fromkeys(origins))
+
+
+def get_setting_source(key: str) -> str:
+    """Describe where an effective server setting currently originates: db | env | default."""
+    db_val = RUNTIME_SETTINGS.get(key)
+    if key in SECRET_SETTING_KEYS:
+        if isinstance(db_val, str) and db_val.strip():
+            return "db"
+    elif db_val not in (None, ""):
+        return "db"
+    attr = SERVER_ENV_ATTR_MAP.get(key)
+    if attr:
+        env_val = getattr(settings, attr, None)
+        if env_val not in (None, ""):
+            return "env"
+    return "default"
 
 
 def get_runtime_timezone() -> str:
@@ -381,13 +544,30 @@ async def load_system_settings(db: AsyncSession) -> Dict[str, Any]:
     for k, default_val in DEFAULT_SYSTEM_SETTINGS.items():
         if k in existing_map:
             try:
-                merged[k] = json.loads(existing_map[k].value_json)
+                parsed_val = json.loads(existing_map[k].value_json)
+                if k in SECRET_SETTING_KEYS and isinstance(parsed_val, str) and parsed_val:
+                    decrypted = decrypt_secret(parsed_val)
+                    merged[k] = decrypted
+                    if decrypted and not is_encrypted_secret(parsed_val):
+                        existing_map[k].value_json = json.dumps(encrypt_secret(decrypted), ensure_ascii=False)
+                        needs_flush = True
+                else:
+                    merged[k] = parsed_val
             except Exception:
                 merged[k] = default_val
         else:
+            seed_val = default_val
+            stored_seed = default_val
+            # Seamless first-boot import of .env integration secrets into encrypted DB rows (non-test runtime)
+            if "pytest" not in sys.modules and k in SECRET_SETTING_KEYS and k in SERVER_ENV_ATTR_MAP:
+                env_raw = getattr(settings, SERVER_ENV_ATTR_MAP[k], "")
+                if isinstance(env_raw, str) and env_raw.strip():
+                    seed_val = env_raw.strip()
+                    stored_seed = encrypt_secret(seed_val)
+            merged[k] = seed_val
             db.add(SystemSetting(
                 key=k,
-                value_json=json.dumps(default_val, ensure_ascii=False),
+                value_json=json.dumps(stored_seed, ensure_ascii=False),
                 description=f"Системний параметр {k}"
             ))
             needs_flush = True
@@ -445,6 +625,10 @@ async def update_system_settings(
         "login_lockout_seconds": {"min": 1, "allow_zero": False, "is_int": True},
         "max_continuous_run_hours": {"min": 0.0, "allow_zero": False, "is_int": False},
         "min_rest_hours_between_runs": {"min": 0.0, "allow_zero": True, "is_int": False},
+        "access_token_expire_minutes": {"min": 5, "allow_zero": False, "is_int": True},
+        "weather_cache_minutes": {"min": 1, "allow_zero": False, "is_int": True},
+        "alerts_cache_seconds": {"min": 5, "allow_zero": False, "is_int": True},
+        "ukraine_alarm_cache_seconds": {"min": 15, "allow_zero": False, "is_int": True},
     }
     for num_key, constraint in numeric_constraints.items():
         if num_key in updates and updates[num_key] is not None:
@@ -459,7 +643,11 @@ async def update_system_settings(
             if constraint["allow_zero"] and val == 0:
                 pass
             elif not constraint["allow_zero"] and val <= min_lim:
-                raise ValueError(f"Параметр '{num_key}' повинен бути більше ніж {min_lim}, отримано: {val}")
+                if num_key in ("access_token_expire_minutes", "weather_cache_minutes", "alerts_cache_seconds", "ukraine_alarm_cache_seconds"):
+                    if val < min_lim:
+                        raise ValueError(f"Параметр '{num_key}' не може бути меншим ніж {min_lim}, отримано: {val}")
+                else:
+                    raise ValueError(f"Параметр '{num_key}' повинен бути більше ніж {min_lim}, отримано: {val}")
             elif val < min_lim:
                 raise ValueError(f"Параметр '{num_key}' не може бути меншим ніж {min_lim}, отримано: {val}")
             updates[num_key] = val
@@ -571,7 +759,8 @@ async def update_system_settings(
         if k not in DEFAULT_SYSTEM_SETTINGS:
             continue
         pending_updates[k] = val
-        json_str = json.dumps(val, ensure_ascii=False)
+        stored_val = encrypt_secret(val) if (k in SECRET_SETTING_KEYS and isinstance(val, str) and val) else val
+        json_str = json.dumps(stored_val, ensure_ascii=False)
         if k in existing_map:
             existing_map[k].value_json = json_str
             existing_map[k].updated_at = now

@@ -32,11 +32,42 @@ _LOGIN_ATTEMPTS: Dict[str, Tuple[int, float, float]] = {}
 _REVOKED_TOKENS: Dict[str, float] = {}
 
 
+def _get_login_max_attempts() -> int:
+    from backend.app.services.settings_service import get_effective_int_setting
+    return get_effective_int_setting(
+        "login_max_attempts",
+        "LOGIN_MAX_ATTEMPTS",
+        int(settings.LOGIN_MAX_ATTEMPTS or 5),
+        min_value=1,
+    )
+
+
+def _get_login_lockout_seconds() -> int:
+    from backend.app.services.settings_service import get_effective_int_setting
+    return get_effective_int_setting(
+        "login_lockout_seconds",
+        "LOGIN_LOCKOUT_SECONDS",
+        int(settings.LOGIN_LOCKOUT_SECONDS or 300),
+        min_value=1,
+    )
+
+
+def _get_access_token_expire_minutes() -> int:
+    from backend.app.services.settings_service import get_effective_int_setting
+    return get_effective_int_setting(
+        "access_token_expire_minutes",
+        "ACCESS_TOKEN_EXPIRE_MINUTES",
+        int(settings.ACCESS_TOKEN_EXPIRE_MINUTES or 1440),
+        min_value=5,
+    )
+
+
 def _cleanup_login_attempts(now: float) -> None:
+    lockout_sec = _get_login_lockout_seconds()
     if len(_LOGIN_ATTEMPTS) > 1000:
         expired_keys = [
             k for k, (_, first_ts, locked_until) in _LOGIN_ATTEMPTS.items()
-            if (locked_until > 0 and locked_until <= now) or (locked_until == 0 and now - first_ts > settings.LOGIN_LOCKOUT_SECONDS)
+            if (locked_until > 0 and locked_until <= now) or (locked_until == 0 and now - first_ts > lockout_sec)
         ]
         for k in expired_keys:
             _LOGIN_ATTEMPTS.pop(k, None)
@@ -98,15 +129,16 @@ def check_login_rate_limit(ip: Optional[str], login: str) -> Optional[int]:
             rem = max(1, int(locked_until - now))
             if rem > max_remaining:
                 max_remaining = rem
-        elif now - first_ts > settings.LOGIN_LOCKOUT_SECONDS:
+        elif now - first_ts > _get_login_lockout_seconds():
             _LOGIN_ATTEMPTS.pop(key, None)
 
     return max_remaining if max_remaining > 0 else None
 
 
 def _increment_attempt_key(key: str, now: float, threshold: int) -> Optional[int]:
+    lockout_sec = _get_login_lockout_seconds()
     entry = _LOGIN_ATTEMPTS.get(key)
-    if not entry or (now - entry[1] > settings.LOGIN_LOCKOUT_SECONDS) or (entry[2] > 0 and entry[2] <= now):
+    if not entry or (now - entry[1] > lockout_sec) or (entry[2] > 0 and entry[2] <= now):
         count = 1
         first_ts = now
     else:
@@ -115,11 +147,11 @@ def _increment_attempt_key(key: str, now: float, threshold: int) -> Optional[int
 
     locked_until = 0.0
     if count >= threshold:
-        locked_until = now + settings.LOGIN_LOCKOUT_SECONDS
+        locked_until = now + lockout_sec
 
     _LOGIN_ATTEMPTS[key] = (count, first_ts, locked_until)
     if locked_until > now:
-        return int(settings.LOGIN_LOCKOUT_SECONDS)
+        return int(lockout_sec)
     return None
 
 
@@ -133,8 +165,9 @@ def record_failed_login(ip: Optional[str], login: str) -> Optional[int]:
     ip_key = f"ip:{ip or 'unknown'}:{login_norm}"
     acct_key = f"acct:{login_norm}"
 
-    lock_ip = _increment_attempt_key(ip_key, now, settings.LOGIN_MAX_ATTEMPTS)
-    lock_acct = _increment_attempt_key(acct_key, now, settings.LOGIN_MAX_ATTEMPTS)
+    max_attempts = _get_login_max_attempts()
+    lock_ip = _increment_attempt_key(ip_key, now, max_attempts)
+    lock_acct = _increment_attempt_key(acct_key, now, max_attempts)
     return lock_ip or lock_acct
 
 
@@ -260,7 +293,7 @@ def create_access_token(
     if expires_delta:
         expire = now + expires_delta
     else:
-        expire = now + datetime.timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = now + datetime.timedelta(minutes=_get_access_token_expire_minutes())
     to_encode.update({"iat": now, "exp": expire, "type": "access"})
     if password_hash:
         to_encode["pwd_sig"] = compute_password_signature(password_hash)

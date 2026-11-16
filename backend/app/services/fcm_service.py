@@ -34,8 +34,12 @@ _cached_project_id: Optional[str] = None
 
 
 def _load_service_account() -> Optional[Dict[str, Any]]:
-    """Load Firebase service account credentials from env JSON or filesystem."""
-    raw_json = (settings.FIREBASE_SERVICE_ACCOUNT_JSON or "").strip()
+    """Load Firebase service account credentials from DB runtime settings, env JSON, or filesystem."""
+    from backend.app.services.settings_service import get_runtime_setting
+
+    runtime_json = (get_runtime_setting("firebase_service_account_json", "") or "").strip()
+    env_json = (settings.FIREBASE_SERVICE_ACCOUNT_JSON or "").strip()
+    raw_json = runtime_json or env_json
     if raw_json:
         try:
             data = json.loads(raw_json)

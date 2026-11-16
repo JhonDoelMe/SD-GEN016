@@ -1,4 +1,5 @@
 import os
+import html
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,6 +22,12 @@ from backend.app.services.auth_security_service import (
 from backend.app.services.backup_service import run_backup_scheduler
 from backend.app.services.operational_guard_service import run_operational_guard_loop
 from backend.app.services.yasno_service import run_yasno_checker_loop
+from backend.app.services.settings_service import (
+    get_effective_allowed_hosts,
+    get_effective_cors_origins,
+    get_effective_primary_domain,
+    get_runtime_timezone,
+)
 from backend.app.api.v1 import api_v1_router
 
 
@@ -309,20 +316,39 @@ def fastapi_docs_kwargs(is_production: bool) -> dict[str, str | None]:
 app = FastAPI(
     title="Service Desk Генератора (SD-GEN016)",
     description="Система оперативного диспетчерського обліку експлуатації мережі бензинових та дизельних генераторів (Multi-site, ПММ, ТО, інвентаризація, Push/Email)",
-    version="5.7.21",
+    version="5.7.22",
     **fastapi_docs_kwargs(settings.is_production),
     lifespan=lifespan,
 )
 
+class DynamicTrustedHostMiddleware(TrustedHostMiddleware):
+    """TrustedHostMiddleware that refreshes allowed_hosts dynamically from runtime DB settings."""
+
+    async def __call__(self, scope, receive, send):
+        self.allowed_hosts = get_effective_allowed_hosts()
+        self.allow_any = "*" in self.allowed_hosts
+        await super().__call__(scope, receive, send)
+
+
+class DynamicCORSMiddleware(CORSMiddleware):
+    """CORSMiddleware that refreshes allow_origins dynamically from runtime DB settings."""
+
+    async def __call__(self, scope, receive, send):
+        dynamic_origins = get_effective_cors_origins()
+        self.allow_all_origins = "*" in dynamic_origins
+        self.allow_origins = dynamic_origins
+        await super().__call__(scope, receive, send)
+
+
 # 1. Restrict trusted hosts (prevents Host header attacks, rogue clone domains and unauthorized proxies)
 app.add_middleware(
-    TrustedHostMiddleware,
+    DynamicTrustedHostMiddleware,
     allowed_hosts=settings.effective_allowed_hosts,
 )
 
 # 2. Restrict CORS origins based on configuration
 app.add_middleware(
-    CORSMiddleware,
+    DynamicCORSMiddleware,
     allow_origins=settings.effective_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -386,8 +412,8 @@ async def health_check():
 
     payload = {
         "status": "healthy" if is_healthy else "unhealthy",
-        "facility_timezone": settings.FACILITY_TIMEZONE,
-        "primary_domain": settings.PRIMARY_DOMAIN,
+        "facility_timezone": get_runtime_timezone(),
+        "primary_domain": get_effective_primary_domain(),
         "database": db_status
     }
     if not is_healthy:
@@ -482,8 +508,9 @@ if FRONTEND_DIR.exists():
         index_path = FRONTEND_DIR / "index.html"
         if index_path.exists():
             content = index_path.read_text(encoding="utf-8")
-            # Inject dynamic primary domain from .env configuration
-            meta_tag = f'<meta name="app-primary-domain" content="{settings.PRIMARY_DOMAIN}">'
+            # Inject dynamic primary domain from DB/runtime or .env configuration
+            domain_escaped = html.escape(get_effective_primary_domain(), quote=True)
+            meta_tag = f'<meta name="app-primary-domain" content="{domain_escaped}">'
             if "</head>" in content and 'name="app-primary-domain"' not in content:
                 content = content.replace("</head>", f"  {meta_tag}\n</head>", 1)
             return HTMLResponse(

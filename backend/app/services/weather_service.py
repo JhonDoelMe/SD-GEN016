@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.config import settings
 from backend.app.models.facility import Facility
 from backend.app.core.timezone import now_utc, now_facility
+from backend.app.services.settings_service import get_effective_str_setting, get_effective_int_setting
 
 logger = logging.getLogger("sd_gen016.weather")
 
@@ -472,14 +473,15 @@ async def get_facility_weather(db: AsyncSession, facility_id: int, force: bool =
     city_name = extract_city_from_facility(facility)
     cache_key = f"weather_{city_name.lower()}"
     now_ts = time.time()
-    cache_ttl = settings.WEATHER_CACHE_MINUTES * 60
+    cache_minutes = get_effective_int_setting("weather_cache_minutes", "WEATHER_CACHE_MINUTES", settings.WEATHER_CACHE_MINUTES, min_value=1)
+    cache_ttl = cache_minutes * 60
 
     # Перевірка кешу (якщо не запрошено примусове оновлення і в кеші вже є 5-денний прогноз)
     cached = _WEATHER_CACHE.get(cache_key)
     if not force and cached and (now_ts - cached[0]) < cache_ttl and cached[1].get("forecast"):
         return cached[1]
 
-    api_key = settings.OPENWEATHER_API_KEY.strip()
+    api_key = get_effective_str_setting("openweather_api_key", "OPENWEATHER_API_KEY", "")
     if not api_key:
         return {
             "is_available": False,
@@ -487,7 +489,7 @@ async def get_facility_weather(db: AsyncSession, facility_id: int, force: bool =
             "temp_c": None,
             "description": "API ключ погоди не налаштовано",
             "icon_emoji": "⛅",
-            "generator_tip": "Налаштуйте OPENWEATHER_API_KEY у .env для отримання порад оператору",
+            "generator_tip": "Налаштуйте OpenWeather API Key у розділі «Сервер та Інтеграції» для отримання порад оператору",
             "forecast": [],
             "updated_at": now_facility().isoformat()
         }
@@ -503,7 +505,7 @@ async def get_facility_weather(db: AsyncSession, facility_id: int, force: bool =
             "temp_c": None,
             "description": "Погодні дані тимчасово недоступні",
             "icon_emoji": "⛅",
-            "generator_tip": "Налаштуйте OPENWEATHER_API_KEY у .env для отримання порад оператору",
+            "generator_tip": "Перевірте OpenWeather API Key у розділі «Сервер та Інтеграції» або з'єднання",
             "forecast": [],
             "updated_at": now_facility().isoformat()
         }

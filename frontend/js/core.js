@@ -230,7 +230,20 @@ window.resetServerSettings = function() {
   updateServerHostLabel();
 };
 
+window.isNativeClientApp = function() {
+  return !!(window.Capacitor || window.location.protocol === 'capacitor:' || window.location.protocol === 'file:');
+};
+
 window.updateServerHostLabel = function() {
+  const isNative = window.isNativeClientApp();
+  const loginWrap = document.getElementById('loginServerSettingsWrap');
+  if (loginWrap) {
+    loginWrap.style.display = isNative ? 'block' : 'none';
+  }
+  const accountBtn = document.getElementById('accountServerSettingsBtn');
+  if (accountBtn) {
+    accountBtn.style.display = isNative ? 'flex' : 'none';
+  }
   const lbl = document.getElementById('authServerLabel');
   if (lbl) {
     const base = window.getApiBaseUrl ? window.getApiBaseUrl() : '';
@@ -379,6 +392,7 @@ function applyRolePermissionsUI() {
     'system': isAdmin() || hasPermission('settings:manage'),
     'users': isAdmin() || hasPermission('users:manage') || superadmin,
     'backups': superadmin,
+    'server': superadmin,
   };
   document.querySelectorAll('#adminSubtabsBar .admin-subtab-btn').forEach((btn) => {
     const key = btn.getAttribute('data-subtab');

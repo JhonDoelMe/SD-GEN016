@@ -158,22 +158,24 @@ async def _record_attempt_db(
 
 async def check_login_rate_limit_db(db: AsyncSession, ip: Optional[str], login: str) -> Optional[int]:
     """Persistent login lockout check (survives worker/container restarts)."""
+    from backend.app.core.security import _get_login_lockout_seconds
     return await _check_rate_limit_db(
         db=db,
         mem_store=_LOGIN_ATTEMPTS,
         key_pairs=_build_login_keys(ip, login),
-        window_sec=float(settings.LOGIN_LOCKOUT_SECONDS),
+        window_sec=float(_get_login_lockout_seconds()),
     )
 
 
 async def record_failed_login_db(db: AsyncSession, ip: Optional[str], login: str) -> Optional[int]:
     """Record a failed login attempt in both DB and in-memory cache."""
-    lockout = float(settings.LOGIN_LOCKOUT_SECONDS)
+    from backend.app.core.security import _get_login_lockout_seconds, _get_login_max_attempts
+    lockout = float(_get_login_lockout_seconds())
     res = await _record_attempt_db(
         db=db,
         mem_store=_LOGIN_ATTEMPTS,
         key_pairs=_build_login_keys(ip, login),
-        max_attempts=int(settings.LOGIN_MAX_ATTEMPTS),
+        max_attempts=int(_get_login_max_attempts()),
         window_sec=lockout,
         lockout_sec=lockout,
     )

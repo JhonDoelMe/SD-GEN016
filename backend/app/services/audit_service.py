@@ -10,6 +10,7 @@ SENSITIVE_KEY_MARKERS = (
     "password", "passwd", "pwd", "secret", "token", "credential",
     "api_key", "apikey", "private_key", "encryption_key", "access_key",
     "auth_key", "signing_key", "master_key", "session_key", "client_secret",
+    "service_account", "firebase_service_account",
     "database_url", "conn_str", "connection_string", "bearer", "key"
 )
 

@@ -39,10 +39,10 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/frontend/icons/apple-touch-icon.png">
 
   <!-- Modular Stylesheets (Loaded in Parallel) -->
-  <link rel="stylesheet" href="/frontend/css/base.css?v=5.7.21">
-  <link rel="stylesheet" href="/frontend/css/components.css?v=5.7.21">
-  <link rel="stylesheet" href="/frontend/css/views.css?v=5.7.21">
-  <link rel="stylesheet" href="/frontend/css/layout.css?v=5.7.21">
+  <link rel="stylesheet" href="/frontend/css/base.css?v=5.7.22">
+  <link rel="stylesheet" href="/frontend/css/components.css?v=5.7.22">
+  <link rel="stylesheet" href="/frontend/css/views.css?v=5.7.22">
+  <link rel="stylesheet" href="/frontend/css/layout.css?v=5.7.22">
 </head>
 <body>
 
@@ -97,7 +97,7 @@
         <div style="margin-top: 1.15rem; font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; text-align: center;">
           Входячи до системи, ви погоджуєтесь з <a href="javascript:void(0)" onclick="openModal('modalTermsOfService')" style="color: #38bdf8; text-decoration: underline;">Умовами використання</a> та <a href="javascript:void(0)" onclick="openModal('modalPrivacyPolicy')" style="color: #38bdf8; text-decoration: underline;">Політикою конфіденційності</a>
         </div>
-        <div style="margin-top: 0.85rem; text-align: center;">
+        <div id="loginServerSettingsWrap" style="margin-top: 0.85rem; text-align: center; display: none;">
           <button type="button" class="btn-server-settings" onclick="openServerSettingsModal()" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); color: var(--text-muted); padding: 6px 14px; border-radius: 20px; font-size: 0.82rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;" title="Змінити адресу сервера">
             <span>🌐</span> <span id="authServerLabel">Сервер: sdgen.pp.ua</span>
           </button>
@@ -134,7 +134,7 @@
       <button type="button" class="nav-item nav-item-install" id="navDrawerInstallApp" style="display: none;" onclick="toggleNavDrawer(false); openInstallAppModal();">📲 Встановити застосунок</button>
     </nav>
     <div class="nav-drawer-footer">
-      <span>SD-GEN016 • v5.7.21</span>
+      <span>SD-GEN016 • v5.7.22</span>
       <button type="button" class="footer-link-btn" style="padding: 0; font-size: 0.76rem;" onclick="toggleNavDrawer(false); openModal('modalOfflineQueue');">📡 Черга PWA</button>
     </div>
   </aside>
@@ -244,7 +244,7 @@
               <span>Тема оформлення</span>
               <span id="accountThemeLabel" class="account-menu-item-val">Авто</span>
             </button>
-            <button type="button" class="account-menu-item" onclick="closeAccountMenu(); openServerSettingsModal();">
+            <button type="button" id="accountServerSettingsBtn" class="account-menu-item" style="display: none;" onclick="closeAccountMenu(); openServerSettingsModal();">
               <span class="account-menu-item-icon">🌐</span>
               <span>Адреса сервера</span>
             </button>
@@ -365,15 +365,15 @@
   <div id="toast" class="toast">Повідомлення</div>
 
   <!-- Core Application Scripts (Heavy Modules Lazy-Loaded via ViewLoader) -->
-  <script src="/frontend/js/core.js?v=5.7.21"></script>
-  <script src="/frontend/js/view-loader.js?v=5.7.21"></script>
-  <script src="/frontend/js/offline-queue.js?v=5.7.21"></script>
-  <script src="/frontend/js/theme-format.js?v=5.7.21"></script>
-  <script src="/frontend/js/auth-nav.js?v=5.7.21"></script>
-  <script src="/frontend/js/dashboard.js?v=5.7.21"></script>
-  <script src="/frontend/js/weather-alerts.js?v=5.7.21"></script>
-  <script src="/frontend/js/yasno.js?v=5.7.21"></script>
-  <script src="/frontend/js/notifications.js?v=5.7.21"></script>
+  <script src="/frontend/js/core.js?v=5.7.22"></script>
+  <script src="/frontend/js/view-loader.js?v=5.7.22"></script>
+  <script src="/frontend/js/offline-queue.js?v=5.7.22"></script>
+  <script src="/frontend/js/theme-format.js?v=5.7.22"></script>
+  <script src="/frontend/js/auth-nav.js?v=5.7.22"></script>
+  <script src="/frontend/js/dashboard.js?v=5.7.22"></script>
+  <script src="/frontend/js/weather-alerts.js?v=5.7.22"></script>
+  <script src="/frontend/js/yasno.js?v=5.7.22"></script>
+  <script src="/frontend/js/notifications.js?v=5.7.22"></script>
 
   <!-- PWA Service Worker Registration -->
   <script>

@@ -7,6 +7,7 @@
         <button type="button" class="admin-subtab-btn" data-subtab="system" onclick="switchAdminSubtab('system')">⚙️ Регламент та Система</button>
         <button type="button" class="admin-subtab-btn" data-subtab="users" onclick="switchAdminSubtab('users')">👥 Користувачі</button>
         <button type="button" class="admin-subtab-btn" data-subtab="backups" onclick="switchAdminSubtab('backups')">💾 Бекапи та БД</button>
+        <button type="button" class="admin-subtab-btn" data-subtab="server" onclick="switchAdminSubtab('server')" style="display: none;">🖥️ Сервер та Інтеграції</button>
       </div>
 
       <!-- SUBTAB 1: FACILITIES & GENERATORS -->
@@ -798,5 +799,193 @@
           </table>
         </div>
       </div>
+      </div>
+
+      <!-- SUBTAB 7: SERVER & INTEGRATIONS (SuperAdmin ONLY) -->
+      <div id="adminPane-server" class="admin-subpane">
+        <div class="panel" style="margin-bottom: 1.25rem;">
+          <div class="panel-header" style="flex-wrap: wrap; gap: 0.75rem;">
+            <div>
+              <h3 style="margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.5rem;">
+                <span>🖥️</span> <span>Налаштування сервера, домену та інтеграцій</span>
+                <span class="badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); font-size: 0.75rem;">Суперадмін</span>
+              </h3>
+              <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0;">
+                Централізоване керування доменом, сесіями та API-ключами без редагування .env. Усі секретні ключі шифруються (Fernet) в БД.
+              </p>
+            </div>
+            <button type="button" class="btn-action" style="padding: 0.5rem 0.9rem; min-height: auto; flex-direction: row;" onclick="loadAdminServerConfig()" title="Оновити конфігурацію">
+              🔄 Оновити
+            </button>
+          </div>
+
+          <!-- Card 1: Domain, Hosts, CORS & Auth Security -->
+          <div style="border-top: 1px solid var(--border-color); padding-top: 1rem; margin-top: 0.75rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.85rem;">
+              <strong style="font-size: 0.98rem;">🌐 Домен, захист від дзеркал та безпека входу</strong>
+              <span id="srvDomainSourceBadge" class="admin-spoiler-badge badge-muted">Джерело: —</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.85rem;">
+              <div class="form-group">
+                <label class="smtp-field-label" for="srvPrimaryDomain">Основний домен (PRIMARY_DOMAIN)</label>
+                <input type="text" id="srvPrimaryDomain" placeholder="sdgen.pp.ua">
+                <small style="color: var(--text-muted); font-size: 0.75rem;">Використовується для PWA anti-clone, посилань в Email та CORS</small>
+              </div>
+              <div class="form-group">
+                <label class="smtp-field-label" for="srvJwtExpireMinutes">Термін дії сесії (хв, без «Запам'ятати мене»)</label>
+                <input type="number" id="srvJwtExpireMinutes" min="5" max="525600" placeholder="1440">
+              </div>
+              <div class="form-group">
+                <label class="smtp-field-label" for="srvLoginMaxAttempts">Ліміт невдалих спроб входу</label>
+                <input type="number" id="srvLoginMaxAttempts" min="1" max="100" placeholder="5">
+              </div>
+              <div class="form-group">
+                <label class="smtp-field-label" for="srvLoginLockoutSeconds">Блокування після спроб (сек)</label>
+                <input type="number" id="srvLoginLockoutSeconds" min="1" max="86400" placeholder="300">
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.85rem; margin-top: 0.35rem;">
+              <div class="form-group">
+                <label class="smtp-field-label" for="srvAllowedHosts">Дозволені Host-заголовки (через кому, опційно)</label>
+                <input type="text" id="srvAllowedHosts" placeholder="Автоматично з основного домену + localhost">
+              </div>
+              <div class="form-group">
+                <label class="smtp-field-label" for="srvCorsOrigins">CORS Origins (через кому, опційно)</label>
+                <input type="text" id="srvCorsOrigins" placeholder="Автоматично https://домен + localhost">
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Weather & Air Alerts APIs -->
+          <div style="border-top: 1px solid var(--border-color); padding-top: 1rem; margin-top: 1rem;">
+            <strong style="display: block; font-size: 0.98rem; margin-bottom: 0.85rem;">🔌 Зовнішні API-сервіси (Погода та Повітряні тривоги)</strong>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem;">
+              <!-- OpenWeatherMap -->
+              <div style="background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 0.65rem; padding: 0.9rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem;">
+                  <strong>⛅ OpenWeatherMap API</strong>
+                  <span id="srvSourceOpenWeather" class="admin-spoiler-badge badge-muted">—</span>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.55rem;">
+                  <label class="smtp-field-label" for="srvOpenWeatherKey">API Ключ</label>
+                  <div style="display: flex; gap: 0.4rem;">
+                    <input type="password" id="srvOpenWeatherKey" autocomplete="new-password" placeholder="Введіть новий ключ або залиште порожнім" style="flex: 1;">
+                    <button type="button" class="btn-action" style="padding: 0.4rem 0.65rem; min-height: auto; flex-direction: row;" onclick="testServerIntegration('openweather', this)" title="Перевірити OpenWeatherMap">🧪 Тест</button>
+                    <button type="button" class="btn-action" style="padding: 0.4rem 0.6rem; min-height: auto; flex-direction: row; color: #f87171;" onclick="clearServerSecretKey('openweather_api_key', 'OpenWeatherMap API Key')" title="Очистити ключ із БД">🗑️</button>
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="smtp-field-label" for="srvWeatherCacheMin">Кеш прогнозу погоди (хвилин)</label>
+                  <input type="number" id="srvWeatherCacheMin" min="1" max="1440" placeholder="20">
+                </div>
+                <div id="srvTestRes-openweather" style="display: none; margin-top: 0.5rem; font-size: 0.8rem;"></div>
+              </div>
+
+              <!-- Air Alerts -->
+              <div style="background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 0.65rem; padding: 0.9rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem;">
+                  <strong>🚨 Карта тривог (alerts.in.ua &amp; UkraineAlarm)</strong>
+                  <span id="srvSourceAlerts" class="admin-spoiler-badge badge-muted">—</span>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.55rem;">
+                  <label class="smtp-field-label" for="srvAlertsInUaToken">Токен alerts.in.ua (Primary)</label>
+                  <div style="display: flex; gap: 0.4rem;">
+                    <input type="password" id="srvAlertsInUaToken" autocomplete="new-password" placeholder="Токен Bearer alerts.in.ua" style="flex: 1;">
+                    <button type="button" class="btn-action" style="padding: 0.4rem 0.65rem; min-height: auto; flex-direction: row;" onclick="testServerIntegration('alerts_in_ua', this)" title="Перевірити alerts.in.ua">🧪 Тест</button>
+                    <button type="button" class="btn-action" style="padding: 0.4rem 0.6rem; min-height: auto; flex-direction: row; color: #f87171;" onclick="clearServerSecretKey('alerts_in_ua_token', 'alerts.in.ua Token')" title="Очистити токен із БД">🗑️</button>
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.55rem;">
+                  <label class="smtp-field-label" for="srvUkraineAlarmKey">Ключ UkraineAlarm (Failover)</label>
+                  <div style="display: flex; gap: 0.4rem;">
+                    <input type="password" id="srvUkraineAlarmKey" autocomplete="new-password" placeholder="API ключ api.ukrainealarm.com" style="flex: 1;">
+                    <button type="button" class="btn-action" style="padding: 0.4rem 0.65rem; min-height: auto; flex-direction: row;" onclick="testServerIntegration('ukraine_alarm', this)" title="Перевірити UkraineAlarm">🧪 Тест</button>
+                    <button type="button" class="btn-action" style="padding: 0.4rem 0.6rem; min-height: auto; flex-direction: row; color: #f87171;" onclick="clearServerSecretKey('ukraine_alarm_api_key', 'UkraineAlarm API Key')" title="Очистити ключ із БД">🗑️</button>
+                  </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label class="smtp-field-label" for="srvAlertsCacheSec">Кеш alerts.in.ua (с)</label>
+                    <input type="number" id="srvAlertsCacheSec" min="5" max="3600" placeholder="15">
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label class="smtp-field-label" for="srvUkraineAlarmCacheSec">Кеш UkraineAlarm (с)</label>
+                    <input type="number" id="srvUkraineAlarmCacheSec" min="15" max="3600" placeholder="60">
+                  </div>
+                </div>
+                <div id="srvTestRes-alerts_in_ua" style="display: none; margin-top: 0.45rem; font-size: 0.8rem;"></div>
+                <div id="srvTestRes-ukraine_alarm" style="display: none; margin-top: 0.35rem; font-size: 0.8rem;"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card-actions" style="margin-top: 1.15rem;">
+            <button type="button" id="btnSaveServerConfig" class="btn-primary" style="width: auto;" onclick="saveAdminServerConfig(this)">
+              💾 Зберегти параметри сервера
+            </button>
+          </div>
+        </div>
+
+        <!-- Collapsible Card 3: Firebase Push (FCM) -->
+        <details class="admin-spoiler" id="spoilerFirebaseConfig" style="margin-bottom: 1.25rem;">
+          <summary class="admin-spoiler-summary">
+            <div class="admin-spoiler-heading">
+              <span class="admin-spoiler-title settings-title-cyan">🔥 Firebase Cloud Messaging (Android Push FCM v1)</span>
+              <span class="admin-spoiler-sub">Завантаження або вставка Service Account JSON без ручного копіювання файлів на сервер</span>
+            </div>
+            <div class="admin-spoiler-meta">
+              <span class="admin-spoiler-badge badge-muted" id="badgeFirebaseStatus">Не налаштовано</span>
+              <span class="admin-spoiler-chevron" aria-hidden="true">▾</span>
+            </div>
+          </summary>
+          <div class="admin-spoiler-body">
+            <div id="srvFirebaseMetaInfo" style="font-size: 0.84rem; color: var(--text-muted); margin-bottom: 0.85rem;">
+              Статус: очікування завантаження...
+            </div>
+            <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.75rem;">
+              <label class="btn-action" style="padding: 0.45rem 0.9rem; min-height: auto; flex-direction: row; cursor: pointer;">
+                <span>📂 Обрати .json файл</span>
+                <input type="file" id="srvFirebaseJsonFile" accept=".json,application/json" style="display: none;" onchange="handleFirebaseJsonFileUpload(this)">
+              </label>
+              <button type="button" class="btn-action" style="padding: 0.45rem 0.9rem; min-height: auto; flex-direction: row;" onclick="testServerIntegration('firebase', this)">
+                🧪 Перевірити Firebase OAuth2
+              </button>
+              <button type="button" class="btn-action" style="padding: 0.45rem 0.9rem; min-height: auto; flex-direction: row; color: #f87171;" onclick="clearServerSecretKey('firebase_service_account_json', 'Firebase Service Account JSON')">
+                🗑️ Видалити ключ з БД
+              </button>
+            </div>
+            <div class="form-group">
+              <label class="smtp-field-label" for="srvFirebaseJsonText">Або вставте вміст Service Account JSON (після збереження шифрується у БД)</label>
+              <textarea id="srvFirebaseJsonText" rows="5" placeholder='{"type": "service_account", "project_id": "...", "private_key": "...", "client_email": "..."}' style="font-family: monospace; font-size: 0.78rem;"></textarea>
+            </div>
+            <div id="srvTestRes-firebase" style="display: none; margin-top: 0.5rem; font-size: 0.82rem;"></div>
+            <div class="settings-card-actions" style="margin-top: 0.75rem;">
+              <button type="button" class="btn-primary" style="width: auto;" onclick="saveAdminServerConfig(this)">
+                💾 Зберегти Firebase JSON
+              </button>
+            </div>
+          </div>
+        </details>
+
+        <!-- Collapsible Card 4: Read-only Runtime / Storage Status -->
+        <details class="admin-spoiler" id="spoilerRuntimeInfra">
+          <summary class="admin-spoiler-summary">
+            <div class="admin-spoiler-heading">
+              <span class="admin-spoiler-title">🛡️ Інфраструктура, БД та сховища (тільки читання)</span>
+              <span class="admin-spoiler-sub">Стан активного середовища, рушія БД і каталогів сховища</span>
+            </div>
+            <div class="admin-spoiler-meta">
+              <span class="admin-spoiler-badge badge-muted" id="badgeRuntimeDialect">—</span>
+              <span class="admin-spoiler-chevron" aria-hidden="true">▾</span>
+            </div>
+          </summary>
+          <div class="admin-spoiler-body">
+            <div id="srvRuntimeInfoGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem; font-size: 0.85rem;"></div>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.85rem; margin-bottom: 0;">
+              ℹ️ Секрети завантаження (`APP_SECRET_KEY`, рядок підключення до PostgreSQL/SQLite) залишаються ізольованими на рівні хоста до переходу на майстер початкового налаштування.
+            </p>
+          </div>
+        </details>
       </div>
     </section>

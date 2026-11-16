@@ -1,9 +1,11 @@
+import json
 import time
 import sys
 import asyncio
 import platform
 import datetime
-from typing import Dict, Any, Optional, Literal
+import httpx
+from typing import Dict, Any, Optional, List, Literal
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select, func, text
@@ -11,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
 from backend.app.config import settings
+from backend.app.core.secrets import SECRET_MASK
 from backend.app.core.timezone import now_facility
 from backend.app.core.security import verify_password
 from backend.app.api.deps import get_current_user, get_current_admin, get_current_superadmin, require_permission, get_client_ip
@@ -19,10 +22,16 @@ from backend.app.models.facility import Facility
 from backend.app.models.generator import Generator
 from backend.app.services.audit_service import log_audit
 from backend.app.services.settings_service import (
+    SERVER_ONLY_SETTING_KEYS,
+    SECRET_SETTING_KEYS,
     load_system_settings,
     update_system_settings,
     get_runtime_timezone,
     get_runtime_setting,
+    get_effective_str_setting,
+    get_effective_int_setting,
+    get_effective_primary_domain,
+    get_setting_source,
     get_fuel_prices_info,
     refresh_internet_fuel_prices,
     perform_system_reset,
@@ -295,11 +304,11 @@ async def get_admin_system_settings(
     Паролі поштових шлюзів маскуються для запобігання витоку.
     """
     data = await load_system_settings(db)
-    masked = dict(data)
+    masked = {k: v for k, v in data.items() if k not in SERVER_ONLY_SETTING_KEYS}
     if masked.get("smtp_primary_password"):
-        masked["smtp_primary_password"] = "********"
+        masked["smtp_primary_password"] = SECRET_MASK
     if masked.get("smtp_fallback_password"):
-        masked["smtp_fallback_password"] = "********"
+        masked["smtp_fallback_password"] = SECRET_MASK
     return {
         "settings": masked,
         "fuel_prices": get_fuel_prices_info(),
@@ -600,3 +609,325 @@ async def send_weekly_digest_manual(
         )
 
     return {"message": "Щотижневий звіт успішно надіслано", "result": res}
+
+
+# ==========================================
+# Server & Integrations Settings (SuperAdmin ONLY)
+# ==========================================
+
+class ServerConfigUpdateRequest(BaseModel):
+    primary_domain: Optional[str] = Field(None, max_length=255)
+    allowed_hosts: Optional[str] = Field(None, max_length=2000)
+    cors_origins: Optional[str] = Field(None, max_length=2000)
+    access_token_expire_minutes: Optional[int] = Field(None, ge=5, le=525600)
+    login_max_attempts: Optional[int] = Field(None, ge=1, le=100)
+    login_lockout_seconds: Optional[int] = Field(None, ge=1, le=86400)
+    openweather_api_key: Optional[str] = Field(None, max_length=512)
+    weather_cache_minutes: Optional[int] = Field(None, ge=1, le=1440)
+    alerts_in_ua_token: Optional[str] = Field(None, max_length=1024)
+    ukraine_alarm_api_key: Optional[str] = Field(None, max_length=1024)
+    alerts_cache_seconds: Optional[int] = Field(None, ge=5, le=3600)
+    ukraine_alarm_cache_seconds: Optional[int] = Field(None, ge=15, le=3600)
+    firebase_service_account_json: Optional[str] = Field(None, max_length=65536)
+    clear_keys: List[str] = Field(default_factory=list)
+
+
+class IntegrationTestRequest(BaseModel):
+    provider: Literal["openweather", "alerts_in_ua", "ukraine_alarm", "firebase"]
+    value: Optional[str] = Field(None, max_length=65536)
+
+
+def _build_server_config_payload() -> Dict[str, Any]:
+    from backend.app.services.fcm_service import _load_service_account, is_fcm_configured
+
+    sa = _load_service_account()
+    db_fb_raw = str(get_runtime_setting("firebase_service_account_json", "") or "").strip()
+    env_fb_raw = str(getattr(settings, "FIREBASE_SERVICE_ACCOUNT_JSON", "") or "").strip()
+    if db_fb_raw:
+        fb_source = "db"
+    elif env_fb_raw:
+        fb_source = "env"
+    elif sa:
+        fb_source = "file"
+    else:
+        fb_source = "default"
+
+    owm_val = get_effective_str_setting("openweather_api_key", "OPENWEATHER_API_KEY", "")
+    aiu_val = get_effective_str_setting("alerts_in_ua_token", "ALERTS_IN_UA_TOKEN", "")
+    ua_val = get_effective_str_setting("ukraine_alarm_api_key", "UKRAINE_ALARM_API_KEY", "")
+
+    config = {
+        "primary_domain": get_effective_primary_domain(),
+        "allowed_hosts": get_effective_str_setting("allowed_hosts", "ALLOWED_HOSTS", ""),
+        "cors_origins": get_effective_str_setting("cors_origins", "CORS_ORIGINS", ""),
+        "access_token_expire_minutes": get_effective_int_setting(
+            "access_token_expire_minutes", "ACCESS_TOKEN_EXPIRE_MINUTES", settings.ACCESS_TOKEN_EXPIRE_MINUTES, min_value=5
+        ),
+        "login_max_attempts": get_effective_int_setting(
+            "login_max_attempts", "LOGIN_MAX_ATTEMPTS", settings.LOGIN_MAX_ATTEMPTS, min_value=1
+        ),
+        "login_lockout_seconds": get_effective_int_setting(
+            "login_lockout_seconds", "LOGIN_LOCKOUT_SECONDS", settings.LOGIN_LOCKOUT_SECONDS, min_value=1
+        ),
+        "openweather_api_key": SECRET_MASK if owm_val else "",
+        "weather_cache_minutes": get_effective_int_setting(
+            "weather_cache_minutes", "WEATHER_CACHE_MINUTES", settings.WEATHER_CACHE_MINUTES, min_value=1
+        ),
+        "alerts_in_ua_token": SECRET_MASK if aiu_val else "",
+        "ukraine_alarm_api_key": SECRET_MASK if ua_val else "",
+        "alerts_cache_seconds": get_effective_int_setting(
+            "alerts_cache_seconds", "ALERTS_CACHE_SECONDS", settings.ALERTS_CACHE_SECONDS, min_value=5
+        ),
+        "ukraine_alarm_cache_seconds": get_effective_int_setting(
+            "ukraine_alarm_cache_seconds", "UKRAINE_ALARM_CACHE_SECONDS", settings.UKRAINE_ALARM_CACHE_SECONDS, min_value=15
+        ),
+        "firebase_service_account_json": SECRET_MASK if (db_fb_raw or env_fb_raw) else "",
+        "firebase_configured": is_fcm_configured(),
+        "firebase_project_id": sa.get("project_id", "") if isinstance(sa, dict) else "",
+        "firebase_client_email": sa.get("client_email", "") if isinstance(sa, dict) else "",
+    }
+
+    sources = {
+        "primary_domain": get_setting_source("primary_domain"),
+        "allowed_hosts": get_setting_source("allowed_hosts"),
+        "cors_origins": get_setting_source("cors_origins"),
+        "access_token_expire_minutes": get_setting_source("access_token_expire_minutes"),
+        "login_max_attempts": "db",
+        "login_lockout_seconds": "db",
+        "openweather_api_key": get_setting_source("openweather_api_key"),
+        "weather_cache_minutes": get_setting_source("weather_cache_minutes"),
+        "alerts_in_ua_token": get_setting_source("alerts_in_ua_token"),
+        "ukraine_alarm_api_key": get_setting_source("ukraine_alarm_api_key"),
+        "alerts_cache_seconds": get_setting_source("alerts_cache_seconds"),
+        "ukraine_alarm_cache_seconds": get_setting_source("ukraine_alarm_cache_seconds"),
+        "firebase_service_account_json": fb_source,
+    }
+
+    db_url = str(getattr(settings, "DATABASE_URL", "") or "")
+    db_dialect = "PostgreSQL" if "postgresql" in db_url.lower() else ("SQLite" if "sqlite" in db_url.lower() else "Custom")
+    runtime = {
+        "app_env": settings.APP_ENV,
+        "database_dialect": db_dialect,
+        "upload_dir": settings.UPLOAD_DIR,
+        "backup_dir": settings.BACKUP_DIR,
+        "facility_timezone": get_runtime_timezone(),
+    }
+    return {"config": config, "sources": sources, "runtime": runtime}
+
+
+@router.get("/server-config")
+async def get_server_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_superadmin),
+) -> Dict[str, Any]:
+    """Отримати конфігурацію сервера та зовнішніх інтеграцій (тільки SuperAdmin)."""
+    await load_system_settings(db)
+    return _build_server_config_payload()
+
+
+@router.put("/server-config")
+async def update_server_config(
+    payload: ServerConfigUpdateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_superadmin),
+) -> Dict[str, Any]:
+    """Оновити параметри сервера та інтеграцій (ключі шифруються в БД, тільки SuperAdmin)."""
+    await load_system_settings(db)
+    submitted = payload.model_dump(exclude_unset=True)
+    clear_keys = set(submitted.pop("clear_keys", []) or [])
+
+    allowed_server_fields = set(SERVER_ONLY_SETTING_KEYS) | {"login_max_attempts", "login_lockout_seconds"}
+    secret_server_keys = SECRET_SETTING_KEYS.intersection(allowed_server_fields)
+
+    updates: Dict[str, Any] = {}
+    reset_fcm = False
+
+    for key in allowed_server_fields:
+        if key in clear_keys:
+            if key in ("access_token_expire_minutes", "weather_cache_minutes", "alerts_cache_seconds", "ukraine_alarm_cache_seconds"):
+                updates[key] = None
+            elif key == "login_max_attempts":
+                updates[key] = 5
+            elif key == "login_lockout_seconds":
+                updates[key] = 300
+            else:
+                updates[key] = ""
+            if key == "firebase_service_account_json":
+                reset_fcm = True
+            continue
+
+        if key not in submitted:
+            continue
+
+        val = submitted[key]
+        if key in secret_server_keys:
+            if val is None or str(val).strip() in ("", SECRET_MASK):
+                continue
+            val_clean = str(val).strip()
+            if key == "firebase_service_account_json":
+                try:
+                    parsed_sa = json.loads(val_clean)
+                except Exception as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Некоректний JSON файлу облікових даних Firebase: {exc}",
+                    )
+                if not isinstance(parsed_sa, dict) or not (
+                    parsed_sa.get("project_id") and parsed_sa.get("private_key") and parsed_sa.get("client_email")
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Firebase JSON повинен містити поля project_id, client_email та private_key",
+                    )
+                val_clean = json.dumps(parsed_sa, ensure_ascii=False)
+                reset_fcm = True
+            updates[key] = val_clean
+        elif key == "primary_domain":
+            dom = str(val or "").strip().lower()
+            dom = dom.removeprefix("https://").removeprefix("http://").strip("/")
+            updates[key] = dom
+        elif key in ("allowed_hosts", "cors_origins"):
+            updates[key] = str(val or "").strip()
+        else:
+            updates[key] = val
+
+    if updates:
+        try:
+            await update_system_settings(db=db, updates=updates)
+        except ValueError as ve:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+
+    if reset_fcm:
+        from backend.app.services.fcm_service import reset_fcm_token_cache
+        reset_fcm_token_cache()
+
+    audit_fields = {
+        k: ("[REDACTED]" if k in secret_server_keys and updates[k] else updates[k])
+        for k in updates
+    }
+    await log_audit(
+        db=db,
+        action="SERVER_CONFIG_UPDATED",
+        entity_type="SystemSetting",
+        entity_id="server-config",
+        user_id=current_user.id,
+        details={"updated_keys": list(updates.keys()), "updates": audit_fields},
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+
+    res = _build_server_config_payload()
+    res["message"] = "Налаштування сервера та інтеграцій збережено"
+    return res
+
+
+@router.post("/server-config/test-integration")
+async def test_server_integration(
+    payload: IntegrationTestRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_superadmin),
+) -> Dict[str, Any]:
+    """Перевірка працездатності API-ключів та Firebase Service Account (тільки SuperAdmin)."""
+    await load_system_settings(db)
+    start_t = time.time()
+    raw_val = (payload.value or "").strip()
+    if raw_val == SECRET_MASK:
+        raw_val = ""
+
+    if payload.provider == "openweather":
+        api_key = raw_val or get_effective_str_setting("openweather_api_key", "OPENWEATHER_API_KEY", "")
+        if not api_key:
+            return {"status": "error", "message": "API ключ OpenWeatherMap не вказано"}
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(
+                    "https://api.openweathermap.org/data/2.5/weather",
+                    params={"q": "Kyiv", "appid": api_key, "units": "metric", "lang": "uk"},
+                )
+            ms = int(round((time.time() - start_t) * 1000))
+            if r.status_code == 200:
+                data = r.json()
+                temp = data.get("main", {}).get("temp")
+                return {
+                    "status": "ok",
+                    "message": f"З'єднання успішне (Київ: {temp}°C)",
+                    "duration_ms": ms,
+                }
+            return {
+                "status": "error",
+                "message": f"OpenWeatherMap повернув код HTTP {r.status_code}",
+                "duration_ms": ms,
+            }
+        except Exception as exc:
+            return {"status": "error", "message": f"Помилка з'єднання: {exc}"}
+
+    if payload.provider == "alerts_in_ua":
+        token_val = raw_val or get_effective_str_setting("alerts_in_ua_token", "ALERTS_IN_UA_TOKEN", "")
+        if not token_val:
+            return {"status": "error", "message": "Токен alerts.in.ua не вказано"}
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(
+                    "https://api.alerts.in.ua/v1/alerts/active.json",
+                    headers={"Authorization": f"Bearer {token_val}"},
+                )
+            ms = int(round((time.time() - start_t) * 1000))
+            if r.status_code in (200, 304):
+                return {"status": "ok", "message": f"Токен alerts.in.ua дійсний (HTTP {r.status_code})", "duration_ms": ms}
+            return {"status": "error", "message": f"alerts.in.ua повернув HTTP {r.status_code}", "duration_ms": ms}
+        except Exception as exc:
+            return {"status": "error", "message": f"Помилка з'єднання: {exc}"}
+
+    if payload.provider == "ukraine_alarm":
+        ua_key = raw_val or get_effective_str_setting("ukraine_alarm_api_key", "UKRAINE_ALARM_API_KEY", "")
+        if not ua_key:
+            return {"status": "error", "message": "API ключ UkraineAlarm не вказано"}
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(
+                    "https://api.ukrainealarm.com/api/v3/alerts",
+                    headers={"Authorization": ua_key},
+                )
+            ms = int(round((time.time() - start_t) * 1000))
+            if r.status_code in (200, 304):
+                return {"status": "ok", "message": f"Ключ UkraineAlarm дійсний (HTTP {r.status_code})", "duration_ms": ms}
+            if r.status_code == 429:
+                return {"status": "ok", "message": "Ключ розпізнано (активний rate-limit 429 API сервісу)", "duration_ms": ms}
+            return {"status": "error", "message": f"UkraineAlarm повернув HTTP {r.status_code}", "duration_ms": ms}
+        except Exception as exc:
+            return {"status": "error", "message": f"Помилка з'єднання: {exc}"}
+
+    if payload.provider == "firebase":
+        from backend.app.services.fcm_service import _load_service_account, _get_fcm_access_token
+        if raw_val:
+            try:
+                sa = json.loads(raw_val)
+            except Exception as exc:
+                return {"status": "error", "message": f"Некоректний JSON: {exc}"}
+            if not isinstance(sa, dict) or not (sa.get("project_id") and sa.get("private_key") and sa.get("client_email")):
+                return {"status": "error", "message": "JSON не містить project_id, client_email або private_key"}
+            return {
+                "status": "ok",
+                "message": f"JSON валідний (проєкт: {sa.get('project_id')}). Збережіть налаштування для активації.",
+                "duration_ms": int(round((time.time() - start_t) * 1000)),
+            }
+
+        sa = _load_service_account()
+        if not sa:
+            return {"status": "error", "message": "Firebase Service Account не налаштовано"}
+        access_tok, project_id = await _get_fcm_access_token()
+        ms = int(round((time.time() - start_t) * 1000))
+        if access_tok and project_id:
+            return {
+                "status": "ok",
+                "message": f"Firebase OAuth2 авторизація успішна (проєкт: {project_id})",
+                "duration_ms": ms,
+            }
+        return {
+            "status": "error",
+            "message": "Не вдалося отримати OAuth2 токен Firebase (перевірте private_key або мережу)",
+            "duration_ms": ms,
+        }
+
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Невідомий провайдер")

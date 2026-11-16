@@ -5,6 +5,18 @@
 
 ---
 
+## [v5.7.22] — 2026-11-16
+### 🖥️ Етап 1 CMS-архітектури: розділ «Сервер та Інтеграції» + шифрування ключів у БД
+- **Прибрано «Адреса сервера» у Web/PWA ([`index.html`](frontend/index.html), [`core.js`](frontend/js/core.js))**:
+  - На звичайних браузерах та PWA кнопка «Адреса сервера» на екрані входу та у меню профілю прихована; вона залишається доступною лише всередині нативного Android APK (Capacitor).
+- **Шифрування секретів у БД та пріоритет `БД -> .env -> default` ([`secrets.py`](backend/app/core/secrets.py), [`settings_service.py`](backend/app/services/settings_service.py), [`audit_service.py`](backend/app/services/audit_service.py), [`report_service.py`](backend/app/services/report_service.py))**:
+  - Додано симетричне шифрування секретних ключів (`Fernet` із префіксом `enc:v1:`) при збереженні в таблицю `system_settings`, із автоматичною міграцією `.env`-секретів та застарілих відкритих значень без переривання роботи.
+  - Посилено редагування аудит-логів і Excel-експортів для `api_key`, `service_account` і `firebase_service_account`.
+- **Динамічні runtime-налаштування без перезапуску ([`weather_service.py`](backend/app/services/weather_service.py), [`alert_service.py`](backend/app/services/alert_service.py), [`fcm_service.py`](backend/app/services/fcm_service.py), [`security.py`](backend/app/core/security.py), [`auth_security_service.py`](backend/app/services/auth_security_service.py), [`auth.py`](backend/app/api/v1/auth.py), [`email_service.py`](backend/app/services/email_service.py), [`main.py`](backend/app/main.py))**:
+  - Погода, мапа тривог, Firebase Push (FCM v1), домен (`PRIMARY_DOMAIN`), `ALLOWED_HOSTS`, CORS, JWT TTL та ліміти блокування входу зчитують активні значення з БД з прозорим fallback на `.env`.
+- **Новий пункт адміністрування (тільки `SuperAdmin`) ([`system.py`](backend/app/api/v1/system.py), [`admin.html`](frontend/views/admin.html), [`admin.js`](frontend/js/admin.js), [`auth-nav.js`](frontend/js/auth-nav.js), [`test_server_config.py`](backend/tests/test_server_config.py))**:
+  - Додано API `GET/PUT /api/v1/system/server-config` та `POST /api/v1/system/server-config/test-integration` (захищені `get_current_superadmin`, маскування `"********"`), а також вкладку `🖥️ Сервер та Інтеграції` із живим тестуванням API та завантаженням Firebase JSON.
+
 ## [v5.7.21] — 2026-11-16
 ### 🤖 Офлайн-стійкість (Етап 2): фонова синхронізація Android `WorkManager` + SQLite
 - **Нативна фонова черга в APK ([`OfflineQueueStore.java`](android/app/src/main/java/ua/pp/sdgen/app/OfflineQueueStore.java), [`OfflineAuthVault.java`](android/app/src/main/java/ua/pp/sdgen/app/OfflineAuthVault.java), [`OfflineSyncEngine.java`](android/app/src/main/java/ua/pp/sdgen/app/OfflineSyncEngine.java), [`OfflineSyncWorker.java`](android/app/src/main/java/ua/pp/sdgen/app/OfflineSyncWorker.java), [`OfflineSyncPlugin.java`](android/app/src/main/java/ua/pp/sdgen/app/OfflineSyncPlugin.java), [`MainActivity.java`](android/app/src/main/java/ua/pp/sdgen/app/MainActivity.java), [`build.gradle`](android/app/build.gradle))**:
