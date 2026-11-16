@@ -691,17 +691,12 @@ window.handleExportAuditExcel = async function (e) {
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       defaultErrorMessage: 'Помилка сервера при створенні Excel аудиту',
     });
-    if (dl?.native) {
-      showToast(
-        dl.savedToDownloads
-          ? `Аудиторський Excel звіт збережено у ${dl.displayPath || 'Завантаження'}!`
-          : 'Аудиторський Excel звіт (.xlsx) сформовано та відкрито!',
-        'success'
-      );
-    } else {
-      showToast('Аудиторський звіт Excel (.xlsx) успішно згенеровано та завантажено!', 'success');
-    }
-    closeModal('modalExportAudit');
+    const ok = window.showDownloadResultToast(
+      dl,
+      'Аудиторський звіт Excel (.xlsx) успішно згенеровано та завантажено!',
+      'Аудиторський Excel звіт'
+    );
+    if (ok) closeModal('modalExportAudit');
   } catch (err) {
     showToast(err.message || 'Помилка завантаження аудиторського звіту Excel', 'error');
   } finally {
@@ -1338,16 +1333,11 @@ window.downloadReportExcel = async function () {
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       defaultErrorMessage: 'Помилка сервера при створенні Excel',
     });
-    if (dl?.native) {
-      showToast(
-        dl.savedToDownloads
-          ? `Excel звіт збережено у ${dl.displayPath || 'Завантаження'}!`
-          : 'Excel звіт (.xlsx) сформовано та відкрито!',
-        'success'
-      );
-    } else {
-      showToast('Excel звіт (.xlsx) успішно згенеровано та завантажено!', 'success');
-    }
+    window.showDownloadResultToast(
+      dl,
+      'Excel звіт (.xlsx) успішно згенеровано та завантажено!',
+      'Excel звіт'
+    );
   } catch (err) {
     showToast(err.message || 'Помилка завантаження Excel звіту', 'error');
   }

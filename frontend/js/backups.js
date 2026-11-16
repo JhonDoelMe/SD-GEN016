@@ -164,16 +164,7 @@ window.downloadBackup = async function (filename) {
       mimeType: 'application/zip',
       defaultErrorMessage: 'Помилка сервера при завантаженні',
     });
-    if (dl?.native) {
-      showToast(
-        dl.savedToDownloads
-          ? `Файл збережено у ${dl.displayPath || 'Завантаження'}!`
-          : `Файл ${filename} підготовлено до збереження/відкриття!`,
-        'success'
-      );
-    } else {
-      showToast(`Файл ${filename} успішно завантажено!`, 'success');
-    }
+    window.showDownloadResultToast(dl, `Файл ${filename} успішно завантажено!`, 'Архів бекапу');
   } catch (err) {
     showToast(err.message || 'Помилка завантаження резервної копії', 'error');
   }

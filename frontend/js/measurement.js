@@ -595,16 +595,11 @@ window.downloadMeasurementPdf = async function (measurementId) {
       mimeType: 'application/pdf',
       defaultErrorMessage: 'Помилка генерації PDF',
     });
-    if (dl?.native) {
-      showToast(
-        dl.savedToDownloads
-          ? `📥 PDF-відомість збережено у ${dl.displayPath || 'Завантаження'}! Кнопка «Погоджено» активна.`
-          : '📥 PDF-відомість сформовано та відкрито! Кнопка «Погоджено» активна.',
-        'success'
-      );
-    } else {
-      showToast('📥 PDF-відомість завантажено! Кнопка «Погоджено» тепер активна.', 'success');
-    }
+    window.showDownloadResultToast(
+      dl,
+      '📥 PDF-відомість завантажено! Кнопка «Погоджено» тепер активна.',
+      '📥 PDF-відомість'
+    );
     await loadMeasurementTab();
   } catch (err) {
     showToast(err.message || 'Помилка завантаження PDF', 'error');

@@ -1057,6 +1057,27 @@ window.downloadAuthorizedFile = async function ({
   const finalFilename = dispositionName || fallbackFilename || 'sdgen_download.bin';
 
   const blob = await res.blob();
+  if (!blob || blob.size <= 0) {
+    throw new Error('Сервер повернув порожній файл.');
+  }
   return window.saveDownloadedBlob(blob, finalFilename, mimeType || blob.type || '', openAfterSave);
+};
+
+window.showDownloadResultToast = function (dl, webMessage, nativeLabel = 'Файл') {
+  if (dl?.native) {
+    if (dl.canceled) {
+      showToast('Збереження файлу скасовано', 'info');
+      return false;
+    }
+    if (dl.savedToDownloads) {
+      showToast(`${nativeLabel} збережено у ${dl.displayPath || 'Download'}!`, 'success');
+      return true;
+    }
+    const reason = dl.saveError ? `: ${dl.saveError}` : '';
+    showToast(`Не вдалося зберегти файл у Завантаження${reason}`, 'error');
+    return false;
+  }
+  showToast(webMessage, 'success');
+  return true;
 };
 

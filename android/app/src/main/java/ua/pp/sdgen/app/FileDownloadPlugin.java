@@ -16,6 +16,7 @@ import android.provider.MediaStore;
 import android.util.Base64;
 import android.webkit.MimeTypeMap;
 
+import androidx.activity.result.ActivityResult;
 import androidx.annotation.RequiresApi;
 import androidx.core.content.FileProvider;
 
@@ -24,6 +25,7 @@ import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
@@ -55,9 +57,12 @@ public class FileDownloadPlugin extends Plugin {
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 60000;
     private static final long MAX_CACHE_AGE_MS = 24L * 60L * 60L * 1000L;
-    private static final String DOWNLOAD_SUBDIR = "SD-GEN016";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private volatile String pendingCacheFilePath = null;
+    private volatile String pendingSafeFileName = null;
+    private volatile String pendingMimeType = null;
+    private volatile boolean pendingOpenAfterSave = true;
 
     @PluginMethod
     public void saveAndOpen(PluginCall call) {
@@ -80,8 +85,6 @@ public class FileDownloadPlugin extends Plugin {
 
     @PermissionCallback
     private void storagePermsCallback(PluginCall call) {
-        // Proceed even if legacy external storage permission was denied:
-        // the file is still written to private cacheDir and shared/opened via FileProvider.
         executeSaveAndOpen(call);
     }
 
@@ -110,15 +113,51 @@ public class FileDownloadPlugin extends Plugin {
                     streamHttpsToFile(downloadUrl, authHeader, cacheFile);
                 }
 
-                boolean savedToDownloads = false;
+                if (!cacheFile.exists() || cacheFile.length() <= 0) {
+                    throw new IOException("Отримано порожній файл.");
+                }
+
                 String displayPath = "";
+                String saveError = "";
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    displayPath = saveToMediaStoreDownloads(ctx, cacheFile, safeFileName, mimeType);
-                    savedToDownloads = !displayPath.isEmpty();
+                    SaveOutcome outcome = saveToMediaStoreDownloads(ctx, cacheFile, safeFileName, mimeType);
+                    displayPath = outcome.displayPath;
+                    saveError = outcome.error;
                 } else if (getPermissionState("storage") == PermissionState.GRANTED) {
-                    displayPath = saveToLegacyDownloads(ctx, cacheFile, safeFileName, mimeType);
-                    savedToDownloads = !displayPath.isEmpty();
+                    SaveOutcome outcome = saveToLegacyDownloads(ctx, cacheFile, safeFileName, mimeType);
+                    displayPath = outcome.displayPath;
+                    saveError = outcome.error;
+                } else {
+                    saveError = "Немає дозволу на запис у Завантаження";
+                }
+
+                boolean savedToDownloads = !displayPath.isEmpty();
+
+                // If automatic save to Downloads did not succeed, launch Android's Storage Access Framework
+                // ("Save as...") picker so the user can save directly into any folder without permissions.
+                if (!savedToDownloads) {
+                    Activity activity = getActivity();
+                    if (activity != null) {
+                        pendingCacheFilePath = cacheFile.getAbsolutePath();
+                        pendingSafeFileName = safeFileName;
+                        pendingMimeType = mimeType;
+                        pendingOpenAfterSave = openAfterSave;
+
+                        Intent createDocIntent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                        createDocIntent.addCategory(Intent.CATEGORY_OPENABLE);
+                        createDocIntent.setType(mimeType);
+                        createDocIntent.putExtra(Intent.EXTRA_TITLE, safeFileName);
+
+                        activity.runOnUiThread(() -> {
+                            try {
+                                startActivityForResult(call, createDocIntent, "handleCreateDocumentResult");
+                            } catch (Exception ex) {
+                                call.reject("Не вдалося зберегти файл у Завантаження: " + ex.getMessage(), ex);
+                            }
+                        });
+                        return;
+                    }
                 }
 
                 Uri shareUri = FileProvider.getUriForFile(
@@ -129,47 +168,139 @@ public class FileDownloadPlugin extends Plugin {
 
                 final boolean finalSaved = savedToDownloads;
                 final String finalPath = displayPath;
+                final String finalError = saveError;
 
                 if (openAfterSave) {
                     Activity activity = getActivity();
                     if (activity != null) {
                         activity.runOnUiThread(() -> {
-                            boolean opened = false;
-                            boolean sharedViaChooser = false;
-                            try {
-                                Intent viewIntent = new Intent(Intent.ACTION_VIEW);
-                                viewIntent.setDataAndType(shareUri, mimeType);
-                                viewIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-                                activity.startActivity(viewIntent);
-                                opened = true;
-                            } catch (ActivityNotFoundException ignored) {
-                                try {
-                                    Intent sendIntent = new Intent(Intent.ACTION_SEND);
-                                    sendIntent.setType(mimeType);
-                                    sendIntent.putExtra(Intent.EXTRA_STREAM, shareUri);
-                                    sendIntent.putExtra(Intent.EXTRA_SUBJECT, safeFileName);
-                                    sendIntent.setClipData(ClipData.newRawUri(safeFileName, shareUri));
-                                    sendIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-                                    Intent chooser = Intent.createChooser(sendIntent, "Відкрити або зберегти файл");
-                                    chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                    activity.startActivity(chooser);
-                                    sharedViaChooser = true;
-                                } catch (Exception ignoredShare) {
-                                    // Saved to Downloads even if no viewer/share target is available
-                                }
-                            }
-                            resolveResult(call, safeFileName, finalSaved, finalPath, shareUri, opened, sharedViaChooser);
+                            OpenOutcome openOut = openOrShareUri(activity, shareUri, safeFileName, mimeType);
+                            resolveResult(
+                                call,
+                                safeFileName,
+                                finalSaved,
+                                finalPath,
+                                shareUri,
+                                openOut.opened,
+                                openOut.sharedViaChooser,
+                                false,
+                                finalError
+                            );
                         });
                         return;
                     }
                 }
 
-                resolveResult(call, safeFileName, finalSaved, finalPath, shareUri, false, false);
+                resolveResult(call, safeFileName, finalSaved, finalPath, shareUri, false, false, false, finalError);
             } catch (Exception e) {
                 call.reject("Помилка збереження файлу: " + e.getMessage(), e);
             }
         });
+    }
+
+    @ActivityCallback
+    private void handleCreateDocumentResult(PluginCall call, ActivityResult result) {
+        if (call == null) {
+            return;
+        }
+        final String cachePath = pendingCacheFilePath;
+        final String safeFileName = pendingSafeFileName != null ? pendingSafeFileName : "sdgen_report.bin";
+        final String mimeType = pendingMimeType != null ? pendingMimeType : "application/octet-stream";
+        final boolean openAfterSave = pendingOpenAfterSave;
+        pendingCacheFilePath = null;
+
+        if (result == null || result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+            resolveResult(call, safeFileName, false, "", null, false, false, true, "Збереження скасовано користувачем");
+            return;
+        }
+
+        final Uri pickedUri = result.getData().getData();
+        if (cachePath == null) {
+            call.reject("Тимчасовий файл експорту втрачено.");
+            return;
+        }
+
+        executor.execute(() -> {
+            try {
+                Context ctx = getContext();
+                File srcFile = new File(cachePath);
+                if (!srcFile.exists()) {
+                    throw new IOException("Тимчасовий файл експорту не знайдено.");
+                }
+
+                try (
+                    InputStream in = new BufferedInputStream(new FileInputStream(srcFile));
+                    OutputStream out = ctx.getContentResolver().openOutputStream(pickedUri)
+                ) {
+                    if (out == null) {
+                        throw new IOException("Не вдалося відкрити обраний файл для запису.");
+                    }
+                    byte[] buf = new byte[16384];
+                    int read;
+                    while ((read = in.read(buf)) != -1) {
+                        out.write(buf, 0, read);
+                    }
+                    out.flush();
+                }
+
+                Uri shareUri = FileProvider.getUriForFile(
+                    ctx,
+                    ctx.getPackageName() + ".fileprovider",
+                    srcFile
+                );
+
+                if (openAfterSave) {
+                    Activity activity = getActivity();
+                    if (activity != null) {
+                        activity.runOnUiThread(() -> {
+                            OpenOutcome openOut = openOrShareUri(activity, shareUri, safeFileName, mimeType);
+                            resolveResult(
+                                call,
+                                safeFileName,
+                                true,
+                                "обраної папки/" + safeFileName,
+                                pickedUri,
+                                openOut.opened,
+                                openOut.sharedViaChooser,
+                                false,
+                                ""
+                            );
+                        });
+                        return;
+                    }
+                }
+
+                resolveResult(call, safeFileName, true, "обраної папки/" + safeFileName, pickedUri, false, false, false, "");
+            } catch (Exception e) {
+                call.reject("Не вдалося записати файл у вибрану папку: " + e.getMessage(), e);
+            }
+        });
+    }
+
+    private OpenOutcome openOrShareUri(Activity activity, Uri uri, String fileName, String mimeType) {
+        try {
+            Intent viewIntent = new Intent(Intent.ACTION_VIEW);
+            viewIntent.setDataAndType(uri, mimeType);
+            viewIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity.startActivity(viewIntent);
+            return new OpenOutcome(true, false);
+        } catch (ActivityNotFoundException ignored) {
+            try {
+                Intent sendIntent = new Intent(Intent.ACTION_SEND);
+                sendIntent.setType(mimeType);
+                sendIntent.putExtra(Intent.EXTRA_STREAM, uri);
+                sendIntent.putExtra(Intent.EXTRA_SUBJECT, fileName);
+                sendIntent.setClipData(ClipData.newRawUri(fileName, uri));
+                sendIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+                Intent chooser = Intent.createChooser(sendIntent, "Відкрити або поділитися файлом");
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                activity.startActivity(chooser);
+                return new OpenOutcome(false, true);
+            } catch (Exception ignoredShare) {
+                return new OpenOutcome(false, false);
+            }
+        }
     }
 
     private void resolveResult(
@@ -177,24 +308,30 @@ public class FileDownloadPlugin extends Plugin {
         String fileName,
         boolean savedToDownloads,
         String displayPath,
-        Uri shareUri,
+        Uri uri,
         boolean opened,
-        boolean sharedViaChooser
+        boolean sharedViaChooser,
+        boolean canceled,
+        String saveError
     ) {
         JSObject ret = new JSObject();
         ret.put("fileName", fileName);
         ret.put("savedToDownloads", savedToDownloads);
         ret.put("displayPath", displayPath);
-        ret.put("cacheUri", shareUri != null ? shareUri.toString() : "");
+        ret.put("cacheUri", uri != null ? uri.toString() : "");
         ret.put("opened", opened);
         ret.put("sharedViaChooser", sharedViaChooser);
+        ret.put("canceled", canceled);
+        if (saveError != null && !saveError.isEmpty()) {
+            ret.put("saveError", saveError);
+        }
         call.resolve(ret);
     }
 
     private void writeBase64ToFile(String base64Input, File destFile) throws IOException {
         String payload = base64Input;
         int commaIdx = base64Input.indexOf(',');
-        if (commaIdx >= 0 && base64Input.substring(0, Math.min(commaIdx, 64)).contains("base64")) {
+        if (commaIdx >= 0 && base64Input.substring(0, Math.min(commaIdx, 256)).contains("base64")) {
             payload = base64Input.substring(commaIdx + 1);
         }
         byte[] decoded = Base64.decode(payload, Base64.DEFAULT);
@@ -244,20 +381,38 @@ public class FileDownloadPlugin extends Plugin {
     }
 
     @RequiresApi(api = Build.VERSION_CODES.Q)
-    private String saveToMediaStoreDownloads(Context ctx, File srcFile, String fileName, String mimeType) {
+    private SaveOutcome saveToMediaStoreDownloads(Context ctx, File srcFile, String fileName, String mimeType) {
+        SaveOutcome firstAttempt = insertIntoMediaStoreDownloads(ctx, srcFile, fileName, mimeType);
+        if (!firstAttempt.displayPath.isEmpty()) {
+            return firstAttempt;
+        }
+        if (!"application/octet-stream".equals(mimeType)) {
+            SaveOutcome fallbackAttempt = insertIntoMediaStoreDownloads(ctx, srcFile, fileName, "application/octet-stream");
+            if (!fallbackAttempt.displayPath.isEmpty()) {
+                return fallbackAttempt;
+            }
+            return fallbackAttempt;
+        }
+        return firstAttempt;
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.Q)
+    private SaveOutcome insertIntoMediaStoreDownloads(Context ctx, File srcFile, String fileName, String mimeType) {
         ContentResolver resolver = ctx.getContentResolver();
         ContentValues values = new ContentValues();
         values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
         values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
-        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + File.separator + DOWNLOAD_SUBDIR);
+        values.put(MediaStore.MediaColumns.SIZE, srcFile.length());
+        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
         values.put(MediaStore.MediaColumns.IS_PENDING, 1);
 
-        Uri itemUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-        if (itemUri == null) {
-            return "";
-        }
-
+        Uri itemUri = null;
         try {
+            itemUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (itemUri == null) {
+                return new SaveOutcome("", "MediaStore.Downloads повернув null");
+            }
+
             try (
                 InputStream in = new BufferedInputStream(new FileInputStream(srcFile));
                 OutputStream out = resolver.openOutputStream(itemUri)
@@ -276,22 +431,23 @@ public class FileDownloadPlugin extends Plugin {
             ContentValues ready = new ContentValues();
             ready.put(MediaStore.MediaColumns.IS_PENDING, 0);
             resolver.update(itemUri, ready, null, null);
-            return "Downloads/" + DOWNLOAD_SUBDIR + "/" + fileName;
+            return new SaveOutcome("Download/" + fileName, "");
         } catch (Exception e) {
-            try {
-                resolver.delete(itemUri, null, null);
-            } catch (Exception ignored) {}
-            return "";
+            if (itemUri != null) {
+                try {
+                    resolver.delete(itemUri, null, null);
+                } catch (Exception ignored) {}
+            }
+            return new SaveOutcome("", e.getMessage() != null ? e.getMessage() : "MediaStore error");
         }
     }
 
     @SuppressWarnings("deprecation")
-    private String saveToLegacyDownloads(Context ctx, File srcFile, String fileName, String mimeType) {
+    private SaveOutcome saveToLegacyDownloads(Context ctx, File srcFile, String fileName, String mimeType) {
         try {
-            File downloadsRoot = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-            File targetDir = new File(downloadsRoot, DOWNLOAD_SUBDIR);
+            File targetDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
             if (!targetDir.exists() && !targetDir.mkdirs()) {
-                return "";
+                return new SaveOutcome("", "Не вдалося створити папку Download");
             }
             File targetFile = resolveUniqueLegacyFile(targetDir, fileName);
             try (
@@ -311,9 +467,9 @@ public class FileDownloadPlugin extends Plugin {
                 new String[] { mimeType },
                 null
             );
-            return "Downloads/" + DOWNLOAD_SUBDIR + "/" + targetFile.getName();
+            return new SaveOutcome("Download/" + targetFile.getName(), "");
         } catch (Exception e) {
-            return "";
+            return new SaveOutcome("", e.getMessage() != null ? e.getMessage() : "Legacy write error");
         }
     }
 
@@ -388,5 +544,25 @@ public class FileDownloadPlugin extends Plugin {
             }
         }
         return "application/octet-stream";
+    }
+
+    private static final class SaveOutcome {
+        final String displayPath;
+        final String error;
+
+        SaveOutcome(String displayPath, String error) {
+            this.displayPath = displayPath;
+            this.error = error;
+        }
+    }
+
+    private static final class OpenOutcome {
+        final boolean opened;
+        final boolean sharedViaChooser;
+
+        OpenOutcome(boolean opened, boolean sharedViaChooser) {
+            this.opened = opened;
+            this.sharedViaChooser = sharedViaChooser;
+        }
     }
 }

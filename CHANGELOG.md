@@ -5,6 +5,14 @@
 
 ---
 
+## [v5.7.19] — 2026-11-16
+### 📂 Надійне збереження Excel у `Download/` та системний вибір папки (SAF)
+- **Виправлено збереження `.xlsx` у файловій системі Android ([`FileDownloadPlugin.java`](android/app/src/main/java/ua/pp/sdgen/app/FileDownloadPlugin.java))**:
+  - Файли тепер зберігаються прямо в корінь системної папки `Download/` («Завантаження») з передачею `SIZE` та резервною MIME-спробою `application/octet-stream`, якщо `MediaStore.Downloads` на прошивці відхиляє довгий Office-MIME для `.xlsx`.
+  - Якщо автоматичне збереження в `Download/` неможливе, відкривається системний діалог `Intent.ACTION_CREATE_DOCUMENT` (Storage Access Framework) для вибору будь-якої теки без зайвих прав доступу.
+- **Прозорий статус збереження і точне ім'я файлу ([`core.js`](frontend/js/core.js), [`audit-reports.js`](frontend/js/audit-reports.js), [`measurement.js`](frontend/js/measurement.js), [`backups.js`](frontend/js/backups.js), [`main.py`](backend/app/main.py))**:
+  - Додано `showDownloadResultToast()`, який повідомляє реальний шлях збереження або скасування/помилку (без оманливого статусу при невдачі запису), перевірку непорожнього файлу та CORS `expose_headers=["Content-Disposition"]`.
+
 ## [v5.7.18] — 2026-11-16
 ### 📥 Нативне скачування та відкриття звітів у Android-додатку
 - **Нативний Capacitor-плагін `FileDownload` ([`FileDownloadPlugin.java`](android/app/src/main/java/ua/pp/sdgen/app/FileDownloadPlugin.java), [`MainActivity.java`](android/app/src/main/java/ua/pp/sdgen/app/MainActivity.java), [`AndroidManifest.xml`](android/app/src/main/AndroidManifest.xml), [`file_paths.xml`](android/app/src/main/res/xml/file_paths.xml))**:
