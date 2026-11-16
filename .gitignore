@@ -39,6 +39,8 @@ backups/*
 
 # Environment variables & SSL certificates
 .env
+data/
+instance.config.json
 docker/ssl/*
 !docker/ssl/.gitkeep
 docker/ssl-fallback/*.pem

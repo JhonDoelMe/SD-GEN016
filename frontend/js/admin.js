@@ -2012,8 +2012,12 @@ function _renderServerConfigUI(res) {
 
   const rtGrid = document.getElementById('srvRuntimeInfoGrid');
   if (rtGrid) {
+    const modeLabel = rt.bootstrap_mode === 'instance_config'
+      ? 'Zero-.env (instance.config.json)'
+      : '.env + БД';
     const items = [
       ['Середовище (APP_ENV)', rt.app_env || '—'],
+      ['Режим конфігурації', modeLabel],
       ['Рушій бази даних', rt.database_dialect || '—'],
       ['Часовий пояс', rt.facility_timezone || 'Europe/Kyiv'],
       ['Каталог завантажень', rt.upload_dir || '—'],

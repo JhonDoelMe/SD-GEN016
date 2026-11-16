@@ -11,6 +11,7 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
+      - data_storage:/app/data
       - ./docker/firebase:/app/firebase:ro
     depends_on:
       db:
@@ -113,6 +114,7 @@ volumes:
   postgres_data:
   uploads_data:
   backups_data:
+  data_storage:
 
 networks:
   frontend_net:

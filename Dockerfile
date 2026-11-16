@@ -55,11 +55,12 @@ COPY frontend /app/frontend
 COPY alembic.ini /app/alembic.ini
 COPY .env.example /app/.env.example
 
-# Restrict permissions: source code is read-only (755), only uploads and backups are writable (INF-14)
-RUN mkdir -p /app/uploads /app/backups && \
-    chown -R appuser:appuser /app/uploads /app/backups && \
+# Restrict permissions: source code is read-only (755), uploads/backups/data are writable (INF-14)
+RUN mkdir -p /app/uploads /app/backups /app/data && \
+    chown -R appuser:appuser /app/uploads /app/backups /app/data && \
     chmod 755 /app /app/backend /app/frontend && \
-    chmod 775 /app/uploads /app/backups
+    chmod 775 /app/uploads /app/backups && \
+    chmod 700 /app/data
 
 USER appuser:appuser
 

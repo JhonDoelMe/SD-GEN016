@@ -236,8 +236,10 @@ def ensure_schema_updates(sync_conn):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from backend.app.core.bootstrap import is_setup_completed
+
     # 0. Check for insecure default secrets and emit warnings if found
-    settings.check_security_warnings()
+    settings.check_security_warnings(has_initialized_admin=is_setup_completed())
 
     # 1. Create DB schema if needed and apply missing columns to existing DBs
     async with engine.begin() as conn:
@@ -316,7 +318,7 @@ def fastapi_docs_kwargs(is_production: bool) -> dict[str, str | None]:
 app = FastAPI(
     title="Service Desk Генератора (SD-GEN016)",
     description="Система оперативного диспетчерського обліку експлуатації мережі бензинових та дизельних генераторів (Multi-site, ПММ, ТО, інвентаризація, Push/Email)",
-    version="5.7.22",
+    version="5.7.23",
     **fastapi_docs_kwargs(settings.is_production),
     lifespan=lifespan,
 )

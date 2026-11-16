@@ -1,7 +1,9 @@
 import logging
+import sys
 import urllib.parse
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,6 +11,7 @@ logger = logging.getLogger("config")
 
 DEFAULT_SECRET_KEY = "sd_gen016_default_secret_key_needs_override_32_chars"
 DEFAULT_ADMIN_PASSWORD = "SuperAdminPass123!"
+DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./service_desk.db"
 
 
 class Settings(BaseSettings):
@@ -23,7 +26,7 @@ class Settings(BaseSettings):
     INITIAL_ADMIN_FULL_NAME: str = "Головний Системний Адміністратор"
 
     # Database
-    DATABASE_URL: str = "sqlite+aiosqlite:///./service_desk.db"
+    DATABASE_URL: str = DEFAULT_DATABASE_URL
 
     # Timezone of the facility (handles Kyiv DST winter/summer shifts)
     FACILITY_TIMEZONE: str = "Europe/Kyiv"
@@ -88,13 +91,72 @@ class Settings(BaseSettings):
             or self.INITIAL_ADMIN_PASSWORD in (DEFAULT_ADMIN_PASSWORD, "SuperAdminSecretPass123!")
         )
 
-    def check_security_warnings(self) -> None:
+    def apply_bootstrap_config(
+        self,
+        config_path: Optional[Path] = None,
+        auto_generate_secret: bool = False,
+    ) -> bool:
+        """
+        Load bootstrap configuration from `data/instance.config.json`.
+
+        Explicit environment/.env overrides take precedence over instance.config.json.
+        When `APP_SECRET_KEY` is still the insecure default and `auto_generate_secret=True`,
+        a new 64-char secret is generated and persisted with 0o600 permissions.
+        Returns True if instance.config.json contributed or generated config values.
+        """
+        from backend.app.core.bootstrap import (
+            generate_instance_secret,
+            load_instance_config,
+            save_instance_config,
+        )
+
+        cfg = load_instance_config(config_path)
+        applied = False
+        dirty = False
+
+        if self.APP_SECRET_KEY == DEFAULT_SECRET_KEY:
+            cfg_key = str(cfg.get("app_secret_key") or "").strip()
+            if len(cfg_key) >= 32:
+                self.APP_SECRET_KEY = cfg_key
+                applied = True
+            elif auto_generate_secret:
+                new_key = generate_instance_secret()
+                cfg["app_secret_key"] = new_key
+                cfg.setdefault("setup_completed", False)
+                self.APP_SECRET_KEY = new_key
+                dirty = True
+                applied = True
+
+        if self.DATABASE_URL == DEFAULT_DATABASE_URL:
+            cfg_db = str(cfg.get("database_url") or "").strip()
+            if cfg_db:
+                self.DATABASE_URL = self.sanitize_database_url(cfg_db)
+                applied = True
+
+        if self.APP_ENV == "development":
+            cfg_env = str(cfg.get("app_env") or "").strip()
+            if cfg_env:
+                self.APP_ENV = cfg_env
+                applied = True
+
+        if dirty:
+            try:
+                save_instance_config(cfg, config_path)
+            except Exception as exc:
+                logger.warning("Could not persist auto-generated instance.config.json: %s", type(exc).__name__)
+
+        return applied
+
+    def check_security_warnings(self, has_initialized_admin: bool = False) -> None:
         is_prod = self.is_production
         insecure_key = (
             self.APP_SECRET_KEY in (DEFAULT_SECRET_KEY, "change_this_to_a_secure_random_secret_key_minimum_32_chars")
             or len(self.APP_SECRET_KEY) < 32
         )
-        insecure_pass = self.INITIAL_ADMIN_PASSWORD in (DEFAULT_ADMIN_PASSWORD, "SuperAdminSecretPass123!")
+        insecure_pass = (
+            not has_initialized_admin
+            and self.INITIAL_ADMIN_PASSWORD in (DEFAULT_ADMIN_PASSWORD, "SuperAdminSecretPass123!")
+        )
 
         if is_prod and (insecure_key or insecure_pass):
             reasons = []
@@ -104,7 +166,7 @@ class Settings(BaseSettings):
                 reasons.append("INITIAL_ADMIN_PASSWORD містить публічно відомий дефолтний пароль")
             err_msg = (
                 f"[FATAL SECURITY ERROR] Запуск SD-GEN016 у режимі 'production' заблоковано з міркувань безпеки: "
-                f"{'; '.join(reasons)}. Будь ласка, задайте унікальні та надійні секрети у файлі .env або змінних середовища перед розгортанням."
+                f"{'; '.join(reasons)}. Будь ласка, задайте унікальні та надійні секрети у файлі .env, instance.config.json або змінних середовища перед розгортанням."
             )
             logger.critical(err_msg)
             raise RuntimeError(err_msg)
@@ -112,7 +174,7 @@ class Settings(BaseSettings):
         if insecure_key:
             logger.warning(
                 "[SECURITY WARNING] APP_SECRET_KEY uses a default or weak value (<32 chars). "
-                "Override APP_SECRET_KEY in .env for production deployment!"
+                "Override APP_SECRET_KEY in .env or instance.config.json for production deployment!"
             )
         if insecure_pass:
             logger.warning(
@@ -172,7 +234,9 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    s.apply_bootstrap_config(auto_generate_secret=("pytest" not in sys.modules))
+    return s
 
 
 settings = get_settings()

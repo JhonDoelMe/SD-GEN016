@@ -703,14 +703,20 @@ def _build_server_config_payload() -> Dict[str, Any]:
         "firebase_service_account_json": fb_source,
     }
 
+    from backend.app.core.bootstrap import instance_config_exists, is_setup_completed
+
     db_url = str(getattr(settings, "DATABASE_URL", "") or "")
     db_dialect = "PostgreSQL" if "postgresql" in db_url.lower() else ("SQLite" if "sqlite" in db_url.lower() else "Custom")
+    has_instance_cfg = instance_config_exists()
     runtime = {
         "app_env": settings.APP_ENV,
         "database_dialect": db_dialect,
         "upload_dir": settings.UPLOAD_DIR,
         "backup_dir": settings.BACKUP_DIR,
         "facility_timezone": get_runtime_timezone(),
+        "bootstrap_mode": "instance_config" if has_instance_cfg else "env",
+        "instance_config_exists": has_instance_cfg,
+        "setup_completed": is_setup_completed(),
     }
     return {"config": config, "sources": sources, "runtime": runtime}
 

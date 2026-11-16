@@ -5,6 +5,16 @@
 
 ---
 
+## [v5.7.23] — 2026-11-16
+### 🌱 Етап 2 CMS-архітектури: Zero-`.env` Bootstrap (`instance.config.json`) та динамічна БД
+- **Автономний bootstrap-конфіг ([`bootstrap.py`](backend/app/core/bootstrap.py), [`config.py`](backend/app/config.py), [`.gitignore`](.gitignore))**:
+  - Додано підтримку `data/instance.config.json` (атомарний запис з правами `0o600`, виключено з Git): за відсутності `.env` чи `APP_SECRET_KEY` система автоматично генерує й зберігає криптостійкий 64-символьний `app_secret_key` без порушення Production Boot-Lock (`check_security_warnings(has_initialized_admin=...)`).
+  - Явні змінні `.env` та середовища завжди зберігають пріоритет над `instance.config.json`, гарантуючи 100% сумісність з існуючими інсталяціями.
+- **Динамічний рушій БД та тестування підключення ([`database.py`](backend/app/database.py))**:
+  - Додано `build_async_engine()`, `reinit_database_engine()` (перепідключення пулу SQLite/PostgreSQL без перезапуску інтерпретатора) і `probe_database_connection()` (перевірка DSN з автоматичним приховуванням пароля в помилках).
+- **Docker та інфраструктурна готовність ([`Dockerfile`](Dockerfile), [`docker-compose.yml`](docker-compose.yml), [`system.py`](backend/app/api/v1/system.py), [`admin.js`](frontend/js/admin.js), [`test_bootstrap.py`](backend/tests/test_bootstrap.py))**:
+  - У Docker додано постійний том `data_storage:/app/data` (права `700` для `appuser`), а у вкладці `🖥️ Сервер та Інтеграції` відображається режим конфігурації (`env` або `instance_config`).
+
 ## [v5.7.22] — 2026-11-16
 ### 🖥️ Етап 1 CMS-архітектури: розділ «Сервер та Інтеграції» + шифрування ключів у БД
 - **Прибрано «Адреса сервера» у Web/PWA ([`index.html`](frontend/index.html), [`core.js`](frontend/js/core.js))**:
