@@ -20,6 +20,25 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_INSTANCE_CONFIG_PATH = Path("./data/instance.config.json")
 
+# In-process flag set during startup lifespan when running in clean Setup Wizard mode
+_SETUP_REQUIRED: bool = False
+
+
+def is_setup_required() -> bool:
+    """Return True if the application is waiting for initial Web Setup Wizard completion."""
+    return _SETUP_REQUIRED
+
+
+def set_setup_required(required: bool) -> None:
+    """Set runtime initial setup gate flag."""
+    global _SETUP_REQUIRED
+    _SETUP_REQUIRED = bool(required)
+
+
+def has_env_file() -> bool:
+    """Return True if an explicit .env file exists on disk."""
+    return Path(".env").is_file() or Path("../.env").is_file()
+
 
 def get_instance_config_path(override_path: Optional[Path] = None) -> Path:
     """Resolve the active path to instance.config.json."""

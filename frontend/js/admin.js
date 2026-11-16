@@ -2012,9 +2012,12 @@ function _renderServerConfigUI(res) {
 
   const rtGrid = document.getElementById('srvRuntimeInfoGrid');
   if (rtGrid) {
-    const modeLabel = rt.bootstrap_mode === 'instance_config'
-      ? 'Zero-.env (instance.config.json)'
-      : '.env + БД';
+    let modeLabel = '.env + БД';
+    if (rt.bootstrap_mode === 'instance_config') {
+      modeLabel = rt.env_file_present
+        ? 'instance.config.json + БД (виявлено .env на диску)'
+        : 'Zero-.env (instance.config.json + БД)';
+    }
     const items = [
       ['Середовище (APP_ENV)', rt.app_env || '—'],
       ['Режим конфігурації', modeLabel],
@@ -2166,6 +2169,30 @@ window.testServerIntegration = async function (provider, btnEl = null) {
     if (btnEl) {
       btnEl.disabled = false;
       btnEl.textContent = origText;
+    }
+  }
+};
+
+window.migrateServerToZeroEnv = async function (btnEl = null) {
+  if (!isSuperAdmin()) return;
+  if (!confirm('Перенести активні секрети та параметри запуску з .env у зашифровану БД і data/instance.config.json?\nСервер продовжить роботу без переривання.')) {
+    return;
+  }
+  const orig = btnEl?.textContent || '';
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = '⏳ Перенесення...';
+  }
+  try {
+    const res = await api('/system/server-config/migrate-zero-env', { method: 'POST' });
+    _renderServerConfigUI(res);
+    showToast(res.message || 'Конфігурацію перенесено в Zero-.env формат!', 'success');
+  } catch (err) {
+    showToast(`Помилка перенесення: ${err.message}`, 'error');
+  } finally {
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.textContent = orig;
     }
   }
 };

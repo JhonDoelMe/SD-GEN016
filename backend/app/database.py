@@ -69,6 +69,11 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
+def get_engine() -> AsyncEngine:
+    """Return the currently active SQLAlchemy AsyncEngine."""
+    return engine
+
+
 async def reinit_database_engine(new_database_url: Optional[str] = None) -> str:
     """
     Dispose the current AsyncEngine and bind AsyncSessionLocal to a new database URL.
@@ -83,6 +88,10 @@ async def reinit_database_engine(new_database_url: Optional[str] = None) -> str:
     new_engine = build_async_engine(settings.DATABASE_URL)
     engine = new_engine
     AsyncSessionLocal.configure(bind=new_engine)
+    import sys
+    main_mod = sys.modules.get("backend.app.main")
+    if main_mod is not None and hasattr(main_mod, "engine"):
+        setattr(main_mod, "engine", new_engine)
     if old_engine is not None and old_engine is not new_engine:
         await old_engine.dispose()
     return "sqlite" if settings.is_sqlite else "postgresql"

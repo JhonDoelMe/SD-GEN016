@@ -703,7 +703,7 @@ def _build_server_config_payload() -> Dict[str, Any]:
         "firebase_service_account_json": fb_source,
     }
 
-    from backend.app.core.bootstrap import instance_config_exists, is_setup_completed
+    from backend.app.core.bootstrap import has_env_file, instance_config_exists, is_setup_completed
 
     db_url = str(getattr(settings, "DATABASE_URL", "") or "")
     db_dialect = "PostgreSQL" if "postgresql" in db_url.lower() else ("SQLite" if "sqlite" in db_url.lower() else "Custom")
@@ -716,6 +716,7 @@ def _build_server_config_payload() -> Dict[str, Any]:
         "facility_timezone": get_runtime_timezone(),
         "bootstrap_mode": "instance_config" if has_instance_cfg else "env",
         "instance_config_exists": has_instance_cfg,
+        "env_file_present": has_env_file(),
         "setup_completed": is_setup_completed(),
     }
     return {"config": config, "sources": sources, "runtime": runtime}
@@ -937,3 +938,54 @@ async def test_server_integration(
         }
 
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Невідомий провайдер")
+
+
+@router.post("/server-config/migrate-zero-env")
+async def migrate_config_to_zero_env(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_superadmin),
+) -> Dict[str, Any]:
+    """
+    Перенести поточні активні налаштування та bootstrap-секрети з .env
+    у зашифровану БД (`system_settings`) та `data/instance.config.json` (Zero-.env).
+    """
+    from backend.app.core.bootstrap import update_instance_config
+    from backend.app.services.settings_service import SERVER_ENV_ATTR_MAP
+
+    await load_system_settings(db)
+
+    updates: Dict[str, Any] = {}
+    for db_key, env_attr in SERVER_ENV_ATTR_MAP.items():
+        current_val = get_runtime_setting(db_key)
+        if current_val in (None, ""):
+            env_val = getattr(settings, env_attr, None)
+            if env_val not in (None, ""):
+                updates[db_key] = env_val.strip() if isinstance(env_val, str) else env_val
+
+    if updates:
+        await update_system_settings(db=db, updates=updates)
+
+    update_instance_config(
+        {
+            "app_secret_key": settings.APP_SECRET_KEY,
+            "database_url": settings.DATABASE_URL,
+            "app_env": settings.APP_ENV,
+            "setup_completed": True,
+        }
+    )
+
+    await log_audit(
+        db=db,
+        action="SYSTEM_MIGRATED_TO_INSTANCE_CONFIG",
+        entity_type="SystemSetting",
+        entity_id="bootstrap",
+        user_id=current_user.id,
+        details={"migrated_db_keys": list(updates.keys())},
+        ip_address=get_client_ip(request),
+    )
+    await db.commit()
+
+    payload = _build_server_config_payload()
+    payload["message"] = "Конфігурацію перенесено в instance.config.json та зашифровану БД"
+    return payload

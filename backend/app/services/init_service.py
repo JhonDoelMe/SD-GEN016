@@ -75,28 +75,8 @@ ROLE_PERMISSIONS_MAP = {
 }
 
 
-async def seed_initial_data(db: AsyncSession) -> None:
-    # 0. Defensive runtime schema safeguard for PostgreSQL (one command per prepared statement for asyncpg)
-    try:
-        bind = db.get_bind()
-        if bind and bind.dialect.name == "postgresql":
-            from sqlalchemy import text as sa_text
-            pg_safeguards = [
-                "ALTER TABLE fuel_stocks ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
-                "ALTER TABLE fuel_receipts ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)",
-                "ALTER TABLE fuel_transfers ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)",
-                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS default_fuel_provider VARCHAR(30) NOT NULL DEFAULT 'wog'",
-                "ALTER TABLE generators ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
-                "ALTER TABLE generators ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
-                "ALTER TABLE generator_runs ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)",
-            ]
-            for stmt in pg_safeguards:
-                await db.execute(sa_text(stmt))
-            await db.commit()
-    except Exception as ex:
-        logger.warning(f"Defensive schema self-heal bypassed: {ex}")
-
-    # 1. Seed Permissions
+async def ensure_permissions_and_roles(db: AsyncSession) -> dict[str, Role]:
+    """Seed permissions and synchronize RBAC roles (idempotent)."""
     existing_perms_res = await db.execute(select(Permission))
     existing_perms = {p.code: p for p in existing_perms_res.scalars().all()}
 
@@ -107,12 +87,11 @@ async def seed_initial_data(db: AsyncSession) -> None:
             existing_perms[code] = perm
     await db.flush()
 
-    # 2. Seed Roles (Case-insensitive deduplication and strict permission sync)
     existing_roles_res = await db.execute(
         select(Role).options(selectinload(Role.permissions), selectinload(Role.users))
     )
     roles_list = existing_roles_res.scalars().all()
-    existing_roles = {}
+    existing_roles: dict[str, Role] = {}
     for r in roles_list:
         low = r.name.lower()
         if low not in existing_roles:
@@ -140,27 +119,33 @@ async def seed_initial_data(db: AsyncSession) -> None:
             existing_roles[role_key] = role
         else:
             role = existing_roles[role_key]
-            # Ensure permissions are exactly synchronized with ROLE_PERMISSIONS_MAP
             target_perms = [existing_perms[c] for c in perm_codes if c in existing_perms]
             role.permissions = target_perms
     await db.flush()
+    return existing_roles
 
-    # 3. Seed Default Facility if none exists
+
+async def ensure_default_facility_and_resources(
+    db: AsyncSession,
+    facility_name: str = "Основний об'єкт",
+    facility_address: str = "Головна локація",
+    timezone_name: str = "Europe/Kyiv",
+) -> Facility:
+    """Create starter facility, starter generator + schedule + maintenance plan, and fuel stock if absent."""
     fac_res = await db.execute(select(Facility))
     default_fac = fac_res.scalars().first()
     if not default_fac:
         default_fac = Facility(
-            name="Основний об'єкт",
-            address="Головна локація",
+            name=facility_name,
+            address=facility_address,
             description="Головна виробничо-офісна локація",
-            timezone="Europe/Kyiv",
+            timezone=timezone_name,
             yasno_enabled=False,
             yasno_group=None
         )
         db.add(default_fac)
         await db.flush()
 
-    # 3.1 Seed Default Generator for facility if none exists
     gen_check = await db.execute(select(Generator))
     if not gen_check.scalars().first():
         init_gen = Generator(
@@ -177,7 +162,7 @@ async def seed_initial_data(db: AsyncSession) -> None:
             fuel_tank_level_l=0.0,
             status="STOPPED",
             is_configured=True,
-            timezone="Europe/Kyiv",
+            timezone=timezone_name,
             created_at=utc_now(),
             updated_at=utc_now()
         )
@@ -189,7 +174,7 @@ async def seed_initial_data(db: AsyncSession) -> None:
             weekday=-1,
             start_time="08:00",
             end_time="20:00",
-            timezone="Europe/Kyiv",
+            timezone=timezone_name,
             is_active=True
         ))
         db.add(MaintenanceSchedule(
@@ -200,6 +185,47 @@ async def seed_initial_data(db: AsyncSession) -> None:
             is_active=True
         ))
         await db.flush()
+
+    stock_res = await db.execute(select(FuelStock))
+    if not stock_res.scalars().first():
+        stock = FuelStock(
+            name="Основний склад ГСМ",
+            fuel_type="А-95",
+            current_balance_l=0.0,
+            facility_id=default_fac.id if default_fac else None,
+        )
+        db.add(stock)
+        await db.flush()
+
+    return default_fac
+
+
+async def seed_initial_data(db: AsyncSession) -> None:
+    # 0. Defensive runtime schema safeguard for PostgreSQL (one command per prepared statement for asyncpg)
+    try:
+        bind = db.get_bind()
+        if bind and bind.dialect.name == "postgresql":
+            from sqlalchemy import text as sa_text
+            pg_safeguards = [
+                "ALTER TABLE fuel_stocks ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+                "ALTER TABLE fuel_receipts ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)",
+                "ALTER TABLE fuel_transfers ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS default_fuel_provider VARCHAR(30) NOT NULL DEFAULT 'wog'",
+                "ALTER TABLE generators ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+                "ALTER TABLE generators ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
+                "ALTER TABLE generator_runs ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)",
+            ]
+            for stmt in pg_safeguards:
+                await db.execute(sa_text(stmt))
+            await db.commit()
+    except Exception as ex:
+        logger.warning(f"Defensive schema self-heal bypassed: {ex}")
+
+    # 1-2. Seed Permissions and Roles
+    existing_roles = await ensure_permissions_and_roles(db)
+
+    # 3. Seed Default Facility, Starter Generator & FuelStock if none exist
+    default_fac = await ensure_default_facility_and_resources(db)
 
     # 4. Seed Initial SuperAdmin (password is set ONLY on initial creation; not overwritten on every restart)
     admin_login = settings.INITIAL_ADMIN_LOGIN.strip()
@@ -233,18 +259,6 @@ async def seed_initial_data(db: AsyncSession) -> None:
             superadmin_user.roles.append(existing_roles["superadmin"])
         await db.flush()
         logger.info(f"Verified existing SuperAdmin user '{admin_login}' (password preserved)")
-
-    # 5. Seed Default FuelStock if none exists
-    stock_res = await db.execute(select(FuelStock))
-    if not stock_res.scalars().first():
-        stock = FuelStock(
-            name="Основний склад ГСМ",
-            fuel_type="А-95",
-            current_balance_l=0.0,
-            facility_id=default_fac.id if default_fac else None,
-        )
-        db.add(stock)
-        await db.flush()
 
     await db.commit()
 

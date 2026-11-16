@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Майстер налаштування — SD-GEN016</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --subtle: #0b1322;
+      --border: rgba(148, 163, 184, 0.22);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --green: #22c55e;
+      --red: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: radial-gradient(circle at top right, #1e293b 0%, var(--bg) 60%);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem 1rem;
+    }
+    .wizard-card {
+      width: 100%;
+      max-width: 680px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1.75rem;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.45);
+    }
+    .wizard-header {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      margin-bottom: 1.25rem;
+    }
+    .wizard-header img {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+    }
+    .wizard-title { font-size: 1.25rem; font-weight: 700; margin: 0; }
+    .wizard-sub { font-size: 0.85rem; color: var(--muted); margin: 0.2rem 0 0; }
+    .stepper {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5rem;
+      margin-bottom: 1.4rem;
+    }
+    .step-pill {
+      padding: 0.55rem 0.5rem;
+      border-radius: 0.55rem;
+      border: 1px solid var(--border);
+      background: var(--subtle);
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-align: center;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .step-pill.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(56, 189, 248, 0.12);
+    }
+    .step-pill.done {
+      border-color: rgba(34, 197, 94, 0.45);
+      color: #4ade80;
+    }
+    .step-pane { display: none; }
+    .step-pane.active { display: block; }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.85rem;
+    }
+    .field { margin-bottom: 0.9rem; }
+    .field label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+      color: #cbd5e1;
+    }
+    .field input, .field select {
+      width: 100%;
+      padding: 0.65rem 0.8rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      background: var(--subtle);
+      color: var(--text);
+      font-size: 0.92rem;
+      outline: none;
+    }
+    .field input:focus, .field select:focus {
+      border-color: var(--accent);
+    }
+    .field small {
+      display: block;
+      margin-top: 0.25rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .db-choice {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .db-option {
+      border: 1px solid var(--border);
+      background: var(--subtle);
+      border-radius: 0.65rem;
+      padding: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .db-option.selected {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.1);
+    }
+    .status-banner {
+      padding: 0.7rem 0.9rem;
+      border-radius: 0.55rem;
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .status-banner.error { display: block; background: rgba(248, 113, 113, 0.14); border: 1px solid rgba(248, 113, 113, 0.45); color: #fca5a5; }
+    .status-banner.success { display: block; background: rgba(34, 197, 94, 0.14); border: 1px solid rgba(34, 197, 94, 0.45); color: #86efac; }
+    .status-banner.info { display: block; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.4); color: #7dd3fc; }
+    .actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .btn {
+      padding: 0.65rem 1.2rem;
+      border-radius: 0.55rem;
+      border: 1px solid var(--border);
+      background: var(--subtle);
+      color: var(--text);
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      border-color: transparent;
+      color: #fff;
+    }
+    .btn-success {
+      background: linear-gradient(135deg, #16a34a, #15803d);
+      border-color: transparent;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="wizard-card">
+    <div class="wizard-header">
+      <img src="/frontend/icons/logo.png" alt="Logo" onerror="this.style.display='none'">
+      <div>
+        <h1 class="wizard-title">Початкове налаштування SD-GEN016</h1>
+        <p class="wizard-sub">Майстер першого запуску без редагування .env</p>
+      </div>
+    </div>
+
+    <div class="stepper">
+      <div class="step-pill active" id="pill-1">1. Система</div>
+      <div class="step-pill" id="pill-2">2. База даних</div>
+      <div class="step-pill" id="pill-3">3. Суперадмін</div>
+      <div class="step-pill" id="pill-4">4. Інтеграції</div>
+    </div>
+
+    <div id="setupBanner" class="status-banner"></div>
+
+    <!-- Step 1 -->
+    <div class="step-pane active" id="step-1">
+      <div class="grid-2">
+        <div class="field">
+          <label for="wizOrgName">Назва організації *</label>
+          <input type="text" id="wizOrgName" value="MAXI-UA LLC" required>
+        </div>
+        <div class="field">
+          <label for="wizPrimaryDomain">Основний домен</label>
+          <input type="text" id="wizPrimaryDomain" placeholder="example.ua">
+          <small>Для PWA anti-clone захисту, CORS та посилань в Email</small>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="field">
+          <label for="wizTimezone">Часовий пояс</label>
+          <select id="wizTimezone">
+            <option value="Europe/Kyiv" selected>Europe/Kyiv (Україна)</option>
+            <option value="UTC">UTC</option>
+            <option value="Europe/Warsaw">Europe/Warsaw</option>
+            <option value="Europe/London">Europe/London</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="wizFacilityName">Назва першого об'єкта *</label>
+          <input type="text" id="wizFacilityName" value="Основний об'єкт" required>
+        </div>
+      </div>
+      <div class="field">
+        <label for="wizFacilityAddress">Адреса / місто об'єкта *</label>
+        <input type="text" id="wizFacilityAddress" value="Головна локація" required>
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step-pane" id="step-2">
+      <div class="db-choice">
+        <div class="db-option selected" id="optSqlite" onclick="selectDbType('sqlite')">
+          <strong>⚡ SQLite (Вбудована БД)</strong>
+          <div style="font-size: 0.78rem; color: var(--muted); margin-top: 0.25rem;">
+            Ідеально для швидкого старту з одного архіву або shared-хостингу без окремого сервера БД.
+          </div>
+        </div>
+        <div class="db-option" id="optPg" onclick="selectDbType('postgresql')">
+          <strong>🐘 PostgreSQL</strong>
+          <div style="font-size: 0.78rem; color: var(--muted); margin-top: 0.25rem;">
+            Рекомендовано для великих виробничих інсталяцій і високого навантаження.
+          </div>
+        </div>
+      </div>
+
+      <div id="sqliteFields">
+        <div class="field">
+          <label for="wizSqliteFile">Файл бази даних у каталозі data/</label>
+          <input type="text" id="wizSqliteFile" value="service_desk.db">
+        </div>
+      </div>
+
+      <div id="pgFields" style="display: none;">
+        <div class="grid-2">
+          <div class="field">
+            <label for="wizPgHost">Хост PostgreSQL *</label>
+            <input type="text" id="wizPgHost" value="localhost">
+          </div>
+          <div class="field">
+            <label for="wizPgPort">Порт</label>
+            <input type="number" id="wizPgPort" value="5432">
+          </div>
+          <div class="field">
+            <label for="wizPgDb">Назва бази даних *</label>
+            <input type="text" id="wizPgDb" value="sd_gen016">
+          </div>
+          <div class="field">
+            <label for="wizPgUser">Користувач БД *</label>
+            <input type="text" id="wizPgUser" value="sd_user">
+          </div>
+        </div>
+        <div class="field">
+          <label for="wizPgPassword">Пароль БД</label>
+          <input type="password" id="wizPgPassword" autocomplete="new-password">
+        </div>
+      </div>
+
+      <button type="button" class="btn" onclick="testDbConnection(this)">🔌 Перевірити з'єднання з БД</button>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step-pane" id="step-3">
+      <div class="grid-2">
+        <div class="field">
+          <label for="wizAdminLogin">Логін суперадміна *</label>
+          <input type="text" id="wizAdminLogin" value="superadmin" required>
+        </div>
+        <div class="field">
+          <label for="wizAdminEmail">Email *</label>
+          <input type="email" id="wizAdminEmail" placeholder="admin@company.ua" required>
+        </div>
+      </div>
+      <div class="field">
+        <label for="wizAdminFullName">ПІБ адміністратора *</label>
+        <input type="text" id="wizAdminFullName" value="Системний Адміністратор" required>
+      </div>
+      <div class="grid-2">
+        <div class="field">
+          <label for="wizAdminPass">Пароль *</label>
+          <input type="password" id="wizAdminPass" autocomplete="new-password" required>
+          <small>Мінімум 8 символів, літери різного регістру, цифра та спецсимвол</small>
+        </div>
+        <div class="field">
+          <label for="wizAdminPassConfirm">Підтвердження пароля *</label>
+          <input type="password" id="wizAdminPassConfirm" autocomplete="new-password" required>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="step-pane" id="step-4">
+      <p style="font-size: 0.85rem; color: var(--muted); margin-top: 0;">
+        Усі API-ключі є опційними — ви зможете додати або змінити їх пізніше в розділі <b>Адміністрування → Сервер та Інтеграції</b>.
+      </p>
+      <div class="field">
+        <label for="wizOwmKey">OpenWeatherMap API Key (прогноз погоди)</label>
+        <input type="password" id="wizOwmKey" autocomplete="new-password" placeholder="Можна залишити порожнім">
+      </div>
+      <div class="field">
+        <label for="wizAlertsToken">Токен alerts.in.ua (карта повітряних тривог)</label>
+        <input type="password" id="wizAlertsToken" autocomplete="new-password" placeholder="Можна залишити порожнім">
+      </div>
+      <div class="field">
+        <label for="wizUaAlarmKey">UkraineAlarm API Key (резерв тривог)</label>
+        <input type="password" id="wizUaAlarmKey" autocomplete="new-password" placeholder="Можна залишити порожнім">
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn" id="btnPrev" onclick="moveStep(-1)" style="visibility: hidden;">← Назад</button>
+      <div style="display: flex; gap: 0.6rem;">
+        <button type="button" class="btn btn-primary" id="btnNext" onclick="moveStep(1)">Далі →</button>
+        <button type="button" class="btn btn-success" id="btnFinish" onclick="submitSetup(this)" style="display: none;">✅ Завершити налаштування</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentStep = 1;
+    let selectedDbType = 'sqlite';
+
+    (function initWizard() {
+      const domIn = document.getElementById('wizPrimaryDomain');
+      if (domIn && !domIn.value && window.location.hostname) {
+        domIn.value = window.location.hostname;
+      }
+      fetch('/api/v1/setup/status')
+        .then(r => r.json())
+        .then(d => {
+          if (!d.setup_required) window.location.replace('/');
+        })
+        .catch(() => {});
+    })();
+
+    function showBanner(msg, type = 'info') {
+      const el = document.getElementById('setupBanner');
+      el.textContent = msg;
+      el.className = `status-banner ${type}`;
+    }
+
+    function clearBanner() {
+      const el = document.getElementById('setupBanner');
+      el.className = 'status-banner';
+      el.textContent = '';
+    }
+
+    function selectDbType(type) {
+      selectedDbType = type;
+      document.getElementById('optSqlite').classList.toggle('selected', type === 'sqlite');
+      document.getElementById('optPg').classList.toggle('selected', type === 'postgresql');
+      document.getElementById('sqliteFields').style.display = type === 'sqlite' ? 'block' : 'none';
+      document.getElementById('pgFields').style.display = type === 'postgresql' ? 'block' : 'none';
+    }
+
+    function validateStep(step) {
+      clearBanner();
+      if (step === 1) {
+        if (document.getElementById('wizOrgName').value.trim().length < 2) {
+          showBanner('Вкажіть назву організації (мінімум 2 символи)', 'error');
+          return false;
+        }
+      }
+      if (step === 3) {
+        const login = document.getElementById('wizAdminLogin').value.trim();
+        const email = document.getElementById('wizAdminEmail').value.trim();
+        const pass = document.getElementById('wizAdminPass').value;
+        const pass2 = document.getElementById('wizAdminPassConfirm').value;
+        if (login.length < 3 || !email.includes('@')) {
+          showBanner('Вкажіть коректний логін та email адміністратора', 'error');
+          return false;
+        }
+        if (pass.length < 8) {
+          showBanner('Пароль повинен містити щонайменше 8 символів', 'error');
+          return false;
+        }
+        if (pass !== pass2) {
+          showBanner('Пароль та підтвердження не співпадають', 'error');
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function moveStep(delta) {
+      if (delta > 0 && !validateStep(currentStep)) return;
+      currentStep = Math.max(1, Math.min(4, currentStep + delta));
+      for (let i = 1; i <= 4; i++) {
+        document.getElementById(`step-${i}`).classList.toggle('active', i === currentStep);
+        const pill = document.getElementById(`pill-${i}`);
+        pill.classList.toggle('active', i === currentStep);
+        pill.classList.toggle('done', i < currentStep);
+      }
+      document.getElementById('btnPrev').style.visibility = currentStep === 1 ? 'hidden' : 'visible';
+      document.getElementById('btnNext').style.display = currentStep < 4 ? 'inline-block' : 'none';
+      document.getElementById('btnFinish').style.display = currentStep === 4 ? 'inline-block' : 'none';
+    }
+
+    function buildDbPayload() {
+      return {
+        db_type: selectedDbType,
+        sqlite_filename: document.getElementById('wizSqliteFile').value.trim() || 'service_desk.db',
+        pg_host: document.getElementById('wizPgHost').value.trim() || 'localhost',
+        pg_port: parseInt(document.getElementById('wizPgPort').value || '5432', 10),
+        pg_db: document.getElementById('wizPgDb').value.trim() || 'sd_gen016',
+        pg_user: document.getElementById('wizPgUser').value.trim() || 'sd_user',
+        pg_password: document.getElementById('wizPgPassword').value || ''
+      };
+    }
+
+    async function testDbConnection(btn) {
+      clearBanner();
+      const orig = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '⏳ Перевірка...';
+      try {
+        const res = await fetch('/api/v1/setup/test-db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildDbPayload())
+        });
+        const data = await res.json();
+        showBanner(data.message || (data.ok ? 'Підключення успішне' : 'Помилка підключення'), data.ok ? 'success' : 'error');
+      } catch (e) {
+        showBanner('Помилка запиту перевірки БД', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    }
+
+    async function submitSetup(btn) {
+      if (!validateStep(3)) {
+        moveStep(3 - currentStep);
+        return;
+      }
+      const orig = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '⏳ Ініціалізація...';
+      const payload = {
+        ...buildDbPayload(),
+        organization_name: document.getElementById('wizOrgName').value.trim(),
+        primary_domain: document.getElementById('wizPrimaryDomain').value.trim(),
+        facility_timezone: document.getElementById('wizTimezone').value,
+        facility_name: document.getElementById('wizFacilityName').value.trim(),
+        facility_address: document.getElementById('wizFacilityAddress').value.trim(),
+        admin_login: document.getElementById('wizAdminLogin').value.trim(),
+        admin_email: document.getElementById('wizAdminEmail').value.trim(),
+        admin_full_name: document.getElementById('wizAdminFullName').value.trim(),
+        admin_password: document.getElementById('wizAdminPass').value,
+        openweather_api_key: document.getElementById('wizOwmKey').value.trim(),
+        alerts_in_ua_token: document.getElementById('wizAlertsToken').value.trim(),
+        ukraine_alarm_api_key: document.getElementById('wizUaAlarmKey').value.trim()
+      };
+      try {
+        const res = await fetch('/api/v1/setup/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showBanner(data.detail || 'Помилка завершення налаштування', 'error');
+          return;
+        }
+        showBanner(data.message || 'Готово! Перехід на екран входу...', 'success');
+        setTimeout(() => window.location.replace(data.redirect || '/'), 900);
+      } catch (e) {
+        showBanner('Мережева помилка при ініціалізації', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    }
+  </script>
+</body>
+</html>

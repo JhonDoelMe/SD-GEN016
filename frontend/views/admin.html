@@ -982,9 +982,14 @@
           </summary>
           <div class="admin-spoiler-body">
             <div id="srvRuntimeInfoGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem; font-size: 0.85rem;"></div>
-            <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.85rem; margin-bottom: 0;">
-              ℹ️ Секрети завантаження (`APP_SECRET_KEY`, рядок підключення до PostgreSQL/SQLite) залишаються ізольованими на рівні хоста до переходу на майстер початкового налаштування.
-            </p>
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.9rem;">
+              <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0; max-width: 650px;">
+                ℹ️ Секрети завантаження (`app_secret_key`, рядок підключення до БД) зберігаються в ізольованому файлі <code>data/instance.config.json</code> (Zero-.env) або у змінних оточення.
+              </p>
+              <button type="button" id="btnMigrateZeroEnv" class="btn-action" style="padding: 0.48rem 0.95rem; min-height: auto; flex-direction: row;" onclick="migrateServerToZeroEnv(this)">
+                📦 Зафіксувати в instance.config.json та БД
+              </button>
+            </div>
           </div>
         </details>
       </div>

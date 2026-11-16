@@ -1,4 +1,5 @@
 import os
+import sys
 import html
 import asyncio
 from contextlib import asynccontextmanager
@@ -6,14 +7,14 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.config import settings
 from backend.app.database import engine, Base, AsyncSessionLocal, get_db
 from backend.app.models import *  # noqa: F401, F403 Ensure all models loaded
-from backend.app.services.init_service import seed_initial_data
+from backend.app.services.init_service import seed_initial_data, ensure_permissions_and_roles
 from backend.app.services.audit_service import sanitize_historical_audit_logs
 from backend.app.services.auth_security_service import (
     cleanup_expired_security_state_db,
@@ -31,7 +32,7 @@ from backend.app.services.settings_service import (
 from backend.app.api.v1 import api_v1_router
 
 
-from sqlalchemy import inspect, select, text
+from sqlalchemy import func, inspect, select, text
 
 
 def ensure_schema_updates(sync_conn):
@@ -236,21 +237,41 @@ def ensure_schema_updates(sync_conn):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from backend.app.core.bootstrap import is_setup_completed
+    from backend.app.config import DEFAULT_ADMIN_PASSWORD
+    from backend.app.core.bootstrap import has_env_file, is_setup_completed, set_setup_required
+    from backend.app.models.user import User
+    from backend.app.services.settings_service import load_system_settings
+
+    # Detect clean Zero-.env initial setup eligibility without breaking explicit .env boot-lock
+    zero_env_clean_candidate = (
+        "pytest" not in sys.modules
+        and not is_setup_completed()
+        and not has_env_file()
+        and settings.INITIAL_ADMIN_PASSWORD in (DEFAULT_ADMIN_PASSWORD, "SuperAdminSecretPass123!")
+    )
 
     # 0. Check for insecure default secrets and emit warnings if found
-    settings.check_security_warnings(has_initialized_admin=is_setup_completed())
+    settings.check_security_warnings(has_initialized_admin=(is_setup_completed() or zero_env_clean_candidate))
 
     # 1. Create DB schema if needed and apply missing columns to existing DBs
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(ensure_schema_updates)
 
-    # 2. Seed initial permissions, roles, superadmin, fuel stock
+    # 2. Seed initial permissions, roles, superadmin, fuel stock (or defer to Setup Wizard on clean install)
     try:
         async with AsyncSessionLocal() as session:
-            await seed_initial_data(session)
-        print(f"[AUTH] SuperAdmin user '{settings.INITIAL_ADMIN_LOGIN}' successfully ensured. Ready for login.", flush=True)
+            user_count = int((await session.execute(select(func.count(User.id)))).scalar() or 0)
+            if zero_env_clean_candidate and user_count == 0:
+                set_setup_required(True)
+                await ensure_permissions_and_roles(session)
+                await session.commit()
+                await load_system_settings(session)
+                print("[SETUP] Clean instance detected without .env users — Web Setup Wizard enabled at /setup", flush=True)
+            else:
+                set_setup_required(False)
+                await seed_initial_data(session)
+                print(f"[AUTH] SuperAdmin user '{settings.INITIAL_ADMIN_LOGIN}' successfully ensured. Ready for login.", flush=True)
     except Exception as e:
         import traceback
         print(f"[ERROR] Failed to seed initial data: {e}", flush=True)
@@ -318,7 +339,7 @@ def fastapi_docs_kwargs(is_production: bool) -> dict[str, str | None]:
 app = FastAPI(
     title="Service Desk Генератора (SD-GEN016)",
     description="Система оперативного диспетчерського обліку експлуатації мережі бензинових та дизельних генераторів (Multi-site, ПММ, ТО, інвентаризація, Push/Email)",
-    version="5.7.23",
+    version="5.7.24",
     **fastapi_docs_kwargs(settings.is_production),
     lifespan=lifespan,
 )
@@ -327,8 +348,14 @@ class DynamicTrustedHostMiddleware(TrustedHostMiddleware):
     """TrustedHostMiddleware that refreshes allowed_hosts dynamically from runtime DB settings."""
 
     async def __call__(self, scope, receive, send):
-        self.allowed_hosts = get_effective_allowed_hosts()
-        self.allow_any = "*" in self.allowed_hosts
+        from backend.app.core.bootstrap import is_setup_required
+
+        if is_setup_required():
+            self.allowed_hosts = ["*"]
+            self.allow_any = True
+        else:
+            self.allowed_hosts = get_effective_allowed_hosts()
+            self.allow_any = "*" in self.allowed_hosts
         await super().__call__(scope, receive, send)
 
 
@@ -505,8 +532,26 @@ if FRONTEND_DIR.exists():
             }
         )
 
+    @app.get("/setup", include_in_schema=False)
+    async def serve_setup_wizard():
+        from backend.app.core.bootstrap import is_setup_required
+
+        if not is_setup_required():
+            return RedirectResponse(url="/", status_code=302)
+        setup_path = FRONTEND_DIR / "setup.html"
+        if setup_path.exists():
+            return HTMLResponse(
+                content=setup_path.read_text(encoding="utf-8"),
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
+        return JSONResponse({"error": "Setup wizard UI not found"}, status_code=404)
+
     @app.api_route("/", methods=["GET", "HEAD"])
     async def serve_index():
+        from backend.app.core.bootstrap import is_setup_required
+
+        if is_setup_required():
+            return RedirectResponse(url="/setup", status_code=307)
         index_path = FRONTEND_DIR / "index.html"
         if index_path.exists():
             content = index_path.read_text(encoding="utf-8")

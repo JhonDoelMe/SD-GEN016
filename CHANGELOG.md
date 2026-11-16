@@ -5,6 +5,16 @@
 
 ---
 
+## [v5.7.24] — 2026-11-16
+### 🧙 Етап 3 CMS-архітектури: Web Setup Wizard (`/setup`) та міграція існуючих серверів у Zero-`.env`
+- **Одноразовий майстер першого запуску ([`setup.py`](backend/app/api/v1/setup.py), [`setup.html`](frontend/setup.html), [`main.py`](backend/app/main.py), [`bootstrap.py`](backend/app/core/bootstrap.py))**:
+  - На чистій інсталяції без `.env` та користувачів у БД (`user_count == 0`) система не створює обліковий запис зі слабким дефолтним паролем, а відкриває захищений 4-кроковий майстер за адресою `/setup` (з автоматичним редиректом із `/`).
+  - Підтримує налаштування організації/домену/часового поясу, вибір `SQLite` або `PostgreSQL` із live-тестом підключення (`POST /api/v1/setup/test-db`), створення `SuperAdmin` та опційний ввід API-ключів (шифруються у БД).
+  - Одразу після завершення (`POST /api/v1/setup/complete`) майстер незворотно блокується (`403 Forbidden`), а `DynamicTrustedHostMiddleware` вмикає сувору перевірку доменів.
+- **Міграція існуючого сервера від `.env` та безпечне перемикання БД ([`system.py`](backend/app/api/v1/system.py), [`database.py`](backend/app/database.py), [`init_service.py`](backend/app/services/init_service.py), [`docker-compose.yml`](docker-compose.yml), [`admin.html`](frontend/views/admin.html), [`admin.js`](frontend/js/admin.js), [`test_setup_wizard.py`](backend/tests/test_setup_wizard.py))**:
+  - Додано `POST /api/v1/system/server-config/migrate-zero-env` та кнопку в **Інфраструктурі**, яка фіксує всі активні параметри в зашифровану БД і `data/instance.config.json`; `env_file` у Docker Compose зроблено необов'язковим (`required: false`).
+  - Додано `get_engine()` для коректного оновлення активного рушія БД після `reinit_database_engine()`.
+
 ## [v5.7.23] — 2026-11-16
 ### 🌱 Етап 2 CMS-архітектури: Zero-`.env` Bootstrap (`instance.config.json`) та динамічна БД
 - **Автономний bootstrap-конфіг ([`bootstrap.py`](backend/app/core/bootstrap.py), [`config.py`](backend/app/config.py), [`.gitignore`](.gitignore))**:
