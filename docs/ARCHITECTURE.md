@@ -1,7 +1,7 @@
 # Архітектура системи: Service Desk Генератора (SD-GEN016)
 
-**Версія архітектури:** 5.7.8 (Modular Service Desk UI, Offline IndexedDB Queue, Measurement Mode, Android APK/OTA/Back Navigation, FCM HTTP v1, Notification Bell, Branded Email & Production Hardening)  
-**Дата оновлення:** 14 листопада 2026 року  
+**Версія архітектури:** 5.7.25 (Zero-`.env` CMS Bootstrap, Encrypted DB Settings, Web Setup Wizard, Android `WorkManager` + SQLite & `FileDownloadPlugin`)  
+**Дата оновлення:** 16 листопада 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 
 ---
@@ -171,3 +171,15 @@
    - Під час `PENDING_INVENTORY` та `PENDING_APPROVAL` функція `ensure_facility_not_locked_by_measurement()` **залишає розблокованим `generator_run` (`start`/`stop`/`manual-run`)** для безперебійної роботи при блекаутах і опечатує (`HTTP 423`) лише операції зі складом ГСМ, дозаправки, каністри та коригування.
 3. **Авторозрахунок каністр, А4 Landscape PDF та звітності (`fpdf2` + кириличний TTF + Excel 6-й аркуш)**:
    - Внесений комісією залишок складу автоматично розкладається функцією `compute_stock_canister_breakdown()` на повні каністри та резерв, формує незмінну PDF-відомість А4 альбомної орієнтації (`fonts-dejavu-core` у Docker/CI); при погодженні оновлюються норма й залишки без перезапису проміжної роботи генератора, а підсумки потрапляють у звіти й 6-й аркуш Excel («Заміри та інвентаризація»).
+
+---
+
+## 8. Нативна офлайн-синхронізація Android APK, Завантаження файлів та CMS Zero-`.env` (`v5.7.16`–`v5.7.25`)
+
+1. **Нативна черга SQLite + `WorkManager` + `AndroidKeyStore` (`v5.7.20`–`v5.7.21`)**:
+   - На мобільному клієнті `offline-queue.js` автоматично делегує чергу в нативний Capacitor-плагін `OfflineSyncPlugin`, де події зберігаються в SQLite (`OfflineQueueStore`), токен захищений в `AndroidKeyStore` (`OfflineAuthVault`, AES/GCM), а доставка гарантується навіть при закритті додатка через `OfflineSyncWorker` (`WorkManager`) під єдиним потокобезпечним замком `OfflineSyncEngine`.
+   - Критичні операції пуску/зупинки передають реальний час натискання кнопки (`event_timestamp`) із валідацією хронології на сервері.
+2. **Нативне збереження файлів на Android (`FileDownloadPlugin`, `v5.7.18`–`v5.7.19`)**:
+   - Звіти Excel, А4 PDF та `.zip` бекапи на Android 10+ зберігаються в `Download/SD-GEN016/` через `MediaStore` із безпечним fallback через системний діалог SAF (`ACTION_CREATE_DOCUMENT`).
+3. **CMS-конфігурація без `.env` та Web Setup Wizard (`v5.7.22`–`v5.7.24`)**:
+   - [`secrets.py`](../backend/app/core/secrets.py) шифрує інтеграційні секрети в `system_settings` через `Fernet` (`enc:v1:`); [`bootstrap.py`](../backend/app/core/bootstrap.py) керує ізольованим `data/instance.config.json` (`0o600`); [`database.py`](../backend/app/database.py) забезпечує `reinit_database_engine()` та `probe_database_connection()`; [`setup.py`](../backend/app/api/v1/setup.py) реалізує одноразовий майстер `/setup` з незворотним блокуванням після ініціалізації.

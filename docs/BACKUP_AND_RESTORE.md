@@ -1,7 +1,7 @@
 # Резервне копіювання та відновлення даних (Backup & Disaster Recovery)
 
-**Версія документа:** 5.7.8 (Full DB Backup across 014 Migrations, Avatars, Canister Pools, Measurement Mode & SHA-256 Hardened)  
-**Дата набрання чинності:** 14 листопада 2026 року  
+**Версія документа:** 5.7.25 (Full DB Backup across 014 Migrations, Encrypted `system_settings`, Avatars, Canister Pools, Measurement Mode & SHA-256 Hardened)  
+**Дата набрання чинності:** 16 листопада 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 
 Система **SD-GEN016** підтримує багаторівневе резервне копіювання:

@@ -1,11 +1,12 @@
-# Змінні середовища та Конфігурація (Environment Variables)
+# Змінні середовища та Конфігурація (Environment Variables & Zero-`.env`)
 
-**Версія документа:** 5.7.8 (Dual-Provider Alerts, FCM HTTP v1 Push, Branded Email & Production Hardening)  
-**Дата набрання чинності:** 14 листопада 2026 року
+**Версія документа:** 5.7.25 (Zero-`.env` CMS Bootstrap, Encrypted DB Settings `Fernet enc:v1:` & Web Setup Wizard)  
+**Дата набрання чинності:** 16 листопада 2026 року
 
-Конфігурація системи **SD-GEN016 v5.7.8** розділена на два чітких рівні:
-1. **Статичні інфраструктурні параметри** — зберігаються у файлі `.env` на сервері та зчитуються під час запуску бекенду (`backend/app/config.py`).
-2. **Динамічні бізнес-налаштування (Runtime Settings)** — зберігаються в реляційній базі даних (таблиця `system_settings`), змінюються на льоту через веб-панель або REST API без перезавантаження сервісів.
+Конфігурація системи **SD-GEN016 v5.7.25** побудована за трирівневою CMS-моделлю без обов'язкової залежності від ручного редагування `.env`:
+1. **Рівень 1 — Зашифрована база даних (`system_settings`):** домен (`PRIMARY_DOMAIN`), `ALLOWED_HOSTS`, `CORS_ORIGINS`, JWT TTL, ліміти входу, API-ключі інтеграцій (`OpenWeatherMap`, `alerts.in.ua`, `UkraineAlarm`), JSON сервісного акаунту Firebase та бізнес-регламенти. Секретні поля шифруються симетрично (`Fernet enc:v1:`) і керуються через вкладку **«Адміністрування → 🖥️ Сервер та Інтеграції»** (`SuperAdmin Only`).
+2. **Рівень 2 — Bootstrap-конфігурація (`data/instance.config.json`, `0o600`):** автогенерований криптографічний `app_secret_key`, рядок `database_url`, `app_env` та прапорець `setup_completed`, створений під час проходження **Web Setup Wizard (`/setup`)** або міграції через панель адміністратора.
+3. **Рівень 3 — Змінні середовища / `.env` (Опційний резерв або Docker Compose):** використовуються як fallback (якщо параметр ще не заданий у БД), або як мінімальний набір інфраструктурних змінних для Docker Compose (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `PRIMARY_DOMAIN` для Nginx). При чистій інсталяції без Docker файл `.env` не потрібен узагалі.
 
 ---
 

@@ -1,7 +1,7 @@
 # Документація REST API (/api/v1 та /ota/)
 
-**Версія API:** 5.7.8 (Offline Idempotency, Full-to-Full Measurement, Canister Pools, Avatars, FCM Push, Bell Feed, RFC 8058 Email Unsubscribe, OTA & Production Hardening)  
-**Дата набрання чинності:** 14 листопада 2026 року  
+**Версія API:** 5.7.25 (Server & Integrations CMS API, Setup Wizard, Offline `event_timestamp`, Measurement, Canister Pools, Avatars, FCM Push, OTA)  
+**Дата набрання чинності:** 16 листопада 2026 року  
 
 Усі маршрути API згруповані за доменними модулями та захищені за допомогою JWT Bearer токенів або HTTP-only Cookie.
 Інтерактивна документація OpenAPI/Swagger доступна за адресою: `http://localhost:8000/docs` (або `http://localhost:8000/redoc`) у режимах розробки/тестування; у бойовому оточенні (`APP_ENV=production`) `/docs`, `/redoc` та `/openapi.json` вимкнені з міркувань безпеки (`v5.7.5`).
@@ -637,3 +637,22 @@
 - **`GET /ota/api/latest`**: Метадані останнього релізу APK (`version_name`, `version_code`, `min_supported_code`, `force_update`, URL завантаження, changelog).
 - **`GET /ota/download/latest.apk`** та **`GET /ota/download/{version_code}.apk`**: Скачування підписаного APK-файлу.
 - **`GET /ota/api/releases`**, **`POST /ota/api/releases`**, **`DELETE /ota/api/releases/{version_code}`**, **`PATCH /ota/api/policy`** *(Захищено `OTA_ADMIN_TOKEN`)*: Перегляд релізів, публікація нового APK, видалення релізу та керування політикою примусового оновлення (`force_update` / `min_supported_code`); вебконсоль доступна на `GET /ota/` та `GET /ota/admin`.
+
+---
+
+## 17. Налаштування сервера та інтеграцій (`/api/v1/system/server-config`, SuperAdmin Only, v5.7.22–v5.7.24)
+
+Усі маршрути доступні **виключно Головному адміністратору (`get_current_superadmin`)**; секрети шифруються `Fernet enc:v1:` у БД і маскуються як `"********"` на виході:
+- **`GET /api/v1/system/server-config`**: Отримання активних параметрів домену (`primary_domain`, `allowed_hosts`, `cors_origins`), безпеки (`access_token_expire_minutes`, `login_max_attempts`, `login_lockout_seconds`), замаскованих API-ключів (`openweather_api_key`, `alerts_in_ua_token`, `ukraine_alarm_api_key`), статусу Firebase Service Account, джерел (`db` / `env` / `file` / `default`) і read-only стану інфраструктури (`bootstrap_mode`, `database_dialect`, `env_file_present`).
+- **`PUT /api/v1/system/server-config`**: Оновлення параметрів на льоту (`DynamicTrustedHostMiddleware`, `DynamicCORSMiddleware`, погода, тривоги, FCM), завантаження/валідація Firebase Service Account JSON і явне очищення ключів (`clear_keys`).
+- **`POST /api/v1/system/server-config/test-integration`**: Перевірка з'єднання для `openweather`, `alerts_in_ua`, `ukraine_alarm` або OAuth2-авторизації `firebase`.
+- **`POST /api/v1/system/server-config/migrate-zero-env`**: Перенесення bootstrap-параметрів і залишкових `.env` ключів у `data/instance.config.json` та зашифровану БД.
+
+---
+
+## 18. Початкове налаштування Web Setup Wizard (`/api/v1/setup/*`, v5.7.24)
+
+Активно лише при чистій інсталяції (`setup_required: true`), після завершення повертає `403 Forbidden`:
+- **`GET /api/v1/setup/status`**: Чи відкритий майстер (`/setup`) і поточний діалект БД.
+- **`POST /api/v1/setup/test-db`**: Пробна перевірка підключення до `SQLite` або `PostgreSQL` (`probe_database_connection`).
+- **`POST /api/v1/setup/complete`**: Ініціалізація схеми обраної БД, створення першого об'єкта/ресурсів, облікового запису `SuperAdmin`, шифрування API-ключів, запис `data/instance.config.json` (`setup_completed: true`) і незворотне блокування майстра.

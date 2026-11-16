@@ -4,14 +4,15 @@
 
 # SERVICE DESK ДЛЯ ЕКСПЛУАТАЦІЇ БЕНЗИНОВИХ ТА ДИЗЕЛЬНИХ ГЕНЕРАТОРІВ (SD-GEN016)
 
-[![Release](https://img.shields.io/badge/Release-v5.7.8-blue.svg)](https://github.com/JhonDoelMe/SD-GEN016/releases)
+[![Release](https://img.shields.io/badge/Release-v5.7.25-blue.svg)](https://github.com/JhonDoelMe/SD-GEN016/releases)
 [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg)](https://www.sqlalchemy.org/)
-[![Tests](https://img.shields.io/badge/Tests-203%20Backend%20%2B%205%20OTA%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-229%20Passed%20(Backend%20%2B%20OTA)-brightgreen.svg)]()
 [![Email](https://img.shields.io/badge/Email-SMTP%20Failover%20%2B%20RFC%208058%20Unsubscribe-blue.svg)]()
-[![PWA](https://img.shields.io/badge/PWA-v5.7.8%20(Offline%20IndexedDB)-purple.svg)]()
-[![Android APK](https://img.shields.io/badge/Android%20APK-Capacitor%20%2B%20OTA%20%2B%20FCM-3DDC84.svg)]()
+[![PWA](https://img.shields.io/badge/PWA-v5.7.25%20(Offline%20IndexedDB)-purple.svg)]()
+[![Android APK](https://img.shields.io/badge/Android%20APK-WorkManager%20%2B%20SQLite%20%2B%20OTA%20%2B%20FCM-3DDC84.svg)]()
+[![Config](https://img.shields.io/badge/Setup-Zero--.env%20CMS%20Wizard%20%2B%20Fernet%20DB-orange.svg)]()
 [![Web Push](https://img.shields.io/badge/Push-VAPID%20Web%20%2B%20FCM%20v1-blue.svg)]()
 [![Compliance](https://img.shields.io/badge/Compliance-DSTU%204163%3A2020%20%7C%20GDPR-success.svg)]()
 [![Security](https://img.shields.io/badge/Security-Enterprise%20Hardened%20(RBAC%20%2B%20Idempotency%20%2B%20Boot--Lock)-blueviolet.svg)]()
@@ -69,15 +70,11 @@
 - Безпековий пріоритет: **зупинка генератора дозволена у будь-який час доби**.
 - Повний облік часового поясу України та сезонних переходів часу (`ZoneInfo("Europe/Kyiv")`).
 
-### 7. Системні налаштування в базі даних (Admin Settings)
-- **Повна де-статизація та структурований інтерфейс**: налаштування згруповано у 5 послідовних блоків:
-  1. *Організація, робочий регламент та часовий пояс*;
-  2. *Стартовий ланцюжок за замовчуванням (Об'єкт ➔ Генератор ➔ Склад ГСМ)*;
-  3. *Табло цін АЗК (WOG та OKKO)* з інтерактивними вкладками вибору мережі та актуалізацією цін у реальному часі;
-  4. *Правила контролю витрати та блокування заправки*;
-  5. *Поштовий шлюз (SMTP) та автоматичні тижневі звіти*.
-- **Серверна перевірка цілісності та транзакційна атомарність**: сувора валідація існування та приналежності обраних об'єктів, генераторів та складів ГСМ перед збереженням; оновлення кешу `RUNTIME_SETTINGS` виконується виключно після успішного підтвердження транзакції в БД (`commit`), що захищає конфігурацію від розсинхронізації.
-- Контекстне розміщення системних кнопок: кнопку скидання БД перенесено в блок резервних копій (доступна тільки SuperAdmin), а кнопку WOG — у відповідний блок цін.
+### 7. Системні налаштування, CMS-конфігурація та інтеграції в БД (`v5.7.16`–`v5.7.24`)
+- **Повна де-статизація та структурований інтерфейс (спойлери-картки)**: адміністративні параметри розділені на доменні спойлери з незалежним збереженням кожної секції (`Регламент та графік`, `Тарифи палива WOG/OKKO`, `SMTP-шлюзи`, `Запобіжники`).
+- **🖥️ Сервер та Інтеграції (`SuperAdmin Only`)**: централізована панель керування доменом (`PRIMARY_DOMAIN`), `ALLOWED_HOSTS`, `CORS_ORIGINS`, JWT TTL, брутфорс-лімітами, API-ключами (`OpenWeatherMap`, `alerts.in.ua`, `UkraineAlarm`) із живим тестуванням підключень та завантаженням `.json` Firebase Service Account. Усі ключі шифруються в БД (`Fernet enc:v1:`) без необхідності редагувати `.env`.
+- **Zero-`.env` Bootstrap та Web Setup Wizard (`/setup`)**: автогенерація `app_secret_key` у `data/instance.config.json` (`0o600`), одноразовий 4-кроковий майстер першого запуску з вибором `SQLite` або `PostgreSQL` (з тестом підключення), створенням `SuperAdmin` і незворотним блокуванням після завершення; кнопка міграції наявних серверів у Zero-`.env` формат.
+- **Серверна перевірка цілісності та транзакційна атомарність**: сувора валідація існування та приналежності обраних об'єктів, генераторів та складів ГСМ перед збереженням; оновлення кешу `RUNTIME_SETTINGS` виконується виключно після успішного підтвердження транзакції в БД (`commit`).
 
 ### 8. Експлуатаційні запобіжники та захист від людських помилок (Operational Safeguards)
 - **Запобіжник дефіциту палива (Fuel Deficit Safeguard)**: дозвіл аварійного пуску оператором при залишковому розрахунковому нулі палива в баку (з огляду на фактичну економію) із активацією захисного візуального інтерфейсу: кнопка пуску отримує червоний пульсуючий ареол (`⚠️ ▶ ЗАПУСТИТИ ГЕНЕРАТОР`), а кнопка швидкої заправки підсвічується бурштиновим бейджем `ПОТРІБНА ЗАПРАВКА`.
@@ -131,15 +128,16 @@
 - **А4 PDF-відомість інвентаризації** (`GET /api/v1/measurement/{id}/statement-pdf`): альбомний офіційний документ для підпису комісією (`fpdf2`).
 - Окремий звіт операційного аудиту та системних коригувань (`GET /api/v1/audit/export-excel`, **лише SuperAdmin**) із двома аркушами: «Журнал дій аудиту» (повна українська локалізація `v5.7.3`) та «Системні коригування».
 
-### 15. Модульний Service Desk інтерфейс, Профілі/Аватари, PWA, Offline Queue (`IndexedDB`) та Android APK (v5.5.0–v5.7.8)
-- **Модульна архітектура фронтенду**: UI розділено на **14 HTML-фрагментів** (`frontend/views/`), **16 ES-модулів** (`frontend/js/`) та **4 таблиці стилів** (`frontend/css/`) із динамічним завантажувачем (`view-loader.js`), фіксованою шапкою (`sticky`), автооновленням SW при зміні контролера (`v5.7.5`), гарячою кнопкою примусового оновлення кешу та бічним ящиком навігації (`Drawer`) + нижньою мобільною панеллю.
+### 15. Модульний Service Desk інтерфейс, Профілі/Аватари, Офлайн-стійкість (`IndexedDB` + Android `WorkManager`) та APK (`v5.5.0`–`v5.7.25`)
+- **Модульна архітектура фронтенду**: UI розділено на **14 HTML-фрагментів** (`frontend/views/`), **16 ES-модулів** (`frontend/js/`), **4 таблиці стилів** (`frontend/css/`) та автономний майстер [`setup.html`](frontend/setup.html) із динамічним завантажувачем (`view-loader.js`), фіксованою шапкою (`sticky`), автооновленням SW при зміні контролера (`v5.7.5`), гарячою кнопкою примусового оновлення кешу та бічним ящиком навігації (`Drawer`) + нижньою мобільною панеллю.
 - **Профілі користувачів та власні аватари (v5.6.7)**: перегляд і редагування власного ПІБ, посади, пароля та завантаження фото профілю (`.webp` на сервері через `avatar_service.py` із захищеним роутом `/uploads/avatars/`).
-- **Повноцінний Offline-режим PWA (`IndexedDB` + Ідемпотентність, v5.5.0)**:
-  - Локальна БД `sd_gen016_offline` зберігає актуальний знімок об'єкта, генераторів, складів, пулів каністр та сесії (`read_cache`), а також ставить мутації (`start`, `stop`, `manual-run`, `transfer`, `canisters/*`, `maintenance`, `faults`) у чергу `mutation_queue` з ключами `idempotency_key`;
-  - Серверна таблиця `idempotency_records` (міграція `012`) гарантує відсутність дублів (`X-Idempotency-Replayed: true`) та виявлення конфліктів (`HTTP 409`) із UI ручного вирішення конфліктів у модалці «📡 Черга PWA».
-- **Мобільний додаток Android APK (Capacitor) та OTA-сервер (`/ota/`, v5.6.3–v5.7.8)**:
-  - Підписаний Capacitor APK (`android/`) із фірмовими іконками та splash-екранами `SD-GEN016` (`v5.7.5`), коректними CSS-відступами `SystemBars` для клавіатури IME (`v5.7.6`), надійною автоініціалізацією OTA й ручною перевіркою з меню профілю (`v5.7.7`), нативною навігацією кнопкою «Назад» по меню, модалках і вкладках із захистом подвійним натисканням від випадкового виходу (`v5.7.8`), а також push-сповіщеннями **FCM HTTP v1**.
-  - У режимі `APP_ENV=production` інтерактивні Swagger/OpenAPI маршрути (`/docs`, `/redoc`, `/openapi.json`) вимкнені, а Nginx приховує версію сервера (`server_tokens off`, `v5.7.5`).
+- **Повноцінна Офлайн-стійкість (Web/PWA + Android Native `WorkManager`, v5.5.0–v5.7.21)**:
+  - **Збереження черги при 401 і таймаут 15 с**: закінчення сесії (`401`) очищує лише кеш читання (`clearCacheOnly()`), зберігаючи невідправлені дії до повторного входу; `AbortController` (`15 с`) і backoff-повтори (`15с → 30с → 60с`) автоматично відновлюють доставку при пропаданні сервера чи мережі;
+  - **Чесний час події (`event_timestamp`)**: при офлайн-натисканні пуску/зупинки сервер рахує тривалість, мотогодини й витрату палива за реальним моментом події;
+  - **Android Native SQLite + `WorkManager` + `AndroidKeyStore`**: усередині APK черга зберігається в SQLite (`OfflineQueueStore`), а токен — в апаратному сховищі `OfflineAuthVault`; навіть при закритті додатка фоновий воркер `OfflineSyncWorker` доставить накопичені операції при появі мережі та повідомить про результат.
+- **Мобільний додаток Android APK (Capacitor) та OTA-сервер (`/ota/`, v5.6.3–v5.7.25)**:
+  - Підписаний Capacitor APK (`android/`) із фірмовими іконками та splash-екранами `SD-GEN016`, CSS-відступами `SystemBars` для клавіатури IME, нативним збереженням звітів/PDF/бекапів у `Download/SD-GEN016/` через `MediaStore`/SAF (`FileDownloadPlugin`), перемикачем адреси сервера (прихований у Web/PWA, активний у APK), нативною навігацією кнопкою «Назад», OTA-оновленнями та push-сповіщеннями **FCM HTTP v1**.
+  - У режимі `APP_ENV=production` інтерактивні Swagger/OpenAPI маршрути (`/docs`, `/redoc`, `/openapi.json`) вимкнені, а Nginx приховує версію сервера (`server_tokens off`).
 - **Повна українізація аудиту (`v5.7.3`)**: усі дії, сутності та деталі операцій в журналі аудиту та Excel-експорті відображаються виключно українською мовою.
 - **Клієнтська пагінація (10 записів на сторінку)** та оптимізовані світла/темна теми.
 
@@ -225,14 +223,30 @@
 
 ## 🚀 Швидкий запуск
 
-### 1. Запуск у Docker (Рекомендовано для сервера / VPS)
+### 1. З готового інсталяційного ZIP без `.env` (Shared Hosting / будь-який сервер, v5.7.25)
+
+1. Завантажте `sd-gen016-v*-install.zip` зі сторінки **Releases** і розпакуйте на сервері.
+2. Встановіть залежності та запустіть ASGI-сервер (`SQLite` створюється автоматично у `./data/`):
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r backend/requirements.txt
+   uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+   ```
+3. Відкрийте адресу сайту в браузері — спрацює одноразовий **Web Setup Wizard (`/setup`)**:
+   - задайте організацію, домен та часовий пояс;
+   - оберіть вбудований `SQLite` або зовнішній `PostgreSQL` (з тестом з'єднання);
+   - створіть власного `SuperAdmin` та за бажанням введіть API-ключі.
+   Після завершення майстер незворотно блокується, а `app_secret_key` зберігається в `data/instance.config.json` (`0o600`).
+
+### 2. Запуск у Docker (Рекомендовано для VPS / Production)
 
 ```bash
 # Клонування репозиторію
 git clone https://github.com/JhonDoelMe/SD-GEN016.git
 cd SD-GEN016
 
-# Налаштування змінних оточення
+# Мінімальний .env (лише інфраструктурні змінні Docker: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, PRIMARY_DOMAIN)
 cp .env.example .env
 
 # Запуск контейнерів у фоновому режимі
@@ -240,26 +254,17 @@ docker compose up -d --build
 ```
 
 Система автоматично розгорне:
-- Бекенд FastAPI (порт 8000);
+- Бекенд FastAPI (порт 8000) із постійними томами `uploads_data`, `backups_data`, `data_storage`;
 - Базу даних PostgreSQL 16 (порт 5432);
 - Nginx Reverse Proxy з автоматичним налаштуванням HTTPS / SSL (порти 80, 443);
-- Автоматично виконає міграції Alembic та створить обліковий запис головного адміністратора.
+- Автоматично виконає міграції Alembic, а всі API-ключі й домени далі зручно налаштовуються через **Адміністрування → 🖥️ Сервер та Інтеграції**.
 
-### 2. Запуск локально (для розробки та тестування)
+### 3. Запуск локально (для розробки та тестування)
 
 ```bash
-# Створення та активація віртуального середовища
 python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-# або: .venv\Scripts\activate  # Windows
-
-# Встановлення залежностей
+source .venv/bin/activate  # Linux/macOS (або .venv\Scripts\activate на Windows)
 pip install -r backend/requirements.txt
-
-# Налаштування .env
-cp .env.example .env
-
-# Запуск міграцій та локального сервера
 alembic upgrade head
 uvicorn backend.app.main:app --reload --port 8000
 ```
@@ -268,11 +273,10 @@ uvicorn backend.app.main:app --reload --port 8000
 
 ## 🧪 Тестування
 
-Для запуску повного набору тестів бекенду та OTA-сервісу (`203` тести бекенду + `5` тестів OTA-сервера):
+Для запуску повного набору тестів бекенду та OTA-сервісу (`229` автотестів):
 
 ```bash
-python -m pytest backend/tests -v
-python -m pytest ota-server/tests -v
+python -m pytest backend/tests ota-server/tests -q
 ```
 
 ---
@@ -280,6 +284,7 @@ python -m pytest ota-server/tests -v
 ## 📄 Документація проєкту
 
 Повний комплект документації доступний у директорії [`docs/`](docs/) та релізних нотатках:
+- [`RELEASE_NOTES_v5.7.25.md`](RELEASE_NOTES_v5.7.25.md) — **Консолідований реліз v5.7.16–v5.7.25: CMS-конфігурація без `.env`, Web Setup Wizard (`/setup`), шифрування секретів `Fernet`, Android `WorkManager` + SQLite офлайн-черга та нативні завантаження `MediaStore`/SAF**;
 - [`RELEASE_NOTES_v5.7.8.md`](RELEASE_NOTES_v5.7.8.md) — **Реліз v5.7.5–v5.7.8: навігація кнопкою «Назад» на Android, виправлення OTA-ініціалізації й допуску повної заправки 60 л (`0.050 л`), SystemBars IME, фірмові іконки Android, посилення production-безпеки та 208 автотестів**;
 - [`RELEASE_NOTES_v5.7.4.md`](RELEASE_NOTES_v5.7.4.md) — **Консолідований реліз v5.5.0–v5.7.4: Offline IndexedDB черга, Режим вимірювання витрат, Модульний Service Desk UI, Профілі/Аватари, Android APK/OTA/FCM Push, Центр сповіщень (🔔), Фірмові Email + 1-click відписка, Повна українізація аудиту та актуалізація всієї документації (v5.7.4)**;
 - [`RELEASE_NOTES_v5.4.0.md`](RELEASE_NOTES_v5.4.0.md) — **WebPush сповіщення тривог/відбоїв, Live Browser Watcher, 5-денний прогноз, готовність палива YASNO, оптимізація продуктивності та актуалізація політик (v5.4.0)**;

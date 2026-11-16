@@ -5,6 +5,15 @@
 
 ---
 
+## [v5.7.25] — 2026-11-16
+### 📚 Документація, релізний Android APK (`versionCode 25`) та інсталяційний ZIP-пакет
+- **Оновлення веб- та репозитарної документації ([`modals-legal.html`](frontend/views/modals-legal.html), [`README.md`](README.md), [`AGENT.md`](AGENT.md), [`RELEASE_NOTES_v5.7.25.md`](RELEASE_NOTES_v5.7.25.md), [`docs/`](docs/))**:
+  - Синхронізовано до версії `5.7.25` політики конфіденційності, умови використання, регламенти SLA/безпеки та довідники `ENV_VARS.md`, `DEPLOYMENT_VPS.md`, `ARCHITECTURE.md`, `API_REFERENCE.md`, `BACKUP_AND_RESTORE.md`.
+  - Задокументовано CMS-конфігурацію (`🖥️ Сервер та Інтеграції`, `Fernet enc:v1:`), Zero-`.env` bootstrap (`data/instance.config.json`), Web Setup Wizard (`/setup`), Android `WorkManager` + SQLite + `AndroidKeyStore`, `FileDownloadPlugin` та 229 автотестів.
+- **Збірка дистрибутива ([`scripts/build_install_zip.py`](scripts/build_install_zip.py)) та Android APK (`v5.7.25`, `versionCode 25`)**:
+  - Додано скрипт генерації чистого інсталяційного архіву `dist/sd-gen016-v5.7.25-install.zip` (з контрольною сумою `.sha256` без жодних `.env`, секретів, локальних БД та кешів збірки).
+  - Зібрано й опубліковано в OTA оновлений підписаний Android APK (`versionCode 25`).
+
 ## [v5.7.24] — 2026-11-16
 ### 🧙 Етап 3 CMS-архітектури: Web Setup Wizard (`/setup`) та міграція існуючих серверів у Zero-`.env`
 - **Одноразовий майстер першого запуску ([`setup.py`](backend/app/api/v1/setup.py), [`setup.html`](frontend/setup.html), [`main.py`](backend/app/main.py), [`bootstrap.py`](backend/app/core/bootstrap.py))**:

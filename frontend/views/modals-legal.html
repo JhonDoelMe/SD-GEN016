@@ -23,23 +23,23 @@
   <div id="modalPrivacyPolicy" class="modal-overlay">
     <div class="modal-content" style="max-width: 750px;">
       <div class="modal-header">
-        <h3>🔒 Політика конфіденційності (Версія 5.7.8)</h3>
+        <h3>🔒 Політика конфіденційності (Версія 5.7.25)</h3>
         <button class="close-btn" onclick="closeModal('modalPrivacyPolicy')">&times;</button>
       </div>
       <div style="font-size: 0.92rem; line-height: 1.6; max-height: 65vh; overflow-y: auto; padding: 0.5rem 0.5rem 0.5rem 0;">
         <div style="background: rgba(56, 189, 248, 0.08); border-left: 3px solid #38bdf8; padding: 0.6rem 0.85rem; border-radius: 4px; margin-bottom: 0.85rem;">
-          <b>Останнє оновлення:</b> 14 листопада 2026 року | <b>MAXI-UA LLC</b><br>
+          <b>Останнє оновлення:</b> 16 листопада 2026 року | <b>MAXI-UA LLC</b><br>
           <span style="font-size: 0.82rem; color: var(--text-muted);">Відповідність Закону України «Про захист персональних даних» № 2297-VI та нормам GDPR</span>
         </div>
 
-        <p>Ця Політика конфіденційності визначає порядок обробки, використання та захисту даних користувачів веб-додатку PWA та мобільного додатку Android APK комплексу <b>SD-GEN016 v5.7.8</b> (Service Desk генераторів).</p>
+        <p>Ця Політика конфіденційності визначає порядок обробки, використання та захисту даних користувачів веб-додатку PWA та мобільного додатку Android APK комплексу <b>SD-GEN016 v5.7.25</b> (Service Desk генераторів).</p>
 
         <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">1. Категорії та обсяг даних, що обробляються</h4>
         <ul style="padding-left: 1.25rem;">
           <li><b>Службові облікові записи та профілі персоналу:</b> логін, робочий e-mail, повне ім'я (ПІБ), посада, призначені ролі (SuperAdmin, Admin, Operator, Viewer), опційний аватар профілю (оптимізоване зображення <code>.webp</code> з авторизованим доступом через <code>/uploads/avatars/</code>) та криптографічний хеш пароля (Bcrypt). Відкриті паролі ніколи не зберігаються і не логуються.</li>
-          <li><b>Технічні параметри сесій, PWA та Offline-кешу:</b> мережева IP-адреса, User-Agent, захищені кукі <code>access_token</code> (HTTP-Only, Secure, SameSite=Lax) або Bearer JWT у мобільному клієнті (60 діб «Запам'ятати мене» або 24 год), параметри у <code>localStorage</code> (обраний об'єкт, генератор, тема) та локальне сховище <code>IndexedDB</code> (<code>sd_gen016_offline</code> — кеш довідників для перегляду без зв'язку та черга відкладених операцій <code>mutation_queue</code> із ключами <code>idempotency_key</code>).</li>
+          <li><b>Технічні параметри сесій, PWA та Offline-сховищ:</b> мережева IP-адреса, User-Agent, захищені кукі <code>access_token</code> (HTTP-Only, Secure, SameSite=Lax) або Bearer JWT у мобільному клієнті (60 діб «Запам'ятати мене» або 24 год), параметри у <code>localStorage</code> (обраний об'єкт, генератор, тема), браузерне сховище <code>IndexedDB</code> (<code>sd_gen016_offline</code>), а у нативному Android APK — локальна база SQLite (<code>OfflineQueueStore</code> для фонової черги <code>WorkManager</code>) та апаратно зашифроване сховище токена в <code>AndroidKeyStore</code> (<code>AES/GCM</code>).</li>
           <li><b>Web Push (VAPID), Android FCM Push та Центр сповіщень:</b> публічні ключі браузерної підписки (endpoint, p256dh, auth з автосинхронізацією <code>pushsubscriptionchange</code>), токени пристрою Firebase Cloud Messaging (FCM HTTP v1) у Android APK, персональні налаштування та індивідуальні відмітки прочитання сповіщень (<code>notification_reads</code>) у Центрі сповіщень («🔔»). Доставка E-mail сповіщень супроводжується захищеним посиланням 1-click відписки стандарту RFC 8058.</li>
-          <li><b>Незмінний журнал системного аудиту (Audit Trail v5.7):</b> структурований повністю українізований запис усіх операцій (пуск, зупинка, заправка, рух каністр, заміри витрат, коригування, зміна профілів і ролей) із фіксацією клієнтського IP, автоматичним маскуванням секретів (<code>[REDACTED]</code>) та мітками часу <code>Europe/Kyiv</code>.</li>
+          <li><b>Незмінний журнал системного аудиту (Audit Trail v5.7):</b> структурований повністю українізований запис усіх операцій (пуск, зупинка, заправка, рух каністр, заміри витрат, коригування, налаштування сервера, зміна профілів і ролей) із фіксацією клієнтського IP, автоматичним маскуванням секретів (<code>[REDACTED]</code>) та мітками часу <code>Europe/Kyiv</code>.</li>
           <li><b>Метеорологічна телеметрія (OpenWeatherMap):</b> запити поточної погоди та 5-денного прогнозу формуються бекендом знеособлено за населеним пунктом об'єкта без передачі персональних GPS-координат пристрою оператора.</li>
           <li><b>Моніторинг сигналів цивільного захисту (Dual-Provider Fusion):</b> паралельна взаємна звірка статусу повітряних тривог здійснюється виключно за географічним ідентифікатором області/району/громади через офіційні шлюзи (<code>alerts.in.ua</code> + <code>api.ukrainealarm.com</code>).</li>
           <li><b>Фотографічні матеріали та первинні акти:</b> фотографії паливних накладних/чеків, фотофіксація дефектів обладнання та сформовані PDF-відомості інвентаризацій.</li>
@@ -49,7 +49,7 @@
         <p>Дані обробляються виключно в межах службових обов'язків для: оперативного диспетчерського обліку мотогодин, контролю безпеки праці, запобігання пожежам та аваріям, своєчасного реагування на повітряні тривоги та відключення, планування регламентних ТО, інвентаризації й достовірного списання ПММ.</p>
 
         <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">3. Комплекс заходів кібербезпеки</h4>
-        <p>Система захищена на рівні сучасних enterprise-стандартів: шифрування каналів зв'язку (TLS 1.2/1.3 HTTPS, Fail-Closed SMTP STARTTLS), захисні заголовки HSTS, CSP, X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy, персистентне відкликання токенів у БД (<code>revoked_tokens</code>), захист від брутфорсу (<code>auth_attempts</code>, блокування при 5 невдалих спробах на 300 сек), Production Boot-Lock, антидзеркальний захист домену, параметризовані SQL-запити, захист медіафайлів <code>/uploads/*</code> авторизацією та фільтрація формульних ін'єкцій у звітах Excel.</p>
+        <p>Система захищена на рівні сучасних enterprise-стандартів: шифрування каналів зв'язку (TLS 1.2/1.3 HTTPS, Fail-Closed SMTP STARTTLS), симетричне шифрування API-ключів і інтеграційних секретів у БД (<code>Fernet enc:v1:</code>), ізольована конфігурація запуску <code>instance.config.json</code> (<code>0o600</code>) з одноразовим блокуванням майстра налаштування <code>/setup</code>, захисні заголовки HSTS, CSP, X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy, персистентне відкликання токенів у БД (<code>revoked_tokens</code>), захист від брутфорсу (<code>auth_attempts</code>, блокування при 5 невдалих спробах на 300 сек), Production Boot-Lock, антидзеркальний захист домену, параметризовані SQL-запити, захист медіафайлів <code>/uploads/*</code> авторизацією та фільтрація формульних ін'єкцій у звітах Excel.</p>
 
         <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">4. Строки зберігання та видалення</h4>
         <p>Журнали напрацювання генераторів, руху каністр, актів замірів та аудиту дій операторів зберігаються протягом <b>від 3 до 7 років</b> відповідно до вимог виробничого та бухгалтерського обліку. Записи ідемпотентності та прочитання сповіщень обслуговуються системно. Повне видалення даних виконується за процедурою Clean DB виключно головним системним адміністратором.</p>
@@ -70,16 +70,16 @@
   <div id="modalTermsOfService" class="modal-overlay">
     <div class="modal-content" style="max-width: 750px;">
       <div class="modal-header">
-        <h3>📄 Умови використання (Terms of Service v5.7.8)</h3>
+        <h3>📄 Умови використання (Terms of Service v5.7.25)</h3>
         <button class="close-btn" onclick="closeModal('modalTermsOfService')">&times;</button>
       </div>
       <div style="font-size: 0.92rem; line-height: 1.6; max-height: 65vh; overflow-y: auto; padding: 0.5rem 0.5rem 0.5rem 0;">
         <div style="background: rgba(56, 189, 248, 0.08); border-left: 3px solid #38bdf8; padding: 0.6rem 0.85rem; border-radius: 4px; margin-bottom: 0.85rem;">
-          <b>Останнє оновлення:</b> 14 листопада 2026 року | <b>MAXI-UA LLC</b><br>
+          <b>Останнє оновлення:</b> 16 листопада 2026 року | <b>MAXI-UA LLC</b><br>
           <span style="font-size: 0.82rem; color: var(--text-muted);">Відкрита ліцензія MIT | Обов'язкова для всіх операторів та адміністраторів</span>
         </div>
 
-        <p>Ці Умови регулюють використання веб-платформи PWA та мобільного додатку Android APK комплексу <b>SD-GEN016 v5.7.8</b>. Використовуючи систему, ви підтверджуєте повну згоду з цими правилами.</p>
+        <p>Ці Умови регулюють використання веб-платформи PWA та мобільного додатку Android APK комплексу <b>SD-GEN016 v5.7.25</b>. Використовуючи систему, ви підтверджуєте повну згоду з цими правилами.</p>
 
         <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">1. Правовий статус та межі функціоналу</h4>
         <p>SD-GEN016 є інформаційно-довідковим та диспетчерським Service Desk комплексом. <b>Система НЕ є приладом автоматичного введення резерву (АВР), автоматичним захисним вимикачем чи реле прямої дії.</b> Система фіксує та розраховує події, тоді як фізичний контроль і безпека генератора покладаються виключно на людину-оператора. Індикатори готовності палива до графіків YASNO, 5-денний прогноз погоди та моніторинг повітряних тривог мають інформаційно-консультативний характер і не замінюють офіційні сигнали ДСНС.</p>
@@ -91,8 +91,8 @@
           <li><b>Регламент системних коригувань:</b> будь-яка ручна зміна напрацювання, залишків палива чи пулів каністр виконується виключно роллю SuperAdmin на підставі Акта інвентаризації із фіксацією документа в аудиті (у стані активного заміру/інвентаризації блокується кодом <code>HTTP 423 Locked</code>).</li>
         </ul>
 
-        <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">3. Офлайн-черга PWA та ретроспективне внесення сесій</h4>
-        <p>У разі тимчасової втрати зв'язку операції автоматично ставляться в локальну офлайн-чергу <code>IndexedDB</code> з ключем ідемпотентності (<code>idempotency_key</code>). При поверненні мережі оператор зобов'язаний проконтролювати синхронізацію черги та вручну вирішити можливі конфлікти (<code>HTTP 409</code>). Також допускається ретроспективне внесення пропущених циклів (<code>manual-run</code>) на основі паперового журналу із зазначенням причини.</p>
+        <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">3. Офлайн-черга (PWA / Android WorkManager) та ретроспективне внесення сесій</h4>
+        <p>У разі тимчасової втрати зв'язку операції автоматично ставляться в локальну офлайн-чергу (<code>IndexedDB</code> у Web/PWA або нативну БД SQLite + фоновий планувальник <code>WorkManager</code> в Android APK) із фіксацією реального часу події (<code>event_timestamp</code>) та ключем ідемпотентності (<code>idempotency_key</code>). При поверненні мережі оператор зобов'язаний проконтролювати синхронізацію черги та вручну вирішити можливі конфлікти (<code>HTTP 409</code>). Також допускається ретроспективне внесення пропущених циклів (<code>manual-run</code>) на основі паперового журналу із зазначенням причини.</p>
 
         <h4 style="margin: 1.1rem 0 0.35rem; color: #38bdf8;">4. Обов'язки персоналу, безпека праці та оновлення додатків</h4>
         <p>Оператор зобов'язаний суворо виконувати правила безпеки: протоколи повітряної тривоги (утримання вищого рівня небезпеки при взаємній звірці двох джерел — негайна евакуація при червоному рівні); 60-секундну паузу охолодження двигуна перед повторним пуском (<code>BR-GEN-14</code>); вимоги щодо зимового ДП (&lt; 0°C); заборону гарячої дозаправки та норми вентиляції. При реєстрації критичної несправності (<code>CRITICAL</code>) запуск генератора блокується. Користувачі Android APK зобов'язані встановлювати обов'язкові оновлення безпеки через штатний OTA-сервіс (<code>/ota/</code>).</p>
@@ -116,12 +116,12 @@
   <div id="modalOperationalSafety" class="modal-overlay">
     <div class="modal-content" style="max-width: 750px;">
       <div class="modal-header">
-        <h3>🦺 Політика безпеки праці та пожежної безпеки (v5.7.8)</h3>
+        <h3>🦺 Політика безпеки праці та пожежної безпеки (v5.7.25)</h3>
         <button class="close-btn" onclick="closeModal('modalOperationalSafety')">&times;</button>
       </div>
       <div style="font-size: 0.92rem; line-height: 1.6; max-height: 65vh; overflow-y: auto; padding: 0.5rem 0.5rem 0.5rem 0;">
         <div style="background: rgba(234, 179, 8, 0.1); border-left: 3px solid #eab308; padding: 0.6rem 0.85rem; border-radius: 4px; margin-bottom: 0.85rem;">
-          <b>Обов'язковий регламент безпеки праці</b> | Версія 5.7.8 (14.11.2026)<br>
+          <b>Обов'язковий регламент безпеки праці</b> | Версія 5.7.25 (16.11.2026)<br>
           <span style="font-size: 0.82rem; color: var(--text-muted);">Правила поводження з паливом і каністрами, пожежної безпеки, повітряних тривог та дій при аваріях</span>
         </div>
 
@@ -178,13 +178,13 @@
   <div id="modalDataGovernance" class="modal-overlay">
     <div class="modal-content" style="max-width: 750px;">
       <div class="modal-header">
-        <h3>🛡️ Управління даними, аудит та регламент SLA (v5.7.8)</h3>
+        <h3>🛡️ Управління даними, аудит та регламент SLA (v5.7.25)</h3>
         <button class="close-btn" onclick="closeModal('modalDataGovernance')">&times;</button>
       </div>
       <div style="font-size: 0.92rem; line-height: 1.6; max-height: 65vh; overflow-y: auto; padding: 0.5rem 0.5rem 0.5rem 0;">
         <div style="background: rgba(34, 197, 94, 0.08); border-left: 3px solid #22c55e; padding: 0.6rem 0.85rem; border-radius: 4px; margin-bottom: 0.85rem;">
-          <b>Політика управління даними та SLA</b> | Версія 5.7.8 (14.11.2026)<br>
-          <span style="font-size: 0.82rem; color: var(--text-muted);">Регламент незмінного аудиту, замірів і інвентаризацій, офлайн-ідемпотентності, сповіщень та резервного копіювання</span>
+          <b>Політика управління даними та SLA</b> | Версія 5.7.25 (16.11.2026)<br>
+          <span style="font-size: 0.82rem; color: var(--text-muted);">Регламент незмінного аудиту, замірів і інвентаризацій, офлайн-ідемпотентності (PWA + WorkManager), шифрування конфігурації та бекапів</span>
         </div>
 
         <h4 style="margin: 1.1rem 0 0.35rem; color: #4ade80;">1. Незмінність журналу аудиту (Audit Trail v5.7)</h4>
@@ -195,10 +195,10 @@
 
         <h4 style="margin: 1.1rem 0 0.35rem; color: #4ade80;">3. Офлайн-ідемпотентність, надійність та бекапи (RPO/RTO)</h4>
         <ul style="padding-left: 1.25rem;">
-          <li><b>Офлайн-синхронізація без дублювання:</b> усі мутуючі операції підтримують <code>idempotency_key</code> та SHA-256 верифікацію корисного навантаження на сервері (<code>idempotency_records</code>, відповідь <code>X-Idempotency-Replayed: true</code> або <code>HTTP 409</code> при конфлікті).</li>
-          <li><b>RPO (Recovery Point Objective):</b> ≤ 24 год (Standard) / ≤ 1 год (Enterprise) з автобекапом БД (всі 14 міграцій Alembic, пули каністр, заміри витрат, сповіщення), вкладень (чеки, дефекти, аватари) та налаштувань.</li>
+          <li><b>Офлайн-синхронізація без дублювання:</b> усі мутуючі операції фіксують фактичний момент події (<code>event_timestamp</code>) і підтримують <code>idempotency_key</code> + SHA-256 верифікацію на сервері (<code>idempotency_records</code>, відповідь <code>X-Idempotency-Replayed: true</code> або <code>HTTP 409</code>). У Android APK фонова черга SQLite синхронізується через <code>WorkManager</code>.</li>
+          <li><b>RPO (Recovery Point Objective):</b> ≤ 24 год (Standard) / ≤ 1 год (Enterprise) з автобекапом БД (всі 14 міграцій Alembic, пули каністр, заміри витрат, сповіщення), вкладень (чеки, дефекти, аватари) та налаштувань (включно з <code>Fernet enc:v1:</code> зашифрованими ключами інтеграцій).</li>
           <li><b>RTO (Recovery Time Objective):</b> ≤ 2 год (Standard) / ≤ 30 хв (Enterprise).</li>
-          <li><b>Цілісність та оновлення клієнтів:</b> архіви <code>.zip</code> захищені SHA-256 (<code>.sha256</code>), маніфестом <code>manifest.json</code>, маскуванням секретів <code>.env</code>, захистом від Zip Slip/Zip Bomb і pre-restore snapshot. Мобільний клієнт Android APK оновлюється централізовано через OTA-сервіс (<code>/ota/</code>).</li>
+          <li><b>Цілісність, файли та оновлення клієнтів:</b> архіви <code>.zip</code> захищені SHA-256 (<code>.sha256</code>), маніфестом <code>manifest.json</code>, маскуванням секретів <code>.env</code>, захистом від Zip Slip/Zip Bomb і pre-restore snapshot. На Android APK документи/звіти зберігаються у <code>Download/SD-GEN016/</code> через <code>MediaStore</code>/SAF (<code>FileDownloadPlugin</code>), а оновлення доставляються через OTA (<code>/ota/</code>).</li>
         </ul>
 
         <h4 style="margin: 1.1rem 0 0.35rem; color: #4ade80;">4. Рівень обслуговування та доступність (SLA)</h4>

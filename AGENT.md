@@ -1,4 +1,4 @@
-# AGENT.md - Інструкція та Архітектура для ШІ-Агентів (SD-GEN016 v5.7.8)
+# AGENT.md - Інструкція та Архітектура для ШІ-Агентів (SD-GEN016 v5.7.25)
 
 ## 1. Загальний опис проєкту
 **SD-GEN016** — це спеціалізований експлуатаційний веб-додаток (Service Desk / Fleet Management) для оперативного обліку роботи бензинових та дизельних генераторів на об'єктах інфраструктури (АЗС, склади, офіси, медичні пункти, резиденції тощо).
@@ -187,15 +187,16 @@ SD-GEN016/
 - При `remember_me=True` токен діє 60 днів, кукі `access_token` встановлюється з `max_age=5184000` (60 діб) та `samesite="lax"`, токен зберігається у `localStorage`.
 - При `remember_me=False` токен діє стандартний час (24 години), токен зберігається у `sessionStorage`.
 
-### 4.5. Тестування (203 бекенд-тести + 5 тестів OTA)
+### 4.5. Тестування (229 тестів Backend + OTA)
 - Завжди запускайте обидва набори тестів перед пушем:
   ```bash
-  python -m pytest backend/tests
-  python -m pytest ota-server/tests
+  python -m pytest backend/tests ota-server/tests -q
   ```
-  Це гарантує проходження всього комплексу модульних та інтеграційних перевірок (203/203 бекенд + 5/5 OTA, 100% success rate).
+  Це гарантує проходження всього комплексу модульних та інтеграційних перевірок (229/229, 100% success rate).
 
-### 4.6. Стандарти безпеки та цілісності даних (Security Hardening v5.7.8)
+### 4.6. Стандарти безпеки та цілісності даних (Security Hardening v5.7.25)
+- **CMS-конфігурація без `.env` & Zero-`.env` Bootstrap:** Секретні ключі інтеграцій (`OpenWeatherMap`, `alerts.in.ua`, `UkraineAlarm`, `Firebase JSON`) шифруються у БД `system_settings` через `Fernet enc:v1:` ([`backend/app/core/secrets.py`](backend/app/core/secrets.py)) та керуються у вкладці `🖥️ Сервер та Інтеграції` виключно роллю `SuperAdmin`. Автономний `data/instance.config.json` (`0o600`, [`backend/app/core/bootstrap.py`](backend/app/core/bootstrap.py)) забезпечує запуск без `.env`, а одноразовий Web Setup Wizard (`/setup`, [`backend/app/api/v1/setup.py`](backend/app/api/v1/setup.py)) незворотно блокується (`403`) після створення першого `SuperAdmin`.
+- **Офлайн-стійкість & чесний час подій:** Мутуючі операції генератора фіксують фактичний `event_timestamp` на момент кліку; у нативному Android APK черга синхронізується через `OfflineQueueStore` (SQLite) + `OfflineSyncWorker` (`WorkManager`) із токенами в `AndroidKeyStore` (`OfflineAuthVault`), а завантаження файлів йдуть через `FileDownloadPlugin` (`MediaStore`/SAF).
 - **Docker Infrastructure Hardening:** Контейнер запускається виключно від непривілейованого користувача `appuser` (UID:GID 10001:10001). Заборонено надавати право запису у системні папки коду бекенду (`/app`). Запуск сервера викорінюється через `exec uvicorn` для гарантованої обробки сигналів SIGTERM/SIGINT. Двоетапні хелсчеки: `/api/health/live` (`/health/live`, `/api/health/liveness`) та `/api/health/ready` (`/health/ready`, `/api/health/readiness`).
 - **Персистентний захист сесій та brute-force (`010_security_persistence.py`):** Відкликані JWT-токени (`revoked_tokens`) та лічильники невдалих спроб (`auth_attempts`) зберігаються у БД та перевіряються навіть на захищеному роуті завантаження медіа `/uploads/{file_path:path}` (чеки, дефекти, аватари `.webp`).
 - **Ідемпотентність офлайн-операцій (`012_offline_idempotency.py`):** Усі критичні мутації підтримують `idempotency_key` (`idempotency_records` + SHA-256 перевірка корисного навантаження); повтор повертає кешовану відповідь із `X-Idempotency-Replayed: true`, зміна payload відхиляється з `HTTP 409 Conflict`.

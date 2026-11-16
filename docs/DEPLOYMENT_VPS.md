@@ -1,13 +1,31 @@
-# Розгортання на VPS, Налаштування PWA, Android APK (OTA) та FCM Push
+# Розгортання на VPS / Shared Hosting, Zero-`.env` Setup Wizard, PWA, Android APK (OTA) та FCM Push
 
-**Версія документа:** 5.7.8 (Docker Hardened, Nginx OTA Proxy, Android APK Release Pipeline, Firebase FCM HTTP v1 & Modular PWA)  
-**Дата набрання чинності:** 14 листопада 2026 року  
+**Версія документа:** 5.7.25 (Zero-`.env` Install Archive, Web Setup Wizard `/setup`, Encrypted DB Config, Android `WorkManager` + `FileDownloadPlugin`)  
+**Дата набрання чинності:** 16 листопада 2026 року  
 
-Цей документ описує покроковий процес розгортання **SD-GEN016** на окремому віртуальному сервері (VPS) під керуванням Ubuntu/Debian із власним доменом, сертифікатом HTTPS, мобільним push-шлюзом Firebase FCM HTTP v1 та сервером OTA-оновлень Android APK (`/ota/`).
+Цей документ описує розгортання **SD-GEN016** як із готового інсталяційного ZIP-архіву без `.env` (через одноразовий Web Setup Wizard `/setup`), так і на виділеному VPS під керуванням Docker Compose, Nginx SSL, Firebase FCM HTTP v1 та OTA-сервісу Android APK (`/ota/`).
 
 ---
 
-## 1. Підготовка сервера VPS
+## 0. Спосіб швидкого старту з інсталяційного ZIP (Zero-`.env`, без Docker)
+
+Підходить для будь-якого Linux/Windows сервера або shared/VPS хостингу:
+1. Завантажте `sd-gen016-v*-install.zip` із розділу **Releases** та розпакуйте.
+2. Створіть віртуальне середовище Python 3.12+ / 3.14 і встановіть залежності:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r backend/requirements.txt
+   ```
+3. Запустіть сервер (без створення `.env`!):
+   ```bash
+   uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+   ```
+4. Відкрийте адресу сайту в браузері — відкриється захищений **Web Setup Wizard (`/setup`)**, де ви покроково оберете `SQLite` (готово з коробки у `data/service_desk.db`) або `PostgreSQL` (з live-перевіркою з'єднання), задасте домен/організацію та створите обліковий запис `SuperAdmin`. Після завершення `/setup` незворотно блокується (`403 Forbidden`), а секрети запуску зберігаються у `data/instance.config.json` (`chmod 600`).
+
+---
+
+## 1. Підготовка сервера VPS (Docker Compose)
 
 ### Встановлення Docker та Docker Compose
 ```bash
@@ -34,19 +52,15 @@ sudo ufw enable
 git clone https://github.com/JhonDoelMe/SD-GEN016.git /opt/sd-gen016
 cd /opt/sd-gen016
 
-# Створіть файл .env на основі .env.example
+# Створіть мінімальний .env (або заповніть тільки POSTGRES_* і PRIMARY_DOMAIN для Docker Compose та Nginx)
 cp .env.example .env
 nano .env
 ```
 
-Обов'язково заповніть у `.env`:
-- `PRIMARY_DOMAIN`: ваш реальний робочий домен (наприклад `sdgen.pp.ua`).
-- `APP_SECRET_KEY`: згенеруйте надійний 64-символьний ключ (`python -c "import secrets; print(secrets.token_urlsafe(64))"`).
-- `INITIAL_ADMIN_PASSWORD`: надійний пароль первинного адміністратора (буде збережено у БД при першому старті).
-- `POSTGRES_PASSWORD`: надійний пароль для бази даних.
-- **Зовнішня телеметрія (рекомендовано):** `OPENWEATHER_API_KEY` (поточна погода та 5-денний прогноз), `ALERTS_IN_UA_TOKEN` та `UKRAINE_ALARM_API_KEY` (паралельний двоканальний моніторинг повітряних тривог зі «Страхуванням відбою»).
-- **Нативні Push Android APK (опційно для FCM):** змонтуйте файл сервісного акаунта Firebase у `docker/firebase/firebase-service-account.json` (read-only том `/app/firebase`) або задайте `FIREBASE_SERVICE_ACCOUNT_JSON`.
-- **CORS / Capacitor:** для підписаного Android APK додайте схеми `https://localhost,capacitor://localhost` до `CORS_ORIGINS` (у production за потреби поруч із доменом `https://sdgen.pp.ua`).
+Обов'язково заповніть у Docker `.env` (інфраструктурний мінімум):
+- `PRIMARY_DOMAIN`: ваш робочий домен для Nginx та SSL (наприклад `sdgen.pp.ua`).
+- `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`: облікові дані контейнера PostgreSQL.
+- *Опційно для першого запуску без майстра `/setup`*: `APP_SECRET_KEY`, `INITIAL_ADMIN_PASSWORD` (далі всі параметри домену, CORS, JWT, OpenWeatherMap, alerts.in.ua, UkraineAlarm і Firebase JSON налаштовуються з адмін-панелі **«🖥️ Сервер та Інтеграції»**, а кнопкою **«📦 Зафіксувати в instance.config.json та БД»** можна перенести bootstrap у том `data_storage:/app/data`).
 
 ---
 
