@@ -17,6 +17,10 @@
   let _isSyncing = false;
   let _editingItemId = null;
   let _serverSnapCache = {};
+  let _autoRetryTimerId = null;
+  let _retryAttemptCount = 0;
+  let _lastVisibilitySyncAt = 0;
+  const RETRY_BACKOFF_MS = [15000, 30000, 60000];
 
   const WIFI_ONLINE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>';
   const WIFI_OFFLINE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2" y1="2" x2="22" y2="22"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 8.82a15 15 0 0 1 4.17-2.65"/><path d="M10.66 5c4.01-.36 8.14.9 11.34 3.76"/><path d="M16.85 11.25a10 10 0 0 1 2.22 1.68"/><path d="M5 13a10 10 0 0 1 5.24-2.76"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>';
@@ -219,10 +223,11 @@
 
   function isNetworkFailure(err, resStatus = null) {
     if (!navigator.onLine) return true;
-    if (resStatus && (resStatus === 502 || resStatus === 503 || resStatus === 504)) return true;
+    if (resStatus && (resStatus === 408 || resStatus === 502 || resStatus === 503 || resStatus === 504)) return true;
     if (!err) return false;
+    if (err.isTimeout === true || err.name === 'AbortError') return true;
     const msg = String(err.message || err).toLowerCase();
-    return err.name === 'TypeError' || msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed');
+    return err.name === 'TypeError' || msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed') || msg.includes('timeout');
   }
 
   function setOfflineMode(isOffline, cacheTimeIso = null) {
@@ -465,6 +470,7 @@
     await applyOptimisticOfflineEffect(item);
     setOfflineMode(!navigator.onLine);
     await updateOfflineUIStatus();
+    scheduleAutoSync();
     return item;
   }
 
@@ -552,14 +558,25 @@
       'Idempotency-Key': item.idempotency_key,
     };
 
+    let abortCtrl = null;
+    let timeoutId = null;
     try {
-      const res = await fetch(`/api/v1${item.endpoint}`, {
+      const reqOpts = {
         method: item.method || 'POST',
         headers,
         body: JSON.stringify({ ...(item.payload || {}), idempotency_key: item.idempotency_key }),
-      });
+      };
+      if (typeof AbortController === 'function') {
+        abortCtrl = new AbortController();
+        reqOpts.signal = abortCtrl.signal;
+        timeoutId = setTimeout(() => {
+          try { abortCtrl.abort(); } catch (_) {}
+        }, 15000);
+      }
+      const res = await fetch(`/api/v1${item.endpoint}`, reqOpts);
+      if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
 
-      if (res.status === 502 || res.status === 503 || res.status === 504) {
+      if (res.status === 408 || res.status === 502 || res.status === 503 || res.status === 504) {
         return { outcome: 'network_error', status: res.status };
       }
 
@@ -578,6 +595,7 @@
         : (data?.detail || `Помилка сервера (${res.status})`);
       return { outcome: 'conflict', status: res.status, message: String(errMsg) };
     } catch (err) {
+      if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
       if (isNetworkFailure(err)) {
         return { outcome: 'network_error' };
       }
@@ -599,11 +617,14 @@
     let syncedCount = 0;
     let conflictCount = 0;
     let deferredCount = 0;
+    let authStopped = false;
 
     try {
       const rows = await queueGetAll();
       const pending = rows.filter((r) => r.status === 'pending');
       if (pending.length === 0) {
+        _retryAttemptCount = 0;
+        clearAutoSyncTimer();
         setOfflineMode(false);
         return { synced: 0, conflicts: rows.filter((r) => r.status === 'conflict').length, deferred: 0 };
       }
@@ -625,6 +646,8 @@
           item.status = 'pending';
           item.updated_at = new Date().toISOString();
           await queuePut(item);
+          authStopped = true;
+          clearAutoSyncTimer();
           if (!silent && typeof showToast === 'function') {
             showToast(result.message, 'warning');
           }
@@ -653,6 +676,7 @@
     }
 
     if (syncedCount > 0) {
+      _retryAttemptCount = 0;
       if (typeof showToast === 'function') {
         showToast(`✅ Синхронізовано офлайн-операцій: ${syncedCount}` + (conflictCount > 0 ? ` (конфліктів: ${conflictCount})` : ''), conflictCount > 0 ? 'warning' : 'success');
       }
@@ -664,6 +688,15 @@
       }
     } else if (conflictCount > 0 && typeof showToast === 'function') {
       showToast(`⚠️ Виявлено ${conflictCount} конфлікт(ів) синхронізації — відкрийте чергу для ручного рішення`, 'warning');
+    }
+
+    if (authStopped) {
+      clearAutoSyncTimer();
+    } else if (deferredCount > 0) {
+      _retryAttemptCount = Math.min(_retryAttemptCount + 1, RETRY_BACKOFF_MS.length - 1);
+      scheduleAutoSync();
+    } else {
+      scheduleAutoSync();
     }
 
     return { synced: syncedCount, conflicts: conflictCount, deferred: deferredCount };
@@ -1076,7 +1109,69 @@
     });
   }
 
+  function clearAutoSyncTimer() {
+    if (_autoRetryTimerId) {
+      clearTimeout(_autoRetryTimerId);
+      _autoRetryTimerId = null;
+    }
+  }
+
+  async function scheduleAutoSync(customDelayMs = null) {
+    clearAutoSyncTimer();
+    const rows = await queueGetAll();
+    const hasPending = rows.some((r) => r.status === 'pending');
+    if (!hasPending || !navigator.onLine) {
+      if (!hasPending) _retryAttemptCount = 0;
+      return;
+    }
+    const authToken = (typeof token !== 'undefined' && token) || localStorage.getItem('sd_token') || sessionStorage.getItem('sd_token');
+    if (!authToken) return;
+
+    const delay = typeof customDelayMs === 'number'
+      ? customDelayMs
+      : RETRY_BACKOFF_MS[Math.min(_retryAttemptCount, RETRY_BACKOFF_MS.length - 1)];
+
+    _autoRetryTimerId = setTimeout(() => {
+      _autoRetryTimerId = null;
+      if (!_isSyncing && navigator.onLine) {
+        syncOfflineQueue({ silent: true }).catch(() => {});
+      }
+    }, delay);
+  }
+
+  async function _recoverStuckSyncingItems() {
+    try {
+      const rows = await queueGetAll();
+      let recovered = false;
+      for (const item of rows) {
+        if (item && item.status === 'syncing') {
+          item.status = 'pending';
+          item.updated_at = new Date().toISOString();
+          await queuePut(item);
+          recovered = true;
+        }
+      }
+      if (recovered) {
+        await updateOfflineUIStatus();
+      }
+    } catch (_) {}
+  }
+
+  async function clearCacheOnly() {
+    clearAutoSyncTimer();
+    await _clearStore(STORE_CACHE);
+    try {
+      localStorage.removeItem(FALLBACK_CACHE_KEY);
+    } catch (_) {}
+    _isOfflineMode = !navigator.onLine;
+    _lastOfflineCacheTime = null;
+    _serverSnapCache = {};
+    await updateOfflineUIStatus();
+  }
+
   async function clearAll() {
+    clearAutoSyncTimer();
+    _retryAttemptCount = 0;
     await Promise.all([
       _clearStore(STORE_CACHE),
       _clearStore(STORE_QUEUE),
@@ -1116,15 +1211,32 @@
 
   function init() {
     window.addEventListener('online', () => {
+      _retryAttemptCount = 0;
       setOfflineMode(false);
       setTimeout(() => {
         syncOfflineQueue({ silent: false }).catch(() => {});
       }, 800);
     });
     window.addEventListener('offline', () => {
+      clearAutoSyncTimer();
       setOfflineMode(true);
     });
-    updateOfflineUIStatus();
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && navigator.onLine) {
+        const now = Date.now();
+        if (now - _lastVisibilitySyncAt < 2000) return;
+        _lastVisibilitySyncAt = now;
+        queueGetAll().then((rows) => {
+          if (rows.some((r) => r.status === 'pending')) {
+            syncOfflineQueue({ silent: true }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    });
+    _recoverStuckSyncingItems().then(() => {
+      updateOfflineUIStatus();
+      scheduleAutoSync(4000);
+    });
   }
 
   window.openOfflineQueueModal = function () {
@@ -1145,6 +1257,7 @@
     enqueueMutation,
     queueGetAll,
     syncOfflineQueue,
+    scheduleAutoSync,
     renderQueueModal,
     retryItem,
     toggleEdit,
@@ -1152,6 +1265,7 @@
     removeItem,
     setOfflineMode,
     updateOfflineUIStatus,
+    clearCacheOnly,
     clearAll,
     ensureUserScope,
   };

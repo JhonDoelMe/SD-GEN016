@@ -106,6 +106,7 @@ class GeneratorStartRequest(BaseModel):
     idempotency_key: Optional[str] = Field(None, max_length=64, description="Ключ ідемпотентності для захисту від дублювання")
     skip_cooldown: bool = Field(False, description="Пропуск 60-секундного кулдауну (для адміністраторів або тестів)")
     is_warmup: bool = Field(False, description="Запуск у режимі профілактичного прогріву")
+    event_timestamp: Optional[datetime.datetime] = Field(None, description="Фактичний час натискання кнопки оператором (UTC ISO, для офлайн-черги)")
 
 
 class GeneratorStopRequest(BaseModel):
@@ -116,6 +117,7 @@ class GeneratorStopRequest(BaseModel):
     fuel_discrepancy_reason: Optional[str] = Field(None, max_length=500, description="Пояснення причини розбіжності палива у баку")
     force_confirm: bool = Field(False, description="Підтвердження операції при підозрілій різниці мотогодин")
     idempotency_key: Optional[str] = Field(None, max_length=64, description="Ключ ідемпотентності")
+    event_timestamp: Optional[datetime.datetime] = Field(None, description="Фактичний час зупинки оператором (UTC ISO, для офлайн-черги)")
 
 
 class GeneratorManualRunCreate(BaseModel):

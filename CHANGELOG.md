@@ -5,6 +5,15 @@
 
 ---
 
+## [v5.7.20] — 2026-11-16
+### 🔄 Офлайн-стійкість (Етап 1): захист черги, автоповтор, таймаути та чесний час подій
+- **Захист черги, таймаути та авто-синхронізація ([`core.js`](frontend/js/core.js), [`offline-queue.js`](frontend/js/offline-queue.js), [`auth-nav.js`](frontend/js/auth-nav.js), [`notifications.js`](frontend/js/notifications.js))**:
+  - При закінченні сесії (`401`) очищується лише кеш читання (`OfflineQueue.clearCacheOnly()`), а локальна черга невідправлених подій `mutation_queue` зберігається до повторного входу; при ручному виході з несинхронізованою чергою показується підтвердження.
+  - Додано `AbortController` таймаут (`15 с`) у `api()` та `_sendSingleQueueItem()`, щоб «завислий» сервер чи провайдер миттєво переводили дію в офлайн-чергу замість вічного очікування.
+  - Додано періодичний backoff retry (`15 с → 30 с → 60 с`), відновлення завислих `syncing`-елементів при старті (`_recoverStuckSyncingItems()`), автосинхронізацію при поверненні у вкладку (`visibilitychange`) та розгортанні Android APK (`__onNativeResume`).
+- **Точний час офлайн-події на бекенді ([`generator.py`](backend/app/schemas/generator.py), [`api/v1/generator.py`](backend/app/api/v1/generator.py), [`generator_service.py`](backend/app/services/generator_service.py), [`test_offline_idempotency.py`](backend/tests/test_offline_idempotency.py))**:
+  - `api()` фіксує `event_timestamp` у момент натискання кнопки до постановки в чергу; `start_generator()` і `stop_generator()` приймають і валідують `event_timestamp` (захист від дати в майбутньому, старіше `72 год`, та порушення хронології запуск/стоп), рахуючи тривалість, мотогодини й витрату палива за реальним часом події.
+
 ## [v5.7.19] — 2026-11-16
 ### 📂 Надійне збереження Excel у `Download/` та системний вибір папки (SAF)
 - **Виправлено збереження `.xlsx` у файловій системі Android ([`FileDownloadPlugin.java`](android/app/src/main/java/ua/pp/sdgen/app/FileDownloadPlugin.java))**:

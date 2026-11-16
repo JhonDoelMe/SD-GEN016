@@ -567,7 +567,7 @@ function extractErrorMessage(data, fallback) {
 
 // API Helper (with IndexedDB Read Cache & Offline Mutation Queue)
 async function api(endpoint, options = {}) {
-  const { offlineMeta, suppressToast, headers: optHeaders, ...fetchOpts } = options;
+  const { offlineMeta, suppressToast, timeoutMs, headers: optHeaders, ...fetchOpts } = options;
   const headers = { 'Content-Type': 'application/json', ...(optHeaders || {}) };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -587,6 +587,9 @@ async function api(endpoint, options = {}) {
     }
     idempotencyKey = parsedBody.idempotency_key || headers['Idempotency-Key'] || window.OfflineQueue.createIdempotencyKey();
     parsedBody.idempotency_key = idempotencyKey;
+    if (!parsedBody.event_timestamp) {
+      parsedBody.event_timestamp = new Date().toISOString();
+    }
     headers['Idempotency-Key'] = idempotencyKey;
     fetchOpts.body = JSON.stringify(parsedBody);
 
@@ -596,9 +599,21 @@ async function api(endpoint, options = {}) {
     }
   }
 
+  const effTimeoutMs = typeof timeoutMs === 'number' ? timeoutMs : 15000;
+  let abortCtrl = null;
+  let timeoutId = null;
+  if (effTimeoutMs > 0 && !fetchOpts.signal && typeof AbortController === 'function') {
+    abortCtrl = new AbortController();
+    fetchOpts.signal = abortCtrl.signal;
+    timeoutId = setTimeout(() => {
+      try { abortCtrl.abort(); } catch (_) {}
+    }, effTimeoutMs);
+  }
+
   try {
     const res = await fetch(`/api/v1${endpoint}`, { ...fetchOpts, headers });
-    if (res.status === 502 || res.status === 503 || res.status === 504) {
+    if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+    if (res.status === 408 || res.status === 502 || res.status === 503 || res.status === 504) {
       const gatewayErr = new Error(`Сервер тимчасово недоступний (${res.status})`);
       gatewayErr.httpStatus = res.status;
       gatewayErr.isOffline = true;
@@ -614,9 +629,9 @@ async function api(endpoint, options = {}) {
         localStorage.removeItem('sd_token');
         sessionStorage.removeItem('sd_token');
         window.invalidateFacilitiesCache?.();
-        window.OfflineQueue?.clearAll?.().catch(() => {});
+        window.OfflineQueue?.clearCacheOnly?.().catch(() => {});
         showAuthScreen();
-        const authErr = new Error('Сесія закінчилась. Будь ласка, увійдіть знову');
+        const authErr = new Error('Сесія закінчилась. Увійдіть знову (офлайн-чергу збережено)');
         authErr.isAuthError = true;
         throw authErr;
       } else {
@@ -640,6 +655,13 @@ async function api(endpoint, options = {}) {
     }
     return data;
   } catch (err) {
+    if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+    if (err && err.name === 'AbortError') {
+      const timeoutErr = new Error('Час очікування відповіді сервера вичерпано');
+      timeoutErr.isOffline = true;
+      timeoutErr.isTimeout = true;
+      err = timeoutErr;
+    }
     const oq = typeof window.OfflineQueue === 'object' ? window.OfflineQueue : null;
     if (!err.isAuthError && oq && oq.isNetworkFailure(err, err?.httpStatus)) {
       err.isOffline = true;

@@ -1021,6 +1021,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!token || !currentUser) return;
     if (typeof refreshServerStatus === 'function') refreshServerStatus();
     window.refreshActiveAppState(`native:${reason}`, true);
+    if (typeof window.OfflineQueue === 'object' && navigator.onLine) {
+      window.OfflineQueue.syncOfflineQueue?.({ silent: true }).catch(() => {});
+    }
   };
 
   setInterval(() => window.refreshActiveAppState('interval', false), 10000);

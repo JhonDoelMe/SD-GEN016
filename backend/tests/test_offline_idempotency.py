@@ -1,3 +1,4 @@
+import datetime
 import pytest
 
 
@@ -214,3 +215,195 @@ async def test_maintenance_and_fault_idempotency(client, superadmin_auth, operat
 
     faults = (await client.get(f"/api/v1/faults?generator_id={gen_id}", headers=superadmin_auth)).json()
     assert len(faults) == 1
+
+
+@pytest.mark.asyncio
+async def test_offline_start_stop_uses_event_timestamp_and_computes_real_duration(
+    client, superadmin_auth, operator_auth
+):
+    await client.put(
+        "/api/v1/system/settings",
+        headers=superadmin_auth,
+        json={"enforce_work_schedule": False},
+    )
+    fac_id = (await client.get("/api/v1/facilities", headers=superadmin_auth)).json()[0]["id"]
+    gen_res = await client.post(
+        "/api/v1/generator",
+        headers=superadmin_auth,
+        json={
+            "facility_id": fac_id,
+            "name": "Офлайн-Час Ген",
+            "model": "TS-100",
+            "manufacturer": "Test",
+            "serial_number": "TS-SN-001",
+            "rated_power_kw": 5.0,
+            "tank_capacity_l": 40.0,
+            "fuel_type": "А-95",
+            "nominal_consumption_l_per_h": 2.0,
+            "initial_operating_hours": 50.0,
+            "initial_fuel_tank_level_l": 20.0,
+            "work_schedule_start": "00:00",
+            "work_schedule_end": "23:59",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv",
+        },
+    )
+    assert gen_res.status_code == 201, gen_res.text
+    gen_id = gen_res.json()["id"]
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+    t_start = now_utc - datetime.timedelta(hours=2)
+    t_stop = now_utc - datetime.timedelta(minutes=30)
+
+    r_start = await client.post(
+        "/api/v1/generator/start",
+        headers=operator_auth,
+        json={
+            "generator_id": gen_id,
+            "idempotency_key": "OF-TS-START-1",
+            "event_timestamp": t_start.isoformat(),
+        },
+    )
+    assert r_start.status_code == 200, r_start.text
+    start_data = r_start.json()
+    assert start_data["start_time"].startswith(t_start.strftime("%Y-%m-%dT%H:%M"))
+
+    r_stop = await client.post(
+        "/api/v1/generator/stop",
+        headers=operator_auth,
+        json={
+            "generator_id": gen_id,
+            "idempotency_key": "OF-TS-STOP-1",
+            "event_timestamp": t_stop.isoformat(),
+        },
+    )
+    assert r_stop.status_code == 200, r_stop.text
+    stop_data = r_stop.json()
+    assert stop_data["duration_seconds"] == 5400
+    assert stop_data["duration_hours"] == pytest.approx(1.5, abs=0.01)
+    assert stop_data["calculated_consumption_l"] == pytest.approx(3.0, abs=0.01)
+    assert stop_data["end_hours"] == pytest.approx(51.5, abs=0.01)
+
+    # Idempotent replay returns exact same stopped run without error
+    r_stop_replay = await client.post(
+        "/api/v1/generator/stop",
+        headers=operator_auth,
+        json={
+            "generator_id": gen_id,
+            "idempotency_key": "OF-TS-STOP-1",
+            "event_timestamp": t_stop.isoformat(),
+        },
+    )
+    assert r_stop_replay.status_code == 200
+    assert r_stop_replay.headers.get("X-Idempotency-Replayed") == "true"
+
+
+@pytest.mark.asyncio
+async def test_offline_event_timestamp_guards_future_stale_and_chronology(
+    client, superadmin_auth, operator_auth
+):
+    await client.put(
+        "/api/v1/system/settings",
+        headers=superadmin_auth,
+        json={"enforce_work_schedule": False},
+    )
+    fac_id = (await client.get("/api/v1/facilities", headers=superadmin_auth)).json()[0]["id"]
+    gen_res = await client.post(
+        "/api/v1/generator",
+        headers=superadmin_auth,
+        json={
+            "facility_id": fac_id,
+            "name": "Офлайн-Захист Ген",
+            "model": "GRD-100",
+            "manufacturer": "Test",
+            "serial_number": "GRD-SN-001",
+            "rated_power_kw": 5.0,
+            "tank_capacity_l": 40.0,
+            "fuel_type": "А-95",
+            "nominal_consumption_l_per_h": 2.0,
+            "initial_operating_hours": 10.0,
+            "initial_fuel_tank_level_l": 20.0,
+            "work_schedule_start": "00:00",
+            "work_schedule_end": "23:59",
+            "maintenance_interval_hours": 300.0,
+            "timezone": "Europe/Kyiv",
+        },
+    )
+    assert gen_res.status_code == 201
+    gen_id = gen_res.json()["id"]
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+
+    # 1. Future timestamp rejected
+    r_future = await client.post(
+        "/api/v1/generator/start",
+        headers=operator_auth,
+        json={
+            "generator_id": gen_id,
+            "idempotency_key": "OF-GRD-FUT",
+            "event_timestamp": (now_utc + datetime.timedelta(minutes=15)).isoformat(),
+        },
+    )
+    assert r_future.status_code == 400
+
+    # 2. Stale (>72h) timestamp rejected
+    r_stale = await client.post(
+        "/api/v1/generator/start",
+        headers=operator_auth,
+        json={
+            "generator_id": gen_id,
+            "idempotency_key": "OF-GRD-STALE",
+            "event_timestamp": (now_utc - datetime.timedelta(hours=80)).isoformat(),
+        },
+    )
+    assert r_stale.status_code == 400
+
+    # 3. Valid offline start at now - 60m, then reject stop before start
+    t_start = now_utc - datetime.timedelta(minutes=60)
+    assert (
+        await client.post(
+            "/api/v1/generator/start",
+            headers=operator_auth,
+            json={
+                "generator_id": gen_id,
+                "idempotency_key": "OF-GRD-START-OK",
+                "event_timestamp": t_start.isoformat(),
+            },
+        )
+    ).status_code == 200
+
+    r_bad_stop = await client.post(
+        "/api/v1/generator/stop",
+        headers=operator_auth,
+        json={
+            "generator_id": gen_id,
+            "idempotency_key": "OF-GRD-BAD-STOP",
+            "event_timestamp": (t_start - datetime.timedelta(minutes=5)).isoformat(),
+        },
+    )
+    assert r_bad_stop.status_code == 400
+
+    # 4. Valid stop at now - 20m, then reject next start earlier than previous stop
+    t_stop = now_utc - datetime.timedelta(minutes=20)
+    assert (
+        await client.post(
+            "/api/v1/generator/stop",
+            headers=operator_auth,
+            json={
+                "generator_id": gen_id,
+                "idempotency_key": "OF-GRD-STOP-OK",
+                "event_timestamp": t_stop.isoformat(),
+            },
+        )
+    ).status_code == 200
+
+    r_overlap_start = await client.post(
+        "/api/v1/generator/start",
+        headers=operator_auth,
+        json={
+            "generator_id": gen_id,
+            "idempotency_key": "OF-GRD-OVERLAP-START",
+            "event_timestamp": (t_stop - datetime.timedelta(minutes=5)).isoformat(),
+        },
+    )
+    assert r_overlap_start.status_code == 400

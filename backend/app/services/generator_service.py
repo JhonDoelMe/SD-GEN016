@@ -43,6 +43,51 @@ def _normalize_to_utc_naive(dt: datetime.datetime, tz_name: Optional[str] = None
     return local_aware.astimezone(datetime.timezone.utc).replace(tzinfo=None)
 
 
+def _resolve_offline_event_time(
+    event_timestamp: Optional[datetime.datetime],
+    tz_name: Optional[str] = None,
+    max_future_skew_sec: int = 180,
+    max_age_hours: int = 72,
+) -> tuple[datetime.datetime, bool]:
+    """
+    Валідує й нормалізує мітку часу події з офлайн-черги клієнта.
+    Повертає (naive_utc_time, is_offline_backdated).
+    """
+    now = utc_now()
+    if event_timestamp is None:
+        return now, False
+    ts = _normalize_to_utc_naive(event_timestamp, tz_name=tz_name)
+    skew_sec = (ts - now).total_seconds()
+    if skew_sec > max_future_skew_sec:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Некоректний час події: мітка часу перевищує поточний серверний час."
+        )
+    if skew_sec > 0:
+        ts = now
+    if (now - ts).total_seconds() > max_age_hours * 3600:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Час офлайн-події застарілий (> {max_age_hours} год). Внесіть сеанс вручну."
+        )
+    is_offline_backdated = (now - ts).total_seconds() > 60
+    return ts, is_offline_backdated
+
+
+async def _get_last_completed_stop_time(db: AsyncSession, generator_id: int) -> Optional[datetime.datetime]:
+    q = (
+        select(GeneratorRun.end_time)
+        .where(
+            GeneratorRun.generator_id == generator_id,
+            GeneratorRun.status == "COMPLETED"
+        )
+        .order_by(GeneratorRun.end_time.desc())
+        .limit(1)
+    )
+    res = await db.execute(q)
+    return res.scalar_one_or_none()
+
+
 async def _user_has_maintenance_override_permission(db: AsyncSession, user_id: int) -> bool:
     """
     GEN-06: Перевірка наявності спеціального права примусового запуску при простроченому ТО.
@@ -407,25 +452,20 @@ async def setup_generator_wizard(
     return res.scalars().first()
 
 
-async def get_generator_cooldown_remaining(db: AsyncSession, generator_id: int) -> int:
+async def get_generator_cooldown_remaining(
+    db: AsyncSession,
+    generator_id: int,
+    at_time: Optional[datetime.datetime] = None,
+) -> int:
     """
     Повертає кількість секунд, що залишились до завершення 60-секундного
     кулдауну після останньої зупинки генератора.
     """
-    q = (
-        select(GeneratorRun.end_time)
-        .where(
-            GeneratorRun.generator_id == generator_id,
-            GeneratorRun.status == "COMPLETED"
-        )
-        .order_by(GeneratorRun.end_time.desc())
-        .limit(1)
-    )
-    res = await db.execute(q)
-    last_stop_time = res.scalar_one_or_none()
+    last_stop_time = await _get_last_completed_stop_time(db, generator_id)
     if not last_stop_time:
         return 0
-    elapsed_sec = (utc_now() - last_stop_time).total_seconds()
+    ref_time = at_time or utc_now()
+    elapsed_sec = (ref_time - last_stop_time).total_seconds()
     if elapsed_sec < 60:
         return max(0, int(60 - elapsed_sec))
     return 0
@@ -563,7 +603,8 @@ async def start_generator(
     idempotency_key: Optional[str] = None,
     facility_id: Optional[int] = None,
     skip_cooldown: bool = False,
-    is_warmup: bool = False
+    is_warmup: bool = False,
+    event_timestamp: Optional[datetime.datetime] = None,
 ) -> GeneratorRun:
     """
     GEN-01, GEN-04, GEN-06, GEN-09, GEN-11, GEN-12, GEN-15:
@@ -588,6 +629,10 @@ async def start_generator(
     generator = res.scalars().first()
     if not generator:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Генератор не знайдено")
+
+    effective_start_time, is_offline_backdated = _resolve_offline_event_time(
+        event_timestamp, tz_name=generator.timezone
+    )
 
     # 2. Facility ownership check (GEN-12)
     if facility_id is not None and generator.facility_id != facility_id:
@@ -626,9 +671,17 @@ async def start_generator(
             detail="Неможливо запустити генератор: генератор уже працює"
         )
 
-    # 5.1 Check stop cooldown (60 seconds pause after stopping)
+    # 5.1 Check stop cooldown (60 seconds pause after stopping) & offline event chronology
+    if event_timestamp is not None:
+        last_stop_time = await _get_last_completed_stop_time(db, generator.id)
+        if last_stop_time and effective_start_time < last_stop_time:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Офлайн-запуск передує завершенню попереднього сеансу роботи. Перевірте чергу або внесіть сеанс вручну."
+            )
+
     if not skip_cooldown:
-        cooldown_rem = await get_generator_cooldown_remaining(db, generator.id)
+        cooldown_rem = await get_generator_cooldown_remaining(db, generator.id, at_time=effective_start_time)
         if cooldown_rem > 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -710,7 +763,9 @@ async def start_generator(
         {"weekday": s.weekday, "start_time": s.start_time, "end_time": s.end_time, "is_active": s.is_active}
         for s in schedules
     ]
-    is_allowed, schedule_msg = is_within_work_schedule(schedules_data, tz_name=generator.timezone)
+    is_allowed, schedule_msg = is_within_work_schedule(
+        schedules_data, dt=effective_start_time, tz_name=generator.timezone
+    )
     if not is_allowed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -741,7 +796,7 @@ async def start_generator(
     run = GeneratorRun(
         generator_id=generator.id,
         user_id=user_id,
-        start_time=utc_now(),
+        start_time=effective_start_time,
         start_hours=generator.current_operating_hours,
         start_fuel_level_l=current_fuel,
         status="RUNNING",
@@ -750,7 +805,7 @@ async def start_generator(
     )
     db.add(run)
     generator.status = "RUNNING"
-    generator.updated_at = utc_now()
+    generator.updated_at = effective_start_time
 
     try:
         await db.flush()
@@ -798,6 +853,7 @@ async def start_generator(
             "run_id": run.id,
             "forced_with_maintenance": bool(is_maintenance_overdue and force_start_with_maintenance),
             "is_warmup": bool(is_warmup),
+            **({"offline_synced": True, "event_timestamp": effective_start_time.isoformat() + "Z"} if is_offline_backdated else {}),
         },
         ip_address=ip_address
     )
@@ -877,7 +933,13 @@ async def stop_generator(
             )
         return None
 
-    end_time = utc_now()
+    raw_event_ts = getattr(stop_data, "event_timestamp", None) if (stop_data and actor_type == "USER") else None
+    end_time, is_offline_backdated = _resolve_offline_event_time(raw_event_ts, tz_name=generator.timezone)
+    if raw_event_ts is not None and end_time < run.start_time:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Час зупинки генератора не може передувати часу запуску."
+        )
     # GEN-07: Календарна тривалість роботи завжди розраховується виключно з різниці часу [start_time, end_time]
     calendar_duration_seconds = max(1, int((end_time - run.start_time).total_seconds()))
 
@@ -1007,7 +1069,8 @@ async def stop_generator(
         "fuel_discrepancy": (fuel_shortage_l > 0),
         "run_id": run.id,
         "status_after": generator.status,
-        "is_warmup": was_warmup
+        "is_warmup": was_warmup,
+        **({"offline_synced": True, "event_timestamp": end_time.isoformat() + "Z"} if is_offline_backdated else {}),
     }
     if system_note:
         audit_details["system_note"] = system_note

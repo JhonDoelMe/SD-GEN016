@@ -537,6 +537,17 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
 });
 
 document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+  if (typeof window.OfflineQueue === 'object' && typeof window.OfflineQueue.queueGetAll === 'function') {
+    const qRows = await window.OfflineQueue.queueGetAll().catch(() => []);
+    const unsynced = qRows.filter((r) => r.status === 'pending' || r.status === 'syncing' || r.status === 'conflict').length;
+    if (unsynced > 0) {
+      const ok = confirm(`У локальній офлайн-черзі є несинхронізованих операцій: ${unsynced}. Вийти з акаунта та видалити локальну чергу?`);
+      if (!ok) {
+        window.closeAccountMenu();
+        return;
+      }
+    }
+  }
   window.closeAccountMenu();
   try {
     await api('/auth/logout', { method: 'POST', suppressToast: true });

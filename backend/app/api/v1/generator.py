@@ -265,7 +265,8 @@ async def api_start_generator(
         idempotency_key=idem_key,
         facility_id=eff_fac_id,
         skip_cooldown=getattr(data, "skip_cooldown", False),
-        is_warmup=getattr(data, "is_warmup", False)
+        is_warmup=getattr(data, "is_warmup", False),
+        event_timestamp=getattr(data, "event_timestamp", None),
     )
     return run_to_out(run, user_name=current_user.full_name)
 
