@@ -213,3 +213,56 @@ async def test_admin_reset_maintenance_counter_with_custom_hours(client, superad
     assert s_data['next_due_hours'] == 900.0
     # Current hours is 615, next due is 900, remaining is 285
     assert s_data['hours_remaining'] == 285.0
+
+
+@pytest.mark.asyncio
+async def test_update_generator_maintenance_interval_recalculates_schedule(client, superadmin_auth, operator_auth):
+    wizard_res = await client.post(
+        '/api/v1/generator/wizard',
+        headers=superadmin_auth,
+        json={
+            'name': 'Генератор Інтервал ТО',
+            'model': 'VULKAN-Test',
+            'manufacturer': 'Vulkan',
+            'serial_number': 'SN-INT-200',
+            'rated_power_kw': 15.0,
+            'tank_capacity_l': 60.0,
+            'fuel_type': 'А-95',
+            'nominal_consumption_l_per_h': 2.5,
+            'initial_operating_hours': 462.8,
+            'initial_fuel_tank_level_l': 31.1,
+            'work_schedule_start': '07:30',
+            'work_schedule_end': '20:15',
+            'maintenance_interval_hours': 300.0,
+            'last_maintenance_performed_hours': 368.0,
+            'timezone': 'Europe/Kyiv'
+        }
+    )
+    assert wizard_res.status_code == 200
+    gen_id = wizard_res.json()['id']
+
+    # Update generator interval directly to 200 hours via PUT /generator/{id}
+    upd = await client.put(
+        f'/api/v1/generator/{gen_id}',
+        headers=superadmin_auth,
+        json={'maintenance_interval_hours': 200.0}
+    )
+    assert upd.status_code == 200
+    assert upd.json()['maintenance_interval_hours'] == 200.0
+
+    # Verify MaintenanceSchedule updated: 368.0 + 200.0 = 568.0, remaining = 568.0 - 462.8 = 105.2
+    sched = await client.get(f'/api/v1/maintenance/schedule?generator_id={gen_id}', headers=operator_auth)
+    assert sched.status_code == 200
+    s_data = sched.json()
+    assert s_data['interval_hours'] == 200.0
+    assert s_data['last_performed_hours'] == 368.0
+    assert s_data['next_due_hours'] == 568.0
+    assert s_data['hours_remaining'] == 105.2
+
+    # Invalid < 10h rejected
+    bad = await client.put(
+        f'/api/v1/generator/{gen_id}',
+        headers=superadmin_auth,
+        json={'maintenance_interval_hours': 5.0}
+    )
+    assert bad.status_code in (400, 422)

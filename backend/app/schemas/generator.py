@@ -56,6 +56,7 @@ class GeneratorUpdate(BaseModel):
     fuel_type: Optional[str] = None
     nominal_consumption_l_per_h: Optional[float] = None
     timezone: Optional[str] = None
+    maintenance_interval_hours: Optional[float] = Field(default=None, gt=0)
 
 
 class GeneratorFacilityTransferRequest(BaseModel):
@@ -88,6 +89,7 @@ class GeneratorOut(BaseModel):
     cooldown_remaining_seconds: int = 0
     days_since_last_run: Optional[float] = None
     last_run_at: Optional[datetime.datetime] = None
+    maintenance_interval_hours: Optional[float] = None
     warmup_enabled: bool = True
     warmup_recommended: bool = False
     warmup_duration_minutes: int = 15

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.database import get_db
 from backend.app.models.user import User
 from backend.app.models.generator import Generator, GeneratorRun
+from backend.app.models.maintenance import MaintenanceSchedule
 from backend.app.schemas.generator import (
     GeneratorOut, GeneratorWizardSetup, GeneratorCreate, GeneratorStartRequest,
     GeneratorStopRequest, GeneratorRunOut, GeneratorUpdate, GeneratorManualRunCreate,
@@ -69,11 +70,22 @@ def run_to_out(run: GeneratorRun, user_name: Optional[str] = None) -> GeneratorR
 router = APIRouter(prefix="/generator", tags=["Генератор"])
 
 
+async def _get_maintenance_intervals_map(db: AsyncSession, gen_ids: List[int]) -> dict:
+    if not gen_ids:
+        return {}
+    res = await db.execute(
+        select(MaintenanceSchedule.generator_id, MaintenanceSchedule.interval_hours)
+        .where(MaintenanceSchedule.generator_id.in_(gen_ids))
+    )
+    return {gid: float(interval) for gid, interval in res.all() if interval is not None}
+
+
 def _build_generator_out(
     gen: Generator,
     live_map: dict,
     idle_map: dict,
     cooldown_seconds: int,
+    maint_map: Optional[dict] = None,
 ) -> GeneratorOut:
     """Формує схему GeneratorOut із живими обчислюваними показниками."""
     idle_info = idle_map.get(gen.id, {})
@@ -88,6 +100,8 @@ def _build_generator_out(
     out.warmup_cold_temp_c = float(idle_info.get("warmup_cold_temp_c", -10.0))
     out.warmup_trigger_mode = str(idle_info.get("warmup_trigger_mode", "any"))
     out.warmup_recently_done = bool(idle_info.get("warmup_recently_done", False))
+    if maint_map and gen.id in maint_map:
+        out.maintenance_interval_hours = maint_map[gen.id]
     return out
 
 
@@ -109,8 +123,9 @@ async def get_generator(
     )
     live_map = await compute_live_tank_levels_map(db, [gen])
     idle_map = await get_generators_idle_info_map(db, [gen])
+    maint_map = await _get_maintenance_intervals_map(db, [gen.id])
     cooldown_sec = 0 if gen.status == "RUNNING" else await get_generator_cooldown_remaining(db, gen.id)
-    return _build_generator_out(gen, live_map, idle_map, cooldown_sec)
+    return _build_generator_out(gen, live_map, idle_map, cooldown_sec, maint_map)
 
 
 @router.get("/list", response_model=List[GeneratorOut])
@@ -127,8 +142,9 @@ async def list_all_generators(
     cooldown_map = await get_generators_cooldown_map(db, stopped_ids) if stopped_ids else {}
     live_map = await compute_live_tank_levels_map(db, gens)
     idle_map = await get_generators_idle_info_map(db, gens)
+    maint_map = await _get_maintenance_intervals_map(db, [g.id for g in gens])
     return [
-        _build_generator_out(g, live_map, idle_map, cooldown_map.get(g.id, 0))
+        _build_generator_out(g, live_map, idle_map, cooldown_map.get(g.id, 0), maint_map)
         for g in gens
     ]
 
@@ -213,7 +229,12 @@ async def update_generator_api(
     if data.facility_id is not None:
         verify_facility_access(current_user, data.facility_id)
     client_ip = get_client_ip(request)
-    return await update_generator(db, generator_id, data, current_user.id, client_ip)
+    gen = await update_generator(db, generator_id, data, current_user.id, client_ip)
+    live_map = await compute_live_tank_levels_map(db, [gen])
+    idle_map = await get_generators_idle_info_map(db, [gen])
+    maint_map = await _get_maintenance_intervals_map(db, [gen.id])
+    cooldown_sec = 0 if gen.status == "RUNNING" else await get_generator_cooldown_remaining(db, gen.id)
+    return _build_generator_out(gen, live_map, idle_map, cooldown_sec, maint_map)
 
 
 @router.post("/wizard", response_model=GeneratorOut)

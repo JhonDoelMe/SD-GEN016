@@ -633,7 +633,7 @@ window.openCreateGeneratorModal = async function() {
   const fuelEl = document.getElementById('newGenInitialFuel');
   if (fuelEl) fuelEl.value = '0.0';
   const maintEl = document.getElementById('newGenMaintInterval');
-  if (maintEl) maintEl.value = '300';
+  if (maintEl) maintEl.value = window.systemSettingsCache?.default_maintenance_interval_hours ?? 300;
 
   await openModal('modalCreateGenerator');
 };
@@ -884,6 +884,13 @@ window.openQuickEditGeneratorModal = async function(genId = null) {
     if (document.getElementById('quickEditGenFuelType')) {
       document.getElementById('quickEditGenFuelType').value = gen.fuel_type || 'А-95';
     }
+    const maintIntEl = document.getElementById('quickEditGenMaintInterval');
+    if (maintIntEl) {
+      maintIntEl.value = roundClean(
+        gen.maintenance_interval_hours ?? window.systemSettingsCache?.default_maintenance_interval_hours ?? 300,
+        1
+      );
+    }
     await openModal('modalQuickEditGenerator');
   } catch (err) {
     showToast(err.message || 'Не вдалося завантажити дані генератора', 'error');
@@ -901,7 +908,8 @@ document.addEventListener('submit', async (e) => {
     rated_power_kw: parseFloat(document.getElementById('quickEditGenPower').value),
     tank_capacity_l: parseFloat(document.getElementById('quickEditGenTank').value),
     fuel_type: document.getElementById('quickEditGenFuelType').value,
-    nominal_consumption_l_per_h: parseFloat(document.getElementById('quickEditGenConsumption').value)
+    nominal_consumption_l_per_h: parseFloat(document.getElementById('quickEditGenConsumption').value),
+    maintenance_interval_hours: parseFloat(document.getElementById('quickEditGenMaintInterval')?.value) || undefined
   };
 
   try {
@@ -1482,12 +1490,26 @@ window.saveSystemSection = async function (sectionKey, btnEl = null) {
       return;
     }
     const coldRaw = parseFloat(document.getElementById('sysWarmupColdTempC')?.value);
+    let applyAll = document.getElementById('sysApplyAllGens')?.checked ?? false;
+    const prevCache = window.systemSettingsCache || {};
+    const scheduleOrMaintChanged = (
+      Number(prevCache.default_maintenance_interval_hours) !== maintVal ||
+      String(prevCache.work_schedule_start || '08:00') !== workStart ||
+      String(prevCache.work_schedule_end || '20:00') !== workEnd
+    );
+    if (!applyAll && scheduleOrMaintChanged) {
+      if (confirm('Ви змінили регламентний інтервал ТО або робочі години, але синхронізація для існуючих генераторів вимкнена.\n\nЗастосувати нові параметри до всіх існуючих генераторів зараз?')) {
+        applyAll = true;
+        const cb = document.getElementById('sysApplyAllGens');
+        if (cb) cb.checked = true;
+      }
+    }
     body = {
       work_schedule_start: workStart,
       work_schedule_end: workEnd,
       default_maintenance_interval_hours: maintVal,
       enforce_work_schedule: document.getElementById('sysEnforceSchedule')?.checked ?? true,
-      apply_to_all_generators: document.getElementById('sysApplyAllGens')?.checked ?? false,
+      apply_to_all_generators: applyAll,
       warmup_reminder_enabled: document.getElementById('sysWarmupReminderEnabled')?.checked ?? true,
       warmup_idle_days: Math.max(1, Math.min(90, parseInt(document.getElementById('sysWarmupIdleDays')?.value || '14', 10) || 14)),
       warmup_duration_minutes: Math.max(5, Math.min(60, parseInt(document.getElementById('sysWarmupDurationMinutes')?.value || '15', 10) || 15)),
@@ -1525,7 +1547,16 @@ window.saveSystemSection = async function (sectionKey, btnEl = null) {
     if (document.getElementById('sysApplyAllGens') && res.settings) {
       document.getElementById('sysApplyAllGens').checked = res.settings.apply_to_all_generators !== false;
     }
-    showToast(successMsg, 'success');
+    let finalToastMsg = successMsg;
+    if (sectionKey === 'regulation') {
+      const updatedCount = Number(res.settings?.updated_generators_count ?? 0);
+      if (body.apply_to_all_generators && updatedCount > 0) {
+        finalToastMsg += ` (Оновлено генераторів: ${updatedCount})`;
+      } else if (!body.apply_to_all_generators) {
+        finalToastMsg = 'Регламент збережено лише за замовчуванням (існуючі генератори залишились без змін).';
+      }
+    }
+    showToast(finalToastMsg, 'success');
     await loadAdminSystemSettings();
     if (typeof loadAllData === 'function') loadAllData();
   } catch (err) {

@@ -5,6 +5,16 @@
 
 ---
 
+## [v5.8.3] — 2026-11-20
+### 🔧 Узгодження інтервалу ТО генераторів та індивідуальне редагування регламенту
+- **Редагування інтервалу ТО на рівні генератора ([`generator.py` (схеми)](backend/app/schemas/generator.py), [`generator.py`](backend/app/api/v1/generator.py), [`generator_service.py`](backend/app/services/generator_service.py), [`modals-admin.html`](frontend/views/modals-admin.html), [`admin.js`](frontend/js/admin.js))**:
+  - Додано поле `maintenance_interval_hours` (мін. 10 год) у модалку редагування генератора (`#modalQuickEditGenerator`), схему `GeneratorUpdate`/`GeneratorOut` та `PUT /api/v1/generator/{id}` з автоматичним перерахунком `next_due_hours` і статусу ТО.
+- **Усунення захардкодженого `300.0` та прозорість масової синхронізації ([`maintenance_service.py`](backend/app/services/maintenance_service.py), [`admin.js`](frontend/js/admin.js))**:
+  - `maintenance_service.py` та форма створення генератора беруть `default_maintenance_interval_hours` із системних налаштувань замість `300.0`.
+  - При збереженні розділу «Робочий регламент, ТО та Прогрів» із вимкненою галкою масової синхронізації інтерфейс явно запитує підтвердження застосування змін до існуючих генераторів і повідомляє точну кількість оновлених генераторів.
+- **Мобільний відступ ([`layout.css`](frontend/css/layout.css))**: збільшено нижній безпечний відступ футера для комфортної прокрутки над 3-кнопковою навігацією Android.
+- **Тести**: додано тест перерахунку графіка ТО при зміні інтервалу генератора в [`test_maintenance.py`](backend/tests/test_maintenance.py) (`234` тести).
+
 ## [v5.8.2] — 2026-11-20
 ### 🧹 Автоматичне скидання кешу WebView при оновленні та локальне завантаження модулів Web-OTA
 - **Автоочищення HTTP-кешу WebView у Java ([`WebOtaManager.java`](android/app/src/main/java/ua/pp/sdgen/app/WebOtaManager.java), [`OtaUpdaterPlugin.java`](android/app/src/main/java/ua/pp/sdgen/app/OtaUpdaterPlugin.java), [`MainActivity.java`](android/app/src/main/java/ua/pp/sdgen/app/MainActivity.java))**:

@@ -265,11 +265,18 @@ async def get_or_create_default_generator(
             timezone="Europe/Kyiv",
             is_active=True
         ))
+        from backend.app.services.settings_service import get_runtime_setting
+        try:
+            def_maint = float(get_runtime_setting("default_maintenance_interval_hours", 300.0))
+            if def_maint < 10.0:
+                def_maint = 300.0
+        except (TypeError, ValueError):
+            def_maint = 300.0
         db.add(MaintenanceSchedule(
             generator_id=generator.id,
-            interval_hours=300.0,
+            interval_hours=def_maint,
             last_performed_hours=0.0,
-            next_due_hours=300.0,
+            next_due_hours=def_maint,
             is_active=True
         ))
         await db.flush()
@@ -1673,6 +1680,36 @@ async def update_generator(
         if new_tz != generator.timezone:
             changes["timezone"] = (generator.timezone, new_tz)
             generator.timezone = new_tz
+
+    if data.maintenance_interval_hours is not None:
+        new_interval = round(float(data.maintenance_interval_hours), 1)
+        if new_interval < 10.0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Регламентний інтервал ТО має бути не менше 10 мотогодин"
+            )
+        m_res = await db.execute(
+            select(MaintenanceSchedule).where(MaintenanceSchedule.generator_id == generator.id)
+        )
+        m_sched = m_res.scalars().first()
+        if not m_sched:
+            m_sched = MaintenanceSchedule(
+                generator_id=generator.id,
+                interval_hours=new_interval,
+                last_performed_hours=0.0,
+                next_due_hours=new_interval,
+                is_active=True,
+            )
+            db.add(m_sched)
+            changes["maintenance_interval_hours"] = (None, new_interval)
+        elif round(float(m_sched.interval_hours), 1) != new_interval:
+            changes["maintenance_interval_hours"] = (m_sched.interval_hours, new_interval)
+            m_sched.interval_hours = new_interval
+            m_sched.next_due_hours = round(float(m_sched.last_performed_hours) + new_interval, 1)
+
+        await db.flush()
+        if generator.status != "RUNNING":
+            generator.status = await _evaluate_generator_resting_status(db, generator)
 
     generator.updated_at = utc_now()
     await db.flush()

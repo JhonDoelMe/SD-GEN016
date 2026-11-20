@@ -1147,7 +1147,7 @@
   margin-top: 2.5rem;
   background: var(--footer-bg);
   border-top: 1px solid var(--border-color);
-  padding: 1.35rem 1rem calc(1.35rem + var(--safe-bottom));
+  padding: 1.35rem 1rem calc(2.25rem + env(safe-area-inset-bottom, 24px));
   color: var(--text-muted);
   font-size: 0.85rem;
 }

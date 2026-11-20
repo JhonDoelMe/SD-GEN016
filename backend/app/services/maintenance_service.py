@@ -8,6 +8,15 @@ from backend.app.models.maintenance import MaintenanceSchedule, MaintenanceRecor
 from backend.app.schemas.maintenance import MaintenanceRecordCreate, MaintenanceScheduleOut
 from backend.app.services.audit_service import log_audit
 from backend.app.services.generator_service import _evaluate_generator_resting_status
+from backend.app.services.settings_service import get_runtime_setting
+
+
+def _default_interval_hours() -> float:
+    try:
+        val = float(get_runtime_setting("default_maintenance_interval_hours", 300.0))
+        return val if val >= 10.0 else 300.0
+    except (TypeError, ValueError):
+        return 300.0
 
 
 async def _resolve_maintenance_generator(
@@ -58,11 +67,12 @@ async def get_maintenance_schedule_status(
     m_res = await db.execute(select(MaintenanceSchedule).where(MaintenanceSchedule.generator_id == generator.id))
     m_sched = m_res.scalars().first()
     if not m_sched:
+        def_interval = _default_interval_hours()
         m_sched = MaintenanceSchedule(
             generator_id=generator.id,
-            interval_hours=300.0,
+            interval_hours=def_interval,
             last_performed_hours=0.0,
-            next_due_hours=300.0,
+            next_due_hours=def_interval,
             is_active=True
         )
         db.add(m_sched)
@@ -171,11 +181,12 @@ async def recalculate_schedule(
     m_res = await db.execute(select(MaintenanceSchedule).where(MaintenanceSchedule.generator_id == generator.id))
     m_sched = m_res.scalars().first()
     if not m_sched:
+        def_interval = _default_interval_hours()
         m_sched = MaintenanceSchedule(
             generator_id=generator.id,
-            interval_hours=300.0,
+            interval_hours=def_interval,
             last_performed_hours=0.0,
-            next_due_hours=300.0,
+            next_due_hours=def_interval,
             is_active=True
         )
         db.add(m_sched)
@@ -193,7 +204,7 @@ async def recalculate_schedule(
             last_performed = 0.0
 
         # Calculate next milestone
-        interval = m_sched.interval_hours if m_sched.interval_hours > 0 else 300.0
+        interval = m_sched.interval_hours if m_sched.interval_hours > 0 else _default_interval_hours()
         next_due = last_performed + interval
         while next_due < generator.current_operating_hours and (next_due + interval <= generator.current_operating_hours):
             next_due += interval
