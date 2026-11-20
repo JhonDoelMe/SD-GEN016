@@ -14,7 +14,8 @@ param(
     [int]$MinNativeCode = 27,
     [string]$Changelog = "",
     [switch]$Mandatory = $false,
-    [switch]$Replace = $false
+    [switch]$Replace = $false,
+    [switch]$WithServerZip = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -118,3 +119,8 @@ if ($httpCode -ne "201" -and $httpCode -ne "200") {
 $resp = $bodyText | ConvertFrom-Json
 Write-Host "✅ Web-OTA бандл v$($resp.version_name) (web_build $($resp.web_build)) опубліковано!" -ForegroundColor Green
 Write-Host "   SHA-256: $($resp.sha256)" -ForegroundColor DarkGray
+
+if ($WithServerZip) {
+    & (Join-Path $PSScriptRoot "release_server_zip.ps1") -Changelog $Changelog -Replace:$Replace
+    if ($LASTEXITCODE -ne 0) { throw "Помилка публікації серверного ZIP." }
+}

@@ -270,3 +270,86 @@ def test_web_bundle_ota_lifecycle_and_compatibility(ota_client: TestClient) -> N
     assert rb.status_code == 200
     assert rb.json()["web_build"] == 28
     assert ota_client.get("/ota/download/web/latest.zip").content == zip28
+
+
+def _fake_server_zip(version: str = "5.9.1") -> bytes:
+    buf = io.BytesIO()
+    prefix = f"sd-gen016-v{version}"
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+        zf.writestr(f"{prefix}/backend/app/main.py", ("print('ok')\n" * 60).encode("utf-8"))
+        zf.writestr(f"{prefix}/docker-compose.yml", b"services:\n  app:\n    build: .\n")
+    return buf.getvalue()
+
+
+def test_server_install_zip_lifecycle_and_landing_page(ota_client: TestClient) -> None:
+    headers = {"X-OTA-Admin-Token": "test-ota-admin-token-1234567890"}
+
+    empty = ota_client.get("/ota/api/server/latest")
+    assert empty.status_code == 200
+    assert empty.json()["has_server_package"] is False
+
+    # Reject ZIP missing SD-GEN016 markers
+    bad_buf = io.BytesIO()
+    with zipfile.ZipFile(bad_buf, "w") as zf:
+        zf.writestr("random.txt", "hello " * 120)
+    bad_upload = ota_client.post(
+        "/ota/api/server/releases",
+        headers=headers,
+        files={"file": ("bad.zip", io.BytesIO(bad_buf.getvalue()), "application/zip")},
+        data={"version_code": "33", "version_name": "5.9.1"},
+    )
+    assert bad_upload.status_code == 400
+
+    # Publish valid server ZIP v5.9.1 (build 33)
+    zip33 = _fake_server_zip("5.9.1")
+    sha33 = hashlib.sha256(zip33).hexdigest()
+    res33 = ota_client.post(
+        "/ota/api/server/releases",
+        headers=headers,
+        files={"file": ("sd-gen016-v5.9.1-install.zip", io.BytesIO(zip33), "application/zip")},
+        data={
+            "version_code": "33",
+            "version_name": "5.9.1",
+            "changelog": "Мануал користувача та актуальні політики",
+        },
+    )
+    assert res33.status_code == 201
+    pkg33 = res33.json()
+    assert pkg33["version_code"] == 33
+    assert pkg33["sha256"] == sha33
+    assert pkg33["file_name"] == "sd-gen016-v5.9.1-install.zip"
+
+    # Landing page must render Server Install ZIP download section
+    landing = ota_client.get("/ota/")
+    assert landing.status_code == 200
+    assert "sd-gen016-v5.9.1-install.zip" in landing.text
+    assert "/ota/download/server/latest.zip" in landing.text
+    assert sha33 in landing.text
+
+    # Download latest + verify headers
+    dl = ota_client.get("/ota/download/server/latest.zip")
+    assert dl.status_code == 200
+    assert dl.content == zip33
+    assert dl.headers["x-ota-sha256"] == sha33
+
+    # Upload v5.9.2 (build 34), then switch active back to 33 and delete 34
+    zip34 = _fake_server_zip("5.9.2")
+    assert ota_client.post(
+        "/ota/api/server/releases",
+        headers=headers,
+        files={"file": ("sd-gen016-v5.9.2-install.zip", io.BytesIO(zip34), "application/zip")},
+        data={"version_code": "34", "version_name": "5.9.2"},
+    ).status_code == 201
+
+    sw = ota_client.patch("/ota/api/server/policy", headers=headers, json={"active_version_code": 33})
+    assert sw.status_code == 200
+    assert sw.json()["version_code"] == 33
+    assert ota_client.get("/ota/download/server/latest.zip").content == zip33
+
+    dl34 = ota_client.get("/ota/download/server/34.zip")
+    assert dl34.status_code == 200
+    assert dl34.content == zip34
+
+    del34 = ota_client.delete("/ota/api/server/releases/34", headers=headers)
+    assert del34.status_code == 200
+    assert del34.json()["deleted"] == 34

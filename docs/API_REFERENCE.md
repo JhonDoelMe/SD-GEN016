@@ -660,6 +660,8 @@
 - **`GET /ota/api/releases`**, **`POST /ota/api/releases`**, **`DELETE /ota/api/releases/{version_code}`**, **`PATCH /ota/api/policy`** *(Захищено `OTA_ADMIN_TOKEN`)*: Керування APK-релізами та політикою примусового оновлення; вебконсоль доступна на `GET /ota/` та `GET /ota/admin`.
 - **`GET /ota/api/web/latest`**, **`GET /ota/download/web/latest.zip`**, **`GET /ota/download/web/{web_build}.zip`**: Метадані та завантаження легковагових Web-OTA бандлів інтерфейсу з SHA-256 верифікацією (`WebOtaManager.java`, без `REQUEST_INSTALL_PACKAGES`).
 - **`GET /ota/api/web/releases`**, **`POST /ota/api/web/releases`**, **`PATCH /ota/api/web/policy`**, **`DELETE /ota/api/web/releases/{web_build}`** *(Захищено `OTA_ADMIN_TOKEN`)*: Керування Web-OTA релізами.
+- **`GET /ota/api/server/latest`**, **`GET /ota/download/server/latest.zip`**, **`GET /ota/download/server/{version_code}.zip`**: Метадані та завантаження чистих серверних інсталяційних ZIP-пакетів (`Zero-.env`) із перевіркою SHA-256 напряму з OTA-порталу без необхідності створювати релізи в Git-репозиторіях.
+- **`GET /ota/api/server/releases`**, **`POST /ota/api/server/releases`**, **`PATCH /ota/api/server/policy`**, **`DELETE /ota/api/server/releases/{version_code}`** *(Захищено `OTA_ADMIN_TOKEN`)*: Керування серверними інсталяційними пакетами.
 
 ---
 

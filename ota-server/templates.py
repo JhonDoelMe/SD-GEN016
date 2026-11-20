@@ -31,8 +31,13 @@ def _format_size(num_bytes: int) -> str:
     return f"{num_bytes / (1024 * 1024):.2f} МБ"
 
 
-def render_landing_page(manifest: dict[str, Any]) -> str:
-    """Render the public, shareable APK download landing page."""
+def render_landing_page(
+    manifest: dict[str, Any],
+    web_manifest: dict[str, Any] | None = None,
+    server_manifest: dict[str, Any] | None = None,
+    server_history: list[dict[str, Any]] | None = None,
+) -> str:
+    """Render the public, shareable APK & Server Install ZIP distribution landing page."""
     app_name = html.escape(str(manifest.get("app_name") or "SD-GEN016"))
     app_id = html.escape(str(manifest.get("app_id") or "ua.pp.sdgen.app"))
     landing_url = str(manifest.get("landing_url") or "https://sdgen.pp.ua/ota/")
@@ -52,23 +57,33 @@ def render_landing_page(manifest: dict[str, Any]) -> str:
     )
     qr_svg = _build_qr_svg(landing_url)
 
+    web_info = web_manifest or {}
+    has_web_ota = bool(web_info.get("has_web_bundle"))
+    web_ver = html.escape(str(web_info.get("version_name") or ""))
+    web_build_num = int(web_info.get("web_build") or 0)
+    web_badge_html = (
+        f'<div class="meta-item"><span>Web-OTA інтерфейс</span><strong>v{web_ver} (build {web_build_num})</strong></div>'
+        if has_web_ota
+        else '<div class="meta-item"><span>Пакет</span><strong>' + app_id + "</strong></div>"
+    )
+
     action_block = (
         f"""
         <a class="btn-primary" href="{download_url}">
           Завантажити APK (v{version_name})
         </a>
         <div class="meta-grid">
-          <div class="meta-item"><span>Версія</span><strong>v{version_name} (build {version_code})</strong></div>
+          <div class="meta-item"><span>Базовий APK</span><strong>v{version_name} (build {version_code})</strong></div>
           <div class="meta-item"><span>Розмір</span><strong>{size_str}</strong></div>
           <div class="meta-item"><span>Опубліковано</span><strong>{published_display}</strong></div>
-          <div class="meta-item"><span>Пакет</span><strong>{app_id}</strong></div>
+          {web_badge_html}
         </div>
         <div class="changelog">
-          <div class="section-label">Що нового</div>
+          <div class="section-label">Що нового (Android)</div>
           <p>{changelog_html}</p>
         </div>
         <div class="hash-box">
-          <span>SHA-256:</span>
+          <span>SHA-256 (APK):</span>
           <code>{sha256}</code>
         </div>
         """
@@ -76,6 +91,91 @@ def render_landing_page(manifest: dict[str, Any]) -> str:
         else """
         <div class="empty-box">
           Релізи APK ще не опубліковані на сервері. Завантажте першу збірку через панель адміністратора або скрипт релізу.
+        </div>
+        """
+    )
+
+    srv_info = server_manifest or {}
+    has_server = bool(srv_info.get("has_server_package"))
+    srv_ver = html.escape(str(srv_info.get("version_name") or "—"))
+    srv_code = int(srv_info.get("version_code") or 0)
+    srv_size = _format_size(int(srv_info.get("file_size") or 0))
+    srv_file = html.escape(str(srv_info.get("file_name") or f"sd-gen016-v{srv_ver}-install.zip"))
+    srv_sha = html.escape(str(srv_info.get("sha256") or "—"))
+    srv_url = html.escape(str(srv_info.get("download_url") or "/ota/download/server/latest.zip"))
+    srv_pub_raw = str(srv_info.get("published_at") or "")
+    srv_pub_display = html.escape(srv_pub_raw[:19].replace("T", " ") + " UTC" if srv_pub_raw else "—")
+    srv_cl_raw = str(srv_info.get("changelog") or "").strip()
+    srv_cl_html = (
+        html.escape(srv_cl_raw).replace("\n", "<br>")
+        if srv_cl_raw
+        else "Повний Zero-.env серверний інсталяційний пакет (Backend + Frontend + Docker + Docs)."
+    )
+
+    history_rows = ""
+    for item in (server_history or []):
+        h_ver = html.escape(str(item.get("version_name") or ""))
+        h_code = int(item.get("version_code") or 0)
+        h_size = _format_size(int(item.get("file_size") or 0))
+        h_date = html.escape(str(item.get("published_at") or "")[:10])
+        h_dl = html.escape(str(item.get("version_download_url") or f"/ota/download/server/{h_code}.zip"))
+        h_badge = ' <span class="pill-mini">Актуальний</span>' if item.get("is_active") else ""
+        history_rows += (
+            f'<li>'
+            f'<a href="{h_dl}">v{h_ver} (build {h_code}) — {h_size}</a>{h_badge}'
+            f'<span class="hist-date">{h_date}</span>'
+            f'</li>'
+        )
+    history_block = (
+        f"""
+        <div class="steps" style="margin-top: 14px;">
+          <div class="section-label">Архів серверних збірок</div>
+          <ul class="history-list">{history_rows}</ul>
+        </div>
+        """
+        if history_rows
+        else ""
+    )
+
+    server_section = (
+        f"""
+        <div class="divider"></div>
+        <span class="badge badge-server">Серверний пакет • Zero-.env ZIP</span>
+        <h2 style="margin: 10px 0 6px; font-size: 20px;">Встановлення та оновлення сервера</h2>
+        <p class="subtitle" style="margin-bottom: 16px;">Чистий інсталяційний архів (без секретів і БД) для розгортання нового сервера через Web Setup Wizard <code>/setup</code> або Docker.</p>
+        <a class="btn-primary btn-server" href="{srv_url}">
+          Завантажити {srv_file}
+        </a>
+        <div class="meta-grid">
+          <div class="meta-item"><span>Версія сервера</span><strong>v{srv_ver} (build {srv_code})</strong></div>
+          <div class="meta-item"><span>Розмір архіву</span><strong>{srv_size}</strong></div>
+          <div class="meta-item"><span>Опубліковано</span><strong>{srv_pub_display}</strong></div>
+          <div class="meta-item"><span>Режим</span><strong>Zero-.env (/setup)</strong></div>
+        </div>
+        <div class="changelog">
+          <div class="section-label">Опис релізу сервера</div>
+          <p>{srv_cl_html}</p>
+        </div>
+        <div class="hash-box">
+          <span>SHA-256 (ZIP):</span>
+          <code>{srv_sha}</code>
+        </div>
+        <div class="steps">
+          <div class="section-label">Швидке розгортання з архіву</div>
+          <ol>
+            <li>Розпакуйте <code>{srv_file}</code> на сервері та перейдіть у директорію проєкту.</li>
+            <li>Для Docker виконайте <code>docker compose up -d --build</code> (або <code>uvicorn backend.app.main:app --port 8000</code>).</li>
+            <li>Відкрийте сайт — запуститься одноразовий <strong>Web Setup Wizard (<code>/setup</code>)</strong> для створення бази й SuperAdmin.</li>
+          </ol>
+        </div>
+        {history_block}
+        """
+        if has_server
+        else """
+        <div class="divider"></div>
+        <span class="badge badge-server">Серверний пакет • Zero-.env ZIP</span>
+        <div class="empty-box" style="margin-top: 12px;">
+          Інсталяційні ZIP-пакети сервера ще не опубліковані. Завантажте архів через <code>/ota/admin</code> або <code>scripts/release_server_zip.ps1</code>.
         </div>
         """
     )
@@ -113,7 +213,7 @@ def render_landing_page(manifest: dict[str, Any]) -> str:
     }}
     .card {{
       width: 100%;
-      max-width: 540px;
+      max-width: 620px;
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 20px;
@@ -131,6 +231,14 @@ def render_landing_page(manifest: dict[str, Any]) -> str:
       letter-spacing: 0.04em;
       text-transform: uppercase;
     }}
+    .badge-server {{
+      background: rgba(16, 185, 129, 0.18);
+      color: #6ee7b7;
+    }}
+    .divider {{
+      margin: 26px 0 20px;
+      border-top: 1px solid var(--border);
+    }}
     h1 {{ margin: 12px 0 6px; font-size: 26px; }}
     .subtitle {{ margin: 0 0 22px; color: var(--muted); font-size: 14px; line-height: 1.5; }}
     .btn-primary {{
@@ -147,6 +255,39 @@ def render_landing_page(manifest: dict[str, Any]) -> str:
       transition: background 0.15s ease;
     }}
     .btn-primary:hover {{ background: var(--accent-hover); }}
+    .btn-server {{ background: #059669; }}
+    .btn-server:hover {{ background: #047857; }}
+    .history-list {{
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 8px;
+      font-size: 13px;
+    }}
+    .history-list li {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      padding-bottom: 6px;
+    }}
+    .history-list li:last-child {{ border-bottom: 0; padding-bottom: 0; }}
+    .history-list a {{ color: #6ee7b7; text-decoration: none; font-weight: 600; }}
+    .history-list a:hover {{ text-decoration: underline; }}
+    .hist-date {{ color: var(--muted); font-size: 12px; }}
+    .pill-mini {{
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.18);
+      color: #6ee7b7;
+      font-size: 11px;
+      font-weight: 600;
+    }}
     .meta-grid {{
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -250,9 +391,10 @@ def render_landing_page(manifest: dict[str, Any]) -> str:
       <ol>
         <li>Натисніть <strong>Завантажити APK</strong> і відкрийте завантажений файл.</li>
         <li>Якщо Android запитає дозвіл на встановлення з цього джерела — увімкніть його у налаштуваннях.</li>
-        <li>Надалі додаток сам повідомлятиме про нові версії та оновлюватиметься штатно без втрати даних.</li>
+        <li>Надалі нові версії інтерфейсу надходитимуть миттєво через Web-OTA всередині додатка без перевстановлення APK.</li>
       </ol>
     </div>
+    {server_section}
     <div class="footer">
       <span>Релізний підпис SHA-256 перевірено</span>
       <a href="/ota/admin">Керування релізами</a>
@@ -469,6 +611,48 @@ def render_admin_page(public_base_url: str) -> str:
           <tbody id="webBundlesBody"></tbody>
         </table>
       </div>
+
+      <div class="card">
+        <h2 style="font-size:17px;">Завантажити серверний інсталяційний пакет (Zero-.env ZIP)</h2>
+        <form id="uploadServerForm" onsubmit="uploadServerPackage(event)">
+          <div class="grid-2">
+            <div>
+              <label>Інсталяційний архів (.zip)</label>
+              <input id="serverFile" type="file" accept=".zip" required>
+            </div>
+            <div>
+              <label>versionName (напр. 5.9.1)</label>
+              <input id="serverVersionName" type="text" placeholder="5.9.1" required>
+            </div>
+            <div>
+              <label>versionCode (ціле число &gt; поточного)</label>
+              <input id="serverVersionCode" type="number" min="1" required>
+            </div>
+          </div>
+          <label>Список змін серверного релізу</label>
+          <textarea id="serverChangelog" rows="2" placeholder="Опис змін..."></textarea>
+          <div class="row" style="margin-top:12px;">
+            <button type="submit">Опублікувати серверний пакет</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card" style="overflow-x:auto;">
+        <h2 style="font-size:17px;">Історія серверних інсталяційних пакетів</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Версія</th>
+              <th>Статус</th>
+              <th>Розмір</th>
+              <th>Завантажень</th>
+              <th>Changelog / SHA-256</th>
+              <th>Дії</th>
+            </tr>
+          </thead>
+          <tbody id="serverPackagesBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
   <script>
@@ -501,9 +685,10 @@ def render_admin_page(public_base_url: str) -> str:
 
     async function loadReleases() {{
       try {{
-        const [data, webData] = await Promise.all([
+        const [data, webData, serverData] = await Promise.all([
           apiFetch('/ota/api/releases'),
           apiFetch('/ota/api/web/releases').catch(() => ({{ bundles: [] }})),
+          apiFetch('/ota/api/server/releases').catch(() => ({{ packages: [] }})),
         ]);
         document.getElementById('adminBody').style.display = 'grid';
         document.getElementById('policyMinCode').value = data.min_supported_version_code || 0;
@@ -562,6 +747,33 @@ def render_admin_page(public_base_url: str) -> str:
               </td>
             `;
             webTbody.appendChild(tr);
+          }}
+        }}
+
+        const srvTbody = document.getElementById('serverPackagesBody');
+        if (srvTbody) {{
+          srvTbody.innerHTML = '';
+          for (const p of (serverData.packages || [])) {{
+            const tr = document.createElement('tr');
+            const mb = (p.file_size / (1024 * 1024)).toFixed(2) + ' МБ';
+            const statusPill = p.is_active
+              ? '<span class="pill pill-ok">Активний</span>'
+              : '<span class="pill">Архів</span>';
+            tr.innerHTML = `
+              <td><strong>v${{escapeHtml(p.version_name)}}</strong><br><small>build ${{p.version_code}}</small></td>
+              <td>${{statusPill}}</td>
+              <td>${{mb}}</td>
+              <td>${{p.download_count}}</td>
+              <td><div>${{escapeHtml(p.changelog || '—')}}</div><small style="color:var(--muted);">${{p.sha256.slice(0, 16)}}...</small></td>
+              <td>
+                <div class="row">
+                  <a class="secondary" style="padding:6px 10px; border-radius:8px; text-decoration:none; color:#fff; background:#1e293b;" href="/ota/download/server/${{p.version_code}}.zip">ZIP</a>
+                  ${{p.is_active ? '' : `<button type="button" class="secondary" onclick="activateServerPackage(${{p.version_code}})">Зробити активним</button>`}}
+                  <button type="button" class="danger" onclick="deleteServerPackage(${{p.version_code}})">Видалити</button>
+                </div>
+              </td>
+            `;
+            srvTbody.appendChild(tr);
           }}
         }}
       }} catch (e) {{
@@ -672,6 +884,48 @@ def render_admin_page(public_base_url: str) -> str:
       if (!confirm('Видалити Web-OTA бандл build ' + build + '?')) return;
       try {{
         await apiFetch('/ota/api/web/releases/' + build, {{ method: 'DELETE' }});
+        await loadReleases();
+      }} catch (e) {{
+        alert('Помилка: ' + e.message);
+      }}
+    }}
+
+    async function uploadServerPackage(ev) {{
+      ev.preventDefault();
+      const file = document.getElementById('serverFile').files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('version_code', document.getElementById('serverVersionCode').value);
+      fd.append('version_name', document.getElementById('serverVersionName').value.trim());
+      fd.append('changelog', document.getElementById('serverChangelog').value.trim());
+      try {{
+        await apiFetch('/ota/api/server/releases', {{ method: 'POST', body: fd }});
+        document.getElementById('uploadServerForm').reset();
+        await loadReleases();
+        alert('Серверний інсталяційний пакет успішно опубліковано!');
+      }} catch (e) {{
+        alert('Помилка публікації серверного пакета: ' + e.message);
+      }}
+    }}
+
+    async function activateServerPackage(code) {{
+      try {{
+        await apiFetch('/ota/api/server/policy', {{
+          method: 'PATCH',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ active_version_code: code }}),
+        }});
+        await loadReleases();
+      }} catch (e) {{
+        alert('Помилка: ' + e.message);
+      }}
+    }}
+
+    async function deleteServerPackage(code) {{
+      if (!confirm('Видалити серверний пакет build ' + code + '?')) return;
+      try {{
+        await apiFetch('/ota/api/server/releases/' + code, {{ method: 'DELETE' }});
         await loadReleases();
       }} catch (e) {{
         alert('Помилка: ' + e.message);

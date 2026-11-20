@@ -6,7 +6,9 @@
 ---
 
 ## [v5.9.1] — 2026-11-20
-### 📘 Посібник користувача та повна синхронізація правил, політик і документації
+### 📘 Посібник користувача, Серверні інсталяційні ZIP на `/ota/` та Повна синхронізація політик
+- **Дистрибуція серверних інсталяційних ZIP-пакетів через OTA-портал ([`ota-server/app.py`](ota-server/app.py), [`ota-server/storage.py`](ota-server/storage.py), [`ota-server/templates.py`](ota-server/templates.py), [`scripts/release_server_zip.ps1`](scripts/release_server_zip.ps1))**:
+  - На публічну сторінку `/ota/` та в адмінку `/ota/admin` додано 3-й канал релізів — **«Серверний пакет • Zero-.env ZIP»** (`/ota/api/server/latest`, `/ota/download/server/latest.zip`, `/ota/download/server/{version_code}.zip`) із SHA-256 перевіркою та архівом попередніх збірок, що дозволяє оновлювати серверні інсталяційні архіви в 1 команду (`scripts/release_server_zip.ps1` або `release_web_ota.ps1 -WithServerZip`) без дублювання релізів на Git-хостингах.
 - **Новий посібник із налаштування та експлуатації ([`docs/USER_AND_ADMIN_MANUAL.md`](docs/USER_AND_ADMIN_MANUAL.md))**:
   - Додано покроковий мануал для нових адміністраторів та операторів: від першого запуску (`/setup`), налаштування інтеграцій і об'єктів/генераторів/каністр до щоденного пуску/стопу, роботи офлайн, вимірювання витрат, зведення «🏢 Об'єкти мережі», звітності `₴/год`, Web-OTA та FAQ.
 - **Внутрішньосистемна інструкція та актуалізація політик у застосунку ([`modals-legal.html`](frontend/views/modals-legal.html), [`index.html`](frontend/index.html), [`view-loader.js`](frontend/js/view-loader.js))**:

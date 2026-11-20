@@ -16,6 +16,7 @@ from typing import Any, BinaryIO
 APK_ZIP_MAGIC = b"PK\x03\x04"
 MAX_APK_BYTES = 150 * 1024 * 1024  # 150 MiB hard ceiling
 MAX_WEB_BUNDLE_BYTES = 50 * 1024 * 1024  # 50 MiB hard ceiling for Web-OTA ZIP
+MAX_SERVER_PACKAGE_BYTES = 100 * 1024 * 1024  # 100 MiB hard ceiling for server install ZIP
 VERSION_NAME_RE = re.compile(r"^[0-9]+(?:\.[0-9]+){1,3}(?:-[A-Za-z0-9._-]+)?$")
 
 
@@ -45,6 +46,7 @@ class OtaStorage:
         self.data_dir = Path(data_dir).resolve()
         self.apks_dir = self.data_dir / "apks"
         self.web_bundles_dir = (self.data_dir / "web_bundles").resolve()
+        self.server_packages_dir = (self.data_dir / "server_packages").resolve()
         self.db_path = self.data_dir / "ota.db"
         self.public_base_url = public_base_url.rstrip("/")
         self.app_id = app_id
@@ -55,6 +57,7 @@ class OtaStorage:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.apks_dir.mkdir(parents=True, exist_ok=True)
         self.web_bundles_dir.mkdir(parents=True, exist_ok=True)
+        self.server_packages_dir.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
@@ -98,6 +101,19 @@ class OtaStorage:
                     sha256 TEXT NOT NULL,
                     changelog TEXT NOT NULL DEFAULT '',
                     is_mandatory INTEGER NOT NULL DEFAULT 0,
+                    is_active INTEGER NOT NULL DEFAULT 0,
+                    download_count INTEGER NOT NULL DEFAULT 0,
+                    published_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS server_packages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    version_code INTEGER NOT NULL UNIQUE,
+                    version_name TEXT NOT NULL,
+                    file_name TEXT NOT NULL,
+                    stored_name TEXT NOT NULL,
+                    file_size INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    changelog TEXT NOT NULL DEFAULT '',
                     is_active INTEGER NOT NULL DEFAULT 0,
                     download_count INTEGER NOT NULL DEFAULT 0,
                     published_at TEXT NOT NULL
@@ -823,3 +839,299 @@ class OtaStorage:
             conn.execute("DELETE FROM web_bundles WHERE web_build = ?", (web_build,))
             stored_name = str(row["stored_name"])
         self._safe_unlink(self.web_bundles_dir / stored_name)
+
+    # ------------------------------------------------------------------
+    # Server Install ZIP Packages Storage (`server_packages`)
+    # ------------------------------------------------------------------
+
+    def _server_row_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        version_code = int(row["version_code"])
+        return {
+            "app_id": self.app_id,
+            "app_name": self.app_name,
+            "has_server_package": True,
+            "version_code": version_code,
+            "version_name": str(row["version_name"]),
+            "is_active": bool(row["is_active"]),
+            "file_name": str(row["file_name"]),
+            "file_size": int(row["file_size"]),
+            "sha256": str(row["sha256"]),
+            "changelog": str(row["changelog"] or ""),
+            "download_count": int(row["download_count"] or 0),
+            "published_at": str(row["published_at"]),
+            "download_url": f"{self.public_base_url}/download/server/latest.zip",
+            "version_download_url": f"{self.public_base_url}/download/server/{version_code}.zip",
+            "landing_url": f"{self.public_base_url}/",
+        }
+
+    def get_latest_server_manifest(self) -> dict[str, Any]:
+        """Return latest active server install ZIP package metadata."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM server_packages WHERE is_active = 1 ORDER BY version_code DESC LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return {
+                "app_id": self.app_id,
+                "app_name": self.app_name,
+                "has_server_package": False,
+                "version_code": 0,
+                "version_name": "",
+                "is_active": False,
+                "file_name": "",
+                "file_size": 0,
+                "sha256": "",
+                "changelog": "",
+                "download_count": 0,
+                "published_at": None,
+                "download_url": f"{self.public_base_url}/download/server/latest.zip",
+                "landing_url": f"{self.public_base_url}/",
+            }
+        return self._server_row_to_dict(row)
+
+    def list_server_packages(self, limit: int | None = None) -> dict[str, Any]:
+        """List server install ZIP packages ordered newest-first."""
+        with self._connect() as conn:
+            if limit is not None and limit > 0:
+                rows = conn.execute(
+                    "SELECT * FROM server_packages ORDER BY version_code DESC LIMIT ?",
+                    (int(limit),),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM server_packages ORDER BY version_code DESC"
+                ).fetchall()
+            return {"packages": [self._server_row_to_dict(r) for r in rows]}
+
+    def save_server_package(
+        self,
+        file_stream: BinaryIO,
+        version_code: int,
+        version_name: str,
+        changelog: str = "",
+        replace: bool = False,
+    ) -> dict[str, Any]:
+        """Validate server distribution ZIP archive, compute SHA-256, store on disk and activate."""
+        if version_code < 1:
+            raise OtaValidationError("version_code має бути цілим числом >= 1.")
+        clean_ver = (version_name or "").strip()
+        if not VERSION_NAME_RE.match(clean_ver):
+            raise OtaValidationError("Некоректний формат version_name (очікується напр. 5.9.1).")
+
+        stored_name = f"sd-gen016-server-v{clean_ver}-b{version_code}.zip"
+        public_file_name = f"sd-gen016-v{clean_ver}-install.zip"
+        final_path = (self.server_packages_dir / stored_name).resolve()
+        if final_path.parent != self.server_packages_dir:
+            raise OtaValidationError("Неприпустиме ім'я файлу.")
+        tmp_path = self.server_packages_dir / f".upload-server-{uuid.uuid4().hex}-{version_code}.tmp"
+
+        hasher = hashlib.sha256()
+        total_bytes = 0
+        first_chunk = True
+        try:
+            with open(tmp_path, "wb") as out_fp:
+                while True:
+                    chunk = file_stream.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    if first_chunk:
+                        first_chunk = False
+                        if len(chunk) < 4 or chunk[:4] != APK_ZIP_MAGIC:
+                            raise OtaValidationError("Файл не є валідним ZIP-архівом (відсутня сигнатура PK).")
+                    total_bytes += len(chunk)
+                    if total_bytes > MAX_SERVER_PACKAGE_BYTES:
+                        raise OtaValidationError(
+                            f"Інсталяційний ZIP перевищує максимальний розмір {MAX_SERVER_PACKAGE_BYTES // (1024 * 1024)} МБ."
+                        )
+                    hasher.update(chunk)
+                    out_fp.write(chunk)
+
+            if total_bytes < 512:
+                raise OtaValidationError("Інсталяційний ZIP-архів занадто малий або порожній.")
+
+            try:
+                with zipfile.ZipFile(tmp_path, "r") as zf:
+                    names = zf.namelist()
+                    has_app_marker = False
+                    for entry_name in names:
+                        norm = entry_name.replace("\\", "/")
+                        if norm.startswith("/") or ".." in norm.split("/") or (len(norm) > 1 and norm[1] == ":"):
+                            raise OtaValidationError(f"Небезпечний шлях у ZIP-архіві: {entry_name}")
+                        if norm.endswith("backend/app/main.py") or norm.endswith("docker-compose.yml"):
+                            has_app_marker = True
+                    if not has_app_marker:
+                        raise OtaValidationError(
+                            "Архів не схожий на інсталяційний пакет SD-GEN016 (відсутні backend/app/main.py або docker-compose.yml)."
+                        )
+            except zipfile.BadZipFile as exc:
+                raise OtaValidationError("Пошкоджений інсталяційний ZIP-архів.") from exc
+
+            sha256_hex = hasher.hexdigest()
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            with self._lock:
+                pruned_to_remove: list[str] = []
+                old_stored_to_remove: str | None = None
+                with self._connect() as conn:
+                    existing = conn.execute(
+                        "SELECT version_code, stored_name FROM server_packages WHERE version_code = ?",
+                        (version_code,),
+                    ).fetchone()
+                    max_row = conn.execute(
+                        "SELECT COALESCE(MAX(version_code), 0) AS max_code FROM server_packages"
+                    ).fetchone()
+                    max_code = int(max_row["max_code"]) if max_row else 0
+
+                    if not replace and version_code <= max_code:
+                        raise OtaConflictError(
+                            f"version_code={version_code} має бути строго більшим за поточний максимум ({max_code})."
+                        )
+
+                    if existing and existing["stored_name"] != stored_name:
+                        old_stored_to_remove = str(existing["stored_name"])
+
+                    conn.execute("UPDATE server_packages SET is_active = 0")
+                    if existing:
+                        conn.execute(
+                            """
+                            UPDATE server_packages
+                            SET version_name = ?, file_name = ?, stored_name = ?,
+                                file_size = ?, sha256 = ?, changelog = ?,
+                                is_active = 1, published_at = ?
+                            WHERE version_code = ?
+                            """,
+                            (
+                                clean_ver,
+                                public_file_name,
+                                stored_name,
+                                total_bytes,
+                                sha256_hex,
+                                (changelog or "").strip(),
+                                now_iso,
+                                version_code,
+                            ),
+                        )
+                    else:
+                        conn.execute(
+                            """
+                            INSERT INTO server_packages (
+                                version_code, version_name, file_name, stored_name,
+                                file_size, sha256, changelog, is_active, download_count, published_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+                            """,
+                            (
+                                version_code,
+                                clean_ver,
+                                public_file_name,
+                                stored_name,
+                                total_bytes,
+                                sha256_hex,
+                                (changelog or "").strip(),
+                                now_iso,
+                            ),
+                        )
+
+                    pruned_to_remove = self._prune_old_server_packages(conn)
+                    saved = conn.execute(
+                        "SELECT * FROM server_packages WHERE version_code = ?",
+                        (version_code,),
+                    ).fetchone()
+                    os.replace(tmp_path, final_path)
+
+                if old_stored_to_remove:
+                    self._safe_unlink(self.server_packages_dir / old_stored_to_remove)
+                for pruned_name in pruned_to_remove:
+                    self._safe_unlink(self.server_packages_dir / pruned_name)
+
+            return self._server_row_to_dict(saved)
+        except Exception:
+            self._safe_unlink(tmp_path)
+            raise
+
+    def _prune_old_server_packages(self, conn: sqlite3.Connection) -> list[str]:
+        rows = conn.execute(
+            "SELECT version_code, stored_name, is_active FROM server_packages ORDER BY version_code DESC"
+        ).fetchall()
+        if len(rows) <= self.max_releases:
+            return []
+        removed_names: list[str] = []
+        for row in rows[self.max_releases :]:
+            if int(row["is_active"]) == 1:
+                continue
+            conn.execute(
+                "DELETE FROM server_packages WHERE version_code = ?",
+                (int(row["version_code"]),),
+            )
+            removed_names.append(str(row["stored_name"]))
+        return removed_names
+
+    def get_server_package_for_download(self, version_code: int | None = None) -> tuple[Path, dict[str, Any]]:
+        """Resolve server install ZIP file path on disk for active release or explicit version_code."""
+        with self._connect() as conn:
+            if version_code is None:
+                row = conn.execute(
+                    "SELECT * FROM server_packages WHERE is_active = 1 ORDER BY version_code DESC LIMIT 1"
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM server_packages WHERE version_code = ?",
+                    (version_code,),
+                ).fetchone()
+            if row is None:
+                raise OtaNotFoundError("Серверний інсталяційний ZIP-пакет не знайдено.")
+            pkg_path = (self.server_packages_dir / os.path.basename(str(row["stored_name"]))).resolve()
+            if pkg_path.parent != self.server_packages_dir or not pkg_path.is_file():
+                raise OtaNotFoundError("Файл інсталяційного пакета відсутній на диску сервера.")
+            conn.execute(
+                "UPDATE server_packages SET download_count = download_count + 1 WHERE version_code = ?",
+                (int(row["version_code"]),),
+            )
+            return pkg_path, self._server_row_to_dict(row)
+
+    def update_server_policy(
+        self,
+        active_version_code: int | None = None,
+        changelog: str | None = None,
+    ) -> dict[str, Any]:
+        """Switch active server install package or update changelog on active package."""
+        with self._connect() as conn:
+            if active_version_code is not None:
+                target = conn.execute(
+                    "SELECT version_code FROM server_packages WHERE version_code = ?",
+                    (active_version_code,),
+                ).fetchone()
+                if target is None:
+                    raise OtaNotFoundError(f"Серверний пакет build {active_version_code} не знайдено.")
+                conn.execute("UPDATE server_packages SET is_active = 0")
+                conn.execute(
+                    "UPDATE server_packages SET is_active = 1 WHERE version_code = ?",
+                    (active_version_code,),
+                )
+            if changelog is not None:
+                active = conn.execute(
+                    "SELECT version_code FROM server_packages WHERE is_active = 1 LIMIT 1"
+                ).fetchone()
+                if active is not None:
+                    conn.execute(
+                        "UPDATE server_packages SET changelog = ? WHERE version_code = ?",
+                        (changelog.strip(), int(active["version_code"])),
+                    )
+        return self.get_latest_server_manifest()
+
+    def delete_server_package(self, version_code: int) -> None:
+        """Delete a server install ZIP package (refuses deleting active one when others exist)."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT stored_name, is_active FROM server_packages WHERE version_code = ?",
+                (version_code,),
+            ).fetchone()
+            if row is None:
+                raise OtaNotFoundError(f"Серверний пакет build {version_code} не знайдено.")
+            total = conn.execute("SELECT COUNT(*) AS cnt FROM server_packages").fetchone()["cnt"]
+            if int(row["is_active"]) == 1 and int(total) > 1:
+                raise OtaConflictError(
+                    "Спочатку активуйте інший серверний пакет, перш ніж видаляти поточний."
+                )
+            conn.execute("DELETE FROM server_packages WHERE version_code = ?", (version_code,))
+            stored_name = str(row["stored_name"])
+        self._safe_unlink(self.server_packages_dir / stored_name)

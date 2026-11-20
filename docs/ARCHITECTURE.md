@@ -142,9 +142,9 @@
    - Точка входу `docker-entrypoint.sh` заміщує процес оболонки через `exec uvicorn`, коректно обробляючи `SIGTERM`/`SIGINT`.
 3. **Двоетапні Healthcheck-зонди**:
    - `/api/health/liveness` (та `/health/live`) і `/api/health/readiness` (та `/health/ready`, `/api/health`).
-5. **Автономний OTA-сервер (`ota-server/`) та Android APK (`android/`, v5.8.0)**:
+5. **Автономний OTA-сервер (`ota-server/`) та Android APK (`android/`, v5.8.0–v5.9.1)**:
    - Підписаний Capacitor APK взаємодіє з Nginx `/api/`, має брендовані іконки й splash-екрани `SD-GEN016`, CSS-керування відступами клавіатури IME через `SystemBars`, нативну навігацію системною кнопкою «Назад» (`OnBackPressedCallback` + `window.__handleNativeBack()`) та двоканальне OTA-оновлення (`WebOtaManager.java` + `OtaUpdaterPlugin.java` + `ota-updater.js`): основні оновлення інтерфейсу постачаються миттєво через Web-Bundle ZIP (`Bridge.setServerBasePath`, SHA-256, Zip-Slip захист, auto-rollback) **без** дозволу `REQUEST_INSTALL_PACKAGES` (який примусово видалено через `tools:node="remove"`), а обов'язкові нативні оновлення APK спрямовують користувача в зовнішній браузер;
-   - На сервері розгорнуто ізольований FastAPI сервіс [`ota-server/`](../ota-server/app.py) на порту `8090` (`upstream ota_server` у `docker/nginx.conf`), який віддає APK-білди (`/ota/api/latest`, `/ota/download/latest.apk`) та Web-OTA бандли (`/ota/api/web/latest`, `/ota/download/web/latest.zip`) і адмін-панель релізів `/ota/admin` (захищено `OTA_ADMIN_TOKEN`).
+   - На сервері розгорнуто ізольований FastAPI сервіс [`ota-server/`](../ota-server/app.py) на порту `8090` (`upstream ota_server` у `docker/nginx.conf`), який віддає APK-білди (`/ota/api/latest`, `/ota/download/latest.apk`), Web-OTA бандли (`/ota/api/web/latest`, `/ota/download/web/latest.zip`), **чисті серверні інсталяційні ZIP-пакети (`Zero-.env`)** (`/ota/api/server/latest`, `/ota/download/server/latest.zip`) із архівом версій прямо на `/ota/`, а також адмін-панель релізів `/ota/admin` (захищено `OTA_ADMIN_TOKEN`).
    - У виробничому режимі `APP_ENV=production` інтерактивні маршрути `/docs`, `/redoc` та `/openapi.json` вимкнено (`main.py`), а Nginx приховує версію сервера (`server_tokens off`).
 
 ---

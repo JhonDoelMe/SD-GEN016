@@ -86,7 +86,7 @@
 16. **Модульний Service Desk UI, Профілі/Аватари, Android APK, OTA та FCM Push (v5.6.2–v5.6.9):**
     - Фронтенд розділено на 14 HTML-фрагментів (`frontend/views/`), 4 стилі (`frontend/css/`) та 16 модулів (`frontend/js/`) з динамічним `view-loader.js`, sticky-шапкою, кнопкою примусового оновлення та бічним меню `Drawer`.
     - Особистий профіль користувача та `.webp` аватари (`avatar_service.py`, міграція `014`, захищений роут `/uploads/avatars/`).
-    - Нативний Android Capacitor APK (`android/`), Edge-to-Edge `WindowInsets`, автономний **OTA-сервіс** (`ota-server/`, шлях `/ota/`) та нативний мобільний **FCM HTTP v1 Push** (`fcm_service.py`).
+    - Нативний Android Capacitor APK (`android/`), Edge-to-Edge `WindowInsets`, автономний **OTA-сервіс** (`ota-server/`, шлях `/ota/`, дистрибуція APK + Web-OTA + серверних інсталяційних `install.zip`) та нативний мобільний **FCM HTTP v1 Push** (`fcm_service.py`).
 17. **Центр сповіщень (🔔), Фірмові Email + 1-Click відписка та Повна українізація аудиту (v5.7.0–v5.7.3):**
     - Іконка дзвоника `#headerBellBtn` у шапці з лічильником непрочитаного та таблицею `notification_reads`.
     - Фірмові адаптивні HTML-листи з логотипом та заголовками RFC 8058 (`List-Unsubscribe` + `/api/v1/email/unsubscribe`, `/resubscribe`).
