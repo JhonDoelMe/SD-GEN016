@@ -5,6 +5,16 @@
 
 ---
 
+## [v5.8.4] — 2026-11-20
+### 🌩️ Офіційні метеопопередження УкрГМЦ (MeteoAlarm Україна)
+- **Бекенд ([`weather_service.py`](backend/app/services/weather_service.py))**:
+  - Інтегровано безкоштовний офіційний JSON/CAP фід **УкрГМЦ через MeteoAlarm** (`https://feeds.meteoalarm.org/api/v1/warnings/feeds-ukraine`) із 15-хвилинним кешуванням.
+  - Реалізовано фільтрацію активних (`expires > now`) попереджень українською мовою (`uk-UA`), зіставлення за областю та координатами полігона (`point-in-polygon`), дедуплікацію та класифікацію рівнів небезпеки (Жовтий I, Помаранчевий II, Червоний III).
+- **Інтерфейс ([`modals-utility.html`](frontend/views/modals-utility.html), [`weather-alerts.js`](frontend/js/weather-alerts.js), [`views.css`](frontend/css/views.css))**:
+  - Індикатор погоди в шапці візуально підсвічує активний рівень штормового попередження.
+  - У модалці **«Погода на об'єкті»** виводяться картки активних небезпечних погодних явищ із періодом дії, описом та джерелом `УкрГМЦ · MeteoAlarm`.
+- **Тести**: додано тест парсингу та гео-фільтрації попереджень УкрГМЦ у [`test_weather_and_alerts.py`](backend/tests/test_weather_and_alerts.py) (`235` тестів).
+
 ## [v5.8.3] — 2026-11-20
 ### 🔧 Узгодження інтервалу ТО генераторів та індивідуальне редагування регламенту
 - **Редагування інтервалу ТО на рівні генератора ([`generator.py` (схеми)](backend/app/schemas/generator.py), [`generator.py`](backend/app/api/v1/generator.py), [`generator_service.py`](backend/app/services/generator_service.py), [`modals-admin.html`](frontend/views/modals-admin.html), [`admin.js`](frontend/js/admin.js))**:

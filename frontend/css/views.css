@@ -1556,6 +1556,21 @@
   box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
 }
 
+.pill-weather-warn-yellow {
+  border-color: rgba(250, 204, 21, 0.65);
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.25);
+}
+
+.pill-weather-warn-orange {
+  border-color: rgba(249, 115, 22, 0.75);
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.32);
+}
+
+.pill-weather-warn-red {
+  border-color: rgba(239, 68, 68, 0.85);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+}
+
 .pill-alert-green {
   background: rgba(34, 197, 94, 0.12);
   border-color: rgba(34, 197, 94, 0.35);
@@ -1722,6 +1737,90 @@
 .weather-hero-loc {
   font-size: 0.85rem;
   color: var(--text-muted);
+}
+
+.weather-warnings-section {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.weather-warning-card {
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  background: rgba(250, 204, 21, 0.1);
+  text-align: left;
+}
+
+.weather-warning-card.ww-level-orange {
+  border-color: rgba(249, 115, 22, 0.55);
+  background: rgba(249, 115, 22, 0.13);
+}
+
+.weather-warning-card.ww-level-red {
+  border-color: rgba(239, 68, 68, 0.65);
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.ww-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+
+.ww-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fde68a;
+}
+
+.ww-level-orange .ww-badge {
+  color: #fdba74;
+}
+
+.ww-level-red .ww-badge {
+  color: #fca5a5;
+}
+
+.ww-period {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.ww-title {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  margin-bottom: 0.2rem;
+}
+
+.ww-desc {
+  font-size: 0.83rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+  opacity: 0.9;
+}
+
+.ww-source {
+  margin-top: 0.35rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+[data-theme="light"] .ww-badge {
+  color: #a16207;
+}
+
+[data-theme="light"] .ww-level-orange .ww-badge {
+  color: #c2410c;
+}
+
+[data-theme="light"] .ww-level-red .ww-badge {
+  color: #b91c1c;
 }
 
 .weather-details-grid {

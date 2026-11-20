@@ -32,8 +32,18 @@ window.loadFacilityIndicators = async function(facilityId, force = false) {
       if (wText) wText.innerText = weather.temp_formatted || `${weather.temp_c}°C`;
       const cleanWCity = (weather.city || '').replace(/^(?:м\.|місто|смт|с\.)\s*/i, '').replace(/[,;].*$/, '').trim();
       if (wCity) wCity.innerText = cleanWCity || '';
+      const hasWarn = Boolean(weather.has_warnings && Array.isArray(weather.warnings) && weather.warnings.length > 0);
+      const maxWarnLvl = weather.max_warning_level || 'none';
+      weatherBadge.className = hasWarn
+        ? `header-pill pill-weather pill-weather-warn-${maxWarnLvl}`
+        : 'header-pill pill-weather';
+      if (hasWarn && wIcon) {
+        const prefix = maxWarnLvl === 'red' ? '🔴' : (maxWarnLvl === 'orange' ? '🟠' : '⚠️');
+        wIcon.innerText = `${prefix}${weather.icon_emoji || '⛅'}`;
+      }
       weatherBadge.style.display = 'inline-flex';
-      weatherBadge.title = `Погода: ${weather.city}, ${weather.temp_formatted}, ${weather.description}. Натисніть для деталей.`;
+      const warnSuffix = hasWarn ? ` · ⚠️ ${weather.warnings[0].event}` : '';
+      weatherBadge.title = `Погода: ${weather.city}, ${weather.temp_formatted}, ${weather.description}${warnSuffix}. Натисніть для деталей.`;
     } else if (weatherBadge) {
       weatherBadge.style.display = 'none';
     }
@@ -242,8 +252,41 @@ window.populateWeatherModal = function(w) {
   if (icon) icon.innerText = w.icon_emoji || '⛅';
   if (temp) temp.innerText = w.temp_formatted || `${w.temp_c}°C`;
   if (desc) desc.innerText = w.description || 'Хмарно';
-  const cleanCity = (w.city || '').replace(/^(?:м\.|місто|смт|с\.)\s*/i, '').replace(/[,;].*$/, '').trim();
-  if (loc) loc.innerText = `📍 м. ${cleanCity || 'Самар'}`;
+  if (loc) {
+    loc.innerText = typeof window.formatLocationDisplay === 'function'
+      ? window.formatLocationDisplay(w.region, w.city)
+      : `📍 м. ${(w.city || '').replace(/^(?:м\.|місто|смт|с\.)\s*/i, '').replace(/[,;].*$/, '').trim() || 'Самар'}`;
+  }
+  const warnBox = document.getElementById('weatherWarningsSection');
+  if (warnBox) {
+    const warnings = Array.isArray(w.warnings) ? w.warnings : [];
+    if (warnings.length > 0) {
+      warnBox.innerHTML = warnings.map((item) => {
+        const lvl = ['red', 'orange', 'yellow'].includes(item.level) ? item.level : 'yellow';
+        const periodHtml = item.period_formatted
+          ? `<span class="ww-period">🕒 ${escapeHtml(String(item.period_formatted))}</span>`
+          : '';
+        const descHtml = item.description
+          ? `<div class="ww-desc">${escapeHtml(String(item.description))}</div>`
+          : '';
+        return `
+          <div class="weather-warning-card ww-level-${lvl}">
+            <div class="ww-top">
+              <span class="ww-badge">${escapeHtml(String(item.icon || '⚠️'))} ${escapeHtml(String(item.level_ua || 'Попередження'))}</span>
+              ${periodHtml}
+            </div>
+            <div class="ww-title">${escapeHtml(String(item.event || 'Небезпечне погодне явище'))}</div>
+            ${descHtml}
+            <div class="ww-source">${escapeHtml(String(item.source || 'УкрГМЦ · MeteoAlarm'))}</div>
+          </div>
+        `;
+      }).join('');
+      warnBox.style.display = 'grid';
+    } else {
+      warnBox.innerHTML = '';
+      warnBox.style.display = 'none';
+    }
+  }
   if (feels) feels.innerText = w.feels_like_formatted || `${w.feels_like_c}°C`;
   if (hum) hum.innerText = `${w.humidity_percent}%`;
   if (wind) wind.innerText = `${w.wind_speed_mps} м/с`;

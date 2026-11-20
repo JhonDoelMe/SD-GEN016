@@ -403,3 +403,112 @@ async def test_facility_weather_and_alerts_endpoints(client: AsyncClient, supera
     set_demo_alert("green", "none")
     alert_reset = await client.get(f"/api/v1/facilities/{fac_id}/alert", headers=superadmin_auth)
     assert alert_reset.json()["level"] == "green"
+
+
+def test_meteoalarm_ukraine_warnings_parsing_and_filtering():
+    from datetime import datetime, timezone
+    from backend.app.services.weather_service import (
+        parse_meteoalarm_warnings,
+        filter_warnings_for_location,
+    )
+
+    now_ref = datetime(2026, 11, 20, 19, 0, 0, tzinfo=timezone.utc)
+    sample_feed = {
+        "warnings": [
+            # Active yellow wind warning for Dnipropetrovsk oblast
+            {
+                "uuid": "warn-dnipro-1",
+                "alert": {
+                    "status": "Actual",
+                    "msgType": "Alert",
+                    "info": [
+                        {
+                            "language": "en-GB",
+                            "event": "Wind warning",
+                            "severity": "Moderate",
+                            "onset": "2026-11-20T14:00:00+02:00",
+                            "expires": "2026-11-21T08:00:00+02:00",
+                            "parameter": [
+                                {"valueName": "awareness_level", "value": "2; yellow; Moderate"},
+                                {"valueName": "awareness_type", "value": "1; wind"},
+                            ],
+                            "area": [{"areaDesc": "Dnipropetrovsk oblast, Poltava oblast"}],
+                        },
+                        {
+                            "language": "uk-UA",
+                            "event": "Попередження про пориви вітру",
+                            "description": "Пориви вітру 15-20 м/с.",
+                            "senderName": "Український гідрометеорологічний центр",
+                            "severity": "Moderate",
+                            "onset": "2026-11-20T14:00:00+02:00",
+                            "expires": "2026-11-21T08:00:00+02:00",
+                            "parameter": [
+                                {"valueName": "awareness_level", "value": "2; yellow; Moderate"},
+                                {"valueName": "awareness_type", "value": "1; wind"},
+                            ],
+                            "area": [{"areaDesc": "Дніпропетровській області, Полтавській області"}],
+                        },
+                    ],
+                },
+            },
+            # Expired warning (should be filtered out)
+            {
+                "uuid": "warn-expired",
+                "alert": {
+                    "status": "Actual",
+                    "msgType": "Alert",
+                    "info": [
+                        {
+                            "language": "uk-UA",
+                            "event": "Старе попередження",
+                            "expires": "2026-11-19T08:00:00+02:00",
+                            "parameter": [{"valueName": "awareness_level", "value": "3; orange; Severe"}],
+                            "area": [{"areaDesc": "Дніпропетровській області"}],
+                        }
+                    ],
+                },
+            },
+            # Polygon-only active orange rain warning covering Lviv coordinates
+            {
+                "uuid": "warn-poly-lviv",
+                "alert": {
+                    "status": "Actual",
+                    "msgType": "Alert",
+                    "info": [
+                        {
+                            "language": "uk-UA",
+                            "event": "Сильний дощ",
+                            "description": "Значні опади.",
+                            "onset": "2026-11-20T12:00:00+02:00",
+                            "expires": "2026-11-21T12:00:00+02:00",
+                            "parameter": [
+                                {"valueName": "awareness_level", "value": "3; orange; Severe"},
+                                {"valueName": "awareness_type", "value": "10; rain"},
+                            ],
+                            "area": [{
+                                "areaDesc": "Карпатах",
+                                "polygon": "49.5,23.5 50.2,23.5 50.2,24.5 49.5,24.5 49.5,23.5",
+                            }],
+                        }
+                    ],
+                },
+            },
+        ]
+    }
+
+    parsed = parse_meteoalarm_warnings(sample_feed, now_dt=now_ref)
+    assert len(parsed) == 2
+
+    dnipro_warns = filter_warnings_for_location(parsed, "Дніпропетровська область", "Самар")
+    assert len(dnipro_warns) == 1
+    assert dnipro_warns[0]["level"] == "yellow"
+    assert dnipro_warns[0]["icon"] == "🌬️"
+    assert dnipro_warns[0]["event"] == "Попередження про пориви вітру"
+
+    lviv_warns = filter_warnings_for_location(parsed, "Львівська область", "Львів", lat_lon=(49.8397, 24.0297))
+    assert len(lviv_warns) == 1
+    assert lviv_warns[0]["level"] == "orange"
+    assert lviv_warns[0]["icon"] == "🌧️"
+
+    kyiv_warns = filter_warnings_for_location(parsed, "м. Київ", "Київ", lat_lon=(50.4501, 30.5234))
+    assert kyiv_warns == []
