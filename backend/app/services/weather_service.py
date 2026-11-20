@@ -25,6 +25,8 @@ METEOALARM_CACHE_TTL_SEC = 900  # 15 minutes
 _WEATHER_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 # Feed-level MeteoAlarm cache: (timestamp, parsed_warnings_list)
 _METEOALARM_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
+# Deduplication cache for dispatched weather push warnings: (facility_id, signature) -> dispatched_ts
+_DISPATCHED_WEATHER_WARNINGS: Dict[Tuple[int, str], float] = {}
 
 # Known coordinates for major Ukrainian cities to avoid extra geocoding calls
 KNOWN_COORDINATES: Dict[str, Tuple[float, float]] = {
@@ -894,3 +896,119 @@ async def get_facility_weather(db: AsyncSession, facility_id: int, force: bool =
 
     _WEATHER_CACHE[cache_key] = (now_ts, result)
     return result
+
+
+async def check_all_facilities_weather_warnings(db: AsyncSession) -> int:
+    """
+    Перевіряє активні попередження УкрГМЦ для всіх активних об'єктів та
+    надсилає Push-сповіщення (з дедуплікацією за подією і порогом рівня).
+    Повертає кількість надісланих сповіщень.
+    """
+    from datetime import timedelta
+    from sqlalchemy import select
+    from backend.app.models.notification import NotificationLog
+    from backend.app.services.settings_service import get_runtime_setting
+    from backend.app.services.notification_service import notify_weather_warning
+
+    if not get_runtime_setting("notifications_enabled", True):
+        return 0
+    if not get_runtime_setting("notify_weather_warnings", True):
+        return 0
+
+    min_lvl_str = str(get_runtime_setting("weather_warning_min_level", "orange") or "orange").strip().lower()
+    min_level_num = {"yellow": 1, "orange": 2, "red": 3}.get(min_lvl_str, 2)
+
+    all_warnings = await fetch_meteoalarm_ukraine_warnings(force=False)
+    if not all_warnings:
+        return 0
+
+    facs = list((await db.execute(select(Facility).order_by(Facility.id.asc()))).scalars().all())
+    if not facs:
+        return 0
+
+    now_naive = now_utc(naive=True)
+    cutoff = now_naive - timedelta(hours=48)
+    recent_logs = list(
+        (
+            await db.execute(
+                select(NotificationLog).where(
+                    NotificationLog.event_type == "WEATHER_WARNING",
+                    NotificationLog.created_at >= cutoff,
+                )
+            )
+        ).scalars().all()
+    )
+
+    now_ts = time.time()
+    # Prune old in-memory deduplication entries (>48h)
+    stale = [k for k, ts in _DISPATCHED_WEATHER_WARNINGS.items() if (now_ts - ts) > 48 * 3600]
+    for k in stale:
+        _DISPATCHED_WEATHER_WARNINGS.pop(k, None)
+
+    sent_total = 0
+    for fac in facs:
+        city_name, region_name = clean_city_and_region(
+            city_raw=getattr(fac, "city", None),
+            address_raw=fac.address,
+            name_raw=fac.name,
+        )
+        lat_lon = KNOWN_COORDINATES.get(city_name.lower())
+        loc_warnings = filter_warnings_for_location(all_warnings, region_name, city_name, lat_lon=lat_lon)
+        eligible = [w for w in loc_warnings if int(w.get("level_num") or 0) >= min_level_num]
+        if not eligible:
+            continue
+
+        for w in eligible:
+            sig = f"{w.get('level')}|{w.get('event')}|{w.get('expires')}"
+            mem_key = (fac.id, sig)
+            if mem_key in _DISPATCHED_WEATHER_WARNINGS:
+                continue
+
+            # Persistent deduplication across restarts via recent NotificationLog
+            already_logged = any(
+                lg.facility_id == fac.id
+                and str(w.get("event") or "") in (lg.body or "")
+                and str(w.get("level_ua") or "") in (lg.title or "")
+                and (not w.get("period_formatted") or str(w.get("period_formatted")) in (lg.body or ""))
+                for lg in recent_logs
+            )
+            if already_logged:
+                _DISPATCHED_WEATHER_WARNINGS[mem_key] = now_ts
+                continue
+
+            res = await notify_weather_warning(
+                db=db,
+                facility_id=fac.id,
+                facility_name=fac.name,
+                city_name=city_name,
+                level=str(w.get("level") or "yellow"),
+                level_ua=str(w.get("level_ua") or "Попередження"),
+                icon=str(w.get("icon") or "⚠️"),
+                event=str(w.get("event") or "Небезпечне метеорологічне явище"),
+                description=str(w.get("description") or ""),
+                period_formatted=str(w.get("period_formatted") or ""),
+            )
+            _DISPATCHED_WEATHER_WARNINGS[mem_key] = now_ts
+            if res and not res.get("skipped"):
+                sent_total += 1
+
+    return sent_total
+
+
+async def run_weather_warning_checker_loop(interval_seconds: int = 900) -> None:
+    """Фоновий цикл перевірки штормових попереджень УкрГМЦ по всіх об'єктах."""
+    from backend.app.database import AsyncSessionLocal
+    logger.info("Weather warning checker loop started (interval: %ss)", interval_seconds)
+    # Initial short delay after boot so startup completes smoothly
+    initial_wait = True
+    while True:
+        try:
+            await asyncio.sleep(60 if initial_wait else interval_seconds)
+            initial_wait = False
+            async with AsyncSessionLocal() as db:
+                await check_all_facilities_weather_warnings(db)
+        except asyncio.CancelledError:
+            break
+        except Exception as ex:
+            initial_wait = False
+            logger.error("Weather warning checker loop error: %s", ex)

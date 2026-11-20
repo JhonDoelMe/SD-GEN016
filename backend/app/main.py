@@ -307,10 +307,12 @@ async def lifespan(app: FastAPI):
 
     # 4. Start background backup scheduler and notification loops
     from backend.app.services.alert_service import run_air_alert_checker_loop
+    from backend.app.services.weather_service import run_weather_warning_checker_loop
     backup_scheduler_task = asyncio.create_task(run_backup_scheduler())
     guard_worker_task = asyncio.create_task(run_operational_guard_loop())
     yasno_worker_task = asyncio.create_task(run_yasno_checker_loop())
     air_alert_worker_task = asyncio.create_task(run_air_alert_checker_loop())
+    weather_warning_worker_task = asyncio.create_task(run_weather_warning_checker_loop())
 
     yield
 
@@ -319,11 +321,13 @@ async def lifespan(app: FastAPI):
     guard_worker_task.cancel()
     yasno_worker_task.cancel()
     air_alert_worker_task.cancel()
+    weather_warning_worker_task.cancel()
     await asyncio.gather(
         backup_scheduler_task,
         guard_worker_task,
         yasno_worker_task,
         air_alert_worker_task,
+        weather_warning_worker_task,
         return_exceptions=True
     )
     await engine.dispose()
@@ -339,7 +343,7 @@ def fastapi_docs_kwargs(is_production: bool) -> dict[str, str | None]:
 app = FastAPI(
     title="Service Desk Генератора (SD-GEN016)",
     description="Система оперативного диспетчерського обліку експлуатації мережі бензинових та дизельних генераторів (Multi-site, ПММ, ТО, інвентаризація, Push/Email)",
-    version="5.8.4",
+    version="5.9.0",
     **fastapi_docs_kwargs(settings.is_production),
     lifespan=lifespan,
 )

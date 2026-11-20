@@ -320,8 +320,10 @@ function applyRolePermissionsUI() {
     || hasPermission('users:manage')
     || hasPermission('settings:manage');
 
+  const canAccessNetwork = isAdmin() || viewer || (Array.isArray(window._cachedFacilitiesList) && window._cachedFacilitiesList.length > 1);
   const tabRules = {
     'tab-dashboard': true,
+    'tab-network': canAccessNetwork,
     'tab-fuel': !viewer,
     'tab-maintenance': !viewer,
     'tab-faults': !viewer,
@@ -331,6 +333,11 @@ function applyRolePermissionsUI() {
     'tab-measurement': superadmin,
     'tab-admin': canAccessAdmin
   };
+
+  const netNavBtn = document.getElementById('navTabNetwork');
+  if (netNavBtn) {
+    netNavBtn.style.display = canAccessNetwork ? '' : 'none';
+  }
 
   const measNavBtn = document.getElementById('navTabMeasurement');
   if (measNavBtn) {

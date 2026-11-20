@@ -88,6 +88,16 @@ class NotificationSettingsIn(BaseModel):
     notify_yasno_outages: bool = True
     notify_air_alerts: bool = True
     notify_air_alert_end: bool = True
+    notify_weather_warnings: bool = True
+    weather_warning_min_level: str = "orange"
+
+    @field_validator("weather_warning_min_level")
+    @classmethod
+    def validate_weather_level(cls, v: str) -> str:
+        clean = (v or "orange").strip().lower()
+        if clean not in ("yellow", "orange", "red"):
+            raise ValueError("Мінімальний рівень погодних сповіщень має бути: yellow, orange або red")
+        return clean
 
 
 class NotificationSettingsOut(BaseModel):
@@ -102,6 +112,8 @@ class NotificationSettingsOut(BaseModel):
     notify_yasno_outages: bool = True
     notify_air_alerts: bool = True
     notify_air_alert_end: bool = True
+    notify_weather_warnings: bool = True
+    weather_warning_min_level: str = "orange"
     vapid_public_key: str
     active_subscriptions_count: int
 

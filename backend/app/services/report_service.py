@@ -1219,7 +1219,42 @@ async def generate_operational_report(
             )
         )
 
-    # 7. Additional calculations
+    # 7. Additional calculations (including cost per operating hour based on consumed fuel + maintenance)
+    eff_price = avg_price
+    if eff_price <= 0 and float(total_cons or 0.0) > 0:
+        hist_q = select(
+            func.coalesce(func.sum(FuelReceipt.liters), 0.0),
+            func.coalesce(func.sum(FuelReceipt.cost_total), 0.0),
+        ).where(FuelReceipt.created_at <= end_date)
+        if facility_id:
+            hist_q = hist_q.outerjoin(FuelStock, FuelReceipt.stock_id == FuelStock.id).where(
+                or_(
+                    FuelReceipt.facility_id == facility_id,
+                    FuelStock.facility_id == facility_id,
+                    and_(facility_id == 1, FuelReceipt.facility_id.is_(None), FuelStock.facility_id.is_(None)),
+                )
+            )
+        h_l, h_c = (await db.execute(hist_q)).first()
+        if float(h_l or 0.0) > 0 and float(h_c or 0.0) > 0:
+            eff_price = round(float(h_c) / float(h_l), 2)
+        else:
+            from backend.app.services.settings_service import resolve_fuel_price_per_liter
+            ft = generator.fuel_type if generator else (matched_gens[0].fuel_type if matched_gens else "А-95")
+            resolved_p, _ = await resolve_fuel_price_per_liter(db, ft)
+            eff_price = round(float(resolved_p or 0.0), 2)
+
+    fuel_consumed_cost = round(float(total_cons or 0.0) * eff_price, 2)
+    maint_cost_val = round(float(m_cost or 0.0), 2)
+    operating_total_cost = round(fuel_consumed_cost + maint_cost_val, 2)
+    if float(total_hours or 0.0) > 0:
+        fuel_cost_per_h = round(fuel_consumed_cost / float(total_hours), 2)
+        maint_cost_per_h = round(maint_cost_val / float(total_hours), 2)
+        cost_per_hour = round(operating_total_cost / float(total_hours), 2)
+    else:
+        fuel_cost_per_h = 0.0
+        maint_cost_per_h = 0.0
+        cost_per_hour = 0.0
+
     total_costs = round((fuel_rec_cost or 0.0) + (m_cost or 0.0), 2)
     avg_cons = round(total_cons / total_hours, 2) if total_hours > 0 else 0.0
     avg_run_dur = round(total_hours / total_runs, 2) if total_runs > 0 else 0.0
@@ -1249,6 +1284,12 @@ async def generate_operational_report(
         resolved_faults_count=f_resolved,
         open_faults_count=(f_total - f_resolved),
         total_costs_uah=total_costs,
+        effective_fuel_price_per_liter=eff_price,
+        fuel_consumed_cost_uah=fuel_consumed_cost,
+        operating_total_cost_uah=operating_total_cost,
+        cost_per_operating_hour_uah=cost_per_hour,
+        fuel_cost_per_hour_uah=fuel_cost_per_h,
+        maintenance_cost_per_hour_uah=maint_cost_per_h,
         avg_consumption_l_per_hour=avg_cons,
         avg_run_duration_hours=avg_run_dur,
         avg_run_duration_human=fmt_hours_human(avg_run_dur),
@@ -1488,6 +1529,9 @@ async def generate_excel_report(
                 ("Оприбутковано палива на склад", round(op_report.total_fuel_received_l, 2), "л"),
                 ("Загальна вартість закупленого палива", round(op_report.total_fuel_receipts_cost_uah, 2), "грн"),
                 ("Середня закупівельна ціна літра", round(op_report.avg_fuel_price_per_liter, 2), "грн/л"),
+                ("Розрахункова вартість спаленого палива", round(op_report.fuel_consumed_cost_uah, 2), "грн"),
+                ("Собівартість експлуатації (спалене паливо + ТО)", round(op_report.operating_total_cost_uah, 2), "грн"),
+                ("Собівартість 1 мотогодини роботи", round(op_report.cost_per_operating_hour_uah, 2), "грн/год"),
                 ("Заправлено з складу в бак генератора", round(op_report.total_fuel_transferred_to_tank_l, 2), "л"),
                 ("Поточний залишок на складі ПММ", round(op_report.current_stock_balance_l, 2), "л"),
                 ("Поточний рівень у паливному баку", round(op_report.current_tank_level_l, 2), "л"),
@@ -1540,7 +1584,7 @@ async def generate_excel_report(
             c1.alignment = ALIGN_LEFT
             c2.alignment = ALIGN_RIGHT
             c3.alignment = ALIGN_CENTER
-            if unit in ("грн", "грн/л"):
+            if unit in ("грн", "грн/л", "грн/год"):
                 c2.number_format = "#,##0.00"
             elif isinstance(val, float):
                 c2.number_format = "#,##0.00"

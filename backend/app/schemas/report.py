@@ -105,6 +105,12 @@ class OperationalReportOut(BaseModel):
 
     # Calculated Analytics
     total_costs_uah: float = 0.0
+    effective_fuel_price_per_liter: float = 0.0
+    fuel_consumed_cost_uah: float = 0.0
+    operating_total_cost_uah: float = 0.0
+    cost_per_operating_hour_uah: float = 0.0
+    fuel_cost_per_hour_uah: float = 0.0
+    maintenance_cost_per_hour_uah: float = 0.0
     avg_consumption_l_per_hour: float = 0.0
     avg_run_duration_hours: float = 0.0
     avg_run_duration_human: str = "0 хв"

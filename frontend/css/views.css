@@ -2635,3 +2635,127 @@
   cursor: not-allowed;
 }
 
+/* ==========================================================================
+   Multi-Facility Network Overview
+   ========================================================================== */
+.network-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 1rem;
+}
+
+.network-facility-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0.85rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.net-fac-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.net-fac-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.net-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border: 1px solid var(--border-color);
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-primary);
+}
+
+.net-pill-ok {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #4ade80;
+}
+
+.net-pill-warn {
+  background: rgba(250, 204, 21, 0.14);
+  border-color: rgba(250, 204, 21, 0.45);
+  color: #fde68a;
+}
+
+.net-pill-orange {
+  background: rgba(249, 115, 22, 0.16);
+  border-color: rgba(249, 115, 22, 0.5);
+  color: #fdba74;
+}
+
+.net-pill-danger {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.55);
+  color: #fca5a5;
+}
+
+.net-fac-stock-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.55rem;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--border-color);
+  font-size: 0.82rem;
+}
+
+.net-fac-gens {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.net-gen-box {
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--border-color);
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.net-gen-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.net-gen-metrics {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.net-m-lbl {
+  color: var(--text-muted);
+}
+
+[data-theme="light"] .net-fac-stock-row,
+[data-theme="light"] .net-gen-box {
+  background: #f8fafc;
+}
+
+[data-theme="light"] .net-pill-ok { color: #15803d; }
+[data-theme="light"] .net-pill-warn { color: #a16207; }
+[data-theme="light"] .net-pill-orange { color: #c2410c; }
+[data-theme="light"] .net-pill-danger { color: #b91c1c; }
+
+

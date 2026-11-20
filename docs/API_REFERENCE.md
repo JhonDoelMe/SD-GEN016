@@ -140,6 +140,10 @@
 - **Опис**: Детальна інформація про локацію разом із генераторами та складами ПММ.
 - **Потрібен дозвіл**: Будь-який авторизований користувач. Для `operator`/`viewer` дозволено лише якщо `facility_id == user.facility_id` (інакше `403 Forbidden`).
 
+### `GET /api/v1/facilities/overview` *(v5.9.0)*
+- **Опис**: Мульти-об'єктне зведення мережі для керівника / оператора: загальні лічильники (кількість об'єктів, генераторів, активних станцій, несправностей, активних попереджень УкрГМЦ / тривог) та картка кожного доступного об'єкта з генераторами, залишками палива в баку/складі/каністрах, лічильником до наступного ТО, несправностями, індикатором заміру, поточною погодою та небезпечними погодними явищами.
+- **Потрібен дозвіл**: Будь-який авторизований користувач (для `operator`/`viewer` автоматично повертаються лише закріплені об'єкти).
+
 ### `PUT /api/v1/facilities/{facility_id}`
 - **Опис**: Оновлення реквізитів або статусу локації, включаючи основну мережу АЗС (`default_fuel_provider`: `"wog"` або `"okko"`), місто (`city`) та налаштування моніторингу графіків відключень YASNO (`yasno_enabled`, `yasno_region_id`, `yasno_dso_id`, `yasno_group`).
 - **Потрібен дозвіл**: `facility:configure`.
@@ -403,7 +407,7 @@
 - **Потрібен дозвіл**: Будь-який авторизований користувач.
 
 ### `GET /api/v1/notifications/settings` та `PUT /api/v1/notifications/settings`
-- **Опис**: Отримання та оновлення глобальних перемикачів Web Push сповіщень (`notifications_enabled`, `notify_generator_start`, `notify_generator_stop`, `notify_low_fuel`, `low_fuel_threshold_l`, `notify_maintenance`, `max_maintenance_notifications_per_day`, `notify_critical_faults`, `notify_yasno_outages`, `notify_air_alerts`, `notify_air_alert_end`).
+- **Опис**: Отримання та оновлення глобальних перемикачів Web Push сповіщень (`notifications_enabled`, `notify_generator_start`, `notify_generator_stop`, `notify_low_fuel`, `low_fuel_threshold_l`, `notify_maintenance`, `max_maintenance_notifications_per_day`, `notify_critical_faults`, `notify_yasno_outages`, `notify_air_alerts`, `notify_air_alert_end`, `notify_weather_warnings`, `weather_warning_min_level`: `"yellow" | "orange" | "red"`).
 - **Потрібен дозвіл**: `notifications:view` (`GET`) / `notifications:configure` (`PUT`).
 
 ### `POST /api/v1/notifications/check-maintenance/{generator_id}`
@@ -440,7 +444,7 @@
 ## 8. Звітність та Експорт (`/api/v1/reports`)
 
 ### `GET /api/v1/reports/summary` та `GET /api/v1/reports/export`
-- **Опис**: Отримання зведених аналітичних KPI за обраний період із дотриманням ізоляції об'єктів.
+- **Опис**: Отримання зведених аналітичних KPI за обраний період із дотриманням ізоляції об'єктів, включно з економікою експлуатації (`effective_fuel_price_per_liter`, `fuel_consumed_cost_uah`, `operating_total_cost_uah`, `cost_per_operating_hour_uah`, `fuel_cost_per_hour_uah`, `maintenance_cost_per_hour_uah`).
 - **Потрібен дозвіл**: `reports:view` / `reports:export`.
 
 ### `GET /api/v1/reports/export-excel`

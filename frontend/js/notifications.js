@@ -669,6 +669,8 @@ async function loadNotificationSettings() {
     setCheck('notifAirAlertsEnabled', s.notify_air_alerts !== false);
     setCheck('notifAirAlertEndEnabled', s.notify_air_alert_end !== false);
     setCheck('notifYasnoEnabled', s.notify_yasno_outages !== false);
+    setCheck('notifWeatherWarningsEnabled', s.notify_weather_warnings !== false);
+    setVal('notifWeatherWarningMinLevel', s.weather_warning_min_level || 'orange');
     setCheck('notifOutsideScheduleEnabled', s.notify_outside_schedule !== false);
   } catch (_) {}
 }
@@ -687,6 +689,8 @@ window.saveNotificationSettings = async function(e) {
     notify_air_alerts: document.getElementById('notifAirAlertsEnabled')?.checked ?? true,
     notify_air_alert_end: document.getElementById('notifAirAlertEndEnabled')?.checked ?? true,
     notify_yasno_outages: document.getElementById('notifYasnoEnabled')?.checked ?? true,
+    notify_weather_warnings: document.getElementById('notifWeatherWarningsEnabled')?.checked ?? true,
+    weather_warning_min_level: document.getElementById('notifWeatherWarningMinLevel')?.value || 'orange',
     notify_outside_schedule: document.getElementById('notifOutsideScheduleEnabled')?.checked ?? true
   };
 
@@ -718,6 +722,7 @@ async function loadNotificationLogs() {
       'CRITICAL_FAULT': '🚨 Аварія',
       'AIR_ALERT_START': '🚨 Тривога',
       'AIR_ALERT_END': '🟢 Відбій',
+      'WEATHER_WARNING': '🌩️ Погода УкрГМЦ',
       'YASNO_OUTAGE_ALERT': '⚡ YASNO',
       'EMAIL_SENT': '📧 Email',
       'EMAIL_FAILOVER': '📧 Резервний SMTP',

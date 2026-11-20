@@ -5,6 +5,17 @@
 
 ---
 
+## [v5.9.0] — 2026-11-20
+### 📊 Вартість мотогодини, «🏢 Об'єкти мережі» та Push про погодні явища УкрГМЦ
+- **Фінансова аналітика у звітах ([`report.py` (схеми)](backend/app/schemas/report.py), [`report_service.py`](backend/app/services/report_service.py), [`audit-reports.js`](frontend/js/audit-reports.js))**:
+  - У підсумку операційного звіту та Excel-експорті додано **собівартість 1 мотогодини роботи (`₴/год`)** з розбивкою на паливну складову (`витрачені літри × середньозважена ціна ПММ`) і сервісні витрати на ТО (`cost_per_operating_hour_uah`, `fuel_cost_per_hour_uah`, `maintenance_cost_per_hour_uah`).
+- **Мульти-об'єктне зведення «🏢 Об'єкти мережі» ([`facilities.py`](backend/app/api/v1/facilities.py), [`network.html`](frontend/views/network.html), [`network.js`](frontend/js/network.js), [`index.html`](frontend/index.html), [`core.js`](frontend/js/core.js))**:
+  - Додано окремий пункт бокового меню для керівників (`Admin`, `SuperAdmin`, `Viewer` або користувачів із доступом до кількох об'єктів) та агрегований ендпоінт `GET /api/v1/facilities/overview`.
+  - На одному екрані відображаються KPI мережі та картки всіх об'єктів (генератори, мотогодини, бак, склад ПММ і каністри, запас до ТО, дефекти, повітряні тривоги й погодні попередження) з переходом у 1 клік.
+- **Фонові Push-сповіщення про небезпечні погодні явища УкрГМЦ ([`weather_service.py`](backend/app/services/weather_service.py), [`notification_service.py`](backend/app/services/notification_service.py), [`main.py`](backend/app/main.py), [`admin.html`](frontend/views/admin.html), [`notifications.js`](frontend/js/notifications.js))**:
+  - Запущено фоновий цикл перевірки попереджень MeteoAlarm (раз на 15 хв) із прив'язкою до відкритих майданчиків генераторів, вибором мінімального рівня небезпеки (`II Помаранчевий` за замовчуванням / `I Жовтий` / `III Червоний`) та двошаровою дедуплікацією.
+- **Тести**: додано [`test_network_cost_and_weather_push.py`](backend/tests/test_network_cost_and_weather_push.py) (разом 238 тестів).
+
 ## [v5.8.4] — 2026-11-20
 ### 🌩️ Офіційні метеопопередження УкрГМЦ (MeteoAlarm Україна)
 - **Бекенд ([`weather_service.py`](backend/app/services/weather_service.py))**:

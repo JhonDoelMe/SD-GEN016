@@ -4,7 +4,7 @@
 (function initViewLoader() {
   const selfSrc = document.currentScript?.src || '';
   const vMatch = selfSrc.match(/[?&]v=([^&]+)/);
-  const ASSET_VERSION = vMatch ? vMatch[1] : '5.8.4';
+  const ASSET_VERSION = vMatch ? vMatch[1] : '5.9.0';
 
   const loadedViews = new Set();
   const viewPromises = new Map();
@@ -19,6 +19,7 @@
 
   const TAB_REGISTRY = {
     'tab-dashboard':   { view: 'dashboard.html',   host: 'viewsHost', scripts: [] },
+    'tab-network':     { view: 'network.html',     host: 'viewsHost', scripts: ['network.js'] },
     'tab-fuel':        { view: 'fuel.html',        host: 'viewsHost', scripts: ['fuel.js'] },
     'tab-maintenance': { view: 'maintenance.html', host: 'viewsHost', scripts: ['operations.js'] },
     'tab-faults':      { view: 'faults.html',      host: 'viewsHost', scripts: ['operations.js'] },

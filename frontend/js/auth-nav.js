@@ -692,6 +692,7 @@ window.switchTab = async function (paneId, options = {}) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
   if (paneId === 'tab-dashboard' && typeof loadAllData === 'function') await loadAllData();
+  if (paneId === 'tab-network' && typeof window.loadNetworkOverview === 'function') await window.loadNetworkOverview();
   if (paneId === 'tab-fuel' && typeof loadFuelData === 'function') await loadFuelData();
   if (paneId === 'tab-maintenance' && typeof loadMaintenanceData === 'function') await loadMaintenanceData();
   if (paneId === 'tab-faults' && typeof loadFaultsData === 'function') await loadFaultsData();
@@ -828,6 +829,9 @@ async function loadFacilitiesList(forceRefresh = false) {
       }
       if (sel) sel.value = currentFacilityId;
       localStorage.setItem('sd_last_facility_id', currentFacilityId);
+    }
+    if (typeof window.applyRolePermissionsUI === 'function') {
+      window.applyRolePermissionsUI();
     }
   } catch (err) {
     console.warn('loadFacilitiesList:', err);

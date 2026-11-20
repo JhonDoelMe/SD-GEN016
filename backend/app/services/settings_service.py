@@ -131,6 +131,8 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "notify_yasno_outages": True,
     "notify_air_alerts": True,
     "notify_air_alert_end": True,
+    "notify_weather_warnings": True,
+    "weather_warning_min_level": "orange",
     "vapid_claims_sub": "mailto:maxiuallc@gmail.com",
     # Automated Backups configuration
     "backup_auto_enabled": False,

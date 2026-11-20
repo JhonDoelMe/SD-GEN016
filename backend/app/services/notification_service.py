@@ -217,6 +217,8 @@ async def get_notification_settings_data(db: AsyncSession) -> Dict[str, Any]:
         "notify_yasno_outages": bool(get_runtime_setting("notify_yasno_outages", True)),
         "notify_air_alerts": bool(get_runtime_setting("notify_air_alerts", True)),
         "notify_air_alert_end": bool(get_runtime_setting("notify_air_alert_end", True)),
+        "notify_weather_warnings": bool(get_runtime_setting("notify_weather_warnings", True)),
+        "weather_warning_min_level": str(get_runtime_setting("weather_warning_min_level", "orange") or "orange"),
         "vapid_public_key": pub_key,
         "active_subscriptions_count": active_count
     }
@@ -295,6 +297,7 @@ async def send_push_notification(
         "YASNO_OUTAGE_ALERT": "notify_yasno_outages",
         "AIR_ALERT_START": "notify_air_alerts",
         "AIR_ALERT_END": "notify_air_alert_end",
+        "WEATHER_WARNING": "notify_weather_warnings",
     }
     toggle_key = event_toggle_map.get(event_type)
     if toggle_key and not get_runtime_setting(toggle_key, True):
@@ -882,4 +885,53 @@ async def notify_air_alert_end(
         event_type="AIR_ALERT_END",
         facility_id=facility_id,
         url="/?tab=tab-dashboard"
+    )
+
+
+async def notify_weather_warning(
+    db: AsyncSession,
+    facility_id: int,
+    facility_name: str,
+    city_name: str,
+    level: str,
+    level_ua: str,
+    icon: str,
+    event: str,
+    description: str = "",
+    period_formatted: str = "",
+) -> Dict[str, Any]:
+    """
+    Надсилає Push-сповіщення про небезпечне метеорологічне явище УкрГМЦ для об'єкта
+    з практичною рекомендацією для генераторів, що працюють на відкритій місцевості.
+    """
+    loc_label = city_name or "регіон"
+    lvl_badge = "🔴" if level == "red" else ("🟠" if level == "orange" else "⚠️")
+    title = f"{lvl_badge} Погода ({level_ua}) — {facility_name} ({loc_label})"
+
+    ev_lower = f"{event} {description}".lower()
+    if any(k in ev_lower for k in ("дощ", "злив", "гроз", "опад", "rain", "storm")):
+        advice = "Перевірте укриття панелі керування, кабельні з'єднання та захист від вологи на відкритій місцевості."
+    elif any(k in ev_lower for k in ("вітер", "порив", "шквал", "wind")):
+        advice = "Перевірте фіксацію кожуха/укриття генератора та відсутність небезпечних предметів поруч."
+    elif any(k in ev_lower for k in ("мороз", "ожелед", "сніг", "холод", "frost", "ice", "snow")):
+        advice = "Перевірте заряд АКБ, наявність зимового ДП та прогрів обладнання перед пуском."
+    elif any(k in ev_lower for k in ("спек", "температур", "пожеж", "heat", "fire")):
+        advice = "Стежте за температурою двигуна, охолодженням та протипожежною безпекою."
+    else:
+        advice = "Врахуйте складні погодні умови при обслуговуванні генератора на відкритому майданчику."
+
+    parts = [f"{icon} {event}."]
+    if description:
+        parts.append(description.rstrip(".") + ".")
+    if period_formatted:
+        parts.append(f"Діє {period_formatted}.")
+    parts.append(advice)
+
+    return await send_push_notification(
+        db=db,
+        title=title,
+        body=" ".join(parts),
+        event_type="WEATHER_WARNING",
+        facility_id=facility_id,
+        url="/?tab=tab-dashboard",
     )

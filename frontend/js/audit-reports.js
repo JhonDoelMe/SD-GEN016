@@ -1163,7 +1163,12 @@ async function loadReport(isUserTriggered = false) {
       <div class="metric-card" style="border-color: rgba(34, 197, 94, 0.4);">
         <div class="metric-label">Загальні витрати за період</div>
         <div class="metric-value" style="color: #4ade80;">${escapeHtml(formatMoney(totalCosts))}</div>
-        <div class="metric-sub">Паливо: ${escapeHtml(formatMoney(r.total_fuel_receipts_cost_uah))} | ТО: ${escapeHtml(formatMoney(r.total_maintenance_cost_uah))}</div>
+        <div class="metric-sub">Паливо (чеки): ${escapeHtml(formatMoney(r.total_fuel_receipts_cost_uah))} | ТО: ${escapeHtml(formatMoney(r.total_maintenance_cost_uah))}</div>
+      </div>
+      <div class="metric-card" style="border-color: rgba(56, 189, 248, 0.45);">
+        <div class="metric-label">Вартість 1 мотогодини</div>
+        <div class="metric-value" style="color: #38bdf8;">${escapeHtml(formatMoney(r.cost_per_operating_hour_uah || 0))}<span style="font-size: 0.9rem; font-weight: 600;">/год</span></div>
+        <div class="metric-sub">Паливо: ${escapeHtml(formatMoney(r.fuel_cost_per_hour_uah || 0))}/год (${escapeHtml(formatMoney(r.fuel_consumed_cost_uah || 0))}) | ТО: ${escapeHtml(formatMoney(r.maintenance_cost_per_hour_uah || 0))}/год</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Оприбутковано на склад</div>
