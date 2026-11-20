@@ -89,12 +89,19 @@
     }
     const resolved = info || currentAppInfo;
     if (!resolved) return;
+    const nativeCode = Number(resolved.nativeVersionCode ?? resolved.versionCode ?? 0);
+    const webBuild = Number(resolved.webBuild ?? nativeCode);
+
+    const menuVerEl = document.getElementById('accountAppVersionLabel');
+    if (menuVerEl && resolved.versionName) {
+      menuVerEl.textContent = `v${resolved.versionName}`;
+      menuVerEl.style.display = '';
+    }
+
     const box = document.getElementById('nativeAppVersionRow');
     const label = document.getElementById('nativeAppVersionLabel');
     if (!box || !label) return;
     box.style.display = 'flex';
-    const nativeCode = Number(resolved.nativeVersionCode ?? resolved.versionCode ?? 0);
-    const webBuild = Number(resolved.webBuild ?? nativeCode);
     if (resolved.isWebOtaActive && webBuild > nativeCode) {
       label.textContent = `Android додаток: v${resolved.versionName || '—'} (Web #${webBuild} · APK #${nativeCode})`;
     } else {

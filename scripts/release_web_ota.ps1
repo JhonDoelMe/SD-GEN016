@@ -102,7 +102,7 @@ $curlArgs = @(
     "-F", "is_mandatory=$($Mandatory.IsPresent.ToString().ToLower())",
     "-F", "replace=$($Replace.IsPresent.ToString().ToLower())"
 )
-if ($Changelog) { $curlArgs += @("-F", "changelog=$Changelog") }
+if ($Changelog) { $curlArgs += @("--form-string", "changelog=$Changelog") }
 $curlArgs += $uploadUrl
 
 $rawResponse = & curl.exe @curlArgs

@@ -142,7 +142,7 @@ $curlArgs = @(
     "-F", "file=@$finalApkPath",
     "-F", "version_code=$verCode",
     "-F", "version_name=$verName",
-    "-F", "changelog=$Changelog",
+    "--form-string", "changelog=$Changelog",
     "-F", "is_mandatory=$($Mandatory.IsPresent.ToString().ToLower())",
     "-F", "replace=$($Replace.IsPresent.ToString().ToLower())"
 )

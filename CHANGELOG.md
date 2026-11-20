@@ -5,6 +5,14 @@
 
 ---
 
+## [v5.8.1] — 2026-11-20
+### ✨ Усунення дублювання кнопки оновлення в Android UI (перший реліз через Web-OTA)
+- **Меню профілю ([`index.html`](frontend/index.html), [`ota-updater.js`](frontend/js/ota-updater.js))**:
+  - У пункті **«🔄 Оновити застосунок»** додано індикатор поточної версії (`#accountAppVersionLabel`, напр. `v5.8.1`), оформлений у стилі перемикача теми.
+- **Налаштування сервера ([`modals-account.html`](frontend/views/modals-account.html))**:
+  - Прибрано дублюючу кнопку **«Перевірити оновлення»** з модального вікна «Налаштування сервера»; залишено лише інформаційний рядок із версією Android-додатка та Web-збірки.
+- **Дистрибуція**: реліз доставляється на Android-пристрої миттєво через **Web-OTA** (`web_build 28`, `min_native_version_code 27`) без перевстановлення APK.
+
 ## [v5.8.0] — 2026-11-20
 ### 🛡️ Web-OTA (Capacitor `setServerBasePath`) та видалення `REQUEST_INSTALL_PACKAGES`
 - **Повне видалення дозволу `REQUEST_INSTALL_PACKAGES` ([`AndroidManifest.xml`](android/app/src/main/AndroidManifest.xml))**:
