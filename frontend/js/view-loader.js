@@ -4,7 +4,7 @@
 (function initViewLoader() {
   const selfSrc = document.currentScript?.src || '';
   const vMatch = selfSrc.match(/[?&]v=([^&]+)/);
-  const ASSET_VERSION = vMatch ? vMatch[1] : '5.8.1';
+  const ASSET_VERSION = vMatch ? vMatch[1] : '5.8.2';
 
   const loadedViews = new Set();
   const viewPromises = new Map();
@@ -91,8 +91,20 @@
     modalDataGovernance:     { view: 'modals-legal.html', scripts: [] },
   };
 
+  function isNativeCapacitorApp() {
+    return !!(
+      window.Capacitor &&
+      typeof window.Capacitor.isNativePlatform === 'function' &&
+      window.Capacitor.isNativePlatform()
+    ) || window.location.protocol === 'capacitor:' || window.location.protocol === 'file:';
+  }
+
   function resolveAssetUrl(relPath) {
-    const base = typeof window.getApiBaseUrl === 'function' ? window.getApiBaseUrl() : '';
+    // In Capacitor/Web-OTA the frontend views & JS live in the local bundle (https://localhost),
+    // NOT on the remote API origin, so Web-OTA updates apply immediately and work offline.
+    const base = isNativeCapacitorApp()
+      ? ''
+      : (typeof window.getApiBaseUrl === 'function' ? window.getApiBaseUrl() : '');
     const sep = relPath.includes('?') ? '&' : '?';
     return `${base}/frontend/${relPath}${sep}v=${encodeURIComponent(ASSET_VERSION)}`;
   }
@@ -105,7 +117,10 @@
     const p = (async () => {
       const host = document.getElementById(hostId);
       if (!host) return;
-      const resp = await fetch(resolveAssetUrl(`views/${viewFile}`), { credentials: 'same-origin' });
+      const resp = await fetch(resolveAssetUrl(`views/${viewFile}`), {
+        credentials: 'same-origin',
+        cache: isNativeCapacitorApp() ? 'no-store' : 'default',
+      });
       if (!resp.ok) {
         throw new Error(`Не вдалося завантажити інтерфейс (${viewFile}: HTTP ${resp.status})`);
       }

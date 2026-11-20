@@ -24,6 +24,13 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OfflineSyncPlugin.class);
         super.onCreate(savedInstanceState);
 
+        if (WebOtaManager.consumePendingCacheClear() && bridge != null) {
+            WebView initWv = bridge.getWebView();
+            if (initWv != null) {
+                initWv.clearCache(true);
+                initWv.post(() -> bridge.reload());
+            }
+        }
         if (hasPendingWebBoot) {
             WebOtaManager.scheduleRollbackWatchdog(this, bridge);
         }

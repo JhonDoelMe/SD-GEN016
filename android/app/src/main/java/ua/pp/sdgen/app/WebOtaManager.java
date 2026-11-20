@@ -47,6 +47,7 @@ public final class WebOtaManager {
 
     private static final long MAX_UNCOMPRESSED_BYTES = 120L * 1024L * 1024L;
     private static final int MAX_ZIP_ENTRIES = 5000;
+    private static volatile boolean pendingCacheClear = false;
 
     private WebOtaManager() {}
 
@@ -108,6 +109,7 @@ public final class WebOtaManager {
         long lastApkCode = prefs.getLong(KEY_LAST_APK_CODE, -1L);
         if (nativeCode > 0 && lastApkCode != nativeCode) {
             Log.i(TAG, "Native APK binary changed (" + lastApkCode + " -> " + nativeCode + "), resetting Web-OTA storage.");
+            pendingCacheClear = true;
             deleteRecursively(getWebOtaRoot(ctx));
             prefs.edit()
                 .clear()
@@ -123,6 +125,7 @@ public final class WebOtaManager {
             File pendingDir = new File(pendingPath);
             if (attempts >= 1 || !isBundleDirValid(pendingDir)) {
                 Log.w(TAG, "Web-OTA pending bundle failed boot check (attempts=" + attempts + "), rolling back.");
+                pendingCacheClear = true;
                 rollbackToConfirmedLocked(ctx, prefs, capPrefs);
                 return false;
             }
@@ -155,6 +158,22 @@ public final class WebOtaManager {
         return false;
     }
 
+    public static boolean consumePendingCacheClear() {
+        boolean val = pendingCacheClear;
+        pendingCacheClear = false;
+        return val;
+    }
+
+    public static void clearWebViewHttpCache(Bridge bridge) {
+        if (bridge == null) return;
+        bridge.executeOnMainThread(() -> {
+            android.webkit.WebView wv = bridge.getWebView();
+            if (wv != null) {
+                wv.clearCache(true);
+            }
+        });
+    }
+
     public static void scheduleRollbackWatchdog(Context ctx, Bridge bridge) {
         final Context appCtx = ctx.getApplicationContext();
         new Handler(Looper.getMainLooper()).postDelayed(
@@ -173,6 +192,7 @@ public final class WebOtaManager {
         SharedPreferences capPrefs = ctx.getSharedPreferences(CAP_PREFS_NAME, Activity.MODE_PRIVATE);
         String targetPath = rollbackToConfirmedLocked(ctx, prefs, capPrefs);
         if (bridge != null) {
+            clearWebViewHttpCache(bridge);
             if (targetPath != null && !targetPath.isEmpty()) {
                 bridge.setServerBasePath(targetPath);
             } else {

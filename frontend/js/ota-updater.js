@@ -258,6 +258,11 @@
     if (laterBtn) laterBtn.disabled = true;
 
     try {
+      await purgeLegacyWebViewCaches();
+      try {
+        sessionStorage.removeItem(LAST_CHECK_KEY);
+        sessionStorage.removeItem(DISMISSED_KEY);
+      } catch (_) {}
       await plugin.downloadAndApplyWebBundle({
         url: latestManifest.download_url,
         sha256: latestManifest.sha256 || '',
@@ -382,6 +387,19 @@
   window.dismissOtaUpdateModal = dismissOtaUpdateModal;
   window.refreshOtaVersionBadge = () => renderServerModalAppVersion();
 
+  async function purgeLegacyWebViewCaches() {
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister().catch(() => {})));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k).catch(() => {})));
+      }
+    } catch (_) {}
+  }
+
   let otaInitialized = false;
   function initOtaUpdater() {
     if (otaInitialized) return;
@@ -389,6 +407,7 @@
     const plugin = getOtaPlugin();
     if (!plugin) return;
 
+    purgeLegacyWebViewCaches();
     if (typeof plugin.confirmWebBundle === 'function') {
       plugin.confirmWebBundle().catch(() => {});
     }

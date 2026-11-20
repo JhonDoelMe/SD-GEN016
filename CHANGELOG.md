@@ -5,6 +5,15 @@
 
 ---
 
+## [v5.8.2] — 2026-11-20
+### 🧹 Автоматичне скидання кешу WebView при оновленні та локальне завантаження модулів Web-OTA
+- **Автоочищення HTTP-кешу WebView у Java ([`WebOtaManager.java`](android/app/src/main/java/ua/pp/sdgen/app/WebOtaManager.java), [`OtaUpdaterPlugin.java`](android/app/src/main/java/ua/pp/sdgen/app/OtaUpdaterPlugin.java), [`MainActivity.java`](android/app/src/main/java/ua/pp/sdgen/app/MainActivity.java))**:
+  - Додано автоматичне очищення дискового кешу Chromium (`WebView.clearCache(true)`) під час застосування Web-OTA бандлу, при оновленні нативного APK та при авто-відкаті — без видалення токенів авторизації та офлайн-черги.
+- **Локальне завантаження view/JS усередині Web-OTA ([`view-loader.js`](frontend/js/view-loader.js))**:
+  - У режимі Capacitor lazy-модулі (`views/*.html`, `js/*.js`) тепер завантажуються виключно з локального бандлу (`https://localhost/frontend/...` із `cache: 'no-store'`) замість мережевого `getApiBaseUrl()`, що виключає розсинхрон між версією APK/Web-OTA та сервером.
+- **Автоочищення застарілого CacheStorage / SW ([`ota-updater.js`](frontend/js/ota-updater.js))**:
+  - На старті та перед Web-OTA автоматично видаляються застарілі реєстрації Service Worker і `caches` із попередніх збірок, щоб користувачам не доводилося вручну очищати кеш або дані додатка в Android.
+
 ## [v5.8.1] — 2026-11-20
 ### ✨ Усунення дублювання кнопки оновлення в Android UI (перший реліз через Web-OTA)
 - **Меню профілю ([`index.html`](frontend/index.html), [`ota-updater.js`](frontend/js/ota-updater.js))**:

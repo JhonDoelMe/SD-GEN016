@@ -210,10 +210,12 @@ public class OtaUpdaterPlugin extends Plugin {
                 ret.put("versionName", versionName);
                 call.resolve(ret);
 
+                WebOtaManager.clearWebViewHttpCache(bridge);
                 final Context appCtx = getContext().getApplicationContext();
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     WebOtaManager.scheduleRollbackWatchdog(appCtx, bridge);
                     if (bridge != null) {
+                        WebOtaManager.clearWebViewHttpCache(bridge);
                         bridge.setServerBasePath(activeBundlePath);
                     }
                 }, 150L);
