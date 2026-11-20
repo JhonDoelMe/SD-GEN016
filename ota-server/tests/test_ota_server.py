@@ -176,3 +176,97 @@ def test_admin_auth_rate_limiting(ota_client: TestClient) -> None:
         assert res.status_code == 401
     blocked = ota_client.get("/ota/api/releases", headers={"X-OTA-Admin-Token": "wrong-token"})
     assert blocked.status_code == 429
+
+
+def _fake_web_bundle(content: str = "<h1>SD-GEN016</h1>") -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("index.html", f"<!doctype html><html><body>{content}</body></html>" * 10)
+        zf.writestr("frontend/js/ota-updater.js", "// ota" * 20)
+    return buf.getvalue()
+
+
+def test_web_bundle_ota_lifecycle_and_compatibility(ota_client: TestClient) -> None:
+    headers = {"X-OTA-Admin-Token": "test-ota-admin-token-1234567890"}
+
+    # Upload base APK v5.8.0 (build 27)
+    apk27 = _fake_apk(b"release-27-")
+    assert ota_client.post(
+        "/ota/api/releases",
+        headers=headers,
+        files={"file": ("sdgen-v5.8.0.apk", io.BytesIO(apk27), "application/vnd.android.package-archive")},
+        data={"version_code": "27", "version_name": "5.8.0", "min_supported_version_code": "27"},
+    ).status_code == 201
+
+    # Upload Web-OTA bundle build 28 requiring min_native_version_code=27
+    zip28 = _fake_web_bundle("v5.8.1-web")
+    sha28 = hashlib.sha256(zip28).hexdigest()
+    r28 = ota_client.post(
+        "/ota/api/web/releases",
+        headers=headers,
+        files={"file": ("web-5.8.1.zip", io.BytesIO(zip28), "application/zip")},
+        data={
+            "web_build": "28",
+            "version_name": "5.8.1",
+            "min_native_version_code": "27",
+            "changelog": "Швидкий веб-фікс",
+            "is_mandatory": "false",
+        },
+    )
+    assert r28.status_code == 201
+    b28 = r28.json()
+    assert b28["web_build"] == 28
+    assert b28["sha256"] == sha28
+    assert b28["download_url"] == "https://sdgen.pp.ua/ota/download/web/latest.zip"
+
+    # APK 27 with embedded web 27 -> eligible for web update 28 without APK reinstall
+    c27 = ota_client.get("/ota/api/web/latest?current_native_code=27&current_web_build=27").json()
+    assert c27["web_update_available"] is True
+    assert c27["native_update_required"] is False
+
+    # Already on web 28 -> no web update
+    c28 = ota_client.get("/ota/api/web/latest?current_native_code=27&current_web_build=28").json()
+    assert c28["web_update_available"] is False
+
+    # Newer APK 29 (embedded 29 > bundle 28) -> never downgrades to bundle 28
+    c29 = ota_client.get("/ota/api/web/latest?current_native_code=29&current_web_build=29").json()
+    assert c29["web_update_available"] is False
+
+    # Very old APK 26 (< min_supported 27) -> native_update_required=True, skips web bundle
+    c26 = ota_client.get("/ota/api/web/latest?current_native_code=26&current_web_build=26").json()
+    assert c26["native_update_required"] is True
+    assert c26["web_update_available"] is False
+    assert c26["native"]["force_update"] is True
+
+    # Download ZIP & verify SHA header
+    dl = ota_client.get("/ota/download/web/latest.zip")
+    assert dl.status_code == 200
+    assert dl.content == zip28
+    assert dl.headers["x-ota-sha256"] == sha28
+
+    # Reject ZIP missing index.html or path traversal
+    bad_buf = io.BytesIO()
+    with zipfile.ZipFile(bad_buf, "w") as zf:
+        zf.writestr("index.html", "ok" * 80)
+        zf.writestr("../evil.js", "alert(1)")
+    bad_zip = ota_client.post(
+        "/ota/api/web/releases",
+        headers=headers,
+        files={"file": ("evil.zip", io.BytesIO(bad_buf.getvalue()), "application/zip")},
+        data={"web_build": "29", "version_name": "5.8.2"},
+    )
+    assert bad_zip.status_code == 400
+
+    # Publish web 29 then rollback to 28
+    zip29 = _fake_web_bundle("v5.8.2-web")
+    assert ota_client.post(
+        "/ota/api/web/releases",
+        headers=headers,
+        files={"file": ("web-5.8.2.zip", io.BytesIO(zip29), "application/zip")},
+        data={"web_build": "29", "version_name": "5.8.2", "min_native_version_code": "27"},
+    ).status_code == 201
+
+    rb = ota_client.patch("/ota/api/web/policy", headers=headers, json={"active_web_build": 28})
+    assert rb.status_code == 200
+    assert rb.json()["web_build"] == 28
+    assert ota_client.get("/ota/download/web/latest.zip").content == zip28

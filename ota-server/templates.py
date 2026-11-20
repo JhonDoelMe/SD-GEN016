@@ -405,7 +405,7 @@ def render_admin_page(public_base_url: str) -> str:
       </div>
 
       <div class="card" style="overflow-x:auto;">
-        <h2 style="font-size:17px;">Історія релізів</h2>
+        <h2 style="font-size:17px;">Історія релізів APK</h2>
         <table>
           <thead>
             <tr>
@@ -418,6 +418,55 @@ def render_admin_page(public_base_url: str) -> str:
             </tr>
           </thead>
           <tbody id="releasesBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2 style="font-size:17px;">Завантажити Web-OTA бандл (ZIP без перевстановлення APK)</h2>
+        <form id="uploadWebForm" onsubmit="uploadWebBundle(event)">
+          <div class="grid-2">
+            <div>
+              <label>Файл Web-бандлу (.zip)</label>
+              <input id="webFile" type="file" accept=".zip" required>
+            </div>
+            <div>
+              <label>versionName (напр. 5.8.1)</label>
+              <input id="webVersionName" type="text" placeholder="5.8.1" required>
+            </div>
+            <div>
+              <label>webBuild (ціле число &gt; поточного)</label>
+              <input id="webBuild" type="number" min="1" required>
+            </div>
+            <div>
+              <label>Мін. нативний versionCode APK (0 = будь-який)</label>
+              <input id="webMinNative" type="number" min="0" value="0">
+            </div>
+          </div>
+          <label>Список змін Web-OTA</label>
+          <textarea id="webChangelog" rows="2" placeholder="Оновлення інтерфейсу..."></textarea>
+          <div class="row" style="margin-top:12px;">
+            <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer;">
+              <input id="webIsMandatory" type="checkbox" style="width:auto;"> Обовʼязкове Web-оновлення
+            </label>
+            <button type="submit">Опублікувати Web-OTA</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card" style="overflow-x:auto;">
+        <h2 style="font-size:17px;">Історія Web-OTA бандлів</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Версія</th>
+              <th>Статус</th>
+              <th>Розмір / Мін. APK</th>
+              <th>Завантажень</th>
+              <th>Changelog / SHA-256</th>
+              <th>Дії</th>
+            </tr>
+          </thead>
+          <tbody id="webBundlesBody"></tbody>
         </table>
       </div>
     </div>
@@ -452,7 +501,10 @@ def render_admin_page(public_base_url: str) -> str:
 
     async function loadReleases() {{
       try {{
-        const data = await apiFetch('/ota/api/releases');
+        const [data, webData] = await Promise.all([
+          apiFetch('/ota/api/releases'),
+          apiFetch('/ota/api/web/releases').catch(() => ({{ bundles: [] }})),
+        ]);
         document.getElementById('adminBody').style.display = 'grid';
         document.getElementById('policyMinCode').value = data.min_supported_version_code || 0;
         const tbody = document.getElementById('releasesBody');
@@ -481,6 +533,36 @@ def render_admin_page(public_base_url: str) -> str:
             </td>
           `;
           tbody.appendChild(tr);
+        }}
+
+        const webTbody = document.getElementById('webBundlesBody');
+        if (webTbody) {{
+          webTbody.innerHTML = '';
+          for (const b of (webData.bundles || [])) {{
+            const tr = document.createElement('tr');
+            const kb = (b.file_size / 1024).toFixed(1) + ' КБ';
+            const statusPill = b.is_active
+              ? '<span class="pill pill-ok">Активний</span>'
+              : '<span class="pill">Архів</span>';
+            const mandatoryPill = b.is_mandatory
+              ? ' <span class="pill pill-warn">Обовʼязковий</span>'
+              : '';
+            tr.innerHTML = `
+              <td><strong>v${{escapeHtml(b.version_name)}}</strong><br><small>web build ${{b.web_build}}</small></td>
+              <td>${{statusPill}}${{mandatoryPill}}</td>
+              <td>${{kb}}<br><small>мін. APK: ${{b.min_native_version_code || 0}}</small></td>
+              <td>${{b.download_count}}</td>
+              <td><div>${{escapeHtml(b.changelog || '—')}}</div><small style="color:var(--muted);">${{b.sha256.slice(0, 16)}}...</small></td>
+              <td>
+                <div class="row">
+                  <a class="secondary" style="padding:6px 10px; border-radius:8px; text-decoration:none; color:#fff; background:#1e293b;" href="/ota/download/web/${{b.web_build}}.zip">ZIP</a>
+                  ${{b.is_active ? '' : `<button type="button" class="secondary" onclick="activateWebBundle(${{b.web_build}})">Зробити активним</button>`}}
+                  <button type="button" class="danger" onclick="deleteWebBundle(${{b.web_build}})">Видалити</button>
+                </div>
+              </td>
+            `;
+            webTbody.appendChild(tr);
+          }}
         }}
       }} catch (e) {{
         document.getElementById('adminBody').style.display = 'none';
@@ -546,6 +628,50 @@ def render_admin_page(public_base_url: str) -> str:
       if (!confirm('Видалити реліз build ' + code + '?')) return;
       try {{
         await apiFetch('/ota/api/releases/' + code, {{ method: 'DELETE' }});
+        await loadReleases();
+      }} catch (e) {{
+        alert('Помилка: ' + e.message);
+      }}
+    }}
+
+    async function uploadWebBundle(ev) {{
+      ev.preventDefault();
+      const file = document.getElementById('webFile').files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('web_build', document.getElementById('webBuild').value);
+      fd.append('version_name', document.getElementById('webVersionName').value.trim());
+      fd.append('min_native_version_code', document.getElementById('webMinNative').value || '0');
+      fd.append('changelog', document.getElementById('webChangelog').value.trim());
+      fd.append('is_mandatory', document.getElementById('webIsMandatory').checked ? 'true' : 'false');
+      try {{
+        await apiFetch('/ota/api/web/releases', {{ method: 'POST', body: fd }});
+        document.getElementById('uploadWebForm').reset();
+        await loadReleases();
+        alert('Web-OTA бандл успішно опубліковано!');
+      }} catch (e) {{
+        alert('Помилка публікації Web-OTA: ' + e.message);
+      }}
+    }}
+
+    async function activateWebBundle(build) {{
+      try {{
+        await apiFetch('/ota/api/web/policy', {{
+          method: 'PATCH',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ active_web_build: build }}),
+        }});
+        await loadReleases();
+      }} catch (e) {{
+        alert('Помилка: ' + e.message);
+      }}
+    }}
+
+    async function deleteWebBundle(build) {{
+      if (!confirm('Видалити Web-OTA бандл build ' + build + '?')) return;
+      try {{
+        await apiFetch('/ota/api/web/releases/' + build, {{ method: 'DELETE' }});
         await loadReleases();
       }} catch (e) {{
         alert('Помилка: ' + e.message);

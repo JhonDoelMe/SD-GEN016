@@ -17,11 +17,16 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        boolean hasPendingWebBoot = WebOtaManager.prepareBeforeBridgeCreate(this);
         registerPlugin(OtaUpdaterPlugin.class);
         registerPlugin(FcmPushPlugin.class);
         registerPlugin(FileDownloadPlugin.class);
         registerPlugin(OfflineSyncPlugin.class);
         super.onCreate(savedInstanceState);
+
+        if (hasPendingWebBoot) {
+            WebOtaManager.scheduleRollbackWatchdog(this, bridge);
+        }
 
         // Capacitor 8 SystemBars handles WindowInsets (system bars + IME) on decorView;
         // do not re-apply IME padding on android.R.id.content or the keyboard gap doubles.

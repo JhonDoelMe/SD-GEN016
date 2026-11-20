@@ -2,25 +2,19 @@ package ua.pp.sdgen.app;
 
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
 import android.net.Uri;
-import android.os.Build;
-import android.provider.Settings;
+import android.os.Handler;
+import android.os.Looper;
 
-import androidx.activity.result.ActivityResult;
-import androidx.core.content.FileProvider;
-
+import com.getcapacitor.Bridge;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
-import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.BufferedInputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -29,36 +23,38 @@ import java.security.MessageDigest;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * Safe Web-OTA updater plugin for Capacitor.
+ * Downloads signed-by-hash Web-OTA ZIP bundles over HTTPS and applies them via
+ * Capacitor's setServerBasePath without requiring REQUEST_INSTALL_PACKAGES.
+ */
 @CapacitorPlugin(name = "OtaUpdater")
 public class OtaUpdaterPlugin extends Plugin {
 
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 60000;
-    private static final Pattern APK_CODE_PATTERN = Pattern.compile("^sdgen-update-(\\d+)\\.apk$");
+    private static final long MAX_WEB_ZIP_BYTES = 50L * 1024L * 1024L;
     private static final Pattern SHA256_PATTERN = Pattern.compile("^[0-9a-f]{64}$");
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private volatile String pendingApkPath = null;
-    private volatile String pendingExpectedSha256 = null;
 
     @PluginMethod
     public void getAppInfo(PluginCall call) {
         try {
             Context ctx = getContext();
-            PackageManager pm = ctx.getPackageManager();
-            PackageInfo info = pm.getPackageInfo(ctx.getPackageName(), 0);
-            long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                ? info.getLongVersionCode()
-                : (long) info.versionCode;
+            WebOtaManager.WebOtaState state = WebOtaManager.getState(ctx);
 
             JSObject ret = new JSObject();
             ret.put("packageName", ctx.getPackageName());
-            ret.put("versionName", info.versionName != null ? info.versionName : "");
-            ret.put("versionCode", versionCode);
-            ret.put("canInstallPackages", canInstallPackages());
+            ret.put("versionName", state.effectiveVersionName);
+            ret.put("versionCode", state.nativeVersionCode);
+            ret.put("nativeVersionCode", state.nativeVersionCode);
+            ret.put("nativeVersionName", state.nativeVersionName);
+            ret.put("webBuild", state.effectiveWebBuild);
+            ret.put("isWebOtaActive", state.isWebOtaActive);
+            ret.put("hasPendingBoot", state.hasPendingBoot);
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("Не вдалося отримати версію додатка: " + e.getMessage(), e);
@@ -66,30 +62,38 @@ public class OtaUpdaterPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void confirmWebBundle(PluginCall call) {
+        try {
+            WebOtaManager.WebOtaState state = WebOtaManager.confirmBundleBoot(getContext());
+            JSObject ret = new JSObject();
+            ret.put("confirmed", true);
+            ret.put("webBuild", state.effectiveWebBuild);
+            ret.put("versionName", state.effectiveVersionName);
+            ret.put("isWebOtaActive", state.isWebOtaActive);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Не вдалося підтвердити Web-OTA бандл: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
     public void cleanupDownloadedUpdates(PluginCall call) {
         try {
-            long currentCode = getCurrentVersionCode();
-            File otaDir = new File(getContext().getCacheDir(), "ota");
-            int removed = 0;
-            if (otaDir.exists() && otaDir.isDirectory()) {
-                File[] files = otaDir.listFiles();
+            int removed = WebOtaManager.cleanupTemporaryDirs(getContext());
+
+            // Clean legacy cacheDir/ota APK files from pre-5.8.0 versions
+            File legacyOtaDir = new File(getContext().getCacheDir(), "ota");
+            if (legacyOtaDir.exists() && legacyOtaDir.isDirectory()) {
+                File[] files = legacyOtaDir.listFiles();
                 if (files != null) {
                     for (File f : files) {
-                        String name = f.getName();
-                        if (name.endsWith(".part")) {
-                            if (f.delete()) removed++;
-                            continue;
-                        }
-                        Matcher m = APK_CODE_PATTERN.matcher(name);
-                        if (m.matches()) {
-                            long fileCode = Long.parseLong(m.group(1));
-                            if (fileCode <= currentCode && f.delete()) {
-                                removed++;
-                            }
+                        if (f.delete()) {
+                            removed++;
                         }
                     }
                 }
             }
+
             JSObject ret = new JSObject();
             ret.put("removed", removed);
             call.resolve(ret);
@@ -99,31 +103,20 @@ public class OtaUpdaterPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void downloadAndInstall(PluginCall call) {
+    public void downloadAndApplyWebBundle(PluginCall call) {
         String downloadUrl = call.getString("url");
         String expectedSha256 = call.getString("sha256", "");
-        long targetCode = call.getInt("versionCode", 0);
+        String versionName = call.getString("versionName", "");
+        long targetWebBuild = call.getInt("webBuild", 0);
 
-        if (downloadUrl == null || !downloadUrl.startsWith("https://")) {
-            call.reject("Небезпечна або некоректна URL-адреса завантаження APK (потрібен HTTPS).");
+        final URL parsedDownloadUrl = validateHttpsUrl(downloadUrl);
+        if (parsedDownloadUrl == null) {
+            call.reject("Небезпечна або некоректна URL-адреса завантаження Web-оновлення (потрібен HTTPS).");
             return;
         }
-        final URL parsedDownloadUrl;
-        try {
-            parsedDownloadUrl = new URL(downloadUrl);
-            String host = parsedDownloadUrl.getHost() != null
-                ? parsedDownloadUrl.getHost().trim().toLowerCase(Locale.ROOT)
-                : "";
-            if (host.isEmpty() || "localhost".equals(host) || host.startsWith("127.") || "169.254.169.254".equals(host)) {
-                call.reject("Неприпустимий хост завантаження оновлення.");
-                return;
-            }
-        } catch (Exception e) {
-            call.reject("Некоректна URL-адреса завантаження APK.");
-            return;
-        }
-        if (targetCode <= 0) {
-            call.reject("Некоректний versionCode релізу.");
+
+        if (targetWebBuild <= 0) {
+            call.reject("Некоректний webBuild релізу.");
             return;
         }
 
@@ -131,35 +124,23 @@ public class OtaUpdaterPlugin extends Plugin {
             ? expectedSha256.trim().toLowerCase(Locale.ROOT)
             : "";
         if (!SHA256_PATTERN.matcher(normalizedExpectedSha).matches()) {
-            call.reject("Відсутня або некоректна контрольна сума SHA-256 релізу.");
+            call.reject("Відсутня або некоректна контрольна сума SHA-256 Web-бандлу.");
             return;
         }
 
         executor.execute(() -> {
-            File tmpFile = null;
+            File tmpZip = null;
             try {
-                File otaDir = new File(getContext().getCacheDir(), "ota");
-                if (!otaDir.exists() && !otaDir.mkdirs()) {
-                    throw new IllegalStateException("Не вдалося створити директорію кешу OTA.");
+                long nativeCode = WebOtaManager.getNativeVersionCode(getContext());
+                if (targetWebBuild <= nativeCode) {
+                    throw new IllegalStateException("Вбудована версія додатка вже новіша або дорівнює обраному Web-бандлу.");
                 }
 
-                File targetFile = new File(otaDir, "sdgen-update-" + targetCode + ".apk");
-                if (targetFile.exists()) {
-                    String cachedSha = computeFileSha256(targetFile);
-                    if (normalizedExpectedSha.equals(cachedSha) && verifyApkPackage(targetFile)) {
-                        emitProgress(100, targetFile.length(), targetFile.length());
-                        proceedWithInstall(call, targetFile, normalizedExpectedSha);
-                        return;
-                    }
-                    //noinspection ResultOfMethodCallIgnored
-                    targetFile.delete();
+                File otaCache = new File(getContext().getCacheDir(), "web_ota_dl");
+                if (!otaCache.exists() && !otaCache.mkdirs()) {
+                    throw new IllegalStateException("Не вдалося створити тимчасову директорію кешу Web-OTA.");
                 }
-
-                tmpFile = new File(otaDir, "sdgen-update-" + targetCode + ".apk.part");
-                if (tmpFile.exists()) {
-                    //noinspection ResultOfMethodCallIgnored
-                    tmpFile.delete();
-                }
+                tmpZip = new File(otaCache, "bundle-" + targetWebBuild + "-" + System.currentTimeMillis() + ".zip.part");
 
                 HttpURLConnection conn = (HttpURLConnection) parsedDownloadUrl.openConnection();
                 conn.setInstanceFollowRedirects(false);
@@ -179,22 +160,25 @@ public class OtaUpdaterPlugin extends Plugin {
 
                 try (
                     InputStream in = new BufferedInputStream(conn.getInputStream());
-                    FileOutputStream out = new FileOutputStream(tmpFile)
+                    FileOutputStream out = new FileOutputStream(tmpZip)
                 ) {
                     byte[] buffer = new byte[32 * 1024];
                     int read;
                     while ((read = in.read(buffer)) != -1) {
+                        downloadedBytes += read;
+                        if (downloadedBytes > MAX_WEB_ZIP_BYTES) {
+                            throw new SecurityException("Розмір Web-OTA бандлу перевищує допустимий ліміт.");
+                        }
                         out.write(buffer, 0, read);
                         digest.update(buffer, 0, read);
-                        downloadedBytes += read;
 
                         if (totalBytes > 0) {
-                            int pct = (int) Math.min(99, (downloadedBytes * 100L) / totalBytes);
-                            if (pct >= lastPercent + 2 || pct == 0) {
+                            int pct = (int) Math.min(95, (downloadedBytes * 95L) / totalBytes);
+                            if (pct >= lastPercent + 3 || pct == 0) {
                                 lastPercent = pct;
                                 emitProgress(pct, downloadedBytes, totalBytes);
                             }
-                        } else if (downloadedBytes % (256 * 1024) < 32 * 1024) {
+                        } else if (downloadedBytes % (128 * 1024) < 32 * 1024) {
                             emitProgress(-1, downloadedBytes, -1);
                         }
                     }
@@ -205,120 +189,81 @@ public class OtaUpdaterPlugin extends Plugin {
 
                 String actualSha = bytesToHex(digest.digest());
                 if (!normalizedExpectedSha.equals(actualSha)) {
-                    throw new SecurityException("Контрольна сума SHA-256 не збігається. Файл пошкоджено.");
+                    throw new SecurityException("Контрольна сума SHA-256 Web-бандлу не збігається.");
                 }
 
-                if (!tmpFile.renameTo(targetFile)) {
-                    throw new IllegalStateException("Не вдалося зберегти завантажений APK.");
-                }
+                emitProgress(98, downloadedBytes, totalBytes > 0 ? totalBytes : downloadedBytes);
 
-                if (!verifyApkPackage(targetFile)) {
-                    //noinspection ResultOfMethodCallIgnored
-                    targetFile.delete();
-                    throw new SecurityException("Завантажений файл не відповідає пакету " + getContext().getPackageName());
-                }
-
+                final Bridge bridge = getBridge();
+                final String activeBundlePath = WebOtaManager.stageAndActivateBundle(
+                    getContext(),
+                    null,
+                    tmpZip,
+                    targetWebBuild,
+                    versionName
+                );
                 emitProgress(100, downloadedBytes, totalBytes > 0 ? totalBytes : downloadedBytes);
-                proceedWithInstall(call, targetFile, normalizedExpectedSha);
-            } catch (Exception e) {
-                if (tmpFile != null && tmpFile.exists()) {
-                    //noinspection ResultOfMethodCallIgnored
-                    tmpFile.delete();
-                }
-                call.reject("Не вдалося завантажити оновлення: " + e.getMessage(), e);
-            }
-        });
-    }
 
-    private void proceedWithInstall(PluginCall call, File apkFile, String expectedSha256) {
-        getBridge().executeOnMainThread(() -> {
-            try {
-                pendingApkPath = apkFile.getAbsolutePath();
-                pendingExpectedSha256 = expectedSha256;
-                if (!canInstallPackages()) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
-                        intent.setData(Uri.parse("package:" + getContext().getPackageName()));
-                        startActivityForResult(call, intent, "handleInstallPermissionResult");
-                        return;
-                    }
-                }
-                launchApkInstaller(apkFile);
                 JSObject ret = new JSObject();
-                ret.put("status", "installer_launched");
+                ret.put("status", "applied");
+                ret.put("webBuild", targetWebBuild);
+                ret.put("versionName", versionName);
                 call.resolve(ret);
+
+                final Context appCtx = getContext().getApplicationContext();
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    WebOtaManager.scheduleRollbackWatchdog(appCtx, bridge);
+                    if (bridge != null) {
+                        bridge.setServerBasePath(activeBundlePath);
+                    }
+                }, 150L);
             } catch (Exception e) {
-                call.reject("Помилка запуску інсталятора: " + e.getMessage(), e);
+                call.reject("Не вдалося завантажити Web-оновлення: " + e.getMessage(), e);
+            } finally {
+                if (tmpZip != null && tmpZip.exists()) {
+                    //noinspection ResultOfMethodCallIgnored
+                    tmpZip.delete();
+                }
             }
         });
     }
 
-    @ActivityCallback
-    private void handleInstallPermissionResult(PluginCall call, ActivityResult result) {
-        if (call == null) {
+    @PluginMethod
+    public void openBrowserUrl(PluginCall call) {
+        String rawUrl = call.getString("url");
+        URL parsed = validateHttpsUrl(rawUrl);
+        if (parsed == null) {
+            call.reject("Некоректне або небезпечне посилання (потрібен HTTPS).");
             return;
         }
         try {
-            if (!canInstallPackages()) {
-                JSObject ret = new JSObject();
-                ret.put("status", "permission_required");
-                call.resolve(ret);
-                return;
-            }
-            if (pendingApkPath == null || pendingExpectedSha256 == null) {
-                call.reject("Шлях до завантаженого APK втрачено. Спробуйте ще раз.");
-                return;
-            }
-            File apkFile = new File(pendingApkPath);
-            if (!apkFile.exists()) {
-                call.reject("Файл оновлення відсутній. Повторіть завантаження.");
-                return;
-            }
-            String actualSha = computeFileSha256(apkFile);
-            if (!pendingExpectedSha256.equals(actualSha) || !verifyApkPackage(apkFile)) {
-                //noinspection ResultOfMethodCallIgnored
-                apkFile.delete();
-                pendingApkPath = null;
-                pendingExpectedSha256 = null;
-                call.reject("Контрольна сума або підпис APK не пройшли повторну перевірку.");
-                return;
-            }
-            launchApkInstaller(apkFile);
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(parsed.toString()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
             JSObject ret = new JSObject();
-            ret.put("status", "installer_launched");
+            ret.put("opened", true);
             call.resolve(ret);
         } catch (Exception e) {
-            call.reject("Не вдалося завершити встановлення: " + e.getMessage(), e);
+            call.reject("Не вдалося відкрити браузер: " + e.getMessage(), e);
         }
     }
 
-    private void launchApkInstaller(File apkFile) {
-        Context ctx = getContext();
-        Uri apkUri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".fileprovider", apkFile);
-        Intent intent = new Intent(Intent.ACTION_VIEW);
-        intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-        ctx.startActivity(intent);
-    }
-
-    private boolean canInstallPackages() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            return getContext().getPackageManager().canRequestPackageInstalls();
+    private URL validateHttpsUrl(String rawUrl) {
+        if (rawUrl == null || !rawUrl.startsWith("https://")) {
+            return null;
         }
-        return true;
-    }
-
-    private long getCurrentVersionCode() throws PackageManager.NameNotFoundException {
-        PackageInfo info = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-            ? info.getLongVersionCode()
-            : (long) info.versionCode;
-    }
-
-    @SuppressWarnings("deprecation")
-    private boolean verifyApkPackage(File apkFile) {
-        PackageInfo archiveInfo = getContext().getPackageManager().getPackageArchiveInfo(apkFile.getAbsolutePath(), 0);
-        return archiveInfo != null && getContext().getPackageName().equals(archiveInfo.packageName);
+        try {
+            URL parsed = new URL(rawUrl);
+            String host = parsed.getHost() != null
+                ? parsed.getHost().trim().toLowerCase(Locale.ROOT)
+                : "";
+            if (host.isEmpty() || "localhost".equals(host) || host.startsWith("127.") || "169.254.169.254".equals(host)) {
+                return null;
+            }
+            return parsed;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private void emitProgress(int percent, long downloadedBytes, long totalBytes) {
@@ -327,18 +272,6 @@ public class OtaUpdaterPlugin extends Plugin {
         data.put("downloadedBytes", downloadedBytes);
         data.put("totalBytes", totalBytes);
         notifyListeners("otaDownloadProgress", data);
-    }
-
-    private String computeFileSha256(File file) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        try (InputStream in = new BufferedInputStream(new FileInputStream(file))) {
-            byte[] buf = new byte[32 * 1024];
-            int r;
-            while ((r = in.read(buf)) != -1) {
-                digest.update(buf, 0, r);
-            }
-        }
-        return bytesToHex(digest.digest());
     }
 
     private static String bytesToHex(byte[] bytes) {

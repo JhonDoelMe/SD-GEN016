@@ -5,6 +5,16 @@
 
 ---
 
+## [v5.8.0] — 2026-11-20
+### 🛡️ Web-OTA (Capacitor `setServerBasePath`) та видалення `REQUEST_INSTALL_PACKAGES`
+- **Повне видалення дозволу `REQUEST_INSTALL_PACKAGES` ([`AndroidManifest.xml`](android/app/src/main/AndroidManifest.xml))**:
+  - Додано директиву `tools:node="remove"` для примусового виключення `REQUEST_INSTALL_PACKAGES` із фінального маніфесту Android, що прибирає евристичні попередження Play Protect про самоінсталяцію пакетів.
+- **Двоканальне OTA-оновлення ([`WebOtaManager.java`](android/app/src/main/java/ua/pp/sdgen/app/WebOtaManager.java), [`OtaUpdaterPlugin.java`](android/app/src/main/java/ua/pp/sdgen/app/OtaUpdaterPlugin.java), [`MainActivity.java`](android/app/src/main/java/ua/pp/sdgen/app/MainActivity.java), [`ota-updater.js`](frontend/js/ota-updater.js))**:
+  - **Web-Bundle OTA (основний канал)**: клієнт завантажує ZIP-архів `frontend/` по HTTPS, перевіряє **SHA-256** та безпеку шляхів (захист від Zip-Slip), застосовує його через `Bridge.setServerBasePath(...)` і підтверджує запуск (`confirmWebBundle()`). У разі збою завантаження або білого екрана спрацьовує автоматичний відкат (`Auto-Rollback`) до попереднього робочого бандлу чи вбудованих асетів APK.
+  - **Нативні оновлення APK (резервний канал)**: замість системного інсталятора зсередини додатка клієнт відкриває `https://sdgen.pp.ua/ota/` у зовнішньому браузері (`openBrowserUrl()`).
+- **OTA-сервер ([`app.py`](ota-server/app.py), [`storage.py`](ota-server/storage.py), [`templates.py`](ota-server/templates.py), [`release_web_ota.ps1`](scripts/release_web_ota.ps1))**:
+  - Додано ендпоінти Web-OTA (`/ota/api/web/latest`, `/ota/download/web/latest.zip`, `/ota/api/web/releases`, `/ota/api/web/policy`, `/ota/api/web/releases/{web_build}`) із контролем `min_native_version_code`, веб-секцією в `/ota/admin` та автотестами.
+
 ## [v5.7.27] — 2026-11-20
 ### ✏️ Редагування надходжень ПММ (72-годинне вікно, автосинхронізація пулу каністр, аудит)
 - **Backend API (`PUT /api/v1/fuel/receipt/{receipt_id}`)**:

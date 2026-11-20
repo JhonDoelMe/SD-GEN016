@@ -1,13 +1,16 @@
 // frontend/js/ota-updater.js
-// Native Android APK Over-The-Air (OTA) update checker, downloader & installer bridge
+// Dual-channel OTA updater for Capacitor Android:
+// 1) Web-Bundle OTA (ZIP + SHA-256 via setServerBasePath, zero APK permissions)
+// 2) External browser redirect when a native APK update is required
 
 (function () {
   const CHECK_INTERVAL_MS = 10 * 60 * 1000;
-  const DISMISSED_KEY = 'sdgen_ota_dismissed_code';
+  const DISMISSED_KEY = 'sdgen_ota_dismissed_tag';
   const LAST_CHECK_KEY = 'sdgen_ota_last_check_ts';
 
   let currentAppInfo = null;
   let latestManifest = null;
+  let currentUpdateMode = null; // 'web' | 'native'
   let isDownloading = false;
   let listenerBound = false;
 
@@ -37,9 +40,12 @@
     return 'https://sdgen.pp.ua/ota';
   }
 
-  function formatMb(bytes) {
+  function formatSize(bytes) {
     const n = Number(bytes || 0);
     if (!Number.isFinite(n) || n <= 0) return '—';
+    if (n < 1024 * 1024) {
+      return `${Math.max(1, Math.round(n / 1024))} КБ`;
+    }
     return `${(n / (1024 * 1024)).toFixed(2)} МБ`;
   }
 
@@ -65,11 +71,11 @@
       if (pct >= 0) {
         bar.style.width = `${Math.min(100, pct)}%`;
         txt.textContent = total > 0
-          ? `Завантаження... ${pct}% (${formatMb(dl)} / ${formatMb(total)})`
+          ? `Завантаження... ${pct}% (${formatSize(dl)} / ${formatSize(total)})`
           : `Завантаження... ${pct}%`;
       } else {
         bar.style.width = '50%';
-        txt.textContent = `Завантаження... ${formatMb(dl)}`;
+        txt.textContent = `Завантаження... ${formatSize(dl)}`;
       }
     });
   }
@@ -87,7 +93,13 @@
     const label = document.getElementById('nativeAppVersionLabel');
     if (!box || !label) return;
     box.style.display = 'flex';
-    label.textContent = `Android додаток: v${resolved.versionName || '—'} (build ${resolved.versionCode || 0})`;
+    const nativeCode = Number(resolved.nativeVersionCode ?? resolved.versionCode ?? 0);
+    const webBuild = Number(resolved.webBuild ?? nativeCode);
+    if (resolved.isWebOtaActive && webBuild > nativeCode) {
+      label.textContent = `Android додаток: v${resolved.versionName || '—'} (Web #${webBuild} · APK #${nativeCode})`;
+    } else {
+      label.textContent = `Android додаток: v${resolved.versionName || '—'} (build ${nativeCode})`;
+    }
   }
 
   function setStatusMessage(text, isError) {
@@ -104,7 +116,14 @@
     el.textContent = text;
   }
 
-  async function showUpdateModal(info, manifest) {
+  function buildDismissTag(mode, manifest) {
+    if (mode === 'web') {
+      return `web:${Number(manifest?.web_build || 0)}`;
+    }
+    return `native:${Number(manifest?.native?.version_code || 0)}`;
+  }
+
+  async function showUpdateModal(info, manifest, mode) {
     if (window.ViewLoader?.ensureModal) {
       try {
         await window.ViewLoader.ensureModal('modalAppUpdate');
@@ -113,9 +132,13 @@
     const modal = document.getElementById('modalAppUpdate');
     if (!modal) return;
 
-    const mandatory = Boolean(manifest.force_update) ||
-      (Number(info.versionCode || 0) < Number(manifest.min_supported_version_code || 0)) ||
-      Boolean(manifest.is_mandatory);
+    currentUpdateMode = mode;
+    const isNative = mode === 'native';
+    const nativeInfo = manifest.native || {};
+
+    const mandatory = isNative
+      ? Boolean(manifest.native_update_required || nativeInfo.force_update || nativeInfo.is_mandatory)
+      : Boolean(manifest.web_force_update || manifest.is_mandatory);
 
     modal.dataset.mandatory = mandatory ? 'true' : 'false';
 
@@ -128,34 +151,64 @@
     const progWrap = document.getElementById('otaProgressWrap');
     const progBar = document.getElementById('otaProgressBar');
 
+    const targetVerName = isNative ? nativeInfo.version_name : manifest.version_name;
     if (titleEl) {
-      titleEl.textContent = mandatory
-        ? `Обов'язкове оновлення v${manifest.version_name}`
-        : `Доступне оновлення v${manifest.version_name}`;
+      if (isNative) {
+        titleEl.textContent = mandatory
+          ? `Потрібне оновлення додатка v${targetVerName}`
+          : `Доступне оновлення APK v${targetVerName}`;
+      } else {
+        titleEl.textContent = mandatory
+          ? `Обов'язкове оновлення v${targetVerName}`
+          : `Доступне оновлення v${targetVerName}`;
+      }
     }
+
     if (summaryEl) {
-      summaryEl.innerHTML =
-        `Поточна версія: <strong>v${escapeText(info.versionName)} (build ${Number(info.versionCode)})</strong><br>` +
-        `Нова версія: <strong>v${escapeText(manifest.version_name)} (build ${Number(manifest.version_code)})</strong> · ${formatMb(manifest.file_size)}`;
+      const curVer = escapeText(info.versionName || '—');
+      const curBuild = Number(info.webBuild ?? info.versionCode ?? 0);
+      if (isNative) {
+        const curNative = Number(info.nativeVersionCode ?? info.versionCode ?? 0);
+        summaryEl.innerHTML =
+          `Поточна APK: <strong>v${curVer} (build ${curNative})</strong><br>` +
+          `Нова версія APK: <strong>v${escapeText(nativeInfo.version_name)} (build ${Number(nativeInfo.version_code)})</strong>`;
+      } else {
+        summaryEl.innerHTML =
+          `Поточна версія: <strong>v${curVer} (#${curBuild})</strong><br>` +
+          `Нова версія: <strong>v${escapeText(manifest.version_name)} (#${Number(manifest.web_build)})</strong> · ${formatSize(manifest.file_size)} (швидке оновлення без перевстановлення APK)`;
+      }
     }
+
     if (changelogEl) {
-      const notes = (manifest.changelog || '').trim() || 'Покращення стабільності та виправлення помилок.';
+      const rawNotes = isNative ? nativeInfo.changelog : manifest.changelog;
+      const notes = (rawNotes || '').trim() || 'Покращення стабільності, інтерфейсу та виправлення помилок.';
       changelogEl.innerHTML = escapeText(notes).replace(/\n/g, '<br>');
     }
+
     if (closeBtn) closeBtn.style.display = mandatory ? 'none' : '';
     if (laterBtn) laterBtn.style.display = mandatory ? 'none' : '';
     if (installBtn) {
       installBtn.disabled = false;
-      installBtn.textContent = 'Оновити зараз';
+      installBtn.textContent = isNative ? 'Завантажити у браузері' : 'Оновити зараз';
     }
     if (progWrap) progWrap.style.display = 'none';
     if (progBar) progBar.style.width = '0%';
-    setStatusMessage(
-      mandatory
-        ? 'Ця версія додатка більше не підтримується сервером. Оновіться, щоб продовжити роботу.'
-        : '',
-      mandatory
-    );
+
+    if (isNative) {
+      setStatusMessage(
+        mandatory
+          ? 'Ця збірка APK потребує оновлення базового пакета Android. Натисніть кнопку нижче, щоб завантажити нову версію через браузер.'
+          : 'Для оновлення базового APK-пакета буде відкрито офіційну сторінку завантаження у браузері.',
+        mandatory
+      );
+    } else {
+      setStatusMessage(
+        mandatory
+          ? 'Доступне критичне оновлення інтерфейсу. Натисніть «Оновити зараз» — це займе кілька секунд.'
+          : '',
+        mandatory
+      );
+    }
 
     if (typeof window.openModal === 'function') {
       window.openModal('modalAppUpdate');
@@ -174,12 +227,23 @@
     const progBar = document.getElementById('otaProgressBar');
     const progTxt = document.getElementById('otaProgressText');
 
+    if (currentUpdateMode === 'native') {
+      const targetUrl = latestManifest?.native?.landing_url || `${resolveOtaBaseUrl()}/`;
+      try {
+        await plugin.openBrowserUrl({ url: targetUrl });
+        setStatusMessage('Офіційну сторінку завантаження APK відкрито у браузері.', false);
+      } catch (err) {
+        setStatusMessage(err?.message || 'Не вдалося відкрити сторінку завантаження у браузері.', true);
+      }
+      return;
+    }
+
     isDownloading = true;
     bindProgressListener(plugin);
     setStatusMessage('', false);
     if (progWrap) progWrap.style.display = 'block';
     if (progBar) progBar.style.width = '0%';
-    if (progTxt) progTxt.textContent = 'Підготовка завантаження...';
+    if (progTxt) progTxt.textContent = 'Підготовка Web-оновлення...';
     if (installBtn) {
       installBtn.disabled = true;
       installBtn.textContent = 'Завантаження...';
@@ -187,28 +251,15 @@
     if (laterBtn) laterBtn.disabled = true;
 
     try {
-      const res = await plugin.downloadAndInstall({
+      await plugin.downloadAndApplyWebBundle({
         url: latestManifest.download_url,
         sha256: latestManifest.sha256 || '',
-        versionCode: Number(latestManifest.version_code),
+        webBuild: Number(latestManifest.web_build),
+        versionName: String(latestManifest.version_name || ''),
       });
 
-      if (res && res.status === 'permission_required') {
-        setStatusMessage(
-          'Увімкніть дозвіл «Встановлення з цього джерела» для SD-GEN016, після чого натисніть кнопку нижче ще раз.',
-          false
-        );
-        if (installBtn) {
-          installBtn.disabled = false;
-          installBtn.textContent = 'Надати дозвіл і встановити';
-        }
-      } else {
-        if (progTxt) progTxt.textContent = 'Інсталятор Android відкрито. Підтвердьте оновлення.';
-        if (installBtn) {
-          installBtn.disabled = false;
-          installBtn.textContent = 'Відкрити інсталятор ще раз';
-        }
-      }
+      if (progTxt) progTxt.textContent = 'Оновлення застосовано. Перезавантаження інтерфейсу...';
+      setStatusMessage('Оновлення успішно встановлено. Додаток перезавантажується...', false);
     } catch (err) {
       setStatusMessage(err?.message || 'Помилка під час завантаження оновлення.', true);
       if (installBtn) {
@@ -226,9 +277,9 @@
     if (modal && modal.dataset.mandatory === 'true') {
       return;
     }
-    if (latestManifest && latestManifest.version_code) {
+    if (latestManifest && currentUpdateMode) {
       try {
-        sessionStorage.setItem(DISMISSED_KEY, String(latestManifest.version_code));
+        sessionStorage.setItem(DISMISSED_KEY, buildDismissTag(currentUpdateMode, latestManifest));
       } catch (_) {}
     }
     if (typeof window.closeModal === 'function') {
@@ -243,15 +294,13 @@
     const plugin = getOtaPlugin();
     if (!plugin) {
       if (manual && typeof window.showToast === 'function') {
-        window.showToast('Перевірка APK-оновлень доступна лише в Android-додатку.', 'info');
+        window.showToast('Перевірка оновлень доступна лише в Android-додатку.', 'info');
       }
       return null;
     }
 
     try {
-      if (!currentAppInfo) {
-        currentAppInfo = await plugin.getAppInfo();
-      }
+      currentAppInfo = await plugin.getAppInfo();
       await renderServerModalAppVersion(currentAppInfo);
 
       if (!manual) {
@@ -263,8 +312,13 @@
         } catch (_) {}
       }
 
+      const nativeCode = Number(currentAppInfo.nativeVersionCode ?? currentAppInfo.versionCode ?? 0);
+      const webBuild = Number(currentAppInfo.webBuild ?? nativeCode);
       const otaBase = resolveOtaBaseUrl();
-      const url = `${otaBase}/api/latest?current_code=${encodeURIComponent(currentAppInfo.versionCode)}&_t=${Date.now()}`;
+      const url =
+        `${otaBase}/api/web/latest?current_native_code=${encodeURIComponent(nativeCode)}` +
+        `&current_web_build=${encodeURIComponent(webBuild)}&_t=${Date.now()}`;
+
       const res = await fetch(url, { method: 'GET', cache: 'no-store' });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
@@ -274,28 +328,34 @@
         sessionStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
       } catch (_) {}
 
-      if (!manifest || !manifest.has_release) {
-        if (manual && typeof window.showToast === 'function') {
-          window.showToast('На сервері ще немає опублікованих релізів APK.');
-        }
-        return manifest;
+      latestManifest = manifest;
+      const nativeInfo = manifest?.native || {};
+      const nativeRequired = Boolean(manifest?.native_update_required || nativeInfo.force_update);
+      const webAvailable = Boolean(manifest?.web_update_available);
+      const nativeOptional = Boolean(nativeInfo.update_available && !nativeRequired);
+
+      let targetMode = null;
+      let mandatory = false;
+      if (nativeRequired) {
+        targetMode = 'native';
+        mandatory = true;
+      } else if (webAvailable) {
+        targetMode = 'web';
+        mandatory = Boolean(manifest.web_force_update);
+      } else if (nativeOptional) {
+        targetMode = 'native';
+        mandatory = false;
       }
 
-      latestManifest = manifest;
-      const installedCode = Number(currentAppInfo.versionCode || 0);
-      const latestCode = Number(manifest.version_code || 0);
-      const minSupported = Number(manifest.min_supported_version_code || 0);
-      const hasNewer = latestCode > installedCode;
-      const mandatory = hasNewer && (installedCode < minSupported || Boolean(manifest.is_mandatory));
-
-      if (hasNewer) {
-        let dismissedCode = 0;
+      if (targetMode) {
+        const tag = buildDismissTag(targetMode, manifest);
+        let dismissedTag = '';
         try {
-          dismissedCode = Number(sessionStorage.getItem(DISMISSED_KEY) || '0');
+          dismissedTag = sessionStorage.getItem(DISMISSED_KEY) || '';
         } catch (_) {}
 
-        if (manual || mandatory || dismissedCode < latestCode) {
-          await showUpdateModal(currentAppInfo, manifest);
+        if (manual || mandatory || dismissedTag !== tag) {
+          await showUpdateModal(currentAppInfo, manifest, targetMode);
         }
       } else if (manual && typeof window.showToast === 'function') {
         window.showToast(`У вас актуальна версія v${currentAppInfo.versionName}`);
@@ -322,6 +382,9 @@
     const plugin = getOtaPlugin();
     if (!plugin) return;
 
+    if (typeof plugin.confirmWebBundle === 'function') {
+      plugin.confirmWebBundle().catch(() => {});
+    }
     plugin.cleanupDownloadedUpdates().catch(() => {});
     plugin.getAppInfo().then((info) => {
       currentAppInfo = info;

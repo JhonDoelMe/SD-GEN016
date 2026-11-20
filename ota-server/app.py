@@ -36,6 +36,13 @@ class PolicyUpdateRequest(BaseModel):
     changelog: Optional[str] = Field(default=None, max_length=4000)
 
 
+class WebPolicyUpdateRequest(BaseModel):
+    active_web_build: Optional[int] = Field(default=None, ge=1)
+    min_native_version_code: Optional[int] = Field(default=None, ge=0)
+    is_mandatory: Optional[bool] = None
+    changelog: Optional[str] = Field(default=None, max_length=4000)
+
+
 def _parse_cors_origins(raw: str) -> list[str]:
     defaults = [
         "https://sdgen.pp.ua",
@@ -144,6 +151,7 @@ def create_ota_app(
     @app.get("/ota/health")
     def ota_health() -> JSONResponse:
         manifest = storage.get_latest_manifest()
+        web_manifest = storage.get_latest_web_manifest()
         return JSONResponse(
             content={
                 "status": "healthy",
@@ -152,6 +160,9 @@ def create_ota_app(
                 "has_release": manifest["has_release"],
                 "latest_version_code": manifest["version_code"],
                 "latest_version_name": manifest["version_name"],
+                "has_web_bundle": web_manifest["has_web_bundle"],
+                "latest_web_build": web_manifest["web_build"],
+                "latest_web_version": web_manifest["version_name"],
             },
             headers=NO_CACHE_HEADERS,
         )
@@ -276,6 +287,124 @@ def create_ota_app(
         except OtaConflictError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         return JSONResponse(content={"deleted": version_code}, headers=NO_CACHE_HEADERS)
+
+    # ------------------------------------------------------------------
+    # Web-Bundle OTA routes (ZIP of Capacitor frontend assets)
+    # ------------------------------------------------------------------
+
+    @app.get("/ota/api/web/latest")
+    def ota_web_latest(
+        current_native_code: Optional[int] = Query(default=None, ge=0),
+        current_web_build: Optional[int] = Query(default=None, ge=0),
+    ) -> JSONResponse:
+        manifest = storage.get_latest_web_manifest(
+            current_native_code=current_native_code,
+            current_web_build=current_web_build,
+        )
+        return JSONResponse(content=manifest, headers=NO_CACHE_HEADERS)
+
+    @app.get("/ota/download/web/latest.zip")
+    def ota_web_download_latest() -> FileResponse:
+        try:
+            bundle_path, meta = storage.get_web_bundle_for_download(web_build=None)
+        except OtaNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        headers = {
+            **NO_CACHE_HEADERS,
+            "Content-Disposition": f'attachment; filename="{meta["file_name"]}"',
+            "X-OTA-Web-Build": str(meta["web_build"]),
+            "X-OTA-Version-Name": str(meta["version_name"]),
+            "X-OTA-SHA256": str(meta["sha256"]),
+        }
+        return FileResponse(
+            path=bundle_path,
+            media_type="application/zip",
+            filename=meta["file_name"],
+            headers=headers,
+        )
+
+    @app.get("/ota/download/web/{web_build}.zip")
+    def ota_web_download_version(web_build: int) -> FileResponse:
+        try:
+            bundle_path, meta = storage.get_web_bundle_for_download(web_build=web_build)
+        except OtaNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        headers = {
+            **NO_CACHE_HEADERS,
+            "Content-Disposition": f'attachment; filename="{meta["file_name"]}"',
+            "X-OTA-Web-Build": str(meta["web_build"]),
+            "X-OTA-Version-Name": str(meta["version_name"]),
+            "X-OTA-SHA256": str(meta["sha256"]),
+        }
+        return FileResponse(
+            path=bundle_path,
+            media_type="application/zip",
+            filename=meta["file_name"],
+            headers=headers,
+        )
+
+    @app.get("/ota/api/web/releases", dependencies=[Depends(require_admin)])
+    def ota_list_web_releases() -> JSONResponse:
+        return JSONResponse(content=storage.list_web_bundles(), headers=NO_CACHE_HEADERS)
+
+    @app.post("/ota/api/web/releases", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
+    def ota_upload_web_release(
+        file: UploadFile = File(...),
+        web_build: int = Form(...),
+        version_name: str = Form(...),
+        min_native_version_code: int = Form(default=0),
+        changelog: str = Form(default=""),
+        is_mandatory: bool = Form(default=False),
+        replace: bool = Form(default=False),
+    ) -> JSONResponse:
+        filename = (file.filename or "").lower()
+        if filename and not filename.endswith(".zip"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Дозволено завантажувати лише файли .zip.",
+            )
+        try:
+            bundle = storage.save_web_bundle(
+                file_stream=file.file,
+                web_build=web_build,
+                version_name=version_name,
+                min_native_version_code=min_native_version_code,
+                changelog=changelog,
+                is_mandatory=is_mandatory,
+                replace=replace,
+            )
+        except OtaValidationError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except OtaConflictError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        finally:
+            file.file.close()
+        return JSONResponse(content=bundle, status_code=status.HTTP_201_CREATED, headers=NO_CACHE_HEADERS)
+
+    @app.patch("/ota/api/web/policy", dependencies=[Depends(require_admin)])
+    def ota_update_web_policy(payload: WebPolicyUpdateRequest) -> JSONResponse:
+        try:
+            manifest = storage.update_web_policy(
+                active_web_build=payload.active_web_build,
+                is_mandatory=payload.is_mandatory,
+                min_native_version_code=payload.min_native_version_code,
+                changelog=payload.changelog,
+            )
+        except OtaValidationError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except OtaNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return JSONResponse(content=manifest, headers=NO_CACHE_HEADERS)
+
+    @app.delete("/ota/api/web/releases/{web_build}", dependencies=[Depends(require_admin)])
+    def ota_delete_web_release(web_build: int) -> JSONResponse:
+        try:
+            storage.delete_web_bundle(web_build=web_build)
+        except OtaNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except OtaConflictError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        return JSONResponse(content={"deleted": web_build}, headers=NO_CACHE_HEADERS)
 
     return app
 

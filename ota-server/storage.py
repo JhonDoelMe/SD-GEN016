@@ -15,6 +15,7 @@ from typing import Any, BinaryIO
 
 APK_ZIP_MAGIC = b"PK\x03\x04"
 MAX_APK_BYTES = 150 * 1024 * 1024  # 150 MiB hard ceiling
+MAX_WEB_BUNDLE_BYTES = 50 * 1024 * 1024  # 50 MiB hard ceiling for Web-OTA ZIP
 VERSION_NAME_RE = re.compile(r"^[0-9]+(?:\.[0-9]+){1,3}(?:-[A-Za-z0-9._-]+)?$")
 
 
@@ -43,6 +44,7 @@ class OtaStorage:
     ) -> None:
         self.data_dir = Path(data_dir).resolve()
         self.apks_dir = self.data_dir / "apks"
+        self.web_bundles_dir = (self.data_dir / "web_bundles").resolve()
         self.db_path = self.data_dir / "ota.db"
         self.public_base_url = public_base_url.rstrip("/")
         self.app_id = app_id
@@ -52,6 +54,7 @@ class OtaStorage:
 
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.apks_dir.mkdir(parents=True, exist_ok=True)
+        self.web_bundles_dir.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
@@ -83,6 +86,21 @@ class OtaStorage:
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     min_supported_version_code INTEGER NOT NULL DEFAULT 0,
                     updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS web_bundles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    web_build INTEGER NOT NULL UNIQUE,
+                    version_name TEXT NOT NULL,
+                    min_native_version_code INTEGER NOT NULL DEFAULT 0,
+                    file_name TEXT NOT NULL,
+                    stored_name TEXT NOT NULL,
+                    file_size INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    changelog TEXT NOT NULL DEFAULT '',
+                    is_mandatory INTEGER NOT NULL DEFAULT 0,
+                    is_active INTEGER NOT NULL DEFAULT 0,
+                    download_count INTEGER NOT NULL DEFAULT 0,
+                    published_at TEXT NOT NULL
                 );
                 """
             )
@@ -351,7 +369,7 @@ class OtaStorage:
     def _safe_unlink(self, path: Path) -> None:
         try:
             resolved = path.resolve()
-            if resolved.parent == self.apks_dir and resolved.exists():
+            if resolved.parent in (self.apks_dir, self.web_bundles_dir) and resolved.exists():
                 resolved.unlink()
         except OSError:
             pass
@@ -446,3 +464,362 @@ class OtaStorage:
             conn.execute("DELETE FROM releases WHERE version_code = ?", (version_code,))
             stored_name = str(row["stored_name"])
         self._safe_unlink(self.apks_dir / stored_name)
+
+    # ------------------------------------------------------------------
+    # Web-Bundle OTA (Capacitor ZIP bundles for silent JS/HTML/CSS OTA)
+    # ------------------------------------------------------------------
+
+    def _web_row_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        web_build = int(row["web_build"])
+        return {
+            "app_id": self.app_id,
+            "app_name": self.app_name,
+            "has_web_bundle": True,
+            "web_build": web_build,
+            "version_name": str(row["version_name"]),
+            "min_native_version_code": int(row["min_native_version_code"] or 0),
+            "is_mandatory": bool(row["is_mandatory"]),
+            "is_active": bool(row["is_active"]),
+            "file_name": str(row["file_name"]),
+            "file_size": int(row["file_size"]),
+            "sha256": str(row["sha256"]),
+            "changelog": str(row["changelog"] or ""),
+            "download_count": int(row["download_count"] or 0),
+            "published_at": str(row["published_at"]),
+            "download_url": f"{self.public_base_url}/download/web/latest.zip",
+            "version_download_url": f"{self.public_base_url}/download/web/{web_build}.zip",
+            "landing_url": f"{self.public_base_url}/",
+        }
+
+    def get_latest_web_manifest(
+        self,
+        current_native_code: int | None = None,
+        current_web_build: int | None = None,
+    ) -> dict[str, Any]:
+        """Return latest active Web-OTA bundle + native APK compatibility summary."""
+        apk_manifest = self.get_latest_manifest(current_code=current_native_code)
+        native_summary = {
+            "has_release": bool(apk_manifest.get("has_release")),
+            "version_code": int(apk_manifest.get("version_code") or 0),
+            "version_name": str(apk_manifest.get("version_name") or ""),
+            "min_supported_version_code": int(apk_manifest.get("min_supported_version_code") or 0),
+            "is_mandatory": bool(apk_manifest.get("is_mandatory")),
+            "changelog": str(apk_manifest.get("changelog") or ""),
+            "landing_url": str(apk_manifest.get("landing_url") or f"{self.public_base_url}/"),
+            "download_url": str(apk_manifest.get("download_url") or f"{self.public_base_url}/download/latest.apk"),
+            "update_available": bool(apk_manifest.get("update_available", False)),
+            "force_update": bool(apk_manifest.get("force_update", False)),
+        }
+
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM web_bundles WHERE is_active = 1 ORDER BY web_build DESC LIMIT 1"
+            ).fetchone()
+
+        if row is None:
+            manifest: dict[str, Any] = {
+                "app_id": self.app_id,
+                "app_name": self.app_name,
+                "has_web_bundle": False,
+                "web_build": 0,
+                "version_name": "",
+                "min_native_version_code": 0,
+                "is_mandatory": False,
+                "file_name": "",
+                "file_size": 0,
+                "sha256": "",
+                "changelog": "",
+                "download_url": f"{self.public_base_url}/download/web/latest.zip",
+                "landing_url": f"{self.public_base_url}/",
+                "published_at": None,
+                "native": native_summary,
+            }
+            if current_native_code is not None or current_web_build is not None:
+                manifest["web_update_available"] = False
+                manifest["web_force_update"] = False
+                manifest["native_update_required"] = bool(native_summary["force_update"])
+            return manifest
+
+        manifest = self._web_row_to_dict(row)
+        manifest["native"] = native_summary
+
+        if current_native_code is not None or current_web_build is not None:
+            native_code = int(current_native_code or 0)
+            eff_web = max(native_code, int(current_web_build or 0))
+            req_native = max(
+                int(native_summary["min_supported_version_code"]),
+                int(manifest["min_native_version_code"]),
+            )
+            native_required = native_code < req_native or bool(native_summary["force_update"])
+            web_available = (not native_required) and (eff_web < int(manifest["web_build"]))
+            manifest["native_update_required"] = native_required
+            manifest["web_update_available"] = web_available
+            manifest["web_force_update"] = bool(web_available and manifest["is_mandatory"])
+            if native_required:
+                manifest["native"]["update_available"] = True
+                manifest["native"]["force_update"] = True
+
+        return manifest
+
+    def list_web_bundles(self) -> dict[str, Any]:
+        """List all Web-OTA bundles ordered newest-first."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM web_bundles ORDER BY web_build DESC"
+            ).fetchall()
+            return {"bundles": [self._web_row_to_dict(r) for r in rows]}
+
+    def save_web_bundle(
+        self,
+        file_stream: BinaryIO,
+        web_build: int,
+        version_name: str,
+        min_native_version_code: int = 0,
+        changelog: str = "",
+        is_mandatory: bool = False,
+        replace: bool = False,
+    ) -> dict[str, Any]:
+        """Validate Web-OTA ZIP bundle, compute SHA-256, store on disk and activate."""
+        if web_build < 1:
+            raise OtaValidationError("web_build має бути цілим числом >= 1.")
+        clean_ver = (version_name or "").strip()
+        if not VERSION_NAME_RE.match(clean_ver):
+            raise OtaValidationError("Некоректний формат version_name (очікується напр. 5.8.1).")
+        if min_native_version_code < 0:
+            raise OtaValidationError("min_native_version_code не може бути від'ємним.")
+
+        stored_name = f"sd-gen016-web-v{clean_ver}-b{web_build}.zip"
+        public_file_name = f"sd-gen016-web-v{clean_ver}.zip"
+        final_path = (self.web_bundles_dir / stored_name).resolve()
+        if final_path.parent != self.web_bundles_dir:
+            raise OtaValidationError("Неприпустиме ім'я файлу.")
+        tmp_path = self.web_bundles_dir / f".upload-web-{uuid.uuid4().hex}-{web_build}.tmp"
+
+        hasher = hashlib.sha256()
+        total_bytes = 0
+        first_chunk = True
+        try:
+            with open(tmp_path, "wb") as out_fp:
+                while True:
+                    chunk = file_stream.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    if first_chunk:
+                        first_chunk = False
+                        if len(chunk) < 4 or chunk[:4] != APK_ZIP_MAGIC:
+                            raise OtaValidationError("Файл не є валідним ZIP-архівом (відсутня сигнатура PK).")
+                    total_bytes += len(chunk)
+                    if total_bytes > MAX_WEB_BUNDLE_BYTES:
+                        raise OtaValidationError(
+                            f"Web-бандл перевищує максимальний розмір {MAX_WEB_BUNDLE_BYTES // (1024 * 1024)} МБ."
+                        )
+                    hasher.update(chunk)
+                    out_fp.write(chunk)
+
+            if total_bytes < 128:
+                raise OtaValidationError("ZIP-архів Web-бандлу занадто малий або порожній.")
+
+            try:
+                with zipfile.ZipFile(tmp_path, "r") as zf:
+                    names = zf.namelist()
+                    if "index.html" not in names:
+                        raise OtaValidationError("Web-бандл ZIP повинен містити index.html у корені.")
+                    for entry_name in names:
+                        norm = entry_name.replace("\\", "/")
+                        if norm.startswith("/") or ".." in norm.split("/") or (len(norm) > 1 and norm[1] == ":"):
+                            raise OtaValidationError(f"Небезпечний шлях у ZIP-архіві: {entry_name}")
+            except zipfile.BadZipFile as exc:
+                raise OtaValidationError("Пошкоджений ZIP-архів Web-бандлу.") from exc
+
+            sha256_hex = hasher.hexdigest()
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            with self._lock:
+                pruned_to_remove: list[str] = []
+                old_stored_to_remove: str | None = None
+                with self._connect() as conn:
+                    existing = conn.execute(
+                        "SELECT web_build, stored_name FROM web_bundles WHERE web_build = ?",
+                        (web_build,),
+                    ).fetchone()
+                    max_row = conn.execute(
+                        "SELECT COALESCE(MAX(web_build), 0) AS max_build FROM web_bundles"
+                    ).fetchone()
+                    max_build = int(max_row["max_build"]) if max_row else 0
+
+                    if not replace and web_build <= max_build:
+                        raise OtaConflictError(
+                            f"web_build={web_build} має бути строго більшим за поточний максимум ({max_build})."
+                        )
+
+                    if existing and existing["stored_name"] != stored_name:
+                        old_stored_to_remove = str(existing["stored_name"])
+
+                    conn.execute("UPDATE web_bundles SET is_active = 0")
+                    if existing:
+                        conn.execute(
+                            """
+                            UPDATE web_bundles
+                            SET version_name = ?, min_native_version_code = ?, file_name = ?, stored_name = ?,
+                                file_size = ?, sha256 = ?, changelog = ?,
+                                is_mandatory = ?, is_active = 1, published_at = ?
+                            WHERE web_build = ?
+                            """,
+                            (
+                                clean_ver,
+                                int(min_native_version_code),
+                                public_file_name,
+                                stored_name,
+                                total_bytes,
+                                sha256_hex,
+                                (changelog or "").strip(),
+                                1 if is_mandatory else 0,
+                                now_iso,
+                                web_build,
+                            ),
+                        )
+                    else:
+                        conn.execute(
+                            """
+                            INSERT INTO web_bundles (
+                                web_build, version_name, min_native_version_code, file_name, stored_name,
+                                file_size, sha256, changelog, is_mandatory,
+                                is_active, download_count, published_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+                            """,
+                            (
+                                web_build,
+                                clean_ver,
+                                int(min_native_version_code),
+                                public_file_name,
+                                stored_name,
+                                total_bytes,
+                                sha256_hex,
+                                (changelog or "").strip(),
+                                1 if is_mandatory else 0,
+                                now_iso,
+                            ),
+                        )
+
+                    pruned_to_remove = self._prune_old_web_bundles(conn)
+                    saved = conn.execute(
+                        "SELECT * FROM web_bundles WHERE web_build = ?",
+                        (web_build,),
+                    ).fetchone()
+                    os.replace(tmp_path, final_path)
+
+                if old_stored_to_remove:
+                    self._safe_unlink(self.web_bundles_dir / old_stored_to_remove)
+                for pruned_name in pruned_to_remove:
+                    self._safe_unlink(self.web_bundles_dir / pruned_name)
+
+            return self._web_row_to_dict(saved)
+        except Exception:
+            self._safe_unlink(tmp_path)
+            raise
+
+    def _prune_old_web_bundles(self, conn: sqlite3.Connection) -> list[str]:
+        rows = conn.execute(
+            "SELECT web_build, stored_name, is_active FROM web_bundles ORDER BY web_build DESC"
+        ).fetchall()
+        if len(rows) <= self.max_releases:
+            return []
+        removed_names: list[str] = []
+        for row in rows[self.max_releases :]:
+            if int(row["is_active"]) == 1:
+                continue
+            conn.execute(
+                "DELETE FROM web_bundles WHERE web_build = ?",
+                (int(row["web_build"]),),
+            )
+            removed_names.append(str(row["stored_name"]))
+        return removed_names
+
+    def get_web_bundle_for_download(self, web_build: int | None = None) -> tuple[Path, dict[str, Any]]:
+        """Resolve Web-OTA ZIP file path on disk for active bundle or explicit web_build."""
+        with self._connect() as conn:
+            if web_build is None:
+                row = conn.execute(
+                    "SELECT * FROM web_bundles WHERE is_active = 1 ORDER BY web_build DESC LIMIT 1"
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM web_bundles WHERE web_build = ?",
+                    (web_build,),
+                ).fetchone()
+            if row is None:
+                raise OtaNotFoundError("Web-OTA бандл не знайдено.")
+            bundle_path = (self.web_bundles_dir / os.path.basename(str(row["stored_name"]))).resolve()
+            if bundle_path.parent != self.web_bundles_dir or not bundle_path.is_file():
+                raise OtaNotFoundError("Файл Web-OTA бандлу відсутній на диску сервера.")
+            conn.execute(
+                "UPDATE web_bundles SET download_count = download_count + 1 WHERE web_build = ?",
+                (int(row["web_build"]),),
+            )
+            return bundle_path, self._web_row_to_dict(row)
+
+    def update_web_policy(
+        self,
+        active_web_build: int | None = None,
+        is_mandatory: bool | None = None,
+        min_native_version_code: int | None = None,
+        changelog: str | None = None,
+    ) -> dict[str, Any]:
+        """Switch active Web-OTA bundle (rollback) or update flags on active bundle."""
+        with self._connect() as conn:
+            if active_web_build is not None:
+                target = conn.execute(
+                    "SELECT web_build FROM web_bundles WHERE web_build = ?",
+                    (active_web_build,),
+                ).fetchone()
+                if target is None:
+                    raise OtaNotFoundError(f"Web-OTA бандл build {active_web_build} не знайдено.")
+                conn.execute("UPDATE web_bundles SET is_active = 0")
+                conn.execute(
+                    "UPDATE web_bundles SET is_active = 1 WHERE web_build = ?",
+                    (active_web_build,),
+                )
+
+            if is_mandatory is not None or min_native_version_code is not None or changelog is not None:
+                active = conn.execute(
+                    "SELECT web_build FROM web_bundles WHERE is_active = 1 LIMIT 1"
+                ).fetchone()
+                if active is not None:
+                    active_id = int(active["web_build"])
+                    if is_mandatory is not None:
+                        conn.execute(
+                            "UPDATE web_bundles SET is_mandatory = ? WHERE web_build = ?",
+                            (1 if is_mandatory else 0, active_id),
+                        )
+                    if min_native_version_code is not None:
+                        if min_native_version_code < 0:
+                            raise OtaValidationError("min_native_version_code не може бути від'ємним.")
+                        conn.execute(
+                            "UPDATE web_bundles SET min_native_version_code = ? WHERE web_build = ?",
+                            (int(min_native_version_code), active_id),
+                        )
+                    if changelog is not None:
+                        conn.execute(
+                            "UPDATE web_bundles SET changelog = ? WHERE web_build = ?",
+                            (changelog.strip(), active_id),
+                        )
+
+        return self.get_latest_web_manifest()
+
+    def delete_web_bundle(self, web_build: int) -> None:
+        """Delete a Web-OTA bundle (refuses deleting active bundle when others exist)."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT stored_name, is_active FROM web_bundles WHERE web_build = ?",
+                (web_build,),
+            ).fetchone()
+            if row is None:
+                raise OtaNotFoundError(f"Web-OTA бандл build {web_build} не знайдено.")
+            total = conn.execute("SELECT COUNT(*) AS cnt FROM web_bundles").fetchone()["cnt"]
+            if int(row["is_active"]) == 1 and int(total) > 1:
+                raise OtaConflictError(
+                    "Спочатку активуйте інший Web-OTA бандл (rollback), перш ніж видаляти поточний."
+                )
+            conn.execute("DELETE FROM web_bundles WHERE web_build = ?", (web_build,))
+            stored_name = str(row["stored_name"])
+        self._safe_unlink(self.web_bundles_dir / stored_name)
