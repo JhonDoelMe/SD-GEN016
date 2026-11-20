@@ -74,7 +74,7 @@ def normalize_fuel_family(fuel_type: Optional[str]) -> str:
 
 async def get_or_create_default_stock(db: AsyncSession, facility_id: Optional[int] = None) -> FuelStock:
     """
-    FUEL-01: Отримати або створити стандартний склад ГСМ для вказаного об'єкта.
+    FUEL-01: Отримати або створити стандартний склад ПММ для вказаного об'єкта.
     Суворо ізольовано:
     - Заборонено повертати склад іншого об'єкта.
     - Заборонено неявний fallback на facility_id=1.
@@ -102,7 +102,7 @@ async def get_or_create_default_stock(db: AsyncSession, facility_id: Optional[in
             # Створюємо стандартний склад виключно для цього об'єкта
             stock = FuelStock(
                 facility_id=facility_id,
-                name="Основний склад ГСМ",
+                name="Основний склад ПММ",
                 fuel_type="А-95",
                 current_balance_l=Decimal("0.000"),
                 is_active=True
@@ -136,7 +136,7 @@ async def get_or_create_default_stock(db: AsyncSession, facility_id: Optional[in
         if not stock:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="У системі відсутні активні склади ГСМ. Вкажіть facility_id для створення складу."
+                detail="У системі відсутні активні склади ПММ. Вкажіть facility_id для створення складу."
             )
         return stock
 
@@ -146,7 +146,7 @@ async def list_fuel_stocks(
     facility_id: Optional[int] = None,
     include_archived: bool = False
 ) -> List[FuelStock]:
-    """Список складів ГСМ із фільтрацією за об'єктом та архівацією"""
+    """Список складів ПММ із фільтрацією за об'єктом та архівацією"""
     query = select(FuelStock).options(selectinload(FuelStock.facility))
     if not include_archived:
         query = query.where(FuelStock.is_active == True)
@@ -176,7 +176,7 @@ async def create_fuel_stock(
     user_id: int,
     ip_address: Optional[str] = None
 ) -> FuelStock:
-    """Створити новий склад ГСМ для об'єкта"""
+    """Створити новий склад ПММ для об'єкта"""
     fac = await db.get(Facility, data.facility_id)
     if not fac:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Об'єкт з ID {data.facility_id} не знайдено")
@@ -224,10 +224,10 @@ async def update_fuel_stock(
     user_id: int,
     ip_address: Optional[str] = None
 ) -> FuelStock:
-    """Оновити параметри складу ГСМ (назву, тип палива, об'єкт, статус активності)"""
+    """Оновити параметри складу ПММ (назву, тип палива, об'єкт, статус активності)"""
     stock = await db.get(FuelStock, stock_id)
     if not stock:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ПММ не знайдено")
 
     from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
     await ensure_facility_not_locked_by_measurement(db, stock.facility_id, "fuel_adjustment")
@@ -325,7 +325,7 @@ async def delete_fuel_stock(
     ip_address: Optional[str] = None
 ) -> dict:
     """
-    FUEL-03: Безпечне видалення та архівація складу ГСМ.
+    FUEL-03: Безпечне видалення та архівація складу ПММ.
     - Перевіряє наявність альтернативного активного складу на об'єкті.
     - Якщо склад має залишок — безпечно переносить його на альтернативний склад.
     - Якщо склад має історичні чеки/переміщення — виконується м'яка архівація (is_active=False).
@@ -334,7 +334,7 @@ async def delete_fuel_stock(
     """
     stock = await db.get(FuelStock, stock_id)
     if not stock:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ПММ не знайдено")
 
     from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
     await ensure_facility_not_locked_by_measurement(db, stock.facility_id, "fuel_adjustment")
@@ -351,7 +351,7 @@ async def delete_fuel_stock(
     if not alt_stock:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Неможливо видалити єдиний склад ГСМ на цьому об'єкті. Створіть інший склад перед видаленням."
+            detail="Неможливо видалити єдиний склад ПММ на цьому об'єкті. Створіть інший склад перед видаленням."
         )
 
     stock_name = stock.name
@@ -367,7 +367,7 @@ async def delete_fuel_stock(
     if (active_pools_count or 0) > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Спочатку видаліть або перенесіть активні пули каністр, прив'язані до цього складу ГСМ."
+            detail="Спочатку видаліть або перенесіть активні пули каністр, прив'язані до цього складу ПММ."
         )
 
     # Перевіряємо наявність історичних операцій
@@ -471,7 +471,7 @@ async def add_fuel_receipt(
         )
         stock = res_stock.scalars().first()
         if not stock:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ПММ не знайдено")
     else:
         target_facility_id = receipt_data.facility_id or 1
         stock_init = await get_or_create_default_stock(db, facility_id=target_facility_id)
@@ -566,7 +566,7 @@ async def add_fuel_receipt(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=(
                         f"Запобіжник об'єму палива: вказано значний об'єм ({float(liters):.1f} л > {float(max_liters_warn):.0f} л). "
-                        f"Перевірте введені дані (можлива опечатка) або підтвердіть дію."
+                        f"Перевірте введені дані (можлива помилка вводу) або підтвердіть дію."
                     )
                 )
             else:
@@ -700,7 +700,7 @@ async def transfer_fuel_to_tank(
         stock = res_st.scalars().first()
 
     if not stock:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ПММ не знайдено")
     if not stock.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -728,7 +728,7 @@ async def transfer_fuel_to_tank(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 f"Неможливо виконати заправку: генератор '{generator.name}' (об'єкт ID {generator.facility_id}) "
-                f"та склад ГСМ '{stock.name}' (об'єкт ID {stock.facility_id}) належать до різних об'єктів."
+                f"та склад ПММ '{stock.name}' (об'єкт ID {stock.facility_id}) належать до різних об'єктів."
             )
         )
 
@@ -778,7 +778,7 @@ async def transfer_fuel_to_tank(
     if src_before < liters:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Недостатньо палива на складі ГСМ! Доступно: {float(src_before):.1f} л, запитано: {float(liters):.1f} л"
+            detail=f"Недостатньо палива на складі ПММ! Доступно: {float(src_before):.1f} л, запитано: {float(liters):.1f} л"
         )
 
     # FUEL-02: Захист від переливу бака генератора (в режимі вимірювання допускаємо долив до фізичної ємності бака;

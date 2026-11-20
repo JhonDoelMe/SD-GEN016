@@ -2,7 +2,7 @@
     <section id="tab-admin" class="tab-pane" style="display: none;">
       <div class="admin-subtabs-bar" id="adminSubtabsBar" role="tablist">
         <button type="button" class="admin-subtab-btn active" data-subtab="facilities" onclick="switchAdminSubtab('facilities')">🏢 Об'єкти та Генератори</button>
-        <button type="button" class="admin-subtab-btn" data-subtab="fuel-admin" onclick="switchAdminSubtab('fuel-admin')">🛢️ ГСМ і Тарифи</button>
+        <button type="button" class="admin-subtab-btn" data-subtab="fuel-admin" onclick="switchAdminSubtab('fuel-admin')">🛢️ ПММ і Тарифи</button>
         <button type="button" class="admin-subtab-btn" data-subtab="notifications" onclick="switchAdminSubtab('notifications')">🔔 Сповіщення та Пошта</button>
         <button type="button" class="admin-subtab-btn" data-subtab="system" onclick="switchAdminSubtab('system')">⚙️ Регламент та Система</button>
         <button type="button" class="admin-subtab-btn" data-subtab="users" onclick="switchAdminSubtab('users')">👥 Користувачі</button>
@@ -43,7 +43,7 @@
           <div class="panel-header">
             <div>
               <h3 style="margin-bottom: 0.25rem;">⚡ Генератори об'єкта</h3>
-              <small style="color: var(--text-muted);">Параметри потужності, об'єму паливного бака, типу палива та розходу</small>
+              <small style="color: var(--text-muted);">Параметри потужності, об'єму паливного бака, типу палива та витрати</small>
             </div>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
               <button type="button" id="addGeneratorBtn" class="btn-action" onclick="openCreateGeneratorModal()">+ Створити генератор</button>
@@ -57,7 +57,7 @@
                   <th>Назва / Модель</th>
                   <th>Серійний №</th>
                   <th>Паливо / Бак</th>
-                  <th>Розхід / Потужність</th>
+                  <th>Витрата / Потужність</th>
                   <th>Мотогодини</th>
                   <th style="text-align: center;">Дії</th>
                 </tr>
@@ -71,7 +71,7 @@
           <summary class="admin-spoiler-summary">
             <div class="admin-spoiler-heading">
               <span class="admin-spoiler-title">🔗 Стартовий ланцюжок за замовчуванням</span>
-              <span class="admin-spoiler-sub">Базова зв'язка Об'єкт ➔ Генератор ➔ Склад ГСМ при вході в систему та для автозвітів</span>
+              <span class="admin-spoiler-sub">Базова зв'язка Об'єкт ➔ Генератор ➔ Склад ПММ при вході в систему та для автозвітів</span>
             </div>
             <div class="admin-spoiler-meta">
               <span class="admin-spoiler-badge" id="badgeDefaultChain">Не обрано</span>
@@ -92,7 +92,7 @@
                 <select id="sysDefaultGeneratorId"></select>
               </div>
               <div class="form-group" style="margin-bottom: 0;">
-                <label>🛢️ Склад ГСМ за замовчуванням</label>
+                <label>🛢️ Склад ПММ за замовчуванням</label>
                 <select id="sysDefaultFuelStockId"></select>
               </div>
             </div>
@@ -110,7 +110,7 @@
         <div class="panel" style="margin-bottom: 1.5rem;">
           <div class="panel-header">
             <div>
-              <h3 style="margin-bottom: 0.25rem;">🛢️ Склади ГСМ та пули каністр</h3>
+              <h3 style="margin-bottom: 0.25rem;">🛢️ Склади ПММ та пули каністр</h3>
               <small style="color: var(--text-muted);">Налаштування складів палива та закріплених каністр обраного об'єкта</small>
             </div>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
@@ -129,7 +129,7 @@
                 <thead>
                   <tr>
                     <th>Назва пулу</th>
-                    <th>Склад ГСМ</th>
+                    <th>Склад ПММ</th>
                     <th>Паливо</th>
                     <th>Номінал</th>
                     <th>Повні (шт)</th>
@@ -145,7 +145,7 @@
             </div>
           </div>
 
-          <h4 style="margin: 1.25rem 0 0.5rem;">Склади ГСМ об'єкта</h4>
+          <h4 style="margin: 1.25rem 0 0.5rem;">Склади ПММ об'єкта</h4>
           <div class="table-wrapper">
             <table id="fuelStocksTable">
               <thead>

@@ -302,7 +302,7 @@ document.addEventListener('submit', async (e) => {
   const p2 = document.getElementById('resetConfirmPassword').value;
 
   if (p1 !== p2) {
-    showToast('Введені паролі не співпадають', 'error');
+    showToast('Введені паролі не збігаються', 'error');
     return;
   }
   if (p1.length < 8 || !/[a-zA-Zа-яА-ЯіїєґІЇЄҐ]/.test(p1) || !/\d/.test(p1)) {
@@ -1150,7 +1150,7 @@ async function loadAdminSystemSettings() {
       const pIn = document.getElementById('sysSmtpPrimaryPassword');
       if (s.smtp_primary_password === '********') {
         pIn.value = '';
-        pIn.placeholder = '•••••••• (Пароль збережено, залиште пустим щоб не змінювати)';
+        pIn.placeholder = '•••••••• (Пароль збережено, залиште порожнім щоб не змінювати)';
       } else {
         pIn.value = s.smtp_primary_password || '';
         pIn.placeholder = '16-значний пароль додатку Google';
@@ -1167,7 +1167,7 @@ async function loadAdminSystemSettings() {
       const fbIn = document.getElementById('sysSmtpFallbackPassword');
       if (s.smtp_fallback_password === '********') {
         fbIn.value = '';
-        fbIn.placeholder = '•••••••• (Пароль збережено, залиште пустим щоб не змінювати)';
+        fbIn.placeholder = '•••••••• (Пароль збережено, залиште порожнім щоб не змінювати)';
       } else {
         fbIn.value = s.smtp_fallback_password || '';
         fbIn.placeholder = 'Пароль для зовнішніх програм Ukr.net';
@@ -1729,7 +1729,7 @@ window.executeSmtpModalTest = async function () {
             <div><b>Отримувач:</b> ${escapeHtml(res.recipient || recipient)}</div>
             <div><b>Час виконання:</b> ${escapeHtml(res.tested_at || '')} (${res.duration_ms || 0} мс)</div>
             <div style="margin-top: 0.5rem; color: #4ade80;">
-              ✨ Повідомлення відправлено. Перевірте скриньку отримувача (також перевірте папку «Спам» або «Оповіщення»).
+              ✨ Повідомлення відправлено. Перевірте скриньку отримувача (також перевірте теку «Спам» або «Оповіщення»).
             </div>
           </div>
         `;

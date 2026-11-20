@@ -205,7 +205,7 @@ public class OtaUpdaterPlugin extends Plugin {
 
                 String actualSha = bytesToHex(digest.digest());
                 if (!normalizedExpectedSha.equals(actualSha)) {
-                    throw new SecurityException("Контрольна сума SHA-256 не співпадає. Файл пошкоджено.");
+                    throw new SecurityException("Контрольна сума SHA-256 не збігається. Файл пошкоджено.");
                 }
 
                 if (!tmpFile.renameTo(targetFile)) {

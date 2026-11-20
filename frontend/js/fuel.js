@@ -303,7 +303,7 @@ const CANISTER_OP_UA = {
   'POOL_CONFIGURED': { label: 'Коригування пулу', color: '#a78bfa' },
   'DISPATCH_REFILL': { label: 'Віддано на АЗС', color: '#fbbf24' },
   'RECEIVE_REFILL': { label: 'Привезено з АЗС', color: '#4ade80' },
-  'RETURN_EMPTY': { label: 'Повернуто пусті', color: '#94a3b8' },
+  'RETURN_EMPTY': { label: 'Повернуто порожні', color: '#94a3b8' },
   'CONSUME_TRANSFER': { label: 'Заправка бака', color: '#60a5fa' },
   'DIRECT_RECEIPT': { label: 'Пряме оприбутк.', color: '#4ade80' },
   'POOL_ADJUSTMENT': { label: 'Коригування (Аудит)', color: '#c084fc' }
@@ -351,7 +351,7 @@ async function loadFuelData() {
           </td>
         </tr>
       `;
-      }).join('') || '<tr><td colspan="7" style="text-align:center; color:var(--text-muted)">Складів ГСМ не знайдено</td></tr>';
+      }).join('') || '<tr><td colspan="7" style="text-align:center; color:var(--text-muted)">Складів ПММ не знайдено</td></tr>';
     }
 
     // Receipts Table (Paginated: 10 per page)
@@ -412,7 +412,7 @@ document.addEventListener('submit', async (e) => {
 
   const stockVal = document.getElementById('recStock').value;
   if (!stockVal) {
-    showToast('Будь ласка, оберіть склад ГСМ або створіть його', 'error');
+    showToast('Будь ласка, оберіть склад ПММ або створіть його', 'error');
     return;
   }
 
@@ -521,7 +521,7 @@ document.addEventListener('submit', async (e) => {
         }),
         offlineMeta: {
           action_type: 'fuel_receipt',
-          title: 'Прийом палива на склад ГСМ',
+          title: 'Прийом палива на склад ПММ',
           summary: `+${liters.toFixed(1)} л (чек ${receiptNumber})`,
           facility_id: recFacilityId,
         }
@@ -576,9 +576,9 @@ document.addEventListener('submit', async (e) => {
     await loadFuelData();
     if (typeof window.loadFuelSummary === 'function') await window.loadFuelSummary();
     closeModal('modalNewStock');
-    showToast(`Склад ГСМ "${created.name}" успішно створено!`, 'success');
+    showToast(`Склад ПММ "${created.name}" успішно створено!`, 'success');
   } catch (err) {
-    showToast(err.message || 'Не вдалося створити склад ГСМ', 'error');
+    showToast(err.message || 'Не вдалося створити склад ПММ', 'error');
   }
 });
 
@@ -622,9 +622,9 @@ document.addEventListener('submit', async (e) => {
     await loadFuelData();
     if (typeof window.loadFuelSummary === 'function') await window.loadFuelSummary();
     closeModal('modalEditStock');
-    showToast('Склад ГСМ успішно оновлено!', 'success');
+    showToast('Склад ПММ успішно оновлено!', 'success');
   } catch (err) {
-    showToast(err.message || 'Не вдалося оновити склад ГСМ', 'error');
+    showToast(err.message || 'Не вдалося оновити склад ПММ', 'error');
   }
 });
 
@@ -640,7 +640,7 @@ window.deleteFuelStock = async function(id, name, balance) {
   if (target) {
     const sameFacStocks = cached.filter(item => Number(item.facility_id) === Number(target.facility_id));
     if (sameFacStocks.length <= 1) {
-      showToast('Неможливо видалити єдиний склад ГСМ на цьому об\'єкті.', 'warning');
+      showToast('Неможливо видалити єдиний склад ПММ на цьому об\'єкті.', 'warning');
       return;
     }
   }
@@ -653,9 +653,9 @@ window.deleteFuelStock = async function(id, name, balance) {
     const res = await api(`/fuel/stocks/${encodeURIComponent(id)}`, { method: 'DELETE' });
     await loadFuelData();
     if (typeof window.loadFuelSummary === 'function') await window.loadFuelSummary();
-    showToast(res.detail || res.message || 'Склад ГСМ успішно видалено!', 'success');
+    showToast(res.detail || res.message || 'Склад ПММ успішно видалено!', 'success');
   } catch (err) {
-    showToast(err.message || 'Не вдалося видалити склад ГСМ', 'error');
+    showToast(err.message || 'Не вдалося видалити склад ПММ', 'error');
   }
 };
 
@@ -666,7 +666,7 @@ document.addEventListener('submit', async (e) => {
   const stockVal = document.getElementById('transStock').value;
   const genVal = document.getElementById('transGenerator').value;
   if (!stockVal) {
-    showToast('Будь ласка, оберіть склад ГСМ', 'error');
+    showToast('Будь ласка, оберіть склад ПММ', 'error');
     return;
   }
   if (!genVal) {
@@ -840,7 +840,7 @@ window.validateTransferLitersInput = function() {
   }
 
   if (stock && stockBal <= 0) {
-    hintEl.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⛔ На обраному складі ГСМ немає палива (0.0 л).</span>`;
+    hintEl.innerHTML = `<span style="color: #ef4444; font-weight: 600;">⛔ На обраному складі ПММ немає палива (0.0 л).</span>`;
     if (submitBtn) submitBtn.disabled = true;
     return false;
   }
@@ -939,12 +939,12 @@ function renderCanisterPoolsSection(pools, txs) {
             <b style="color:#38bdf8;">${formatLiters(p.available_liters)}</b>
           </div>
           <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.65rem;">
-            Склад: ${escapeHtml(p.stock_name || '-')} • Повні: <b style="color:#4ade80;">${Number(p.full_count)}/${Number(p.total_count)}</b> • Пусті: <b>${Number(p.empty_count)}</b> • На АЗС: <b style="color:#fbbf24;">${Number(p.away_refill_count)}</b>
+            Склад: ${escapeHtml(p.stock_name || '-')} • Повні: <b style="color:#4ade80;">${Number(p.full_count)}/${Number(p.total_count)}</b> • Порожні: <b>${Number(p.empty_count)}</b> • На АЗС: <b style="color:#fbbf24;">${Number(p.away_refill_count)}</b>
           </div>
           <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
             <button type="button" class="btn-action" style="padding: 0.35rem 0.65rem; min-height: auto; font-size: 0.8rem;" ${(!canTransfer || Number(p.empty_count) === 0) ? 'disabled' : ''} onclick="openCanisterActionModal(${Number(p.id)}, 'dispatch')">📤 На АЗС</button>
             <button type="button" class="btn-action" style="padding: 0.35rem 0.65rem; min-height: auto; font-size: 0.8rem; border-color: #4ade80; color: #4ade80;" ${(!canReceipt || (Number(p.away_refill_count) === 0 && Number(p.empty_count) === 0)) ? 'disabled' : ''} onclick="openUnifiedCanisterReceiveModal(${Number(p.id)})">📥 Привезли</button>
-            ${Number(p.away_refill_count) > 0 && canTransfer ? `<button type="button" class="btn-action" style="padding: 0.35rem 0.65rem; min-height: auto; font-size: 0.8rem;" onclick="openCanisterActionModal(${Number(p.id)}, 'return')" title="Повернути каністри порожніми без заправки">↩️ Пусті</button>` : ''}
+            ${Number(p.away_refill_count) > 0 && canTransfer ? `<button type="button" class="btn-action" style="padding: 0.35rem 0.65rem; min-height: auto; font-size: 0.8rem;" onclick="openCanisterActionModal(${Number(p.id)}, 'return')" title="Повернути каністри порожніми без заправки">↩️ Порожні</button>` : ''}
           </div>
         </div>
       `).join('');
@@ -994,7 +994,7 @@ function renderCanisterPoolsSection(pools, txs) {
           <td><span style="color:${meta.color}; font-weight:600;">${escapeHtml(meta.label)}</span></td>
           <td>${cntTxt}</td>
           <td>${Number(t.reserve_before).toFixed(1)} → <b>${Number(t.reserve_after).toFixed(1)} л</b></td>
-          <td>повні: <b>${Number(t.full_after)}</b> / пусті: ${Number(t.empty_after)} / АЗС: ${Number(t.away_after)}</td>
+          <td>повні: <b>${Number(t.full_after)}</b> / порожні: ${Number(t.empty_after)} / АЗС: ${Number(t.away_after)}</td>
           <td>${escapeHtml(t.comment || '-')}</td>
           <td>${escapeHtml(t.user_name || '-')}</td>
         </tr>
@@ -1049,7 +1049,7 @@ window.onCanisterPoolFacilityChange = async function () {
     const stocks = await api(`/fuel/stocks?facility_id=${encodeURIComponent(facId)}`);
     window._canisterModalStocks = stocks || [];
     if (!stocks || stocks.length === 0) {
-      stockSel.innerHTML = '<option value="">(Немає складів ГСМ)</option>';
+      stockSel.innerHTML = '<option value="">(Немає складів ПММ)</option>';
     } else {
       stockSel.innerHTML = stocks.map(s => `<option value="${Number(s.id)}">${escapeHtml(s.name)} (${escapeHtml(s.fuel_type)}, зараз ${Number(s.current_balance_l).toFixed(1)} л)</option>`).join('');
     }

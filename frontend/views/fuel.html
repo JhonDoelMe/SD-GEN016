@@ -3,7 +3,7 @@
         <div class="panel-header">
           <div>
             <h3>⛽ Операції з паливом</h3>
-            <small style="color: var(--text-muted);">Налаштування складів ГСМ та пулів каністр перенесено до розділу ⚙️ Адміністрування</small>
+            <small style="color: var(--text-muted);">Налаштування складів ПММ та пулів каністр перенесено до розділу ⚙️ Адміністрування</small>
           </div>
           <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
             <button type="button" id="btnFuelReceipt" class="btn-action" onclick="openModal('modalReceipt')">📥 + Прийняти паливо</button>
@@ -13,7 +13,7 @@
 
         <div class="metrics-grid" style="margin-bottom: 1.5rem;">
           <div class="metric-card">
-            <div class="metric-label">Залишок на складі ГСМ</div>
+            <div class="metric-label">Залишок на складі ПММ</div>
             <div class="metric-value" id="fuelStockBal">0.0 л</div>
           </div>
           <div class="metric-card">
@@ -48,7 +48,7 @@
               <tr>
                 <th>Дата</th>
                 <th>Об'єкт</th>
-                <th>Склад ГСМ</th>
+                <th>Склад ПММ</th>
                 <th>Мережа АЗС</th>
                 <th>Літри</th>
                 <th>Сума (грн)</th>
@@ -62,7 +62,7 @@
           </table>
         </div>
 
-        <h4 style="margin: 2rem 0 0.5rem;">Переміщення палива (Склад ГСМ → Бак генератора)</h4>
+        <h4 style="margin: 2rem 0 0.5rem;">Переміщення палива (Склад ПММ → Бак генератора)</h4>
         <div class="table-wrapper" style="margin-bottom: 1.5rem;">
           <table id="fuelTransfersTable">
             <thead>
@@ -92,7 +92,7 @@
                   <th>Операція</th>
                   <th>К-сть</th>
                   <th>Резерв (до → після)</th>
-                  <th>Стан після (повні / пусті / АЗС)</th>
+                  <th>Стан після (повні / порожні / АЗС)</th>
                   <th>Деталі</th>
                   <th>Оператор</th>
                 </tr>

@@ -16,18 +16,18 @@
             <b id="stopDurationDisplay" style="color: #38bdf8; font-size: 1.25rem; font-family: monospace;">00:00:00</b>
           </div>
           <div style="display: flex; justify-content: space-between;">
-            <span style="color: var(--text-muted);">Розрахунковий розхід:</span>
+            <span style="color: var(--text-muted);">Розрахункова витрата:</span>
             <b id="stopEstFuelDisplay" style="color: #4ade80;">0.000 л</b>
           </div>
         </div>
         <div class="form-group">
           <label>Кінцеві мотогодини на лічильнику (необов'язково)</label>
-          <input type="number" step="any" id="stopEndHours" placeholder="Залиште пустим для авто-розрахунку">
+          <input type="number" step="any" id="stopEndHours" placeholder="Залиште порожнім для авто-розрахунку">
           <small style="color: var(--text-muted);">Якщо лічильник не змінився, значення буде розраховано за секундоміром</small>
         </div>
         <div class="form-group">
           <label>Фактичний рівень палива в баку (л, необов'язково)</label>
-          <input type="number" step="0.1" id="stopEndFuel" placeholder="Якщо не вказано, спишеться розрахунковий розхід">
+          <input type="number" step="0.1" id="stopEndFuel" placeholder="Якщо не вказано, спишеться розрахункова витрата">
         </div>
         <div class="form-group">
           <label>Коментар / примітки</label>
@@ -50,7 +50,7 @@
             <select id="recFacility" required></select>
           </div>
           <div class="form-group">
-            <label>Склад ГСМ</label>
+            <label>Склад ПММ</label>
             <select id="recStock" required onchange="onReceiptStockChange()"></select>
           </div>
         </div>
@@ -207,7 +207,7 @@
 
         <div class="form-group">
           <label>Фактично витрачене паливо (л) <small style="color:var(--text-muted);">(якщо відомо)</small></label>
-          <input type="number" step="0.1" id="manualRunFuelConsumed" placeholder="якщо не вказано — за нормою розходу">
+          <input type="number" step="0.1" id="manualRunFuelConsumed" placeholder="якщо не вказано — за нормою витрати">
         </div>
 
         <div class="form-group">
@@ -232,10 +232,10 @@
       <form id="transferForm">
         <div id="transferModalRedAlertNotice" class="red-alert-safety-info" style="display: none; margin-bottom: 0.85rem;"></div>
         <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
-          Переміщення палива: Склад ГСМ → Бак генератора
+          Переміщення палива: Склад ПММ → Бак генератора
         </p>
         <div class="form-group">
-          <label>Зі складу ГСМ</label>
+          <label>Зі складу ПММ</label>
           <select id="transStock" required onchange="updateTransferCapacityHint()"></select>
         </div>
         <div class="form-group">
@@ -278,7 +278,7 @@
         </div>
         <div class="form-group">
           <label>Використані витратні матеріали</label>
-          <input type="text" id="maintConsumables" placeholder="напр. Масло 10W40 1.1л, свічка NGK">
+          <input type="text" id="maintConsumables" placeholder="напр. Олива 10W40 1.1л, свічка NGK">
         </div>
         <div class="form-group">
           <label>Вартість матеріалів та робіт (грн)</label>
@@ -301,7 +301,7 @@
       <form id="faultForm">
         <div class="form-group">
           <label>Коротка назва несправності</label>
-          <input type="text" id="faultTitle" required placeholder="напр. Стукіт у двигуні / витік масла">
+          <input type="text" id="faultTitle" required placeholder="напр. Стукіт у двигуні / витік оливи">
         </div>
         <div class="form-group">
           <label>Пріоритет</label>

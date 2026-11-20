@@ -98,7 +98,7 @@ async def ensure_facility_not_locked_by_measurement(
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail=(
-                "Операції зі складом ГСМ, дозаправка баку, рух каністр та коригування на об'єкті тимчасово "
+                "Операції зі складом ПММ, дозаправка баку, рух каністр та коригування на об'єкті тимчасово "
                 "заблоковані до підписання та погодження відомості інвентаризації. "
                 "Запуск і зупинка генератора працюють у штатному режимі."
             ),
@@ -108,7 +108,7 @@ async def ensure_facility_not_locked_by_measurement(
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail=(
-                "У режимі вимірювання будь-які системні коригування палива, пулів каністр або норми розходу "
+                "У режимі вимірювання будь-які системні коригування палива, пулів каністр або норми витрати "
                 "суворо заборонені до завершення заміру та інвентаризації!"
             ),
         )
@@ -252,7 +252,7 @@ async def _build_measurement_summary(db: AsyncSession, m: FuelMeasurement) -> Me
             id=tr.id,
             created_at=tr.created_at,
             liters=round(float(tr.liters or 0.0), 2),
-            stock_name=tr.stock.name if tr.stock else "Склад ГСМ",
+            stock_name=tr.stock.name if tr.stock else "Склад ПММ",
             operator_name=(tr.user.full_name or tr.user.login) if tr.user else None,
             comment=tr.comment,
         )
@@ -334,7 +334,7 @@ async def get_measurement_status_envelope(
         reason = None
         if locked:
             reason = (
-                "Склад ГСМ, рух каністр та коригування заблоковані до підписання PDF і погодження Суперадміністратором "
+                "Склад ПММ, рух каністр та коригування заблоковані до підписання PDF і погодження Суперадміністратором "
                 "(запуск/зупинка генератора працюють у штатному режимі)."
             )
         return MeasurementStatusEnvelope(
@@ -871,7 +871,7 @@ async def generate_measurement_statement_pdf(
 
     pdf.ln(3)
     pdf.set_font(font_family, "B", 13)
-    pdf.cell(273, 7, t(f"ВІДОМІСТЬ ІНВЕНТАРИЗАЦІЇ ГСМ ТА КОНТРОЛЬНОГО ЗАМІРУ № {stmt_no}"), align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(273, 7, t(f"ВІДОМІСТЬ ІНВЕНТАРИЗАЦІЇ ПММ ТА КОНТРОЛЬНОГО ЗАМІРУ № {stmt_no}"), align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font(font_family, "", 9)
     fac_desc = f"Об'єкт: {fac.name if fac else '-'} ({fac.address or '-'})" if fac else "Об'єкт: -"
     gen_desc = (
@@ -982,7 +982,7 @@ async def generate_measurement_statement_pdf(
         diff_v = float(st.get("diff_l", 0.0))
         inv_rows.append([
             str(row_no),
-            f"Склад ГСМ: {st.get('stock_name', '-')}",
+            f"Склад ПММ: {st.get('stock_name', '-')}",
             str(st.get("fuel_type", "-")),
             "—",
             "—",
@@ -1005,7 +1005,7 @@ async def generate_measurement_statement_pdf(
         pdf.ln()
 
     pdf.set_font(font_family, "B", 8.5)
-    pdf.cell(195, 6.5, t("РАЗОМ ПО ОБ'ЄКТУ (Бак + Склади ГСМ):"), border=1, align="R", fill=True)
+    pdf.cell(195, 6.5, t("РАЗОМ ПО ОБ'ЄКТУ (Бак + Склади ПММ):"), border=1, align="R", fill=True)
     pdf.cell(26, 6.5, t(f"{total_book_all:.2f}"), border=1, align="C", fill=True)
     pdf.cell(26, 6.5, t(f"{total_fact_all:.2f}"), border=1, align="C", fill=True)
     pdf.cell(26, 6.5, t(f"{total_diff_all:+.2f}"), border=1, align="C", fill=True)
@@ -1075,7 +1075,7 @@ async def approve_measurement(
     if not m.document_downloaded_at:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Спочатку скачайте сформовану PDF-відомість інвентаризації для підпису комісією!",
+            detail="Спочатку завантажте сформовану PDF-відомість інвентаризації для підпису комісією!",
         )
 
     gen = (

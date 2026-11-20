@@ -237,10 +237,10 @@ AUDIT_ACTION_UA = {
     "FUEL_RECEIPT_DELETED": "Видалення оприбуткування палива",
     "FUEL_TRANSFER_TO_TANK": "Заправка бака зі складу",
     "FUEL_TRANSFERRED": "Заправка бака зі складу",
-    "FUEL_STOCK_CREATED": "Створення складу ГСМ",
-    "FUEL_STOCK_UPDATED": "Оновлення складу ГСМ",
-    "FUEL_STOCK_DELETED": "Видалення складу ГСМ",
-    "FUEL_STOCK_ARCHIVED": "Архівація складу ГСМ",
+    "FUEL_STOCK_CREATED": "Створення складу ПММ",
+    "FUEL_STOCK_UPDATED": "Оновлення складу ПММ",
+    "FUEL_STOCK_DELETED": "Видалення складу ПММ",
+    "FUEL_STOCK_ARCHIVED": "Архівація складу ПММ",
     "FUEL_PRICES_REFRESHED": "Оновлення цін палива (АЗК)",
     "CANISTER_POOL_CREATED": "Створення пулу каністр",
     "CANISTER_POOL_UPDATED": "Оновлення пулу каністр",
@@ -321,7 +321,7 @@ AUDIT_ACTION_UA = {
     "MEASUREMENT_TANK_FULL": "Підтвердження повного баку (фініш вимірювання)",
     "MEASUREMENT_TANK_EMPTY": "Фіксація баку на фініші вимірювання",
     "MEASUREMENT_INVENTORY_SUBMITTED": "Внесення інвентаризації комісією",
-    "MEASUREMENT_STATEMENT_DOWNLOADED": "Скачування відомості інвентаризації (PDF)",
+    "MEASUREMENT_STATEMENT_DOWNLOADED": "Завантаження відомості інвентаризації (PDF)",
     "MEASUREMENT_APPROVED": "Затвердження заміру та інвентаризації",
     "MEASUREMENT_CANCELLED": "Аварійне скасування вимірювання",
 }
@@ -329,7 +329,7 @@ AUDIT_ACTION_UA = {
 AUDIT_ENTITY_UA = {
     "Generator": "Генератор",
     "Facility": "Об'єкт",
-    "FuelStock": "Склад ГСМ",
+    "FuelStock": "Склад ПММ",
     "CanisterPool": "Пул каністр",
     "FuelMeasurement": "Контрольний замір",
     "FuelReceipt": "Оприбуткування",
@@ -441,7 +441,7 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
             "model": "Модель",
             "manufacturer": "Виробник",
             "serial_number": "Серійний номер",
-            "nominal_consumption_l_per_h": "Нормативний розхід",
+            "nominal_consumption_l_per_h": "Нормативна витрата",
             "tank_capacity_l": "Місткість бака",
             "fuel_type": "Тип палива",
             "rated_power_kw": "Потужність",
@@ -520,7 +520,7 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
             "smtp_fallback_from": "Відправник резервного SMTP",
             "default_facility_id": "Об'єкт за замовчуванням (ID)",
             "default_generator_id": "Генератор за замовчуванням (ID)",
-            "default_fuel_stock_id": "Склад ГСМ за замовчуванням (ID)",
+            "default_fuel_stock_id": "Склад ПММ за замовчуванням (ID)",
             "apply_to_all_generators": "Застосувати до всіх генераторів",
             "login_max_attempts": "Ліміт спроб входу",
             "login_lockout_seconds": "Час блокування (с)",
@@ -561,7 +561,7 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
         if gens_del:
             extra_info.append(f"генераторів: {len(gens_del)}")
         if stocks_del:
-            extra_info.append(f"складів ГСМ: {len(stocks_del)}")
+            extra_info.append(f"складів ПММ: {len(stocks_del)}")
         if unbound:
             extra_info.append(f"відкріплено користувачів: {unbound}")
         cascade_str = f" (каскадно видалено {', '.join(extra_info)})" if extra_info else ""
@@ -751,7 +751,7 @@ def format_audit_details_ua(details_obj: Any, action: str = "") -> str:
         "commission_members": "Склад комісії",
         "statement_number": "Номер відомості",
         "measured_liters_before_cancel": "Заміряно до скасування (л)",
-        "receipts_count": "Приходів палива (шт.)",
+        "receipts_count": "Надходжень палива (шт.)",
         "transfers_count": "Заправок (шт.)",
         "history_preserved": "Історію збережено",
         "mode": "Режим",
@@ -1110,7 +1110,7 @@ async def generate_operational_report(
             driver_name=rec.driver_name or "-",
             supplier=f"АЗК {rec.fuel_provider.upper()}" if getattr(rec, "fuel_provider", None) else "АЗК WOG",
             fuel_provider=getattr(rec, "fuel_provider", "wog") or "wog",
-            stock_name=rec.stock.name if rec.stock else "Склад ГСМ",
+            stock_name=rec.stock.name if rec.stock else "Склад ПММ",
             operator_name=(rec.user.full_name or rec.user.login) if rec.user else "Система"
         )
         for rec in receipts_rows
@@ -1139,7 +1139,7 @@ async def generate_operational_report(
             id=tr.id,
             created_at=fmt_dt_ua(tr.created_at),
             liters=round(float(tr.liters or 0.0), 2),
-            stock_name=tr.stock.name if tr.stock else "Склад ГСМ",
+            stock_name=tr.stock.name if tr.stock else "Склад ПММ",
             generator_name=tr.generator.name if tr.generator else (gen_name or "Генератор"),
             operator_name=(tr.user.full_name or tr.user.login) if tr.user else "Система"
         )
@@ -1272,7 +1272,7 @@ async def generate_excel_report(
     Містить 5 тематичних вкладок:
     1. Загальний звіт (Дашборд KPI, параметри об'єкта та генератора)
     2. Звіт по днях (Детальні цикли роботи, години, паливо, тривалість)
-    3. Рух палива та Склад ГСМ (Надходження, заправки в бак, залишки)
+    3. Рух палива та Склад ПММ (Надходження, заправки в бак, залишки)
     4. Технічне обслуговування (Журнал регламентних та проміжних ТО, витрати)
     5. Журнал несправностей та інцидентів (Облік несправностей, критичність та усунення)
     """
@@ -1489,7 +1489,7 @@ async def generate_excel_report(
                 ("Загальна вартість закупленого палива", round(op_report.total_fuel_receipts_cost_uah, 2), "грн"),
                 ("Середня закупівельна ціна літра", round(op_report.avg_fuel_price_per_liter, 2), "грн/л"),
                 ("Заправлено з складу в бак генератора", round(op_report.total_fuel_transferred_to_tank_l, 2), "л"),
-                ("Поточний залишок на складі ГСМ", round(op_report.current_stock_balance_l, 2), "л"),
+                ("Поточний залишок на складі ПММ", round(op_report.current_stock_balance_l, 2), "л"),
                 ("Поточний рівень у паливному баку", round(op_report.current_tank_level_l, 2), "л"),
             ]
         ),
@@ -1564,7 +1564,7 @@ async def generate_excel_report(
         "Тривалість (ГГ:ХХ:СС)", "Тривалість (год, хв)",
         "Початкові мотогодини", "Кінцеві мотогодини",
         "Початкове паливо в баку (л)", "Кінцеве паливо в баку (л)",
-        "Витрата палива (л)", "Заправка в бак (л)", "Приход на склад (л)",
+        "Витрата палива (л)", "Заправка в бак (л)", "Надходження на склад (л)",
         "Оператор", "Статус", "Примітки"
     ]
     ws2.row_dimensions[1].height = 26
@@ -1674,7 +1674,7 @@ async def generate_excel_report(
             if fuel_added > 0 or fuel_rec > 0:
                 st_label = "Рух палива (без пуску)"
                 nt_label = "Оприбуткування / заправка без пуску генератора"
-                op_label = "Склад ГСМ"
+                op_label = "Склад ПММ"
             else:
                 st_label = "Черговий режим (без запусків)"
                 nt_label = "Генератор не запускався"
@@ -1765,23 +1765,23 @@ async def generate_excel_report(
     auto_adjust_column_widths(ws2, min_width=12)
 
     # -------------------------------------------------------------
-    # ВКЛАДКА 3: РУХ ПАЛИВА ТА СКЛАД ГСМ
+    # ВКЛАДКА 3: РУХ ПАЛИВА ТА СКЛАД ПММ
     # -------------------------------------------------------------
-    ws3 = wb.create_sheet(title="Рух палива та Склад ГСМ")
+    ws3 = wb.create_sheet(title="Рух палива та Склад ПММ")
     ws3.views.sheetView[0].showGridLines = True
     ws3.freeze_panes = "A3"
 
     # Section 1: Receipts
     ws3.merge_cells("A1:M1")
     s1_title = ws3["A1"]
-    s1_title.value = "1. Оприбуткування палива на склад ГСМ (закупівля / чеки)"
+    s1_title.value = "1. Оприбуткування палива на склад ПММ (закупівля / чеки)"
     s1_title.font = SECTION_FONT
     s1_title.fill = PRIMARY_FILL
     s1_title.alignment = ALIGN_LEFT
     ws3.row_dimensions[1].height = 24
 
     headers3_rec = [
-        "№", "Дата / Час", "Об'єкт (локація)", "Склад ГСМ", "Чек / Накладна №",
+        "№", "Дата / Час", "Об'єкт (локація)", "Склад ПММ", "Чек / Накладна №",
         "Мережа АЗС", "Водій / Постачальник", "Тип палива", "Об'єм (л)",
         "Сума (грн)", "Ціна за літр (грн/л)", "Хто прийняв", "Коментар"
     ]
@@ -1800,7 +1800,7 @@ async def generate_excel_report(
         tot_rec_l += float(rc.liters or 0.0)
         tot_rec_uah += float(rc.cost_total or 0.0)
         fac_rec_name = rc.stock.facility.name if rc.stock and rc.stock.facility else facility_name
-        stock_name = rc.stock.name if rc.stock else "Склад ГСМ"
+        stock_name = rc.stock.name if rc.stock else "Склад ПММ"
         rec_user = rc.user.full_name if rc.user else "Користувач"
         prov_label = (rc.fuel_provider or "wog").upper()
         vals = [
@@ -1858,7 +1858,7 @@ async def generate_excel_report(
 
     # Section 2: Transfers to Tank
     ws3.merge_cells(start_row=row_cur, start_column=1, end_row=row_cur, end_column=12)
-    s2_title = ws3.cell(row=row_cur, column=1, value="2. Заправки зі складу ГСМ у бак генератора")
+    s2_title = ws3.cell(row=row_cur, column=1, value="2. Заправки зі складу ПММ у бак генератора")
     s2_title.font = SECTION_FONT
     s2_title.fill = PRIMARY_FILL
     s2_title.alignment = ALIGN_LEFT
@@ -1866,7 +1866,7 @@ async def generate_excel_report(
     row_cur += 1
 
     headers3_tr = [
-        "№", "Дата / Час", "Об'єкт (локація)", "Звідки (Склад ГСМ)", "Куди (Генератор)",
+        "№", "Дата / Час", "Об'єкт (локація)", "Звідки (Склад ПММ)", "Куди (Генератор)",
         "Заправлено (л)", "Склад до (л)", "Склад після (л)",
         "Бак до (л)", "Бак після (л)", "Оператор", "Коментар"
     ]
@@ -1883,7 +1883,7 @@ async def generate_excel_report(
     for idx, tr in enumerate(transfers, start=1):
         tot_tr_l += float(tr.liters or 0.0)
         fac_tr_name = tr.stock.facility.name if tr.stock and tr.stock.facility else facility_name
-        stock_name = tr.stock.name if tr.stock else "Склад ГСМ"
+        stock_name = tr.stock.name if tr.stock else "Склад ПММ"
         gen_tr_name = tr.generator.name if tr.generator else generator_name
         tr_user = tr.user.full_name if tr.user else "Оператор"
         vals = [
@@ -1933,7 +1933,7 @@ async def generate_excel_report(
 
     # Section 3: Current Balances of all Fuel Stocks
     ws3.merge_cells(start_row=row_cur, start_column=1, end_row=row_cur, end_column=6)
-    s3_title = ws3.cell(row=row_cur, column=1, value="3. Поточні залишки на складах ГСМ")
+    s3_title = ws3.cell(row=row_cur, column=1, value="3. Поточні залишки на складах ПММ")
     s3_title.font = SECTION_FONT
     s3_title.fill = PRIMARY_FILL
     s3_title.alignment = ALIGN_LEFT
@@ -1941,7 +1941,7 @@ async def generate_excel_report(
     row_cur += 1
 
     headers3_stk = [
-        "№", "Назва складу ГСМ", "Об'єкт (локація)", "Тип палива",
+        "№", "Назва складу ПММ", "Об'єкт (локація)", "Тип палива",
         "Поточний залишок (л)", "Дата останнього оновлення"
     ]
     ws3.row_dimensions[row_cur].height = 24
@@ -2145,7 +2145,7 @@ async def generate_excel_report(
 
     ws6.merge_cells("A1:J1")
     m_title = ws6["A1"]
-    m_title.value = "Журнал контрольних замірів витрат палива та актів інвентаризації ГСМ"
+    m_title.value = "Журнал контрольних замірів витрат палива та актів інвентаризації ПММ"
     m_title.font = SECTION_FONT
     m_title.fill = PRIMARY_FILL
     m_title.alignment = ALIGN_LEFT
@@ -2210,7 +2210,7 @@ ADJUSTMENT_FIELD_UA = {
     "current_operating_hours": "Мотогодини",
     "fuel_tank_level_l": "Рівень у баку (л)",
     "status": "Статус генератора",
-    "nominal_consumption_l_per_h": "Нормативний розхід (л/год)",
+    "nominal_consumption_l_per_h": "Нормативна витрата (л/год)",
     "current_balance_l": "Залишок на складі (л)",
     "stock_balance_l": "Залишок на складі (л)",
     "full_count": "Повні каністри (шт.)",

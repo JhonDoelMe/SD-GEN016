@@ -85,7 +85,7 @@ async def test_maintenance_scheduled_vs_intermediate(client, superadmin_auth, op
         json={
             "maintenance_type": "SCHEDULED",
             "work_description": "Спроба оператора",
-            "consumables_used": "Масло",
+            "consumables_used": "Олива",
             "cost": 100.0
         }
     )
@@ -98,7 +98,7 @@ async def test_maintenance_scheduled_vs_intermediate(client, superadmin_auth, op
         json={
             "maintenance_type": "SCHEDULED",
             "work_description": "Регламентне ТО: заміна моторної оливи, масляного та повітряного фільтрів",
-            "consumables_used": "Масло 10W-40 1.1л, фільтр",
+            "consumables_used": "Олива 10W-40 1.1л, фільтр",
             "cost": 1200.0
         }
     )

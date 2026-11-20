@@ -169,7 +169,7 @@ async def perform_adjustment(
             if new_cons <= 0:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Нормативний розхід палива повинен бути більшим за 0"
+                    detail="Нормативна витрата палива повинна бути більшою за 0"
                 )
             old_val_str = str(gen.nominal_consumption_l_per_h)
             gen.nominal_consumption_l_per_h = new_cons
@@ -179,7 +179,7 @@ async def perform_adjustment(
     elif target_entity_type == "FuelStock":
         stock = await db.get(FuelStock, data.entity_id)
         if not stock:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ПММ не знайдено")
         target_facility_id = stock.facility_id or target_facility_id
         from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
         await ensure_facility_not_locked_by_measurement(db, target_facility_id, "fuel_adjustment")

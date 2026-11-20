@@ -589,7 +589,7 @@ async def test_measurement_mode_full_to_full_unblocked_blackout_and_53l_auto_can
         "commission_members": [
             {"name": "Іваненко І.І.", "role": "Голова комісії"},
             {"name": "Петренко П.П.", "role": "Головний інженер"},
-            {"name": "Сидоренко С.С.", "role": "Оператор ГСМ"},
+            {"name": "Сидоренко С.С.", "role": "Оператор ПММ"},
         ],
     }
     assert (

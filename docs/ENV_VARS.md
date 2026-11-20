@@ -34,14 +34,14 @@
 | `POSTGRES_USER` | Користувач бази даних PostgreSQL (для Docker Compose) | `sd_user` | Унікальне системне ім'я користувача СУБД |
 | `POSTGRES_PASSWORD` | Пароль користувача бази даних PostgreSQL | `sd_password` | Складний згенерований пароль СУБД |
 | `POSTGRES_DB` | Назва робочої бази даних PostgreSQL | `sd_gen016` | Найменування виробничої бази даних |
-| `OPENWEATHER_API_KEY` | Ключ доступу до OpenWeatherMap API | `""` (пустий) | Робочий API-ключ OpenWeather для поточної погоди та 5-денного прогнозу |
+| `OPENWEATHER_API_KEY` | Ключ доступу до OpenWeatherMap API | `""` (порожній) | Робочий API-ключ OpenWeather для поточної погоди та 5-денного прогнозу |
 | `WEATHER_CACHE_MINUTES` | Період кешування погодних даних у пам'яті | `20` | Інтервал від 10 до 30 хв |
-| `ALERTS_IN_UA_TOKEN` | API-токен офіційного сервісу `alerts.in.ua` | `""` (пустий) | Провайдер №1 тривог (взаємна верифікація та типи загроз) |
-| `UKRAINE_ALARM_API_KEY` | API-ключ сервісу `api.ukrainealarm.com` (Stfalcon / Ajax) | `""` (пустий) | Провайдер №2 тривог та страхування відбою |
+| `ALERTS_IN_UA_TOKEN` | API-токен офіційного сервісу `alerts.in.ua` | `""` (порожній) | Провайдер №1 тривог (взаємна верифікація та типи загроз) |
+| `UKRAINE_ALARM_API_KEY` | API-ключ сервісу `api.ukrainealarm.com` (Stfalcon / Ajax) | `""` (порожній) | Провайдер №2 тривог та страхування відбою |
 | `ALERTS_CACHE_SECONDS` | Період кешування `alerts.in.ua` (із підтримкою HTTP 304) | `15` | Від 15 до 30 секунд |
 | `UKRAINE_ALARM_CACHE_SECONDS` | Період глобального кешування запитів до `api.ukrainealarm.com` | `60` | Не менше `60` секунд згідно з лімітом API UkraineAlarm |
 | `FIREBASE_SERVICE_ACCOUNT_PATH` | Шлях до JSON-ключа сервісного акаунта Firebase (FCM HTTP v1) | `/app/firebase/firebase-service-account.json` | Змонтований read-only файл `./docker/firebase/firebase-service-account.json` |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | Альтернативний спосіб передачі Firebase Service Account у вигляді JSON-рядка | `""` (пустий) | Використовувати у хмарних оточеннях без файлового монтування |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Альтернативний спосіб передачі Firebase Service Account у вигляді JSON-рядка | `""` (порожній) | Використовувати у хмарних оточеннях без файлового монтування |
 
 > [!IMPORTANT]
 > **Незмінність пароля SuperAdmin при рестартах**:
@@ -66,7 +66,7 @@
 - **`default_maintenance_interval_hours`**: Стандартний інтервал регламентного ТО (за замовчуванням `300.0 год`).
 - **`backup_last_auto_run_date`**: Системна дата останнього успішного автобекапу за розкладом (`YYYY-MM-DD`), яка виключає повторні хибні спрацювання планувальника при перезавантаженні контейнера.
 - **`backup_auto_enabled`, `backup_schedule_time`, `backup_frequency`, `backup_retention_count`, `backup_default_type`**: Параметри автоматичного резервного копіювання за розкладом.
-- **`default_facility_id`, `default_generator_id`, `default_fuel_stock_id`**: Стартовий ланцюжок за замовчуванням (`Об'єкт ➔ Генератор ➔ Склад ГСМ`).
+- **`default_facility_id`, `default_generator_id`, `default_fuel_stock_id`**: Стартовий ланцюжок за замовчуванням (`Об'єкт ➔ Генератор ➔ Склад ПММ`).
 - **`max_continuous_run_hours`, `auto_stop_on_schedule_end`, `notify_running_heartbeat`, `heartbeat_interval_hours`**: Параметри операційних запобіжників (`12.0 год`, автостоп після зміни, пульс-нагадування кожні `4.0 год`).
 - **`fuel_receipt_max_liters_warning`, `fuel_receipt_min_price`, `fuel_receipt_max_price`**: Поріг контролю аномальних чеків (`1000.0 л`, `15.0–250.0 грн/л`).
 - **`notifications_enabled`, `notify_generator_start`, `notify_generator_stop`, `notify_low_fuel`, `low_fuel_threshold_l`, `notify_maintenance`, `max_maintenance_notifications_per_day`, `notify_critical_faults`, `notify_outside_schedule`, `notify_yasno_outages`, `notify_air_alerts`, `notify_air_alert_end`, `vapid_claims_sub`**: Правила Web Push / Android FCM / Центру сповіщень (включно з тривогами, відбоями, роботою поза графіком та відключеннями YASNO).

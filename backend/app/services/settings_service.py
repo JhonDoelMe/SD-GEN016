@@ -707,15 +707,15 @@ async def update_system_settings(
             if target_stock_id is not None:
                 stock = await db.get(FuelStock, target_stock_id)
                 if not stock:
-                    raise ValueError(f"Склад ГСМ за замовчуванням з ID {target_stock_id} не знайдено в системі")
+                    raise ValueError(f"Склад ПММ за замовчуванням з ID {target_stock_id} не знайдено в системі")
                 if stock.facility_id is None:
                     raise ValueError(
-                        f"Склад ГСМ '{stock.name}' (ID {stock.id}) не закріплений за жодним об'єктом "
+                        f"Склад ПММ '{stock.name}' (ID {stock.id}) не закріплений за жодним об'єктом "
                         f"і не може бути складом за замовчуванням для об'єкта ID {target_fac_id}"
                     )
                 if int(stock.facility_id) != int(target_fac_id):
                     raise ValueError(
-                        f"Склад ГСМ '{stock.name}' закріплений за об'єктом ID {stock.facility_id}, "
+                        f"Склад ПММ '{stock.name}' закріплений за об'єктом ID {stock.facility_id}, "
                         f"а не за вказаним об'єктом за замовчуванням ID {target_fac_id}"
                     )
         else:
@@ -1371,7 +1371,7 @@ async def perform_system_reset(
         # Recreate default FuelStock & default unconfigured Generator
         db.add(FuelStock(
             facility_id=1,
-            name="Основний склад ГСМ",
+            name="Основний склад ПММ",
             fuel_type="А-95",
             current_balance_l=0.0,
             updated_at=now

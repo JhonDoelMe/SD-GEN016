@@ -445,7 +445,7 @@ async def test_system_adjustments_sync_fuel_stock_and_canister_pool(client, supe
             "facility_id": fac_id,
             "field_name": "current_balance_l",
             "new_value": "45.0",
-            "reason": "Інвентаризація ГСМ: 2 повні каністри та 5 л в резерві",
+            "reason": "Інвентаризація ПММ: 2 повні каністри та 5 л в резерві",
         },
     )
     assert adj_stock.status_code == 201, adj_stock.text

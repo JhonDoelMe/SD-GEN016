@@ -65,9 +65,9 @@ function updateMeasurementHeaderUI() {
     if (state.is_locked) {
       lockBanner.className = 'offline-sync-banner banner-conflict';
       const stageTxt = m.status === 'PENDING_APPROVAL'
-        ? `PDF-відомість <b>${escapeHtml(m.statement_number || '')}</b> сформована — скачайте та натисніть «Погоджено» (Суперадмін).`
-        : 'Внесіть залишок складу комісією (мін. 3 особи) для розблокування ГСМ.';
-      lockBannerText.innerHTML = `🔒 <b>Склад ГСМ опечатано для інвентаризації (замір завершено):</b> залито <b>${measured.toFixed(1)} л</b> (${Number(m.total_hours_elapsed || 0).toFixed(2)} год → <b>${Number(m.calculated_consumption_l_per_h || 0).toFixed(3)} л/год</b>). Запуск і зупинка генератора працюють штатно. ${stageTxt}`;
+        ? `PDF-відомість <b>${escapeHtml(m.statement_number || '')}</b> сформована — завантажте та натисніть «Погоджено» (Суперадмін).`
+        : 'Внесіть залишок складу комісією (мін. 3 особи) для розблокування ПММ.';
+      lockBannerText.innerHTML = `🔒 <b>Склад ПММ опечатано для інвентаризації (замір завершено):</b> залито <b>${measured.toFixed(1)} л</b> (${Number(m.total_hours_elapsed || 0).toFixed(2)} год → <b>${Number(m.calculated_consumption_l_per_h || 0).toFixed(3)} л/год</b>). Запуск і зупинка генератора працюють штатно. ${stageTxt}`;
     } else {
       lockBanner.className = 'offline-sync-banner banner-measurement';
       lockBannerText.innerHTML = `📏 <b>Режим вимірювання («від повного до повного»):</b> заправлено в бак <b>${measured.toFixed(1)} / ${minThresh.toFixed(0)} л</b> • обмеження на долив та попередження баку ігноруються • корекції заборонені.`;
@@ -310,9 +310,9 @@ window.loadMeasurementTab = async function () {
         <div class="panel" style="border-color: rgba(245, 158, 11, 0.5);">
           <div class="panel-header" style="flex-wrap:wrap; gap:0.65rem;">
             <div>
-              <h3>🔒 Склад ГСМ опечатано для інвентаризації — ${escapeHtml(m.generator_name || 'Генератор')}</h3>
+              <h3>🔒 Склад ПММ опечатано для інвентаризації — ${escapeHtml(m.generator_name || 'Генератор')}</h3>
               <p style="font-size:0.83rem; color:var(--text-muted); margin:0.2rem 0 0;">
-                Відомість: <b>${escapeHtml(m.statement_number || 'Буде присвоєно')}</b> • Залито в бак: <b>${Number(m.total_fuel_consumed_l || 0).toFixed(1)} л</b> за <b>${Number(m.total_hours_elapsed || 0).toFixed(2)} год</b> → Новий розхід: <b style="color:#4ade80;">${Number(m.calculated_consumption_l_per_h || 0).toFixed(3)} л/год</b> (було ${Number(m.old_nominal_consumption_l_per_h).toFixed(3)})
+                Відомість: <b>${escapeHtml(m.statement_number || 'Буде присвоєно')}</b> • Залито в бак: <b>${Number(m.total_fuel_consumed_l || 0).toFixed(1)} л</b> за <b>${Number(m.total_hours_elapsed || 0).toFixed(2)} год</b> → Нова витрата: <b style="color:#4ade80;">${Number(m.calculated_consumption_l_per_h || 0).toFixed(3)} л/год</b> (було ${Number(m.old_nominal_consumption_l_per_h).toFixed(3)})
               </p>
               <div style="font-size:0.8rem; color:#4ade80; margin-top:0.25rem;">
                 ⚡ Запуск та зупинка генератора працюють без обмежень (об'єкт готовий до роботи під час знеструмлення).
@@ -336,10 +336,10 @@ window.loadMeasurementTab = async function () {
             </div>
 
             ${stocks.length > 0 ? `
-              <h4 style="margin:0.85rem 0 0.45rem; font-size:0.95rem;">📦 Фактичні залишки на складах ГСМ (система автоматично рахує каністри й резерв)</h4>
+              <h4 style="margin:0.85rem 0 0.45rem; font-size:0.95rem;">📦 Фактичні залишки на складах ПММ (система автоматично рахує каністри й резерв)</h4>
               <div class="table-container">
                 <table id="invStocksTable">
-                  <thead><tr><th>Склад ГСМ</th><th>За обліком (л)</th><th>Факт склад (л) *</th><th>Авто-розклад по каністрах та резерву</th></tr></thead>
+                  <thead><tr><th>Склад ПММ</th><th>За обліком (л)</th><th>Факт склад (л) *</th><th>Авто-розклад по каністрах та резерву</th></tr></thead>
                   <tbody>
                     ${stocks.map((s) => {
                       const sid = Number(s.stock_id);
@@ -358,7 +358,7 @@ window.loadMeasurementTab = async function () {
                   </tbody>
                 </table>
               </div>
-            ` : '<div style="font-size:0.84rem; color:var(--text-muted); margin:0.65rem 0;">Активних складів ГСМ не знайдено.</div>'}
+            ` : '<div style="font-size:0.84rem; color:var(--text-muted); margin:0.65rem 0;">Активних складів ПММ не знайдено.</div>'}
 
             <div style="display:flex; justify-content:space-between; align-items:center; margin:1rem 0 0.5rem;">
               <h4 style="margin:0; font-size:0.95rem;">👥 Склад комісії (мінімум 3 особи)</h4>
@@ -378,7 +378,7 @@ window.loadMeasurementTab = async function () {
               <h4 style="margin:0 0 0.6rem; font-size:0.98rem;">📑 Крок 2–3: Підписання та погодження відомості (${escapeHtml(m.statement_number || '')})</h4>
               <div class="offline-toolbar-actions">
                 <button type="button" class="btn-secondary btn-oq-toolbar" onclick="downloadMeasurementPdf(${Number(m.id)})">
-                  📥 Скачати PDF (А4 Альбом)
+                  📥 Завантажити PDF (А4 Альбом)
                 </button>
                 <button type="button" id="btnApproveMeasurement" class="btn-primary btn-oq-toolbar" ${!pdfDownloaded ? 'disabled' : ''} onclick="approveMeasurementMode(${Number(m.id)})">
                   ✅ Погоджено (Затвердити)
@@ -387,7 +387,7 @@ window.loadMeasurementTab = async function () {
               <div style="font-size:0.83rem; color:${pdfDownloaded ? '#4ade80' : '#fbbf24'};">
                 ${pdfDownloaded
                   ? `✓ Відомість завантажено (${escapeHtml(formatDateTime(m.document_downloaded_at))}). Після підписання комісією натисніть «✅ Погоджено».`
-                  : '⚠️ Спочатку скачайте сформовану PDF-відомість для підпису комісією — після цього активується кнопка «Погоджено».'}
+                  : '⚠️ Спочатку завантажте сформовану PDF-відомість для підпису комісією — після цього активується кнопка «Погоджено».'}
               </div>
             </div>
           ` : ''}
@@ -536,7 +536,7 @@ window.startMeasurementMode = async function () {
 
 window.finishMeasurementFull = async function (measurementId) {
   const endH = parseFloat(document.getElementById('measFinishEndHours')?.value || '0');
-  if (!confirm('Підтверджуєте, що після фінальної заправки бак генератора 100% ПОВНИЙ і контрольний замір завершено?\nЗапуск/зупинка генератора залишаться доступними, а склад ГСМ буде зафіксовано до підписання PDF комісією.')) return;
+  if (!confirm('Підтверджуєте, що після фінальної заправки бак генератора 100% ПОВНИЙ і контрольний замір завершено?\nЗапуск/зупинка генератора залишаться доступними, а склад ПММ буде зафіксовано до підписання PDF комісією.')) return;
   try {
     await api(`/measurement/${encodeURIComponent(measurementId)}/finish-full`, {
       method: 'POST',
@@ -581,7 +581,7 @@ window.submitMeasurementInventoryForm = async function (e, measurementId) {
         notes,
       }),
     });
-    showToast('📄 Акт інвентаризації збережено! Скачайте PDF-відомість А4 Альбом.', 'success');
+    showToast('📄 Акт інвентаризації збережено! Завантажте PDF-відомість А4 Альбом.', 'success');
     await loadMeasurementTab();
   } catch (_) {}
 };
@@ -610,7 +610,7 @@ window.approveMeasurementMode = async function (measurementId) {
   if (!confirm('Підтверджуєте погодження підписаної відомості, оновлення норми витрат (л/год) та фіксацію фактичних залишків складу (каністри та резерв перераховуються автоматично)?')) return;
   try {
     await api(`/measurement/${encodeURIComponent(measurementId)}/approve`, { method: 'POST' });
-    showToast('✅ Погоджено! Фактичний розхід і залишки зафіксовано, система у звичайному режимі.', 'success');
+    showToast('✅ Погоджено! Фактична витрата і залишки зафіксовано, система у звичайному режимі.', 'success');
     await Promise.allSettled([
       loadMeasurementTab(),
       typeof loadAllData === 'function' ? loadAllData() : Promise.resolve(),

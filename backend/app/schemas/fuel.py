@@ -5,13 +5,13 @@ from pydantic import BaseModel, Field
 
 class FuelStockCreate(BaseModel):
     facility_id: int = Field(..., description="ID об'єкта, до якого належить склад")
-    name: str = Field(..., min_length=2, max_length=100, description="Назва складу ГСМ")
+    name: str = Field(..., min_length=2, max_length=100, description="Назва складу ПММ")
     fuel_type: str = Field(default="А-95", max_length=50)
     initial_balance_l: float = Field(default=0.0, ge=0, description="Початковий залишок (л)")
 
 
 class FuelStockUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=2, max_length=100, description="Нова назва складу ГСМ")
+    name: Optional[str] = Field(None, min_length=2, max_length=100, description="Нова назва складу ПММ")
     fuel_type: Optional[str] = Field(None, min_length=2, max_length=50, description="Новий тип палива")
     facility_id: Optional[int] = Field(None, description="Перенесення на інший об'єкт")
     is_active: Optional[bool] = Field(None, description="Статус активності складу")

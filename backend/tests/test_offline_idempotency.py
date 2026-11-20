@@ -185,7 +185,7 @@ async def test_maintenance_and_fault_idempotency(client, superadmin_auth, operat
     maint_payload = {
         "generator_id": gen_id,
         "maintenance_type": "INTERMEDIATE",
-        "work_description": "Перевірка рівня масла та фільтра",
+        "work_description": "Перевірка рівня оливи та фільтра",
         "cost": 150.0,
         "idempotency_key": "OF-MAINT-1",
     }

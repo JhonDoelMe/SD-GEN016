@@ -119,7 +119,7 @@ async def create_facility(
     # Automatically create a default fuel stock for this facility
     default_stock = FuelStock(
         facility_id=facility.id,
-        name=f"Склад ГСМ ({facility.name})",
+        name=f"Склад ПММ ({facility.name})",
         fuel_type="А-95",
         current_balance_l=0.0
     )

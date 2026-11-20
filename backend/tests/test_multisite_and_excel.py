@@ -220,7 +220,7 @@ async def test_dynamic_excel_report_generation(client, superadmin_auth, operator
     # Verify all 5 required sheets exist
     assert "Загальний звіт" in sheet_names
     assert "Звіт по днях" in sheet_names
-    assert "Рух палива та Склад ГСМ" in sheet_names
+    assert "Рух палива та Склад ПММ" in sheet_names
     assert "Технічне обслуговування" in sheet_names
     assert "Несправності та інциденти" in sheet_names
 
@@ -331,7 +331,7 @@ async def test_multi_warehouse_receipt_transfer_and_excel(client, superadmin_aut
     rep_res = await client.get(f"/api/v1/reports/export-excel?facility_id={fac_id}", headers=superadmin_auth)
     assert rep_res.status_code == 200
     wb = openpyxl.load_workbook(io.BytesIO(rep_res.content))
-    ws_fuel = wb["Рух палива та Склад ГСМ"]
+    ws_fuel = wb["Рух палива та Склад ПММ"]
     # Check that receipt and transfer data appear in the worksheet
     sheet_text = " ".join(str(cell.value) for row in ws_fuel.iter_rows() for cell in row if cell.value)
     assert "Резервний склад Львів" in sheet_text

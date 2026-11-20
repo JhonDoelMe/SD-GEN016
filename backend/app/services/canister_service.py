@@ -217,11 +217,11 @@ async def create_canister_pool(
         await db.execute(select(FuelStock).where(FuelStock.id == data.stock_id).with_for_update())
     ).scalars().first()
     if not stock or not stock.is_active:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Активний склад ГСМ не знайдено")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Активний склад ПММ не знайдено")
     if int(stock.facility_id) != int(data.facility_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Склад ГСМ належить до іншого об'єкта."
+            detail="Склад ПММ належить до іншого об'єкта."
         )
 
     vol_dec = to_decimal(data.canister_volume_l, 2)
@@ -628,7 +628,7 @@ async def receive_canisters(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Активний пул каністр не знайдено")
 
     if not stock or not stock.is_active:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пов'язаний склад ГСМ не знайдено або архівовано.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пов'язаний склад ПММ не знайдено або архівовано.")
 
     if data.idempotency_key:
         existing_rec = (

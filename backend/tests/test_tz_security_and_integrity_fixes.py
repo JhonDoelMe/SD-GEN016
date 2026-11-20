@@ -482,7 +482,7 @@ async def test_system_settings_server_validation_domain_integrity(client, supera
 @pytest.mark.asyncio
 async def test_unassigned_generator_and_stock_rejected_for_default_facility(client, superadmin_auth, db_session):
     """
-    Перевіряє, що генератор або склад ГСМ без закріпленого об'єкта (facility_id=None)
+    Перевіряє, що генератор або склад ПММ без закріпленого об'єкта (facility_id=None)
     відхиляються при спробі встановити їх за замовчуванням для конкретної філії.
     """
     # Create unassigned generator directly

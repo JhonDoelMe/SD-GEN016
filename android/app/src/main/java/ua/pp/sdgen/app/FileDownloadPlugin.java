@@ -258,7 +258,7 @@ public class FileDownloadPlugin extends Plugin {
                                 call,
                                 safeFileName,
                                 true,
-                                "обраної папки/" + safeFileName,
+                                "обраної теки/" + safeFileName,
                                 pickedUri,
                                 openOut.opened,
                                 openOut.sharedViaChooser,
@@ -270,9 +270,9 @@ public class FileDownloadPlugin extends Plugin {
                     }
                 }
 
-                resolveResult(call, safeFileName, true, "обраної папки/" + safeFileName, pickedUri, false, false, false, "");
+                resolveResult(call, safeFileName, true, "обраної теки/" + safeFileName, pickedUri, false, false, false, "");
             } catch (Exception e) {
-                call.reject("Не вдалося записати файл у вибрану папку: " + e.getMessage(), e);
+                call.reject("Не вдалося записати файл у вибрану теку: " + e.getMessage(), e);
             }
         });
     }
@@ -447,7 +447,7 @@ public class FileDownloadPlugin extends Plugin {
         try {
             File targetDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
             if (!targetDir.exists() && !targetDir.mkdirs()) {
-                return new SaveOutcome("", "Не вдалося створити папку Download");
+                return new SaveOutcome("", "Не вдалося створити теку Download");
             }
             File targetFile = resolveUniqueLegacyFile(targetDir, fileName);
             try (

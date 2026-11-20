@@ -57,7 +57,7 @@ async def test_fuel_receipt_and_transfer_invariants(client, superadmin_auth, ope
         json={"liters": 150.0}
     )
     assert over_transfer.status_code == 400
-    assert "Недостатньо палива на складі ГСМ" in over_transfer.json()["detail"]
+    assert "Недостатньо палива на складі ПММ" in over_transfer.json()["detail"]
 
     # 3. Invariant: cannot exceed tank capacity (tank capacity = 25L)
     over_capacity = await client.post(
@@ -310,7 +310,7 @@ async def test_running_generator_blocks_refuel_and_exposes_live_tank_balance(
     assert blocked_tr.status_code == 400
     assert "заборонена з міркувань безпеки" in blocked_tr.json()["detail"]
 
-    # 2. Зведений баланс ГСМ показує живий залишок ~35.0 л і зберігає стартовий обліковий залишок 50.0 л
+    # 2. Зведений баланс ПММ показує живий залишок ~35.0 л і зберігає стартовий обліковий залишок 50.0 л
     summary = (
         await client.get(f"/api/v1/fuel/summary?facility_id={fac_id}&generator_id={gen_id}", headers=operator_auth)
     ).json()

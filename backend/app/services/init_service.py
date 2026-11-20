@@ -22,7 +22,7 @@ ALL_PERMISSIONS = [
     ("facility:configure", "Створення, редагування та видалення об'єктів"),
     # Fuel
     ("fuel:view", "Перегляд залишків та історії палива"),
-    ("fuel:receipt", "Оприбуткування палива на склад ГСМ"),
+    ("fuel:receipt", "Оприбуткування палива на склад ПММ"),
     ("fuel:receipt:override", "Підтвердження нетипового об'єму або ціни палива (force_confirm)"),
     ("fuel:transfer", "Заправка бака генератора зі складу"),
     ("fuel:configure", "Керування складами палива (створення, редагування, видалення)"),
@@ -189,7 +189,7 @@ async def ensure_default_facility_and_resources(
     stock_res = await db.execute(select(FuelStock))
     if not stock_res.scalars().first():
         stock = FuelStock(
-            name="Основний склад ГСМ",
+            name="Основний склад ПММ",
             fuel_type="А-95",
             current_balance_l=0.0,
             facility_id=default_fac.id if default_fac else None,

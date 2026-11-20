@@ -975,7 +975,7 @@ document.addEventListener('submit', async (e) => {
       return;
     }
     if (newPwd !== cfmPwd) {
-      showToast('Підтвердження нового пароля не співпадає', 'warning');
+      showToast('Підтвердження нового пароля не збігається', 'warning');
       return;
     }
     if (btn) btn.disabled = true;
@@ -1065,7 +1065,7 @@ document.addEventListener('submit', async (e) => {
         fb.style.background = 'rgba(239, 68, 68, 0.15)';
         fb.style.border = '1px solid rgba(239, 68, 68, 0.4)';
         fb.style.color = '#f87171';
-        fb.innerText = 'Введені паролі не співпадають!';
+        fb.innerText = 'Введені паролі не збігаються!';
       }
       return;
     }

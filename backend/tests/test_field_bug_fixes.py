@@ -53,12 +53,12 @@ def test_audit_details_ua_formatting():
         "name": "Х216, Гетьманська",
         "cascade": True,
         "generators_deleted": [],
-        "fuel_stocks_deleted": ["Склад ГСМ (Х216, Гетьманська)"],
+        "fuel_stocks_deleted": ["Склад ПММ (Х216, Гетьманська)"],
         "users_unbound_count": 1,
     }
     formatted_del = format_audit_details_ua(details_del, "FACILITY_DELETED")
     assert "Видалено об'єкт 'Х216, Гетьманська'" in formatted_del
-    assert "видалено складів ГСМ: 1" in formatted_del
+    assert "видалено складів ПММ: 1" in formatted_del
     assert "відкріплено користувачів: 1" in formatted_del
 
     # 3. Object changes diff
@@ -175,7 +175,7 @@ async def test_fuel_generic_stock_and_cross_brand(client: AsyncClient, superadmi
         headers=superadmin_auth,
         json={
             "facility_id": fac_id,
-            "name": "Основний склад ГСМ (А-95)",
+            "name": "Основний склад ПММ (А-95)",
             "fuel_type": "Бензин А-95",
             "initial_balance_l": 0.0,
         }

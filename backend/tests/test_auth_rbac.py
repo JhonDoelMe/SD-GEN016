@@ -254,7 +254,7 @@ async def test_operator_strict_rbac_matrix(client, operator_auth, superadmin_aut
         json={
             "maintenance_type": "INTERMEDIATE",
             "operating_hours": 10.0,
-            "work_description": "Заміна масла"
+            "work_description": "Заміна оливи"
         }
     )
     assert maint_inter_res.status_code == 201

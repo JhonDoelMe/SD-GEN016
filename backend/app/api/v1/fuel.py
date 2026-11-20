@@ -86,7 +86,7 @@ async def get_stocks_list(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("fuel:view"))
 ):
-    """Список усіх складів ГСМ (за об'єктом або загальний)"""
+    """Список усіх складів ПММ (за об'єктом або загальний)"""
     eff_facility_id = verify_facility_access(current_user, facility_id)
     stocks = await list_fuel_stocks(db, facility_id=eff_facility_id, include_archived=include_archived)
     agg_map = await get_stock_canister_aggregates(db, [s.id for s in stocks])
@@ -101,7 +101,7 @@ async def create_stock_api(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("fuel:configure"))
 ):
-    """Створити новий склад ГСМ для обраного об'єкта"""
+    """Створити новий склад ПММ для обраного об'єкта"""
     verify_facility_access(current_user, data.facility_id)
     client_ip = get_client_ip(request)
     stock = await create_fuel_stock(db, data, current_user.id, client_ip)
@@ -116,7 +116,7 @@ async def update_stock_api(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("fuel:configure"))
 ):
-    """Редагувати склад ГСМ (назву, тип палива, об'єкт, статус активності)"""
+    """Редагувати склад ПММ (назву, тип палива, об'єкт, статус активності)"""
     existing = await db.get(FuelStock, stock_id)
     if existing:
         verify_facility_access(current_user, existing.facility_id)
@@ -135,7 +135,7 @@ async def delete_stock_api(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("fuel:configure"))
 ):
-    """Видалити або перевести в архів склад ГСМ (збереження історії)"""
+    """Видалити або перевести в архів склад ПММ (збереження історії)"""
     existing = await db.get(FuelStock, stock_id)
     if existing:
         verify_facility_access(current_user, existing.facility_id)
@@ -177,7 +177,7 @@ async def create_receipt(
     if data.stock_id:
         st = await db.get(FuelStock, data.stock_id)
         if not st:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ПММ не знайдено")
         verify_facility_access(current_user, st.facility_id)
 
     user_perms = [perm.code for role in (current_user.roles or []) for perm in (role.permissions or [])]
@@ -213,7 +213,7 @@ async def create_receipt(
         facility_id=receipt.facility_id,
         facility_name=fac_name,
         stock_id=receipt.stock_id,
-        stock_name=stock.name if stock else "Склад ГСМ",
+        stock_name=stock.name if stock else "Склад ПММ",
         user_id=receipt.user_id,
         user_name=current_user.full_name,
         fuel_provider=getattr(receipt, "fuel_provider", "wog") or "wog",
@@ -255,7 +255,7 @@ async def list_receipts(
             facility_id=r.facility_id or (r.stock.facility_id if r.stock else None),
             facility_name=r.stock.facility.name if r.stock and r.stock.facility else None,
             stock_id=r.stock_id,
-            stock_name=r.stock.name if r.stock else "Склад ГСМ",
+            stock_name=r.stock.name if r.stock else "Склад ПММ",
             user_id=r.user_id,
             user_name=(r.user.full_name or r.user.login) if r.user else None,
             fuel_provider=getattr(r, "fuel_provider", "wog") or "wog",
@@ -298,7 +298,7 @@ async def create_transfer(
     if data.stock_id is not None:
         st = await db.get(FuelStock, data.stock_id)
         if not st:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ГСМ не знайдено")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Склад ПММ не знайдено")
         verify_facility_access(current_user, st.facility_id)
 
     data.idempotency_key = resolve_idempotency_key(request, data.idempotency_key)
@@ -329,7 +329,7 @@ async def create_transfer(
         facility_id=transfer.facility_id,
         facility_name=fac_name,
         stock_id=transfer.stock_id,
-        stock_name=stock.name if stock else "Склад ГСМ",
+        stock_name=stock.name if stock else "Склад ПММ",
         generator_id=transfer.generator_id,
         generator_name=gen.name if gen else "Генератор",
         user_id=transfer.user_id,
@@ -392,7 +392,7 @@ async def list_transfers(
                 facility_id=t.facility_id,
                 facility_name=t.stock.facility.name if t.stock and t.stock.facility else None,
                 stock_id=t.stock_id,
-                stock_name=t.stock.name if t.stock else "Склад ГСМ",
+                stock_name=t.stock.name if t.stock else "Склад ПММ",
                 generator_id=t.generator_id,
                 generator_name=t.generator.name if t.generator else "Генератор",
                 user_id=t.user_id,

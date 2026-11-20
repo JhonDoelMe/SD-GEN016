@@ -7,7 +7,7 @@ class FuelStock(Base):
     __tablename__ = "fuel_stocks"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False, default="Основний склад ГСМ")
+    name = Column(String(100), nullable=False, default="Основний склад ПММ")
     fuel_type = Column(String(50), nullable=False, default="А-95")
     current_balance_l = Column(Numeric(10, 3, asdecimal=True), nullable=False, default=0.0)
     is_active = Column(Boolean, nullable=False, default=True, server_default="1")

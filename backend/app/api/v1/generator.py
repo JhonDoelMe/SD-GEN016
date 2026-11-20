@@ -208,7 +208,7 @@ async def update_generator_api(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_permission("generator:configure"))
 ):
-    """Швидке оновлення налаштувань генератора (назва, модель, бак, розхід тощо)"""
+    """Швидке оновлення налаштувань генератора (назва, модель, бак, витрата тощо)"""
     await verify_generator_facility_access(db, current_user, generator_id)
     if data.facility_id is not None:
         verify_facility_access(current_user, data.facility_id)

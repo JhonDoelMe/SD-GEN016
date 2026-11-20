@@ -766,7 +766,7 @@ window.updateFuelAssessmentBlock = function (liveTankOverride = null) {
 
   const rateEl = document.getElementById('fuelAssessRateBadge');
   if (rateEl) {
-    rateEl.innerText = `${currentGenerator.fuel_type || 'А-95'} • розхід ${nominal.toFixed(1).replace('.', ',')} л/год`;
+    rateEl.innerText = `${currentGenerator.fuel_type || 'А-95'} • витрата ${nominal.toFixed(1).replace('.', ',')} л/год`;
   }
 
   const inMeas = !!(window._measurementState && window._measurementState.is_measuring);
@@ -1240,10 +1240,10 @@ document.addEventListener('submit', async (e) => {
       const isSuspicious = (deltaH > 14.0) || (elapsedH > 0.02 && Math.abs(deltaH - elapsedH) > 2.0);
       if (isSuspicious) {
         const confirmed = confirm(
-          `⚠️ Запобіжник опечатки мотогодин!\n\n` +
+          `⚠️ Запобіжник помилки вводу мотогодин!\n\n` +
           `Напрацювання за введеним лічильником: ${deltaH.toFixed(2)} год.\n` +
           `Час роботи за таймером: ${elapsedH.toFixed(2)} год.\n\n` +
-          `Різниця суттєва. Можлива опечатка (зайва цифра або пропущена крапка)!\n` +
+          `Різниця суттєва. Можлива помилка вводу (зайва цифра або пропущена крапка)!\n` +
           `Ви впевнені, що показник ${endHours} правильний?`
         );
         if (!confirmed) {
@@ -1284,7 +1284,7 @@ document.addEventListener('submit', async (e) => {
         startCooldownTimer(60);
         const durText = res.duration_formatted || formatDuration(res.duration_seconds) || `${res.duration_hours} год`;
         const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l} л` : '-';
-        showToast(`Генератор зупинено! Відпрацьовано: ${durText}, розхід: ${fuelText}`, 'success');
+        showToast(`Генератор зупинено! Відпрацьовано: ${durText}, витрата: ${fuelText}`, 'success');
       }
       loadAllData();
     } catch (err) {

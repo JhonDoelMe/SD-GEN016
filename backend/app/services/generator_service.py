@@ -957,14 +957,14 @@ async def stop_generator(
             duration_hours = hours_consumed
             calculated_consumption = round(hours_consumed * generator.nominal_consumption_l_per_h, 2)
 
-            # Typo Guard ("Запобіжник опечатки мотогодин"):
+            # Typo Guard ("Запобіжник помилки вводу мотогодин"):
             elapsed_hours = calendar_duration_seconds / 3600.0
             is_suspicious = (hours_consumed > 14.0) or (calendar_duration_seconds >= 60 and abs(hours_consumed - elapsed_hours) > 2.0)
             if is_suspicious and not stop_data.force_confirm:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=(
-                        f"Запобіжник опечатки: напрацювання за лічильником ({hours_consumed:.2f} год) суттєво відрізняється "
+                        f"Запобіжник помилки вводу: напрацювання за лічильником ({hours_consumed:.2f} год) суттєво відрізняється "
                         f"від часу роботи за таймером ({elapsed_hours:.2f} год). "
                         f"Перевірте введені мотогодини або встановіть підтвердження."
                     )
@@ -1827,7 +1827,7 @@ async def add_manual_run(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    f"Запобіжник опечатки: напрацювання за лічильником ({hours_worked:.2f} год) суттєво розходиться "
+                    f"Запобіжник помилки вводу: напрацювання за лічильником ({hours_worked:.2f} год) суттєво розходиться "
                     f"із часовим інтервалом запису ({time_diff_hours:.2f} год). "
                     f"Перевірте мотогодини або підтвердіть дію."
                 )

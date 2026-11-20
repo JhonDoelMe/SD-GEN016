@@ -27,7 +27,7 @@ const AUDIT_ACTION_MAP_UA = {
   'GENERATOR_FUEL_RECONCILED': 'Звірка залишку пального в баку',
   'GENERATOR_SAFETY_STOP': 'Аварійна зупинка генератора (захист)',
   'GENERATOR_AUTO_STOP': 'Автоматична зупинка генератора (розклад)',
-  'FUEL_STOCK_ARCHIVED': 'Архівація складу ГСМ',
+  'FUEL_STOCK_ARCHIVED': 'Архівація складу ПММ',
   'BACKUP_CREATE': 'Створення резервної копії БД',
   'BACKUP_CREATED': 'Створення резервної копії БД',
   'BACKUP_RESTORE': 'Відновлення БД з резервної копії',
@@ -49,9 +49,9 @@ const AUDIT_ACTION_MAP_UA = {
   'FUEL_DISPENSE': 'Заправка генератора',
   'FUEL_TRANSFER_TO_TANK': 'Заправка бака зі складу',
   'FUEL_TRANSFERRED': 'Заправка бака зі складу',
-  'FUEL_STOCK_CREATED': 'Створення складу ГСМ',
-  'FUEL_STOCK_UPDATED': 'Оновлення складу ГСМ',
-  'FUEL_STOCK_DELETED': 'Видалення складу ГСМ',
+  'FUEL_STOCK_CREATED': 'Створення складу ПММ',
+  'FUEL_STOCK_UPDATED': 'Оновлення складу ПММ',
+  'FUEL_STOCK_DELETED': 'Видалення складу ПММ',
   'FUEL_PRICES_REFRESHED': 'Оновлення цін палива (АЗК)',
   'CANISTER_POOL_CREATED': 'Створення пулу каністр',
   'CANISTER_POOL_UPDATED': 'Оновлення пулу каністр',
@@ -164,7 +164,7 @@ const ADJUSTMENT_FIELD_MAP_UA = {
   'current_operating_hours': 'Мотогодини',
   'fuel_tank_level_l': 'Рівень у баку (л)',
   'status': 'Статус генератора',
-  'nominal_consumption_l_per_h': 'Нормативний розхід (л/год)',
+  'nominal_consumption_l_per_h': 'Нормативна витрата (л/год)',
   'current_balance_l': 'Залишок на складі (л)',
   'full_count': 'Повні каністри (шт.)',
   'empty_count': 'Порожні каністри (шт.)',
@@ -253,7 +253,7 @@ function formatAuditDetailsUa(detailsRaw, action) {
       model: 'Модель',
       manufacturer: 'Виробник',
       serial_number: 'Серійний номер',
-      nominal_consumption_l_per_h: 'Нормативний розхід',
+      nominal_consumption_l_per_h: 'Нормативна витрата',
       tank_capacity_l: 'Місткість бака',
       fuel_type: 'Тип палива',
       rated_power_kw: 'Потужність',
@@ -335,7 +335,7 @@ function formatAuditDetailsUa(detailsRaw, action) {
       smtp_fallback_from: 'Відправник резервного SMTP',
       default_facility_id: "Об'єкт за замовчуванням (ID)",
       default_generator_id: 'Генератор за замовчуванням (ID)',
-      default_fuel_stock_id: 'Склад ГСМ за замовчуванням (ID)',
+      default_fuel_stock_id: 'Склад ПММ за замовчуванням (ID)',
       apply_to_all_generators: 'Застосувати до всіх генераторів',
       login_max_attempts: 'Ліміт спроб входу',
       login_lockout_seconds: 'Час блокування (с)',
@@ -365,7 +365,7 @@ function formatAuditDetailsUa(detailsRaw, action) {
     const stocks = Array.isArray(details.fuel_stocks_deleted) ? details.fuel_stocks_deleted : [];
     const unbound = details.users_unbound_count || 0;
     if (gens.length > 0) extraInfo.push(`генераторів: ${gens.length}`);
-    if (stocks.length > 0) extraInfo.push(`складів ГСМ: ${stocks.length}`);
+    if (stocks.length > 0) extraInfo.push(`складів ПММ: ${stocks.length}`);
     if (unbound > 0) extraInfo.push(`відкріплено користувачів: ${unbound}`);
     const cascadeStr = extraInfo.length > 0 ? ` (каскадно видалено ${extraInfo.join(', ')})` : '';
     return `Видалено об'єкт '${facName}'${cascadeStr}`;
@@ -409,7 +409,7 @@ function formatAuditDetailsUa(detailsRaw, action) {
     return `${mType} | Роботи: ${details.work} | Вартість: ${details.cost || 0} грн`;
   }
 
-  // 9.5 Оновлення або видалення складу ГСМ (old / new diff objects)
+  // 9.5 Оновлення або видалення складу ПММ (old / new diff objects)
   if ((action === 'FUEL_STOCK_UPDATED' || action === 'FUEL_STOCK_DELETED' || action === 'FUEL_STOCK_CREATED') && (details.old || details.new || details.name)) {
     if (details.old && details.new && typeof details.old === 'object' && typeof details.new === 'object') {
       const fDiffs = [];
@@ -455,7 +455,7 @@ function formatAuditDetailsUa(detailsRaw, action) {
     liters: 'Літри', cost: 'Вартість', cost_total: 'Загальна сума', source: 'Джерело', updated_at: 'Оновлено',
     name: 'Назва', fuel_type: 'Тип палива', reason: 'Причина', field: 'Поле', old_value: 'Було', new_value: 'Стало',
     address: 'Адреса', default_fuel_provider: 'Мережа АЗК', cascade: 'Каскадне видалення',
-    generators_deleted: 'Видалені генератори', fuel_stocks_deleted: 'Видалені склади ГСМ',
+    generators_deleted: 'Видалені генератори', fuel_stocks_deleted: 'Видалені склади ПММ',
     users_unbound_count: 'Відкріплено користувачів', records_count: 'Кількість записів',
     files_count: 'Кількість файлів', notes: 'Примітки', message: 'Повідомлення',
     comment: 'Коментар', old_name: 'Попередня назва', new_name: 'Нова назва',
@@ -501,7 +501,7 @@ function formatAuditDetailsUa(detailsRaw, action) {
     start_balance_l: 'Початковий залишок (л)', commission_count: 'Членів комісії',
     commission_members: 'Склад комісії', statement_number: 'Номер відомості',
     measured_liters_before_cancel: 'Заміряно до скасування (л)',
-    receipts_count: 'Приходів палива (шт.)', transfers_count: 'Заправок (шт.)',
+    receipts_count: 'Надходжень палива (шт.)', transfers_count: 'Заправок (шт.)',
     history_preserved: 'Історію збережено', mode: 'Режим',
     generators_reset: 'Скинуто генераторів', deleted_count: 'Видалено записів',
     faults: 'Несправностей', runs: 'Запусків', transfers: 'Заправок',
@@ -746,7 +746,7 @@ window.openAdjustmentModal = async function() {
         <option value="current_operating_hours">Мотогодини</option>
         <option value="fuel_tank_level_l">Рівень у баку (л)</option>
         <option value="status">Статус генератора</option>
-        <option value="nominal_consumption_l_per_h">Нормативний розхід (л/год)</option>
+        <option value="nominal_consumption_l_per_h">Нормативна витрата (л/год)</option>
       `;
     }
   }
@@ -793,7 +793,7 @@ window.onAdjFacilityOrEntityChange = async function() {
   const fieldSelect = document.getElementById('adjField');
 
   if (entity === 'FuelStock') {
-    if (targetLabel) targetLabel.innerText = 'Цільовий склад ГСМ';
+    if (targetLabel) targetLabel.innerText = 'Цільовий склад ПММ';
     fieldSelect.innerHTML = `
       <option value="current_balance_l">Залишок на складі (л)</option>
       <option value="name">Назва складу</option>
@@ -812,7 +812,7 @@ window.onAdjFacilityOrEntityChange = async function() {
         targetSel.innerHTML = `<option value="" disabled selected>Немає складів на цьому об'єкті</option>`;
       }
     } catch (_) {
-      targetSel.innerHTML = `<option value="1" data-balance="0.0">Основний склад ГСМ (за замовчуванням)</option>`;
+      targetSel.innerHTML = `<option value="1" data-balance="0.0">Основний склад ПММ (за замовчуванням)</option>`;
     }
   } else if (entity === 'CanisterPool') {
     if (targetLabel) targetLabel.innerText = 'Цільовий пул каністр';
@@ -829,7 +829,7 @@ window.onAdjFacilityOrEntityChange = async function() {
       if (pools && pools.length > 0) {
         targetSel.innerHTML = pools.map((p) => `
           <option value="${p.id}" data-type="CanisterPool" data-full="${p.full_count}" data-empty="${p.empty_count}" data-away="${p.away_refill_count}" data-reserve="${p.reserve_liters}">
-            ${escapeHtml(p.name)} (${escapeHtml(p.fuel_type)}, ${Number(p.canister_volume_l).toFixed(0)} л) — повних: ${p.full_count}, пустих: ${p.empty_count}, АЗС: ${p.away_refill_count}, рез: ${Number(p.reserve_liters).toFixed(1)} л
+            ${escapeHtml(p.name)} (${escapeHtml(p.fuel_type)}, ${Number(p.canister_volume_l).toFixed(0)} л) — повних: ${p.full_count}, порожніх: ${p.empty_count}, АЗС: ${p.away_refill_count}, рез: ${Number(p.reserve_liters).toFixed(1)} л
           </option>
         `).join('');
       } else {
@@ -844,7 +844,7 @@ window.onAdjFacilityOrEntityChange = async function() {
       <option value="current_operating_hours">Мотогодини</option>
       <option value="fuel_tank_level_l">Рівень у баку (л)</option>
       <option value="status">Статус генератора</option>
-      <option value="nominal_consumption_l_per_h">Нормативний розхід (л/год)</option>
+      <option value="nominal_consumption_l_per_h">Нормативна витрата (л/год)</option>
     `;
     targetSel.innerHTML = '<option value="" disabled selected>Завантаження генераторів...</option>';
     try {
@@ -1156,9 +1156,9 @@ async function loadReport(isUserTriggered = false) {
         <div class="metric-sub">${escapeHtml(r.total_runs_count)} пусків (сер. ${escapeHtml(avgRunDurationDisplay)})</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">Розрахунковий розхід палива</div>
+        <div class="metric-label">Розрахункова витрата палива</div>
         <div class="metric-value">${escapeHtml(formatLiters(r.total_calculated_consumption_l))}</div>
-        <div class="metric-sub">Сер. розхід: ${escapeHtml(formatLiters(avgCons))}/год</div>
+        <div class="metric-sub">Сер. витрата: ${escapeHtml(formatLiters(avgCons))}/год</div>
       </div>
       <div class="metric-card" style="border-color: rgba(34, 197, 94, 0.4);">
         <div class="metric-label">Загальні витрати за період</div>
@@ -1232,7 +1232,7 @@ async function loadReport(isUserTriggered = false) {
         <tr>
           <td><b>${escapeHtml(row.created_at)}</b></td>
           <td style="color:#4ade80; font-weight:700;">${formatLiters(row.liters)}</td>
-          <td>${escapeHtml(row.stock_name || 'Склад ГСМ')}</td>
+          <td>${escapeHtml(row.stock_name || 'Склад ПММ')}</td>
           <td>${escapeHtml(row.generator_name || 'Генератор')}</td>
           <td>${escapeHtml(row.operator_name || '-')}</td>
         </tr>
@@ -1246,7 +1246,7 @@ async function loadReport(isUserTriggered = false) {
           <td>${formatPricePerLiter(row.price_per_liter)}</td>
           <td style="font-weight:600;">${formatMoney(row.cost_total)}</td>
           <td>${escapeHtml(row.supplier || '-')}</td>
-          <td>${escapeHtml(row.stock_name || 'Склад ГСМ')}</td>
+          <td>${escapeHtml(row.stock_name || 'Склад ПММ')}</td>
           <td>${escapeHtml(row.operator_name || '-')}</td>
         </tr>
       `, 7, 'Немає надходжень на склад за обраний період', 10);

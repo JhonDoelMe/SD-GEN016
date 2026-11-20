@@ -116,7 +116,7 @@ async def test_t03_concurrent_fuel_transfer_prevention(client: AsyncClient, supe
         json={'facility_id': fac_id, 'stock_id': stock_id, 'generator_id': gen_id, 'liters': 35.0}
     )
     assert tr2.status_code == 400
-    assert 'Недостатньо палива на складі ГСМ' in tr2.json()['detail']
+    assert 'Недостатньо палива на складі ПММ' in tr2.json()['detail']
 
     # Final balance check: exactly 15.0L left (50 - 35), generator tank level exactly 35.0L
     st_check = await client.get(f'/api/v1/fuel/stocks?facility_id={fac_id}', headers=superadmin_auth)
