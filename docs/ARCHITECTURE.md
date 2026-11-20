@@ -1,7 +1,7 @@
 # Архітектура системи: Service Desk Генератора (SD-GEN016)
 
-**Версія архітектури:** 5.7.25 (Zero-`.env` CMS Bootstrap, Encrypted DB Settings, Web Setup Wizard, Android `WorkManager` + SQLite & `FileDownloadPlugin`)  
-**Дата оновлення:** 16 листопада 2026 року  
+**Версія архітектури:** 5.9.1 (Cost-per-Hour Analytics, Multi-Facility Network Overview, UHMC Weather Push, Web-OTA, Zero-`.env` CMS Bootstrap)  
+**Дата оновлення:** 20 листопада 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 
 ---
@@ -19,9 +19,9 @@
 ```
 +------------------------------------------------------------------------------------+
 |                                    КЛІЄНТИ                                         |
-|  - ПК та смартфони (Chrome, Edge, Firefox, Safari) — Модульний UI (14 views/16 js) |
-|  - Встановлений автономний PWA додаток (Standalone PWA v5.7.8 + IndexedDB Offline + SW Auto-Reload) |
-|  - Нативний мобільний клієнт Android APK (Capacitor + SystemBars IME + Back Stack + FCM + OTA) |
+|  - ПК та смартфони (Chrome, Edge, Firefox, Safari) — Модульний UI (15 views/17 js) |
+|  - Встановлений автономний PWA додаток (Standalone PWA v5.9.1 + IndexedDB Offline + SW Auto-Reload) |
+|  - Нативний мобільний клієнт Android APK (Capacitor + SystemBars IME + Back Stack + FCM + Web-OTA) |
 |  - Live Browser Watcher + pushsubscriptionchange + Центр сповіщень («🔔»)                  |
 +------------------------------------------------------------------------------------+
                                           │
@@ -118,17 +118,17 @@
 16. **AuditLog (`audit_logs`)**, **SystemAdjustment (`system_adjustments`)**, **PasswordResetToken (`password_resets`)**, **RevokedToken (`revoked_tokens`)**, **AuthAttempt (`auth_attempts`)**: незмінні реєстри українізованого аудиту, коригувань, відновлення паролів та персистентної безпеки (`010`).
 17. **Міграції Alembic (`001`–`014`)**: включаючи `010_security_persistence`, `011_canister_pools`, `012_offline_idempotency`, `013_fuel_measurements` та `014_user_avatar` (`User.avatar_url` + `.webp` аватари).
 
-## 4. Фонові служби, інтеграції та оптимізації продуктивності (v5.7.8)
+## 4. Фонові служби, інтеграції та оптимізації продуктивності (v5.9.1)
 
 - **`settings_service.py` (парсери WOG/OKKO)**: асинхронні `httpx` парсери роздрібних цін мереж WOG та OKKO з автоматичним фоновим кешуванням (TTL 12 годин), ручним оновленням через API та аварійним Fallback-кешем.
 - **`backup_service.py` та `run_backup_scheduler`**: автобекапи із 15-хвилинним вікном (`0 <= diff_minutes <= 15`) та `backup_last_auto_run_date`, контрольними сумами `.sha256` та pre-restore snapshot.
 - **`operational_guard_service.py` (`run_operational_guard_loop`)**: контроль 12-годинного безперервного прогону, автостоп наприкінці зміни, 4-годинне пульс-нагадування, живий моніторинг низького палива й наближення ТО (із урахуванням режиму заміру палива).
 - **`yasno_service.py` та `run_yasno_checker_loop`**: графіки відключень YASNO (`15 хв` кеш), блок «Паливо в баку ↔ YASNO» у всіх станах і сповіщення за 20–35 хв.
 - **`alert_service.py` та `run_air_alert_checker_loop`**: паралельний dual-provider моніторинг (`alerts.in.ua` HTTP 304 + `api.ukrainealarm.com` 60s кеш), Worst-Case Hold, переходи `GREEN ↔ YELLOW/RED` кожні 45 с.
-- **`weather_service.py`**: поточна погода + 5-денний прогноз OpenWeatherMap (`20 хв` кеш) та проактивні заморозкові рекомендації для ДП.
+- **`weather_service.py` та `run_weather_warning_checker_loop`**: поточна погода + 5-денний прогноз OpenWeatherMap (`20 хв` кеш), проактивні заморозкові рекомендації для ДП, а також офіційні попередження про небезпечні погодні явища **УкрГМЦ / MeteoAlarm Ukraine** (`15 хв` кеш, без API-ключів) із фоновим циклом Push-сповіщень (`WEATHER_WARNING`, інтервал 900 с, поріг `yellow`/`orange`/`red` і подвійною 48-годинною дедуплікацією).
 - **`fcm_service.py`, `email_service.py`, `notification_service.py`**: мультиканальна доставка (Web Push VAPID, Firebase Cloud Messaging HTTP v1 для Android APK, фірмові HTML-листи з RFC 8058 1-click відпискою).
-- **Модульний фронтенд & Продуктивність (`frontend/views/`, `frontend/css/`, `frontend/js/`)**: 14 HTML-парціалів, 4 CSS-файли, 16 JS-модулів, динамічний `view-loader.js`, паралелізація API (`Promise.all`), пакетний cooldown (`get_generators_cooldown_map`), `bcrypt` у `asyncio.to_thread`, Gzip + кеш Nginx, пагінація по 10 записів.
-- **Експорт звітності та аудиту**: `GET /api/v1/reports/export-excel` формує **6-аркушеву книгу Excel** (вкл. «Заміри та інвентаризація»); `GET /api/v1/audit/export-excel` (SuperAdmin) формує окремий **2-аркушевий українізований звіт** («Журнал дій аудиту» та «Системні коригування»).
+- **Модульний фронтенд & Продуктивність (`frontend/views/`, `frontend/css/`, `frontend/js/`)**: 15 HTML-парціалів (включно з `network.html` — зведення «🏢 Об'єкти мережі»), 4 CSS-файли, 17 JS-модулів, динамічний `view-loader.js`, паралелізація API (`Promise.all`), пакетний cooldown (`get_generators_cooldown_map`), `bcrypt` у `asyncio.to_thread`, Gzip + кеш Nginx, пагінація по 10 записів.
+- **Експорт звітності та аудиту**: `GET /api/v1/reports/summary` і `GET /api/v1/reports/export-excel` включають економіку експлуатації (**вартість 1 мотогодини `₴/год`**) та формують **6-аркушеву книгу Excel** (вкл. «Заміри та інвентаризація»); `GET /api/v1/audit/export-excel` (SuperAdmin) формує окремий **2-аркушевий українізований звіт** («Журнал дій аудиту» та «Системні коригування»).
 
 ---
 

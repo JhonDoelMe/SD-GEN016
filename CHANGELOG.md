@@ -5,6 +5,16 @@
 
 ---
 
+## [v5.9.1] — 2026-11-20
+### 📘 Посібник користувача та повна синхронізація правил, політик і документації
+- **Новий посібник із налаштування та експлуатації ([`docs/USER_AND_ADMIN_MANUAL.md`](docs/USER_AND_ADMIN_MANUAL.md))**:
+  - Додано покроковий мануал для нових адміністраторів та операторів: від першого запуску (`/setup`), налаштування інтеграцій і об'єктів/генераторів/каністр до щоденного пуску/стопу, роботи офлайн, вимірювання витрат, зведення «🏢 Об'єкти мережі», звітності `₴/год`, Web-OTA та FAQ.
+- **Внутрішньосистемна інструкція та актуалізація політик у застосунку ([`modals-legal.html`](frontend/views/modals-legal.html), [`index.html`](frontend/index.html), [`view-loader.js`](frontend/js/view-loader.js))**:
+  - Додано модальне вікно **«📖 Короткий посібник користувача»** (`#modalUserManual`) з доступом із меню профілю та підвалу сайту/APK.
+  - Оновлено до редакції **`v5.9.1`** вбудовані модальні документи: Політику конфіденційності, Умови використання, Безпеку праці (вкл. реагування на небезпечні явища УкрГМЦ для відкритих майданчиків) та Управління даними й SLA.
+- **Повна синхронізація документації репозиторіїв**:
+  - Актуалізовано [`README.md`](README.md), [`AGENT.md`](AGENT.md), [`API_REFERENCE.md`](docs/API_REFERENCE.md), [`ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`BUSINESS_RULES.md`](docs/BUSINESS_RULES.md), [`RBAC_PERMISSIONS.md`](docs/RBAC_PERMISSIONS.md), [`PRIVACY_POLICY.md`](docs/PRIVACY_POLICY.md), [`TERMS_OF_SERVICE.md`](docs/TERMS_OF_SERVICE.md), [`OPERATIONAL_SAFETY_POLICY.md`](docs/OPERATIONAL_SAFETY_POLICY.md), [`DATA_GOVERNANCE_AND_AUDIT.md`](docs/DATA_GOVERNANCE_AND_AUDIT.md) та [`SLA_AND_SUPPORT.md`](docs/SLA_AND_SUPPORT.md).
+
 ## [v5.9.0] — 2026-11-20
 ### 📊 Вартість мотогодини, «🏢 Об'єкти мережі» та Push про погодні явища УкрГМЦ
 - **Фінансова аналітика у звітах ([`report.py` (схеми)](backend/app/schemas/report.py), [`report_service.py`](backend/app/services/report_service.py), [`audit-reports.js`](frontend/js/audit-reports.js))**:

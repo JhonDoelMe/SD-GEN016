@@ -4,7 +4,7 @@
 (function initViewLoader() {
   const selfSrc = document.currentScript?.src || '';
   const vMatch = selfSrc.match(/[?&]v=([^&]+)/);
-  const ASSET_VERSION = vMatch ? vMatch[1] : '5.9.0';
+  const ASSET_VERSION = vMatch ? vMatch[1] : '5.9.1';
 
   const loadedViews = new Set();
   const viewPromises = new Map();
@@ -90,6 +90,7 @@
     modalTermsOfService:     { view: 'modals-legal.html', scripts: [] },
     modalOperationalSafety:  { view: 'modals-legal.html', scripts: [] },
     modalDataGovernance:     { view: 'modals-legal.html', scripts: [] },
+    modalUserManual:         { view: 'modals-legal.html', scripts: [] },
   };
 
   function isNativeCapacitorApp() {

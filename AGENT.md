@@ -1,4 +1,4 @@
-# AGENT.md - Інструкція та Архітектура для ШІ-Агентів (SD-GEN016 v5.7.25)
+# AGENT.md - Інструкція та Архітектура для ШІ-Агентів (SD-GEN016 v5.9.1)
 
 ## 1. Загальний опис проєкту
 **SD-GEN016** — це спеціалізований експлуатаційний веб-додаток (Service Desk / Fleet Management) для оперативного обліку роботи бензинових та дизельних генераторів на об'єктах інфраструктури (АЗС, склади, офіси, медичні пункти, резиденції тощо).
@@ -95,6 +95,8 @@
     - У `APP_ENV=production` вимкнено `/docs`, `/redoc`, `/openapi.json`; у Nginx увімкнено `server_tokens off` та усунено дублювання CSP/безпекових заголовків; посилено SSRF, SHA-256 OTA-перевірки та санітизацію.
     - Додано допуск округлення `0.050 л` при дозаправці бака до повної ємності (`fuel_service.py`, `fuel.js`, `step="any" min="0.01"` у `#transLiters`), щоб залишок на кшталт `59.944 л` не блокував повне заповнення 60 л.
     - В Android APK: фірмові іконки й splash-екрани `SD-GEN016`, коректний IME відступ через `SystemBars` (`insetsHandling: "css"`), надійна ініціалізація `ota-updater.js` (`initOtaUpdater()`) і кнопка «🔄 Оновити застосунок» у меню/сервері, а також навігація системною кнопкою «Назад» (`OnBackPressedCallback` + `window.__handleNativeBack()` із закриттям меню/модалок, історією вкладок/підвкладок та подвійним натисканням для виходу).
+19. **Web-OTA, Індивідуальні інтервали ТО, УкрГМЦ Метеопопередження та Аналітика мережі (`v5.8.0`–`v5.9.1`):**
+    - Capacitor **Web-OTA** (`WebOtaManager.java`, `OtaUpdaterPlugin.java`) із видаленням `REQUEST_INSTALL_PACKAGES` для повної відповідності Google Play Protect; індивідуальний `maintenance_interval_hours` на кожен генератор; офіційний CAP фід УкрГМЦ/MeteoAlarm (`feeds.meteoalarm.org`, без ключів, 15 хв кеш) + фоновий воркер `run_weather_warning_checker_loop` (`WEATHER_WARNING` push із порогом `yellow|orange|red` і 48-годинною дедуплікацією); мульти-об'єктне зведення «🏢 Об'єкти мережі» (`GET /api/v1/facilities/overview`, `network.html`, `network.js`); собівартість 1 мотогодини (`cost_per_operating_hour_uah`) у звітах/Excel; вбудована модалка інструкції `#modalUserManual` та повний посібник [`docs/USER_AND_ADMIN_MANUAL.md`](docs/USER_AND_ADMIN_MANUAL.md).
 
 ---
 
@@ -102,7 +104,7 @@
 - **Бекенд:** Python 3.11+ / 3.14+, FastAPI, SQLAlchemy 2.0 (asyncio), SQLite (`aiosqlite`) / PostgreSQL (`asyncpg`), Alembic, OpenPyXL, fpdf2, Pillow (аватари `.webp`), Pydantic v2, PyJWT, bcrypt, pywebpush, firebase-admin (FCM HTTP v1), httpx, BeautifulSoup4 (WOG та OKKO парсери).
 - **Фронтенд:** Vanilla JavaScript (ES6+ модульна архітектура), HTML5 (`frontend/views/` парціали), CSS3 (`frontend/css/`, Flexbox/Grid, Safe Area Insets), IndexedDB (`offline-queue.js`), Service Worker PWA (`sw.js`).
 - **Мобільний клієнт та OTA:** Capacitor Android APK (`android/`) + окремий FastAPI сервіс оновлень (`ota-server/`).
-- **Тестування:** `pytest`, `pytest-asyncio`, `httpx` (набір із **203** тестів у `backend/tests/` + **5** тестів у `ota-server/tests/`).
+- **Тестування:** `pytest`, `pytest-asyncio`, `httpx` (набір із **238+** тестів у `backend/tests/` та `ota-server/tests/`).
 
 ---
 
@@ -120,12 +122,12 @@ SD-GEN016/
 │   │   ├── config.py         # Налаштування pydantic-settings (24 змінні)
 │   │   ├── database.py       # Асинхронний рушій БД та сесії
 │   │   └── main.py           # Точка входу FastAPI додатку + /api/health/* + /uploads/*
-│   └── tests/                # Асинхронні інтеграційні та модульні тести (203 тести)
+│   └── tests/                # Асинхронні інтеграційні та модульні тести (233 backend + 5 OTA)
 ├── frontend/
 │   ├── index.html            # Головна оболонка PWA (header, drawer, bottom nav, placeholder-и представлень)
-│   ├── views/                # 14 HTML-фрагментів (dashboard, runs, fuel, maintenance, faults, measurement, reports, audit, admin, modals-*)
+│   ├── views/                # 15 HTML-фрагментів (dashboard, network, runs, fuel, maintenance, faults, measurement, reports, audit, admin, modals-*)
 │   ├── css/                  # 4 модульні таблиці стилів (base.css, components.css, layout.css, views.css)
-│   ├── js/                   # 16 клієнтських модулів (view-loader, core, auth-nav, offline-queue, measurement, ota-updater, notifications, fuel, operations тощо)
+│   ├── js/                   # 17 клієнтських модулів (view-loader, core, auth-nav, network, offline-queue, measurement, ota-updater, notifications, fuel, operations тощо)
 │   ├── styles.css            # Агрегований/додатковий файл стилів
 │   ├── manifest.json         # PWA Web App Manifest
 │   ├── sw.js                 # Service Worker (офлайн кеш, WebPush, pushsubscriptionchange)
@@ -134,7 +136,8 @@ SD-GEN016/
 ├── android/                  # Capacitor проєкт нативного Android APK + Gradle конфігурація
 ├── docker/                   # Nginx конфіг та docker/firebase/ для FCM ключів
 ├── scripts/                  # Допоміжні скрипти (bump-version.js тощо)
-├── docs/                     # Повна документація проєкту (13 документів)
+├── docs/                     # Повна документація проєкту (14 документів)
+│   ├── USER_AND_ADMIN_MANUAL.md # Повний посібник із налаштування та щоденної експлуатації (для новачків та адмінів)
 │   ├── API_REFERENCE.md      # Повний опис ендпоінтів REST API
 │   ├── ARCHITECTURE.md       # Архітектура бекенду, фронтенду, APK/OTA та БД
 │   ├── BACKUP_AND_RESTORE.md # Політика резервного копіювання та DR
@@ -187,14 +190,14 @@ SD-GEN016/
 - При `remember_me=True` токен діє 60 днів, кукі `access_token` встановлюється з `max_age=5184000` (60 діб) та `samesite="lax"`, токен зберігається у `localStorage`.
 - При `remember_me=False` токен діє стандартний час (24 години), токен зберігається у `sessionStorage`.
 
-### 4.5. Тестування (229 тестів Backend + OTA)
+### 4.5. Тестування (238+ тестів Backend + OTA)
 - Завжди запускайте обидва набори тестів перед пушем:
   ```bash
   python -m pytest backend/tests ota-server/tests -q
   ```
-  Це гарантує проходження всього комплексу модульних та інтеграційних перевірок (229/229, 100% success rate).
+  Це гарантує проходження всього комплексу модульних та інтеграційних перевірок (100% success rate).
 
-### 4.6. Стандарти безпеки та цілісності даних (Security Hardening v5.7.25)
+### 4.6. Стандарти безпеки та цілісності даних (Security Hardening v5.9.1)
 - **CMS-конфігурація без `.env` & Zero-`.env` Bootstrap:** Секретні ключі інтеграцій (`OpenWeatherMap`, `alerts.in.ua`, `UkraineAlarm`, `Firebase JSON`) шифруються у БД `system_settings` через `Fernet enc:v1:` ([`backend/app/core/secrets.py`](backend/app/core/secrets.py)) та керуються у вкладці `🖥️ Сервер та Інтеграції` виключно роллю `SuperAdmin`. Автономний `data/instance.config.json` (`0o600`, [`backend/app/core/bootstrap.py`](backend/app/core/bootstrap.py)) забезпечує запуск без `.env`, а одноразовий Web Setup Wizard (`/setup`, [`backend/app/api/v1/setup.py`](backend/app/api/v1/setup.py)) незворотно блокується (`403`) після створення першого `SuperAdmin`.
 - **Офлайн-стійкість & чесний час подій:** Мутуючі операції генератора фіксують фактичний `event_timestamp` на момент кліку; у нативному Android APK черга синхронізується через `OfflineQueueStore` (SQLite) + `OfflineSyncWorker` (`WorkManager`) із токенами в `AndroidKeyStore` (`OfflineAuthVault`), а завантаження файлів йдуть через `FileDownloadPlugin` (`MediaStore`/SAF).
 - **Docker Infrastructure Hardening:** Контейнер запускається виключно від непривілейованого користувача `appuser` (UID:GID 10001:10001). Заборонено надавати право запису у системні каталоги коду бекенду (`/app`). Запуск сервера викорінюється через `exec uvicorn` для гарантованої обробки сигналів SIGTERM/SIGINT. Двоетапні хелсчеки: `/api/health/live` (`/health/live`, `/api/health/liveness`) та `/api/health/ready` (`/health/ready`, `/api/health/readiness`).

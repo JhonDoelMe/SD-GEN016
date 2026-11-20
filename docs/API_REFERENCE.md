@@ -1,7 +1,7 @@
 # Документація REST API (/api/v1 та /ota/)
 
-**Версія API:** 5.7.25 (Server & Integrations CMS API, Setup Wizard, Offline `event_timestamp`, Measurement, Canister Pools, Avatars, FCM Push, OTA)  
-**Дата набрання чинності:** 16 листопада 2026 року  
+**Версія API:** 5.9.1 (Operating Hour Cost, Network Overview, UHMC Weather Push, Web-OTA, Server & Integrations CMS API, Setup Wizard, Offline `event_timestamp`, Measurement, Canister Pools, Avatars, FCM Push)  
+**Дата набрання чинності:** 20 листопада 2026 року  
 
 Усі маршрути API згруповані за доменними модулями та захищені за допомогою JWT Bearer токенів або HTTP-only Cookie.
 Інтерактивна документація OpenAPI/Swagger доступна за адресою: `http://localhost:8000/docs` (або `http://localhost:8000/redoc`) у режимах розробки/тестування; у бойовому оточенні (`APP_ENV=production`) `/docs`, `/redoc` та `/openapi.json` вимкнені з міркувань безпеки (`v5.7.5`).
@@ -652,13 +652,14 @@
 
 ---
 
-## 16. Автономний OTA-сервіс оновлень Android APK (`/ota/`, `ota-server/`, v5.6.3)
+## 16. Автономний OTA-сервіс оновлень Android APK та Web-OTA (`/ota/`, `ota-server/`, v5.6.3–v5.8.0)
 
 Працює як окремий сервіс (порт `8090`, проксі Nginx `/ota/`):
 - **`GET /ota/health`**: Статус працездатності OTA-сервера.
-- **`GET /ota/api/latest`**: Метадані останнього релізу APK (`version_name`, `version_code`, `min_supported_code`, `force_update`, URL завантаження, changelog).
-- **`GET /ota/download/latest.apk`** та **`GET /ota/download/{version_code}.apk`**: Завантаження підписаного APK-файлу.
-- **`GET /ota/api/releases`**, **`POST /ota/api/releases`**, **`DELETE /ota/api/releases/{version_code}`**, **`PATCH /ota/api/policy`** *(Захищено `OTA_ADMIN_TOKEN`)*: Перегляд релізів, публікація нового APK, видалення релізу та керування політикою примусового оновлення (`force_update` / `min_supported_code`); вебконсоль доступна на `GET /ota/` та `GET /ota/admin`.
+- **`GET /ota/api/latest`**, **`GET /ota/download/latest.apk`**, **`GET /ota/download/{version_code}.apk`**: Метадані та завантаження підписаного APK-файлу.
+- **`GET /ota/api/releases`**, **`POST /ota/api/releases`**, **`DELETE /ota/api/releases/{version_code}`**, **`PATCH /ota/api/policy`** *(Захищено `OTA_ADMIN_TOKEN`)*: Керування APK-релізами та політикою примусового оновлення; вебконсоль доступна на `GET /ota/` та `GET /ota/admin`.
+- **`GET /ota/api/web/latest`**, **`GET /ota/download/web/latest.zip`**, **`GET /ota/download/web/{web_build}.zip`**: Метадані та завантаження легковагових Web-OTA бандлів інтерфейсу з SHA-256 верифікацією (`WebOtaManager.java`, без `REQUEST_INSTALL_PACKAGES`).
+- **`GET /ota/api/web/releases`**, **`POST /ota/api/web/releases`**, **`PATCH /ota/api/web/policy`**, **`DELETE /ota/api/web/releases/{web_build}`** *(Захищено `OTA_ADMIN_TOKEN`)*: Керування Web-OTA релізами.
 
 ---
 

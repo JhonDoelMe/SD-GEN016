@@ -1,8 +1,8 @@
 # Система ролей та дозволів (RBAC)
 **SD-GEN016: Role-Based Access Control Specification**
 
-**Версія документа:** 5.7.8 (Multi-site Scoped RBAC, Measurement Mode, Canister Pools, User Avatars & Offline Idempotency — 25 дозволів)  
-**Дата набрання чинності:** 14 листопада 2026 року  
+**Версія документа:** 5.9.1 (Multi-site Scoped RBAC, Network Overview, Measurement Mode, Canister Pools, User Avatars & Offline Idempotency — 25 дозволів)  
+**Дата набрання чинності:** 20 листопада 2026 року  
 **Розробник комплексу:** ТОВ «МАКСІ-ЮА» (MAXI-UA LLC)  
 
 У системі SD-GEN016 реалізовано сувору, багаторівневу модель керування доступом на основі ролей та дозволів (Role-Based Access Control). Усі операції перевіряються на рівні серверних залежностей FastAPI (`require_permission`, `verify_facility_access`, `verify_generator_facility_access`), унеможливлюючи несанкціонований доступ навіть за умови прямої маніпуляції API-запитами.
@@ -73,7 +73,7 @@
 
 ## 3. Повна матриця дозволів (Permissions Matrix — 25 дозволів у БД)
 
-> Примітка: маршрути `GET /api/v1/facilities` та `GET /api/v1/generator/list` перевіряють автентифікацію (`get_current_user`) та ізоляцію за об'єктом (`verify_facility_access`), а створення/редагування/видалення користувачів (`POST/PUT/DELETE /users`) і демо-тривога (`POST /facilities/demo-alert`) захищені жорсткою залежністю `get_current_superadmin`.
+> Примітка: маршрути `GET /api/v1/facilities`, `GET /api/v1/facilities/overview` та `GET /api/v1/generator/list` перевіряють автентифікацію (`get_current_user`) та ізоляцію за об'єктом (`verify_facility_access`), а створення/редагування/видалення користувачів (`POST/PUT/DELETE /users`) і демо-тривога (`POST /facilities/demo-alert`) захищені жорсткою залежністю `get_current_superadmin`. У клієнтському інтерфейсі вкладка «🏢 Об'єкти мережі» доступна ролям `superadmin`, `admin`, `viewer` або користувачам із кількома доступними локаціями.
 
 | Код дозволу (Permission Code) | Опис та сфера дії | superadmin | admin | operator | viewer |
 |---|---|:---:|:---:|:---:|:---:|
