@@ -134,6 +134,71 @@
     </div>
   </div>
 
+  <div id="modalEditReceipt" class="modal-overlay">
+    <div class="modal-content modal-compact" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3>✏️ Редагування надходження ПММ</h3>
+        <button class="close-btn" onclick="closeModal('modalEditReceipt')">&times;</button>
+      </div>
+      <form id="editReceiptForm">
+        <input type="hidden" id="editRecId">
+        <div id="editRecMetaBanner" style="margin-bottom: 0.75rem; padding: 0.55rem 0.75rem; border-radius: 0.5rem; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.28); font-size: 0.82rem; line-height: 1.45;"></div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="editRecProvider">Мережа АЗС *</label>
+            <select id="editRecProvider" required>
+              <option value="wog">АЗК WOG</option>
+              <option value="okko">АЗК OKKO</option>
+              <option value="other">Інша АЗС</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="editRecLiters">Кількість (л) *</label>
+            <input type="number" step="0.01" min="0.01" id="editRecLiters" required oninput="onEditReceiptLitersOrCostChange()">
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="editRecCostTotal">Загальна сума (грн) *</label>
+            <input type="number" step="0.01" min="0.01" id="editRecCostTotal" required oninput="onEditReceiptLitersOrCostChange()">
+          </div>
+          <div class="form-group">
+            <label for="editRecPricePerL">Ціна за літр (грн/л)</label>
+            <input type="number" step="0.01" min="0.01" id="editRecPricePerL" oninput="onEditReceiptPricePerLChange()">
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="editRecDriver">Хто доставив (ПІБ) *</label>
+            <input type="text" id="editRecDriver" required minlength="2">
+          </div>
+          <div class="form-group">
+            <label for="editRecNumber">Номер чека / накладної *</label>
+            <input type="text" id="editRecNumber" required minlength="1">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="editRecComment">Коментар</label>
+          <input type="text" id="editRecComment" placeholder="Додаткова інформація (необов'язково)">
+        </div>
+
+        <div class="form-group">
+          <label for="editRecReason">Причина редагування (для журналу аудиту) *</label>
+          <input type="text" id="editRecReason" required minlength="3" placeholder="напр. Помилково обрано мережу АЗС / уточнення суми за чеком">
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalEditReceipt')">Скасувати</button>
+          <button type="submit" id="btnSubmitEditReceipt" class="btn-primary">💾 Зберегти зміни</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="modalCanisterAction" class="modal-overlay">
     <div class="modal-content modal-compact" style="max-width: 460px;">
       <div class="modal-header">

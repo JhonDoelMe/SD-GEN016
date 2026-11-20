@@ -60,6 +60,18 @@ class FuelReceiptCreate(BaseModel):
     idempotency_key: Optional[str] = Field(None, max_length=64, description="Унікальний ключ ідемпотентності")
 
 
+class FuelReceiptUpdate(BaseModel):
+    fuel_provider: Optional[str] = Field(default=None, max_length=50, description="Мережа АЗС ('wog', 'okko', 'other')")
+    liters: Optional[float] = Field(default=None, gt=0, description="Оновлена кількість літрів")
+    cost_total: Optional[float] = Field(default=None, ge=0, description="Оновлена загальна сума (грн)")
+    price_per_liter: Optional[float] = Field(default=None, ge=0, description="Оновлена ціна за літр (грн)")
+    driver_name: Optional[str] = Field(default=None, min_length=2, max_length=255, description="ПІБ водія / постачальника")
+    receipt_number: Optional[str] = Field(default=None, min_length=1, max_length=100, description="Номер чека або накладної")
+    comment: Optional[str] = Field(default=None, max_length=1000, description="Коментар")
+    edit_reason: str = Field(..., min_length=3, max_length=500, description="Обов'язкова причина редагування для аудиту")
+    force_confirm: bool = Field(False, description="Підтвердження при значному об'ємі або нетиповій ціні")
+
+
 class FuelReceiptOut(BaseModel):
     id: int
     facility_id: Optional[int] = None

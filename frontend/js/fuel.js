@@ -306,7 +306,8 @@ const CANISTER_OP_UA = {
   'RETURN_EMPTY': { label: 'Повернуто порожні', color: '#94a3b8' },
   'CONSUME_TRANSFER': { label: 'Заправка бака', color: '#60a5fa' },
   'DIRECT_RECEIPT': { label: 'Пряме оприбутк.', color: '#4ade80' },
-  'POOL_ADJUSTMENT': { label: 'Коригування (Аудит)', color: '#c084fc' }
+  'POOL_ADJUSTMENT': { label: 'Коригування (Аудит)', color: '#c084fc' },
+  'RECEIPT_EDIT': { label: 'Правка надходження', color: '#f59e0b' }
 };
 
 async function loadFuelData() {
@@ -355,11 +356,29 @@ async function loadFuelData() {
     }
 
     // Receipts Table (Paginated: 10 per page)
+    window._fuelReceiptsMap = {};
+    (receipts || []).forEach((r) => { window._fuelReceiptsMap[r.id] = r; });
+    const canEditReceipts = typeof isAdmin === 'function' && isAdmin();
+
     window.renderPaginatedTable('fuelReceiptsTable', receipts, (r) => {
-      const isOkko = (r.fuel_provider || 'wog').toLowerCase() === 'okko';
-      const provBadge = isOkko
-        ? '<span class="badge" style="background: rgba(234, 179, 8, 0.2); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.4);">OKKO</span>'
-        : '<span class="badge" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4);">WOG</span>';
+      const provLow = (r.fuel_provider || 'wog').toLowerCase();
+      let provBadge = '<span class="badge" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4);">WOG</span>';
+      if (provLow === 'okko') {
+        provBadge = '<span class="badge" style="background: rgba(234, 179, 8, 0.2); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.4);">OKKO</span>';
+      } else if (provLow === 'other') {
+        provBadge = '<span class="badge" style="background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.4);">Інша АЗС</span>';
+      }
+
+      const iso = String(r.created_at || '');
+      const utcIso = /([zZ]|[+-]\d{2}:\d{2})$/.test(iso) ? iso : `${iso}Z`;
+      const ageHours = (Date.now() - Date.parse(utcIso)) / 3600000;
+      const hoursLeft = Math.max(0, 72 - ageHours);
+      const isEditable = canEditReceipts && Number.isFinite(ageHours) && ageHours >= 0 && ageHours <= 72;
+
+      const actionCell = isEditable
+        ? `<button type="button" class="btn-action" style="padding: 0.25rem 0.55rem; min-height: auto; font-size: 0.82rem;" onclick="openEditReceiptModal(${Number(r.id)})" title="Редагувати надходження (залишилось ~${Math.ceil(hoursLeft)} год)">✏️</button>`
+        : '<span style="color: var(--text-muted); font-size: 0.78rem;">—</span>';
+
       return `
         <tr>
           <td>${formatDateTime(r.created_at)}</td>
@@ -372,9 +391,10 @@ async function loadFuelData() {
           <td>${escapeHtml(r.driver_name)}</td>
           <td>${escapeHtml(r.receipt_number)}</td>
           <td>${escapeHtml(r.user_name || '-')}</td>
+          <td style="text-align: center;">${actionCell}</td>
         </tr>
       `;
-    }, 10, 'Надходжень не зареєстровано', 10);
+    }, 11, 'Надходжень не зареєстровано', 10);
 
     // Transfers Table (Paginated: 10 per page)
     window.renderPaginatedTable('fuelTransfersTable', transfers, (t) => {
@@ -1287,5 +1307,148 @@ window.checkTransferClientBounds = function() {
   }
   return true;
 };
+
+// ==========================================
+// ✏️ Edit Fuel Receipt (Admin / SuperAdmin, <= 72h)
+// ==========================================
+
+window.openEditReceiptModal = async function (receiptId) {
+  if (typeof isAdmin !== 'function' || !isAdmin()) {
+    showToast('Редагування надходжень дозволено лише Адміністратору або Головному адміністратору', 'warning');
+    return;
+  }
+  const rec = window._fuelReceiptsMap?.[receiptId];
+  if (!rec) {
+    showToast('Не вдалося знайти дані надходження. Оновіть сторінку.', 'error');
+    return;
+  }
+
+  await window.ViewLoader?.ensureModal('modalEditReceipt');
+
+  const iso = String(rec.created_at || '');
+  const utcIso = /([zZ]|[+-]\d{2}:\d{2})$/.test(iso) ? iso : `${iso}Z`;
+  const ageHours = (Date.now() - Date.parse(utcIso)) / 3600000;
+  const hoursLeft = Math.max(0, 72 - ageHours);
+
+  if (hoursLeft <= 0) {
+    showToast('Термін редагування (72 години з моменту створення) вже минув', 'warning');
+    return;
+  }
+
+  const setVal = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.value = v ?? '';
+  };
+
+  setVal('editRecId', rec.id);
+  setVal('editRecProvider', ['wog', 'okko', 'other'].includes((rec.fuel_provider || '').toLowerCase()) ? rec.fuel_provider.toLowerCase() : 'wog');
+  setVal('editRecLiters', Number(rec.liters || 0).toFixed(2));
+  setVal('editRecCostTotal', Number(rec.cost_total || 0).toFixed(2));
+  setVal('editRecPricePerL', Number(rec.price_per_liter || 0).toFixed(2));
+  setVal('editRecDriver', rec.driver_name || '');
+  setVal('editRecNumber', rec.receipt_number || '');
+  setVal('editRecComment', rec.comment || '');
+  setVal('editRecReason', '');
+
+  const banner = document.getElementById('editRecMetaBanner');
+  if (banner) {
+    const hrs = Math.floor(hoursLeft);
+    const mins = Math.max(0, Math.round((hoursLeft - hrs) * 60));
+    banner.innerHTML =
+      `📦 Склад: <b>${escapeHtml(rec.stock_name || 'Склад ПММ')}</b> (${escapeHtml(rec.fuel_type || '')}) • Створено: <b>${formatDateTime(rec.created_at)}</b><br>` +
+      `⏱️ Залишилось для редагування: <b>${hrs} год ${mins} хв</b> (ліміт 72 год). При зміні літрів баланс складу та пул каністр перерахуються автоматично.`;
+  }
+
+  await openModal('modalEditReceipt');
+};
+
+window.onEditReceiptLitersOrCostChange = function () {
+  const liters = parseFloat(document.getElementById('editRecLiters')?.value || '0');
+  const cost = parseFloat(document.getElementById('editRecCostTotal')?.value || '0');
+  const priceEl = document.getElementById('editRecPricePerL');
+  if (priceEl && liters > 0 && cost > 0) {
+    priceEl.value = (cost / liters).toFixed(2);
+  }
+};
+
+window.onEditReceiptPricePerLChange = function () {
+  const liters = parseFloat(document.getElementById('editRecLiters')?.value || '0');
+  const price = parseFloat(document.getElementById('editRecPricePerL')?.value || '0');
+  const costEl = document.getElementById('editRecCostTotal');
+  if (costEl && liters > 0 && price > 0) {
+    costEl.value = (liters * price).toFixed(2);
+  }
+};
+
+document.addEventListener('submit', async (e) => {
+  if (!e.target || e.target.id !== 'editReceiptForm') return;
+  e.preventDefault();
+
+  const recId = parseInt(document.getElementById('editRecId')?.value || '0', 10);
+  const provider = document.getElementById('editRecProvider')?.value || 'wog';
+  const liters = parseFloat(document.getElementById('editRecLiters')?.value || '0');
+  const costTotal = parseFloat(document.getElementById('editRecCostTotal')?.value || '0');
+  const driverName = (document.getElementById('editRecDriver')?.value || '').trim();
+  const receiptNumber = (document.getElementById('editRecNumber')?.value || '').trim();
+  const comment = (document.getElementById('editRecComment')?.value || '').trim();
+  const editReason = (document.getElementById('editRecReason')?.value || '').trim();
+  const submitBtn = document.getElementById('btnSubmitEditReceipt');
+
+  if (!recId || Number.isNaN(liters) || liters <= 0) {
+    showToast('Вкажіть коректну кількість літрів (> 0)', 'error');
+    return;
+  }
+  if (Number.isNaN(costTotal) || costTotal <= 0) {
+    showToast('Вкажіть коректну загальну суму чека (> 0)', 'error');
+    return;
+  }
+  if (editReason.length < 3) {
+    showToast('Вкажіть причину редагування (мінімум 3 символи)', 'warning');
+    return;
+  }
+
+  let forceConfirm = false;
+  if (liters > 1000.0) {
+    if (!confirm(`⚠️ Запобіжник об'єму палива!\n\nВказано ${liters.toFixed(1)} л (> 1000 л). Продовжити збереження?`)) return;
+    forceConfirm = true;
+  }
+  const pricePerL = costTotal / liters;
+  if (pricePerL < 15.0 || pricePerL > 250.0) {
+    if (!confirm(`⚠️ Запобіжник вартості палива!\n\nРозрахункова ціна: ${pricePerL.toFixed(2)} грн/л.\nЗберегти зміни?`)) return;
+    forceConfirm = true;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ Збереження...';
+  }
+
+  try {
+    await api(`/fuel/receipt/${recId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        fuel_provider: provider,
+        liters: liters,
+        cost_total: costTotal,
+        driver_name: driverName,
+        receipt_number: receiptNumber,
+        comment: comment,
+        edit_reason: editReason,
+        force_confirm: forceConfirm
+      })
+    });
+    closeModal('modalEditReceipt');
+    showToast('Надходження ПММ успішно оновлено!', 'success');
+    await Promise.allSettled([loadFuelData(), loadAllData()]);
+  } catch (err) {
+    showToast(`Помилка оновлення надходження: ${err.message}`, 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '💾 Зберегти зміни';
+    }
+  }
+});
+
 
 

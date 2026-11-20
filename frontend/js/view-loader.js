@@ -4,7 +4,7 @@
 (function initViewLoader() {
   const selfSrc = document.currentScript?.src || '';
   const vMatch = selfSrc.match(/[?&]v=([^&]+)/);
-  const ASSET_VERSION = vMatch ? vMatch[1] : '5.7.26';
+  const ASSET_VERSION = vMatch ? vMatch[1] : '5.7.27';
 
   const loadedViews = new Set();
   const viewPromises = new Map();
@@ -39,6 +39,7 @@
     modalStopGen:            { view: 'modals-ops.html', scripts: [] },
     modalManualRun:          { view: 'modals-ops.html', scripts: [] },
     modalReceipt:            { view: 'modals-ops.html', scripts: ['fuel.js'] },
+    modalEditReceipt:        { view: 'modals-ops.html', scripts: ['fuel.js'] },
     modalTransfer:           { view: 'modals-ops.html', scripts: ['fuel.js'] },
     modalCanisterAction:     { view: 'modals-ops.html', scripts: ['fuel.js'] },
     modalMaintenance:        { view: 'modals-ops.html', scripts: ['operations.js'] },

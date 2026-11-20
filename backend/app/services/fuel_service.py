@@ -528,7 +528,7 @@ async def add_fuel_receipt(
         else:
             from backend.app.services.settings_service import get_runtime_setting
             receipt_provider = str(get_runtime_setting("fuel_default_provider", "wog")).strip().lower()
-    if receipt_provider not in ("wog", "okko"):
+    if receipt_provider not in ("wog", "okko", "other"):
         receipt_provider = "wog"
 
     # FUEL-08: Розрахунок вартості через точну арифметику Decimal
@@ -662,6 +662,237 @@ async def add_fuel_receipt(
     )
     if _auto_commit:
         await db.commit()
+    return receipt
+
+
+FUEL_RECEIPT_EDIT_WINDOW_HOURS = 72
+
+
+async def update_fuel_receipt(
+    db: AsyncSession,
+    receipt_id: int,
+    update_data,
+    user_id: int,
+    ip_address: Optional[str] = None,
+) -> FuelReceipt:
+    """
+    Редагування надходження ПММ на склад (тільки Admin / SuperAdmin) у межах 72 годин від створення.
+    При зміні кількості літрів транзакційно перераховує залишок складу та автосинхронізує
+    пов'язані пули каністр (Варіант 1) із захистом від від'ємного залишку та переповнення пулу.
+    """
+    import datetime as _dt
+
+    rec_res = await db.execute(
+        select(FuelReceipt)
+        .options(selectinload(FuelReceipt.user), selectinload(FuelReceipt.stock).selectinload(FuelStock.facility))
+        .where(FuelReceipt.id == receipt_id)
+        .with_for_update()
+    )
+    receipt = rec_res.scalars().first()
+    if not receipt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Надходження ПММ з ID {receipt_id} не знайдено"
+        )
+
+    now_dt = utc_now()
+    age = now_dt - receipt.created_at
+    if age > _dt.timedelta(hours=FUEL_RECEIPT_EDIT_WINDOW_HOURS):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Редагування надходження ПММ дозволено лише протягом {FUEL_RECEIPT_EDIT_WINDOW_HOURS} годин з моменту створення."
+        )
+
+    stock_res = await db.execute(
+        select(FuelStock)
+        .options(selectinload(FuelStock.facility))
+        .where(FuelStock.id == receipt.stock_id)
+        .with_for_update()
+    )
+    stock = stock_res.scalars().first()
+    if not stock:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пов'язаний склад ПММ не знайдено"
+        )
+
+    effective_facility_id = receipt.facility_id or stock.facility_id
+    if effective_facility_id:
+        from backend.app.services.measurement_service import ensure_facility_not_locked_by_measurement
+        await ensure_facility_not_locked_by_measurement(db, effective_facility_id, "fuel_receipt")
+
+    old_liters = to_liters(receipt.liters)
+    old_cost_total = to_money(receipt.cost_total)
+    old_price_per_l = to_money(receipt.price_per_liter)
+    old_provider = (getattr(receipt, "fuel_provider", "wog") or "wog").strip().lower()
+
+    before_snapshot = {
+        "fuel_provider": old_provider,
+        "liters": float(old_liters),
+        "cost_total": float(old_cost_total),
+        "price_per_liter": float(old_price_per_l),
+        "driver_name": receipt.driver_name,
+        "receipt_number": receipt.receipt_number,
+        "comment": receipt.comment,
+    }
+
+    new_provider = old_provider
+    if update_data.fuel_provider is not None:
+        cand_prov = update_data.fuel_provider.strip().lower()
+        if cand_prov not in ("wog", "okko", "other"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Некоректна мережа АЗС (дозволено: wog, okko, other)"
+            )
+        new_provider = cand_prov
+
+    new_liters = to_liters(update_data.liters) if update_data.liters is not None else old_liters
+    if new_liters <= Decimal("0.000"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Кількість літрів повинна бути більшою за 0"
+        )
+
+    if update_data.cost_total is not None and update_data.cost_total > 0:
+        new_cost_total = to_money(update_data.cost_total)
+        new_price_per_l = (new_cost_total / new_liters).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    elif update_data.price_per_liter is not None and update_data.price_per_liter > 0:
+        new_price_per_l = to_money(update_data.price_per_liter)
+        new_cost_total = (new_liters * new_price_per_l).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    elif new_liters != old_liters:
+        new_price_per_l = old_price_per_l
+        new_cost_total = (new_liters * new_price_per_l).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    else:
+        new_cost_total = old_cost_total
+        new_price_per_l = old_price_per_l
+
+    # Перевірка запобіжників об'єму та вартості (аналогічно add_fuel_receipt)
+    from backend.app.services.settings_service import get_runtime_setting
+    max_liters_warn = to_liters(get_runtime_setting("fuel_receipt_max_liters_warning", 1000.0))
+    min_price_warn = to_money(get_runtime_setting("fuel_receipt_min_price", 15.0))
+    max_price_warn = to_money(get_runtime_setting("fuel_receipt_max_price", 250.0))
+
+    is_volume_breach = new_liters > max_liters_warn
+    is_price_breach = new_price_per_l < min_price_warn or new_price_per_l > max_price_warn
+    if (is_volume_breach or is_price_breach) and not update_data.force_confirm:
+        if is_volume_breach:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Запобіжник об'єму палива: вказано значний об'єм ({float(new_liters):.1f} л > {float(max_liters_warn):.0f} л). "
+                    f"Перевірте введені дані або підтвердіть дію."
+                )
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Запобіжник вартості палива: розрахункова ціна ({float(new_price_per_l):.2f} грн/л) виходить за межі "
+                f"очікуваного діапазону ({float(min_price_warn):.0f} - {float(max_price_warn):.0f} грн/л). "
+                f"Перевірте суму чека або підтвердіть дію."
+            )
+        )
+
+    delta_liters = new_liters - old_liters
+    stock_before = to_liters(stock.current_balance_l)
+    stock_after = stock_before + delta_liters
+    reason_clean = update_data.edit_reason.strip()
+
+    if delta_liters != Decimal("0.000"):
+        if stock_after < Decimal("0.000"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Неможливо зменшити надходження на {float(abs(delta_liters)):.1f} л: "
+                    f"поточний залишок складу ПММ ({float(stock_before):.1f} л) стане від'ємним "
+                    f"(частину палива вже витрачено)."
+                )
+            )
+
+        from backend.app.models.canister import CanisterPool
+        from backend.app.services.canister_service import (
+            adjust_stock_canisters_to_balance,
+            compute_stock_canister_breakdown,
+        )
+
+        pools = list(
+            (
+                await db.execute(
+                    select(CanisterPool)
+                    .where(CanisterPool.stock_id == stock.id, CanisterPool.is_active == True)  # noqa: E712
+                    .order_by(CanisterPool.id.asc())
+                    .with_for_update()
+                )
+            ).scalars().all()
+        )
+        if pools:
+            _, max_capacity = compute_stock_canister_breakdown(pools, stock_after)
+            if stock_after > max_capacity:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Неможливо збільшити надходження на {float(delta_liters):.1f} л: "
+                        f"новий залишок складу ({float(stock_after):.1f} л) перевищує сумарну місткість "
+                        f"прив'язаного пулу каністр ({float(max_capacity):.1f} л)."
+                    )
+                )
+            await adjust_stock_canisters_to_balance(
+                db=db,
+                stock=stock,
+                target_balance=stock_after,
+                user_id=user_id,
+                reason=reason_clean,
+                operation="RECEIPT_EDIT",
+                comment_prefix=f"Правка надходження #{receipt.id}",
+            )
+            stock_after = to_liters(stock.current_balance_l)
+        else:
+            stock.current_balance_l = stock_after
+            stock.updated_at = now_dt
+
+    receipt.fuel_provider = new_provider
+    receipt.liters = new_liters
+    receipt.cost_total = new_cost_total
+    receipt.price_per_liter = new_price_per_l
+    if update_data.driver_name is not None:
+        receipt.driver_name = update_data.driver_name.strip()
+    if update_data.receipt_number is not None:
+        receipt.receipt_number = update_data.receipt_number.strip()
+    if update_data.comment is not None:
+        receipt.comment = update_data.comment.strip() or None
+
+    after_snapshot = {
+        "fuel_provider": receipt.fuel_provider,
+        "liters": float(receipt.liters),
+        "cost_total": float(receipt.cost_total),
+        "price_per_liter": float(receipt.price_per_liter),
+        "driver_name": receipt.driver_name,
+        "receipt_number": receipt.receipt_number,
+        "comment": receipt.comment,
+    }
+
+    await log_audit(
+        db=db,
+        action="FUEL_RECEIPT_UPDATED",
+        entity_type="FuelReceipt",
+        entity_id=str(receipt.id),
+        user_id=user_id,
+        details={
+            "receipt_id": receipt.id,
+            "facility_id": effective_facility_id,
+            "stock_id": stock.id,
+            "stock_name": stock.name,
+            "delta_liters": float(delta_liters),
+            "stock_before": float(stock_before),
+            "stock_after": float(stock_after),
+            "reason": reason_clean,
+            "before": before_snapshot,
+            "after": after_snapshot,
+            "is_override": bool(update_data.force_confirm),
+        },
+        ip_address=ip_address,
+    )
+
+    await db.commit()
     return receipt
 
 

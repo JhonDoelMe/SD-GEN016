@@ -11,7 +11,7 @@ from backend.app.models.canister import CanisterTransaction
 from backend.app.models.generator import Generator
 from backend.app.models.facility import Facility
 from backend.app.schemas.fuel import (
-    FuelStockCreate, FuelStockUpdate, FuelStockOut, FuelReceiptCreate, FuelReceiptOut,
+    FuelStockCreate, FuelStockUpdate, FuelStockOut, FuelReceiptCreate, FuelReceiptUpdate, FuelReceiptOut,
     FuelTransferCreate, FuelTransferOut, FuelBalancesSummary,
     CanisterPoolCreate, CanisterPoolUpdate, CanisterPoolOut,
     CanisterDispatchRequest, CanisterReceiveRequest, CanisterReturnEmptyRequest,
@@ -19,6 +19,7 @@ from backend.app.schemas.fuel import (
 )
 from backend.app.api.deps import (
     get_current_user,
+    get_current_admin,
     require_permission,
     get_client_ip,
     is_user_admin_or_super,
@@ -28,7 +29,7 @@ from backend.app.api.deps import (
 from backend.app.services.fuel_service import (
     get_or_create_default_stock, list_fuel_stocks, create_fuel_stock,
     update_fuel_stock, delete_fuel_stock,
-    add_fuel_receipt, transfer_fuel_to_tank, get_fuel_balances_summary
+    add_fuel_receipt, update_fuel_receipt, transfer_fuel_to_tank, get_fuel_balances_summary
 )
 from backend.app.services.canister_service import (
     get_stock_canister_aggregates,
@@ -271,6 +272,50 @@ async def list_receipts(
         )
         for r in receipts
     ]
+
+
+@router.put("/receipt/{receipt_id}", response_model=FuelReceiptOut)
+async def edit_receipt(
+    receipt_id: int,
+    payload: FuelReceiptUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin),
+):
+    """Редагування надходження ПММ (тільки Admin / SuperAdmin, не пізніше 72 годин від створення)."""
+    receipt = await update_fuel_receipt(
+        db=db,
+        receipt_id=receipt_id,
+        update_data=payload,
+        user_id=current_user.id,
+        ip_address=get_client_ip(request),
+    )
+    stock = await db.get(FuelStock, receipt.stock_id)
+    fac_name = None
+    if stock and stock.facility_id:
+        fac = await db.get(Facility, stock.facility_id)
+        if fac:
+            fac_name = fac.name
+    rec_user = await db.get(User, receipt.user_id)
+    return FuelReceiptOut(
+        id=receipt.id,
+        facility_id=receipt.facility_id or (stock.facility_id if stock else None),
+        facility_name=fac_name,
+        stock_id=receipt.stock_id,
+        stock_name=stock.name if stock else "Склад ПММ",
+        user_id=receipt.user_id,
+        user_name=(rec_user.full_name or rec_user.login) if rec_user else None,
+        fuel_provider=getattr(receipt, "fuel_provider", "wog") or "wog",
+        fuel_type=receipt.fuel_type,
+        liters=float(receipt.liters),
+        cost_total=float(receipt.cost_total),
+        price_per_liter=float(receipt.price_per_liter),
+        driver_name=receipt.driver_name,
+        receipt_number=receipt.receipt_number,
+        comment=receipt.comment,
+        idempotency_key=receipt.idempotency_key,
+        created_at=receipt.created_at,
+    )
 
 
 @router.post("/transfer", response_model=FuelTransferOut, status_code=status.HTTP_201_CREATED)
