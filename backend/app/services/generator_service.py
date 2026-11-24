@@ -1073,7 +1073,9 @@ async def stop_generator(
         "calculated_consumption_l": calculated_consumption,
         "end_fuel_level_l": generator.fuel_tank_level_l,
         "fuel_shortage_l": fuel_shortage_l,
-        "fuel_discrepancy": (fuel_shortage_l > 0),
+        "fuel_discrepancy": (fuel_shortage_l > 0) or (
+            abs(float(fuel_res.get("end_fuel_l", 0.0)) - float(fuel_res.get("expected_end_fuel_l", 0.0))) >= 0.01
+        ),
         "run_id": run.id,
         "status_after": generator.status,
         "is_warmup": was_warmup,

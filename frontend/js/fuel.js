@@ -174,6 +174,12 @@ window.onReceiptStockChange = function () {
 
 async function setupReceiptModal() {
   try {
+    ['recLiters', 'recCostTotal', 'recDriver', 'recNumber', 'recComment'].forEach((elId) => {
+      const el = document.getElementById(elId);
+      if (el) el.value = '';
+    });
+    const canCountEl = document.getElementById('recCanisterCount');
+    if (canCountEl) canCountEl.value = '1';
     const [facilities] = await Promise.all([
       typeof window.getFacilitiesCached === 'function' ? window.getFacilitiesCached() : api('/facilities'),
       fetchFuelPricesCache()
@@ -251,6 +257,10 @@ async function setupNewStockModal() {
 
 async function setupTransferModal() {
   try {
+    const litersEl = document.getElementById('transLiters');
+    const commentEl = document.getElementById('transComment');
+    if (litersEl) litersEl.value = '';
+    if (commentEl) commentEl.value = '';
     const stockSel = document.getElementById('transStock');
     const genSel = document.getElementById('transGenerator');
     const qFac = currentFacilityId ? `?facility_id=${encodeURIComponent(currentFacilityId)}` : '';
@@ -715,6 +725,7 @@ document.addEventListener('submit', async (e) => {
         generator_id: body.generator_id,
       }
     });
+    e.target.reset();
     closeModal('modalTransfer');
     if (savedTr && savedTr._queuedOffline) {
       showToast(`📥 Заправку бака (+${Number(body.liters).toFixed(1)} л) збережено в офлайн-чергу`, 'warning');

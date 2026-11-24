@@ -264,7 +264,7 @@ async def test_t05_t06_t07_t08_t09_manual_runs_overlap_and_chronology(
 # =====================================================================
 @pytest.mark.asyncio
 async def test_t10_t11_t12_t23_fuel_bounds_rollback_and_tank_capacity(
-    client, superadmin_auth, operator_auth
+    client, superadmin_auth, operator_auth, db_session
 ):
     gen = await _create_test_generator(
         client, superadmin_auth,
@@ -348,6 +348,17 @@ async def test_t10_t11_t12_t23_fuel_bounds_rollback_and_tank_capacity(
     )
     assert stop_reconciled.status_code == 200
     assert stop_reconciled.json()["end_fuel_level_l"] == 1.5
+
+    import json
+    stop_audit = (
+        await db_session.execute(
+            select(AuditLog)
+            .where(AuditLog.action == "GENERATOR_STOP", AuditLog.entity_id == str(gen_id))
+            .order_by(AuditLog.id.desc())
+        )
+    ).scalars().first()
+    assert stop_audit is not None
+    assert json.loads(stop_audit.details_json)["fuel_discrepancy"] is True
 
 
 # =====================================================================

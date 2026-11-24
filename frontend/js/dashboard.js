@@ -949,8 +949,10 @@ document.addEventListener('click', async (e) => {
   const btn = e.target.closest('#mainActionBtn');
   if (!btn) return;
   if (!currentGenerator) return;
-  if (isViewerOnly() || !hasPermission('generator:start')) {
-    showToast('Керування генератором недоступне для ролі Спостерігач', 'warning');
+  const isStopping = currentGenerator.status === 'RUNNING';
+  const requiredPerm = isStopping ? 'generator:stop' : 'generator:start';
+  if (isViewerOnly() || !hasPermission(requiredPerm)) {
+    showToast('Керування генератором недоступне для поточної ролі', 'warning');
     return;
   }
 
@@ -961,15 +963,28 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
-  if (currentGenerator.status === 'RUNNING') {
+  if (isStopping) {
     if (window.ViewLoader?.ensureModal) {
       await window.ViewLoader.ensureModal('modalStopGen');
     }
+    const stopForm = document.getElementById('stopGenForm');
+    if (stopForm) stopForm.reset();
+
     const endHoursInput = document.getElementById('stopEndHours');
     if (endHoursInput) {
       endHoursInput.value = '';
       endHoursInput.min = currentGenerator.current_operating_hours;
     }
+    const endFuelInput = document.getElementById('stopEndFuel');
+    if (endFuelInput) {
+      endFuelInput.value = '';
+      endFuelInput.min = '0';
+      if (currentGenerator.tank_capacity_l != null) {
+        endFuelInput.max = String(currentGenerator.tank_capacity_l);
+      }
+    }
+    const stopNoteInput = document.getElementById('stopNote');
+    if (stopNoteInput) stopNoteInput.value = '';
 
     if (activeRun && activeRun.start_time) {
       const startDisp = document.getElementById('stopStartTimeDisplay');
@@ -1253,6 +1268,30 @@ document.addEventListener('submit', async (e) => {
       }
     }
 
+    if (endFuel !== null && currentGenerator) {
+      const startTank = Number(currentGenerator.fuel_tank_level_l ?? 0);
+      const rate = Number(currentGenerator.nominal_consumption_l_per_h || 2.2);
+      let elapsedH = 0;
+      if (endHours !== null) {
+        const startH = activeRun?.start_hours ?? currentGenerator.current_operating_hours ?? 0;
+        elapsedH = Math.max(0, endHours - startH);
+      } else if (activeRun?.start_time) {
+        elapsedH = Math.max(0, (Date.now() - new Date(activeRun.start_time).getTime()) / 3600000);
+      }
+      const expectedAfter = Math.max(0, startTank - (elapsedH * rate));
+      if (Math.abs(endFuel - expectedAfter) > 10.0) {
+        const confirmedFuel = confirm(
+          `⚠️ Розбіжність залишку пального в баку!\n\n` +
+          `Ви вказали фактичний залишок: ${endFuel.toFixed(1)} л.\n` +
+          `Розрахунковий залишок після сеансу: ~${expectedAfter.toFixed(1)} л.\n\n` +
+          `Підтвердити перезапис залишку бака до ${endFuel.toFixed(1)} л?`
+        );
+        if (!confirmedFuel) {
+          return;
+        }
+      }
+    }
+
     if (submitBtn) {
       submitBtn.disabled = true;
       submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Зупинка...';
@@ -1276,6 +1315,7 @@ document.addEventListener('submit', async (e) => {
           generator_id: currentGeneratorId,
         }
       });
+      form.reset();
       closeModal('modalStopGen');
       stopRunStopwatch();
       if (res && res._queuedOffline) {
@@ -1292,7 +1332,7 @@ document.addEventListener('submit', async (e) => {
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.innerHTML = 'Зупинити генератор';
+        submitBtn.innerHTML = 'Підтвердити зупинку';
       }
     }
   }
