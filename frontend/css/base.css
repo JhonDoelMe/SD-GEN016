@@ -447,7 +447,8 @@ input[type="checkbox"], input[type="radio"] {
   padding: 0;
 }
 
-.btn-primary {
+.btn-primary,
+.btn-danger {
   width: 100%;
   min-height: var(--h-control);
   height: auto;
@@ -472,15 +473,23 @@ input[type="checkbox"], input[type="radio"] {
   box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
 }
 
-.btn-primary:hover {
+.btn-danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.btn-primary:hover,
+.btn-danger:hover {
   filter: brightness(1.1);
 }
 
-.btn-primary:active {
+.btn-primary:active,
+.btn-danger:active {
   transform: scale(0.99);
 }
 
-.btn-primary:disabled {
+.btn-primary:disabled,
+.btn-danger:disabled {
   opacity: 0.45;
   cursor: not-allowed;
   filter: grayscale(0.25);

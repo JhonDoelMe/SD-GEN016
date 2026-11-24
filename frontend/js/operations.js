@@ -270,6 +270,7 @@ document.addEventListener('submit', async (e) => {
           generator_id: currentGeneratorId,
         }
       });
+      form.reset();
       closeModal('modalFault');
       showToast(res?._queuedOffline ? '📥 Заявку про несправність збережено в офлайн-чергу' : 'Заявку про несправність створено!', res?._queuedOffline ? 'warning' : 'success');
       loadFaultsData();

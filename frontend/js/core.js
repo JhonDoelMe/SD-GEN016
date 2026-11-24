@@ -824,6 +824,10 @@ window.openModal = async function (id, options = {}) {
   if (id === 'modalReceipt' && typeof setupReceiptModal === 'function') await setupReceiptModal();
   if (id === 'modalTransfer' && typeof setupTransferModal === 'function') await setupTransferModal();
   if (id === 'modalNewStock' && typeof setupNewStockModal === 'function') await setupNewStockModal();
+  if (id === 'modalFault') {
+    const faultForm = document.getElementById('faultForm');
+    if (faultForm) faultForm.reset();
+  }
   if (modal) {
     modal.style.display = 'flex';
     window._openModalStack = (window._openModalStack || []).filter((mId) => mId !== id);
