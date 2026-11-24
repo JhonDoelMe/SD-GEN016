@@ -919,7 +919,8 @@ async def generate_operational_report(
     ).where(
         GeneratorRun.start_time >= start_date,
         GeneratorRun.start_time <= end_date,
-        GeneratorRun.status == "COMPLETED"
+        GeneratorRun.status == "COMPLETED",
+        GeneratorRun.is_test == False
     )
     if generator_id or generator:
         target_gid = generator.id if generator else generator_id
@@ -1055,7 +1056,8 @@ async def generate_operational_report(
     runs_detail_q = select(GeneratorRun).options(selectinload(GeneratorRun.user)).where(
         GeneratorRun.start_time >= start_date,
         GeneratorRun.start_time <= end_date,
-        GeneratorRun.status == "COMPLETED"
+        GeneratorRun.status == "COMPLETED",
+        GeneratorRun.is_test == False
     )
     if generator_id or generator:
         target_gid = generator.id if generator else generator_id
@@ -1385,10 +1387,12 @@ async def generate_excel_report(
     current_hours = primary_gen.current_operating_hours if primary_gen else 0.0
     hours_remaining = round(next_due_hours - current_hours, 1)
 
-    # 4. Fetch Generator Runs
+    # 4. Fetch Generator Runs (excluding TEST runs)
     runs_q = select(GeneratorRun).options(selectinload(GeneratorRun.user)).where(
         GeneratorRun.start_time >= start_date,
-        GeneratorRun.start_time <= end_date
+        GeneratorRun.start_time <= end_date,
+        GeneratorRun.is_test == False,
+        GeneratorRun.status != "TEST"
     )
     if generator:
         runs_q = runs_q.where(GeneratorRun.generator_id == generator.id)

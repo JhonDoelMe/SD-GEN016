@@ -1130,6 +1130,7 @@ async function loadAdminSystemSettings() {
     if (document.getElementById('sysApplyAllGens')) document.getElementById('sysApplyAllGens').checked = s.apply_to_all_generators !== false;
     if (document.getElementById('sysWarmupReminderEnabled')) document.getElementById('sysWarmupReminderEnabled').checked = s.warmup_reminder_enabled !== false;
     if (document.getElementById('sysWarmupIdleDays')) document.getElementById('sysWarmupIdleDays').value = s.warmup_idle_days ?? 14;
+    if (document.getElementById('sysTestRunThresholdSec')) document.getElementById('sysTestRunThresholdSec').value = s.test_run_threshold_seconds ?? 120;
     if (document.getElementById('sysWarmupDurationMinutes')) document.getElementById('sysWarmupDurationMinutes').value = s.warmup_duration_minutes ?? 15;
     if (document.getElementById('sysWarmupColdTempC')) document.getElementById('sysWarmupColdTempC').value = s.warmup_cold_temp_c ?? -10;
     if (document.getElementById('sysWarmupTriggerMode')) document.getElementById('sysWarmupTriggerMode').value = s.warmup_trigger_mode || 'any';
@@ -1512,6 +1513,7 @@ window.saveSystemSection = async function (sectionKey, btnEl = null) {
       apply_to_all_generators: applyAll,
       warmup_reminder_enabled: document.getElementById('sysWarmupReminderEnabled')?.checked ?? true,
       warmup_idle_days: Math.max(1, Math.min(90, parseInt(document.getElementById('sysWarmupIdleDays')?.value || '14', 10) || 14)),
+      test_run_threshold_seconds: Math.max(0, Math.min(3600, parseInt(document.getElementById('sysTestRunThresholdSec')?.value ?? '120', 10) || 0)),
       warmup_duration_minutes: Math.max(5, Math.min(60, parseInt(document.getElementById('sysWarmupDurationMinutes')?.value || '15', 10) || 15)),
       warmup_cold_temp_c: Number.isFinite(coldRaw) ? Math.max(-40, Math.min(10, coldRaw)) : -10,
       warmup_trigger_mode: document.getElementById('sysWarmupTriggerMode')?.value || 'any'

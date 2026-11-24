@@ -645,7 +645,7 @@
               <input type="number" min="5" max="60" step="1" id="sysWarmupDurationMinutes" value="15">
             </div>
           </div>
-          <div class="form-row-2">
+          <div class="form-row-2" style="margin-bottom: 0.75rem;">
             <div class="form-group" style="margin-bottom: 0;">
               <label>Поріг морозу для прогріву (°C)</label>
               <input type="number" min="-40" max="10" step="1" id="sysWarmupColdTempC" value="-10">
@@ -658,6 +658,13 @@
                 <option value="cold">Лише низька температура</option>
                 <option value="both">Обидві умови разом</option>
               </select>
+            </div>
+          </div>
+          <div class="form-row-2">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>🧪 Поріг авто-позначки тестового пуску (сек)</label>
+              <input type="number" min="0" max="3600" step="10" id="sysTestRunThresholdSec" value="120">
+              <small style="color: var(--text-muted);">Пуски коротші за цей поріг (0 = вимкн.) автоматично пропонуються як тестові при зупинці</small>
             </div>
           </div>
 

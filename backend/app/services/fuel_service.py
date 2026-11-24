@@ -1246,10 +1246,10 @@ async def get_fuel_balances_summary(
             tr_query = tr_query.where(FuelTransfer.facility_id == facility_id)
         total_transferred_l = (await db.execute(tr_query)).scalar_one()
 
-        # 5. Агрегат розрахункового споживання мотогодинами
+        # 5. Агрегат розрахункового споживання мотогодинами (без тестових пусків)
         runs_query = select(func.coalesce(func.sum(GeneratorRun.calculated_consumption_l), 0.0)).join(
             Generator, GeneratorRun.generator_id == Generator.id
-        )
+        ).where(GeneratorRun.is_test == False, GeneratorRun.status != "TEST")
         if generator_id:
             runs_query = runs_query.where(GeneratorRun.generator_id == generator_id)
         else:
@@ -1286,7 +1286,9 @@ async def get_fuel_balances_summary(
             tr_query = tr_query.where(FuelTransfer.generator_id == generator_id)
         total_transferred_l = (await db.execute(tr_query)).scalar_one()
 
-        runs_query = select(func.coalesce(func.sum(GeneratorRun.calculated_consumption_l), 0.0))
+        runs_query = select(func.coalesce(func.sum(GeneratorRun.calculated_consumption_l), 0.0)).where(
+            GeneratorRun.is_test == False, GeneratorRun.status != "TEST"
+        )
         if generator_id:
             runs_query = runs_query.where(GeneratorRun.generator_id == generator_id)
         total_consumed_l = (await db.execute(runs_query)).scalar_one()

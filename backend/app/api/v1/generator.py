@@ -15,6 +15,7 @@ from backend.app.schemas.generator import (
 )
 from backend.app.api.deps import (
     get_current_user,
+    get_current_admin,
     require_permission,
     get_client_ip,
     is_user_admin_or_super,
@@ -27,10 +28,12 @@ from backend.app.services.generator_service import (
     create_generator, delete_generator, update_generator, add_manual_run,
     restore_generator, transfer_generator_facility, reconcile_generator_state,
     get_generator_cooldown_remaining, get_generators_cooldown_map,
-    get_generators_idle_info_map
+    get_generators_idle_info_map,
+    toggle_run_test_flag, delete_test_run, cleanup_short_runs_as_test,
 )
 from backend.app.services.fuel_service import compute_live_tank_levels_map
 from backend.app.services.idempotency_service import resolve_idempotency_key, run_idempotent_endpoint
+from backend.app.services.settings_service import get_runtime_setting
 
 
 def format_seconds(seconds: Optional[int]) -> Optional[str]:
@@ -63,6 +66,7 @@ def run_to_out(run: GeneratorRun, user_name: Optional[str] = None) -> GeneratorR
         end_fuel_level_l=run.end_fuel_level_l,
         calculated_consumption_l=run.calculated_consumption_l,
         status=run.status,
+        is_test=bool(getattr(run, "is_test", False) or run.status == "TEST"),
         note=run.note
     )
 
@@ -100,6 +104,7 @@ def _build_generator_out(
     out.warmup_cold_temp_c = float(idle_info.get("warmup_cold_temp_c", -10.0))
     out.warmup_trigger_mode = str(idle_info.get("warmup_trigger_mode", "any"))
     out.warmup_recently_done = bool(idle_info.get("warmup_recently_done", False))
+    out.test_run_threshold_seconds = int(get_runtime_setting("test_run_threshold_seconds", 120) or 120)
     if maint_map and gen.id in maint_map:
         out.maintenance_interval_hours = maint_map[gen.id]
     return out
@@ -383,6 +388,7 @@ async def get_active_run(
 @router.get("/runs", response_model=List[GeneratorRunOut])
 async def list_runs(
     generator_id: Optional[int] = None,
+    include_test: bool = Query(False, description="Включити тестові пуски у відповідь журналу"),
     limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -395,7 +401,66 @@ async def list_runs(
         query = query.join(Generator, GeneratorRun.generator_id == Generator.id).where(
             Generator.facility_id == current_user.facility_id
         )
+    if not include_test:
+        query = query.where(GeneratorRun.is_test == False, GeneratorRun.status != "TEST")
     query = query.order_by(GeneratorRun.id.desc()).limit(limit)
     res = await db.execute(query)
     runs = res.scalars().all()
     return [run_to_out(r) for r in runs]
+
+
+@router.post("/runs/{run_id}/toggle-test", response_model=GeneratorRunOut)
+async def api_toggle_run_test(
+    run_id: int,
+    request: Request,
+    is_test: bool = Query(..., description="True — позначити як тестовий, False — повернути в робочі"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin),
+):
+    """Позначити завершений пуск як тестовий (виключити зі звітів) або повернути в робочі (Адміністратор)."""
+    run = await toggle_run_test_flag(
+        db=db,
+        run_id=run_id,
+        is_test=is_test,
+        user_id=current_user.id,
+        ip_address=get_client_ip(request),
+    )
+    return run_to_out(run)
+
+
+@router.delete("/runs/{run_id}")
+async def api_delete_test_run(
+    run_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin),
+):
+    """Видалити тестовий пуск із журналу (тільки для Адміністратора, робочі пуски захищені)."""
+    return await delete_test_run(
+        db=db,
+        run_id=run_id,
+        user_id=current_user.id,
+        ip_address=get_client_ip(request),
+    )
+
+
+@router.post("/runs/cleanup-short")
+async def api_cleanup_short_runs(
+    request: Request,
+    generator_id: Optional[int] = Query(None),
+    facility_id: Optional[int] = Query(None),
+    max_seconds: Optional[int] = Query(None, ge=1, le=3600),
+    delete_runs: bool = Query(False, description="False — позначити як тестові, True — видалити тестові та короткі пуски"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin),
+):
+    """Масове позначення або очищення коротких тестових пусків (< порогу, за замовчуванням 120 с)."""
+    return await cleanup_short_runs_as_test(
+        db=db,
+        user_id=current_user.id,
+        generator_id=generator_id,
+        facility_id=facility_id,
+        max_seconds=max_seconds,
+        delete_runs=delete_runs,
+        ip_address=get_client_ip(request),
+    )

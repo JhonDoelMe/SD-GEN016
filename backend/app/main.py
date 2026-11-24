@@ -134,6 +134,7 @@ def ensure_schema_updates(sync_conn):
         sync_conn.execute(text("ALTER TABLE generators ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"))
         sync_conn.execute(text("ALTER TABLE generators ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP"))
         sync_conn.execute(text("ALTER TABLE generator_runs ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)"))
+        sync_conn.execute(text("ALTER TABLE generator_runs ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT FALSE"))
         sync_conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_generator_runs_idempotency_key ON generator_runs(idempotency_key)"))
         sync_conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE"))
         sync_conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS notifications_read_at TIMESTAMP"))
@@ -186,6 +187,8 @@ def ensure_schema_updates(sync_conn):
 
         if "generator_runs" in tables:
             cols = [c["name"] for c in inspector.get_columns("generator_runs")]
+            if "is_test" not in cols:
+                sync_conn.execute(text("ALTER TABLE generator_runs ADD COLUMN is_test BOOLEAN NOT NULL DEFAULT 0"))
             if "idempotency_key" not in cols:
                 sync_conn.execute(text("ALTER TABLE generator_runs ADD COLUMN idempotency_key VARCHAR(64)"))
                 try:
@@ -308,11 +311,13 @@ async def lifespan(app: FastAPI):
     # 4. Start background backup scheduler and notification loops
     from backend.app.services.alert_service import run_air_alert_checker_loop
     from backend.app.services.weather_service import run_weather_warning_checker_loop
+    from backend.app.services.settings_service import run_fuel_prices_refresh_loop
     backup_scheduler_task = asyncio.create_task(run_backup_scheduler())
     guard_worker_task = asyncio.create_task(run_operational_guard_loop())
     yasno_worker_task = asyncio.create_task(run_yasno_checker_loop())
     air_alert_worker_task = asyncio.create_task(run_air_alert_checker_loop())
     weather_warning_worker_task = asyncio.create_task(run_weather_warning_checker_loop())
+    fuel_prices_worker_task = asyncio.create_task(run_fuel_prices_refresh_loop())
 
     yield
 
@@ -322,12 +327,14 @@ async def lifespan(app: FastAPI):
     yasno_worker_task.cancel()
     air_alert_worker_task.cancel()
     weather_warning_worker_task.cancel()
+    fuel_prices_worker_task.cancel()
     await asyncio.gather(
         backup_scheduler_task,
         guard_worker_task,
         yasno_worker_task,
         air_alert_worker_task,
         weather_warning_worker_task,
+        fuel_prices_worker_task,
         return_exceptions=True
     )
     await engine.dispose()
@@ -343,7 +350,7 @@ def fastapi_docs_kwargs(is_production: bool) -> dict[str, str | None]:
 app = FastAPI(
     title="Service Desk Генератора (SD-GEN016)",
     description="Система оперативного диспетчерського обліку експлуатації мережі бензинових та дизельних генераторів (Multi-site, ПММ, ТО, інвентаризація, Push/Email)",
-    version="5.9.4",
+    version="5.9.6",
     **fastapi_docs_kwargs(settings.is_production),
     lifespan=lifespan,
 )

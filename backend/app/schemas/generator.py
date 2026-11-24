@@ -96,6 +96,7 @@ class GeneratorOut(BaseModel):
     warmup_cold_temp_c: float = -10.0
     warmup_trigger_mode: str = "any"
     warmup_recently_done: bool = False
+    test_run_threshold_seconds: int = 120
 
     model_config = {"from_attributes": True}
 
@@ -118,6 +119,7 @@ class GeneratorStopRequest(BaseModel):
     note: Optional[str] = None
     fuel_discrepancy_reason: Optional[str] = Field(None, max_length=500, description="Пояснення причини розбіжності палива у баку")
     force_confirm: bool = Field(False, description="Підтвердження операції при підозрілій різниці мотогодин")
+    is_test: Optional[bool] = Field(None, description="Позначити як тестовий/хибний пуск (не враховувати у звітах, мотогодинах і паливі)")
     idempotency_key: Optional[str] = Field(None, max_length=64, description="Ключ ідемпотентності")
     event_timestamp: Optional[datetime.datetime] = Field(None, description="Фактичний час зупинки оператором (UTC ISO, для офлайн-черги)")
 
@@ -151,6 +153,7 @@ class GeneratorRunOut(BaseModel):
     end_fuel_level_l: Optional[float] = None
     calculated_consumption_l: Optional[float] = None
     status: str
+    is_test: bool = False
     note: Optional[str] = None
 
 

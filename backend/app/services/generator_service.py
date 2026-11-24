@@ -79,7 +79,8 @@ async def _get_last_completed_stop_time(db: AsyncSession, generator_id: int) -> 
         select(GeneratorRun.end_time)
         .where(
             GeneratorRun.generator_id == generator_id,
-            GeneratorRun.status == "COMPLETED"
+            GeneratorRun.status == "COMPLETED",
+            GeneratorRun.is_test == False
         )
         .order_by(GeneratorRun.end_time.desc())
         .limit(1)
@@ -950,6 +951,62 @@ async def stop_generator(
     # GEN-07: Календарна тривалість роботи завжди розраховується виключно з різниці часу [start_time, end_time]
     calendar_duration_seconds = max(1, int((end_time - run.start_time).total_seconds()))
 
+    # Тестовий / хибний пуск: закриває сеанс БЕЗ списання пального, БЕЗ нарахування мотогодин і БЕЗ потрапляння у звіти
+    is_test_run = bool(stop_data.is_test) if (stop_data and stop_data.is_test is not None) else False
+    if is_test_run:
+        run.end_time = end_time
+        run.end_hours = run.start_hours
+        run.duration_seconds = calendar_duration_seconds
+        run.duration_hours = round(calendar_duration_seconds / 3600.0, 4)
+        run.calculated_consumption_l = 0.0
+        run.end_fuel_level_l = generator.fuel_tank_level_l
+        run.status = "TEST"
+        run.is_test = True
+        user_note = stop_data.note.strip() if (stop_data and stop_data.note) else ""
+        if user_note:
+            run.note = user_note if user_note.startswith("[ТЕСТ]") else f"[ТЕСТ] {user_note}"
+        else:
+            run.note = "[ТЕСТ] Тестовий / хибний пуск"
+
+        generator.updated_at = end_time
+        generator.status = await _evaluate_generator_resting_status(db, generator)
+        await db.flush()
+
+        h = calendar_duration_seconds // 3600
+        m = (calendar_duration_seconds % 3600) // 60
+        s = calendar_duration_seconds % 60
+        duration_formatted = f"{h:02d}:{m:02d}:{s:02d}"
+
+        await log_audit(
+            db=db,
+            action="GENERATOR_TEST_RUN",
+            entity_type="Generator",
+            entity_id=str(generator.id),
+            user_id=user_id,
+            details={
+                "actor_type": actor_type,
+                "facility_id": generator.facility_id,
+                "is_test": True,
+                "run_id": run.id,
+                "duration_seconds": calendar_duration_seconds,
+                "duration_formatted": duration_formatted,
+                "start_hours": run.start_hours,
+                "end_hours": run.end_hours,
+                "calculated_consumption_l": 0.0,
+                "end_fuel_level_l": generator.fuel_tank_level_l,
+                "status_after": generator.status,
+                "note": run.note,
+            },
+            ip_address=ip_address,
+        )
+        await db.commit()
+        q_fresh = (
+            select(GeneratorRun)
+            .options(selectinload(GeneratorRun.user))
+            .where(GeneratorRun.id == run.id)
+        )
+        return (await db.execute(q_fresh)).scalar_one()
+
     if stop_data and stop_data.end_hours is not None:
         if stop_data.end_hours < run.start_hours:
             raise HTTPException(
@@ -1812,7 +1869,11 @@ async def add_manual_run(
     current_utc = utc_now()
     existing_runs_res = await db.execute(
         select(GeneratorRun)
-        .where(GeneratorRun.generator_id == generator.id)
+        .where(
+            GeneratorRun.generator_id == generator.id,
+            GeneratorRun.is_test == False,
+            GeneratorRun.status != "TEST",
+        )
         .order_by(GeneratorRun.start_time.asc())
     )
     existing_runs = existing_runs_res.scalars().all()
@@ -1983,3 +2044,162 @@ async def add_manual_run(
     )
     res_fresh = await db.execute(q_fresh)
     return res_fresh.scalar_one()
+
+
+async def toggle_run_test_flag(
+    db: AsyncSession,
+    run_id: int,
+    is_test: bool,
+    user_id: int,
+    ip_address: Optional[str] = None,
+) -> GeneratorRun:
+    """Позначає завершений пуск як тестовий (виключає зі звітів) або повертає у робочі."""
+    res = await db.execute(
+        select(GeneratorRun)
+        .options(selectinload(GeneratorRun.user))
+        .where(GeneratorRun.id == run_id)
+    )
+    run = res.scalars().first()
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запис пуску не знайдено")
+    if run.status == "RUNNING":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Неможливо змінити статус активного (працюючого) сеансу")
+
+    old_is_test = bool(getattr(run, "is_test", False) or run.status == "TEST")
+    run.is_test = bool(is_test)
+    run.status = "TEST" if is_test else "COMPLETED"
+    if is_test and not (run.note or "").startswith("[ТЕСТ]"):
+        run.note = f"[ТЕСТ] {run.note}".strip() if run.note else "[ТЕСТ] Позначено адміністратором"
+    elif not is_test and (run.note or "").startswith("[ТЕСТ]"):
+        cleaned = (run.note or "").replace("[ТЕСТ] Позначено адміністратором", "").replace("[ТЕСТ]", "").strip()
+        run.note = cleaned or None
+
+    await log_audit(
+        db=db,
+        action="GENERATOR_RUN_TEST_TOGGLED",
+        entity_type="GeneratorRun",
+        entity_id=str(run.id),
+        user_id=user_id,
+        details={
+            "generator_id": run.generator_id,
+            "before_is_test": old_is_test,
+            "after_is_test": bool(is_test),
+            "duration_seconds": run.duration_seconds,
+        },
+        ip_address=ip_address,
+    )
+    await db.commit()
+    return run
+
+
+async def delete_test_run(
+    db: AsyncSession,
+    run_id: int,
+    user_id: int,
+    ip_address: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Видаляє з журналу виключно тестовий пуск (робочі пуски захищені від видалення)."""
+    res = await db.execute(select(GeneratorRun).where(GeneratorRun.id == run_id))
+    run = res.scalars().first()
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запис пуску не знайдено")
+    if not (bool(getattr(run, "is_test", False)) or run.status == "TEST"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Видаляти дозволено лише тестові пуски. Спочатку позначте запис як тестовий."
+        )
+
+    info = {
+        "deleted_run_id": run.id,
+        "generator_id": run.generator_id,
+        "duration_seconds": run.duration_seconds,
+        "start_time": str(run.start_time),
+    }
+    await db.delete(run)
+    await log_audit(
+        db=db,
+        action="GENERATOR_TEST_RUN_DELETED",
+        entity_type="GeneratorRun",
+        entity_id=str(run_id),
+        user_id=user_id,
+        details=info,
+        ip_address=ip_address,
+    )
+    await db.commit()
+    return info
+
+
+async def cleanup_short_runs_as_test(
+    db: AsyncSession,
+    user_id: int,
+    generator_id: Optional[int] = None,
+    facility_id: Optional[int] = None,
+    max_seconds: Optional[int] = None,
+    delete_runs: bool = False,
+    ip_address: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Масове очищення коротких пусків (< max_seconds, за замовчуванням test_run_threshold_seconds):
+    - delete_runs=False: позначає знайдені COMPLETED пуски як TEST (is_test=True)
+    - delete_runs=True: видаляє всі тестові пуски та короткі COMPLETED пуски < max_seconds
+    """
+    threshold = int(max_seconds) if max_seconds is not None else int(get_runtime_setting("test_run_threshold_seconds", 120) or 120)
+    if threshold < 1:
+        threshold = 120
+
+    q = select(GeneratorRun).where(GeneratorRun.status != "RUNNING")
+    if generator_id:
+        q = q.where(GeneratorRun.generator_id == generator_id)
+    elif facility_id:
+        q = q.join(Generator, GeneratorRun.generator_id == Generator.id).where(Generator.facility_id == facility_id)
+
+    runs = list((await db.execute(q)).scalars().all())
+    affected_ids: List[int] = []
+    marked_count = 0
+    deleted_count = 0
+
+    for r in runs:
+        dur_sec = r.duration_seconds
+        if dur_sec is None and r.start_time and r.end_time:
+            dur_sec = max(0, int((r.end_time - r.start_time).total_seconds()))
+        is_already_test = bool(getattr(r, "is_test", False) or r.status == "TEST")
+        is_short = (dur_sec is not None) and (dur_sec < threshold)
+
+        if delete_runs:
+            if is_already_test or is_short:
+                affected_ids.append(r.id)
+                await db.delete(r)
+                deleted_count += 1
+        else:
+            if not is_already_test and is_short:
+                r.is_test = True
+                r.status = "TEST"
+                if not (r.note or "").startswith("[ТЕСТ]"):
+                    r.note = f"[ТЕСТ] {r.note}".strip() if r.note else f"[ТЕСТ] Короткий пуск (< {threshold} с)"
+                affected_ids.append(r.id)
+                marked_count += 1
+
+    await log_audit(
+        db=db,
+        action="GENERATOR_SHORT_RUNS_CLEANUP",
+        entity_type="GeneratorRun",
+        entity_id=str(generator_id or facility_id or "all"),
+        user_id=user_id,
+        details={
+            "generator_id": generator_id,
+            "facility_id": facility_id,
+            "threshold_seconds": threshold,
+            "delete_runs": bool(delete_runs),
+            "marked_count": marked_count,
+            "deleted_count": deleted_count,
+            "affected_ids": affected_ids[:100],
+        },
+        ip_address=ip_address,
+    )
+    await db.commit()
+    return {
+        "threshold_seconds": threshold,
+        "delete_runs": bool(delete_runs),
+        "marked_count": marked_count,
+        "deleted_count": deleted_count,
+    }

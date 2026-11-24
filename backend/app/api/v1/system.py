@@ -34,6 +34,7 @@ from backend.app.services.settings_service import (
     get_setting_source,
     get_fuel_prices_info,
     refresh_internet_fuel_prices,
+    is_fuel_prices_stale,
     perform_system_reset,
 )
 
@@ -91,6 +92,7 @@ class SystemSettingsUpdateRequest(BaseModel):
     fuel_receipt_max_liters_warning: Optional[float] = Field(default=None, gt=0)
     fuel_receipt_min_price: Optional[float] = Field(default=None, ge=0)
     fuel_receipt_max_price: Optional[float] = Field(default=None, gt=0)
+    test_run_threshold_seconds: Optional[int] = Field(default=None, ge=0, le=3600)
     # SMTP & Failover Settings
     smtp_enabled: Optional[bool] = None
     smtp_primary_host: Optional[str] = Field(default=None, max_length=150)
@@ -253,11 +255,15 @@ async def get_fuel_prices(
     Доступно для всіх авторизованих користувачів (використовується у формі оприбуткування палива).
     """
     await load_system_settings(db)
-    if get_runtime_setting("auto_fetch_fuel_prices", True) and not get_runtime_setting("internet_prices_updated_at"):
-        try:
-            await refresh_internet_fuel_prices(db)
-        except Exception:
-            pass
+    if get_runtime_setting("auto_fetch_fuel_prices", True):
+        wog_stale = is_fuel_prices_stale(get_runtime_setting("internet_prices_updated_at"))
+        okko_stale = is_fuel_prices_stale(get_runtime_setting("okko_prices_updated_at"))
+        if wog_stale or okko_stale:
+            prov = "all" if (wog_stale and okko_stale) else ("wog" if wog_stale else "okko")
+            try:
+                await refresh_internet_fuel_prices(db, provider=prov)
+            except Exception:
+                pass
     return get_fuel_prices_info()
 
 
@@ -350,6 +356,7 @@ async def update_admin_system_settings(
         "fuel_receipt_max_liters_warning",
         "fuel_receipt_min_price",
         "fuel_receipt_max_price",
+        "test_run_threshold_seconds",
         "smtp_enabled",
         "smtp_primary_host",
         "smtp_primary_port",

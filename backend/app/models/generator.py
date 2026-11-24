@@ -86,6 +86,7 @@ class GeneratorRun(Base):
 
     calculated_consumption_l = Column(Float, nullable=True)
     status = Column(String(50), nullable=False, default="RUNNING")
+    is_test = Column(Boolean, default=False, nullable=False, server_default="false")
     note = Column(Text, nullable=True)
     idempotency_key = Column(String(64), nullable=True, unique=True, index=True)
 

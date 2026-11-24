@@ -3,8 +3,11 @@ from backend.app.services.settings_service import (
     DEFAULT_WOG_LINEUP,
     DEFAULT_OKKO_LINEUP,
     DEFAULT_OKKO_PRICES,
+    _parse_wog_fuel_html,
+    _parse_okko_fuel_html,
     fetch_okko_fuel_prices_online,
     get_fuel_prices_info,
+    is_fuel_prices_stale,
     resolve_fuel_price_per_liter,
 )
 from backend.app.services.report_service import generate_excel_report
@@ -158,4 +161,64 @@ async def test_excel_report_includes_fuel_provider_column(db_session):
     start = datetime(2025, 1, 1, tzinfo=timezone.utc).replace(tzinfo=None)
     end = datetime(2025, 12, 31, tzinfo=timezone.utc).replace(tzinfo=None)
     excel_bytes = await generate_excel_report(db_session, start_date=start, end_date=end)
-    assert len(excel_bytes) > 1000
+    assert excel_bytes and len(excel_bytes) > 1000
+
+
+def test_parse_wog_next_data_optional_brand_and_100():
+    html = (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        '{"props":{"pageProps":{"items":['
+        '{"price":10090,"i_am_page_element":"block.fuels_fuel","type":"ДП","brand":"Євро5"},'
+        '{"price":10390,"i_am_page_element":"block.fuels_fuel","type":"ДП","brand":"Mustang+"},'
+        '{"price":8690,"i_am_page_element":"block.fuels_fuel","type":"95","brand":"Євро5-Е10"},'
+        '{"price":8990,"i_am_page_element":"block.fuels_fuel","type":"95","brand":"Mustang Євро5-Е10"},'
+        '{"price":9690,"i_am_page_element":"block.fuels_fuel","type":"100","brand":"Mustang Євро5-Е0"},'
+        '{"price":6350,"i_am_page_element":"block.fuels_fuel","type":"ГАЗ"},'
+        '{"price":6290,"i_am_page_element":"block.fuels_fuel","type":"AdBlue"}'
+        ']}}}</script>'
+    )
+    prices, lineup = _parse_wog_fuel_html(html)
+    assert len(lineup) == 7
+    assert prices["ДП"] == 100.90
+    assert prices["ДП Mustang+"] == 103.90
+    assert prices["А-95"] == 86.90
+    assert prices["А-95 Mustang"] == 89.90
+    assert prices["А-100 Mustang"] == 96.90
+    assert prices["ГАЗ"] == 63.50
+    assert prices["AdBlue"] == 62.90
+
+
+def test_parse_okko_nuxt_semantic_order_independent():
+    # Reversed/shuffled order compared to default positional layout
+    html = (
+        '<script>window.__NUXT__=(function(a,b,c,d,e,f,g){return {'
+        'bullets:{items:['
+        '{title:"ГАЗ",price:"63.90",type:a,fuel_code:"SPBT"},'
+        '{title:b,price:"84.90",type:c,fuel_code:"A-95"},'
+        '{title:d,price:"99.90",type:c,fuel_code:"DP"},'
+        '{title:b,price:"87.90",type:e,fuel_code:"Pulls 95"},'
+        '{title:d,price:"102.90",type:e,fuel_code:"Pulls Diesel"},'
+        '{title:"100",price:"94.90",type:e,fuel_code:"Pulls 100"},'
+        '{title:f,price:"62.90",type:a,fuel_code:f}'
+        ']}};})("","95","euro","ДП","pulls","AdBlue",null));</script>'
+    )
+    parsed = _parse_okko_fuel_html(html)
+    assert parsed is not None
+    prices, lineup = parsed
+    assert len(lineup) == 7
+    assert prices["ГАЗ"] == 63.90
+    assert prices["А-95"] == 84.90
+    assert prices["А-95 Pulls"] == 87.90
+    assert prices["ДП"] == 99.90
+    assert prices["ДП Pulls"] == 102.90
+    assert prices["А-100 Pulls"] == 94.90
+    assert prices["AdBlue"] == 62.90
+
+
+def test_is_fuel_prices_stale():
+    assert is_fuel_prices_stale("") is True
+    assert is_fuel_prices_stale("invalid") is True
+    assert is_fuel_prices_stale("2020-01-01 00:00:00") is True
+    from zoneinfo import ZoneInfo
+    now_str = datetime.now(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d %H:%M:%S")
+    assert is_fuel_prices_stale(now_str) is False

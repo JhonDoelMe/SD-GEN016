@@ -284,28 +284,105 @@ document.addEventListener('submit', async (e) => {
 // 5. Runs History (loadRecentRuns lives in dashboard.js for fast initial boot)
 async function loadRunsData() {
   try {
-    const q = currentGeneratorId ? '&generator_id=' + encodeURIComponent(currentGeneratorId) : '';
+    const canManageTest = !!(currentUser && (currentUser.is_superadmin || currentUser.role === 'admin' || (typeof hasPermission === 'function' && hasPermission('system:settings'))));
+    const cleanupBtn = document.getElementById('btnCleanupShortRuns');
+    if (cleanupBtn) cleanupBtn.style.display = canManageTest ? 'inline-flex' : 'none';
+
+    const showTest = !!document.getElementById('runsShowTestToggle')?.checked;
+    const q = (currentGeneratorId ? '&generator_id=' + encodeURIComponent(currentGeneratorId) : '') + (showTest ? '&include_test=true' : '');
     const runs = await api('/generator/runs?limit=200' + q);
     window.renderPaginatedTable('allRunsTable', runs, (r) => {
+      const isTest = !!(r.is_test || r.status === 'TEST');
       const durText = r.duration_formatted || (r.duration_seconds != null ? formatDuration(r.duration_seconds) : (r.duration_hours ? formatHoursToHms(r.duration_hours) : '-'));
-      const consText = r.calculated_consumption_l != null ? formatLiters(r.calculated_consumption_l) : '-';
+      const consText = isTest ? '0.0 л' : (r.calculated_consumption_l != null ? formatLiters(r.calculated_consumption_l) : '-');
       const startFuel = r.start_fuel_level_l != null ? formatLiters(r.start_fuel_level_l) : '-';
       const endFuel = r.end_fuel_level_l != null ? formatLiters(r.end_fuel_level_l) : '-';
+      const idCell = isTest
+        ? `#${Number(r.id)} <span class="badge-warning" style="font-size:0.7rem;padding:0.1rem 0.35rem;border-radius:0.3rem;margin-left:0.25rem;">🧪 Тест</span>`
+        : `#${Number(r.id)}`;
+      let actionsHtml = '-';
+      if (canManageTest && r.status !== 'RUNNING') {
+        if (isTest) {
+          actionsHtml = `
+            <div style="display:flex;gap:0.35rem;white-space:nowrap;">
+              <button type="button" class="btn-secondary" style="padding:0.2rem 0.45rem;font-size:0.75rem;width:auto;" title="Повернути в робочі пуски" onclick="toggleRunTestFlag(${Number(r.id)}, false)">↩️</button>
+              <button type="button" class="btn-secondary" style="padding:0.2rem 0.45rem;font-size:0.75rem;width:auto;color:#f87171;" title="Видалити тестовий пуск" onclick="deleteTestRunById(${Number(r.id)})">🗑️</button>
+            </div>`;
+        } else {
+          actionsHtml = `<button type="button" class="btn-secondary" style="padding:0.2rem 0.45rem;font-size:0.75rem;width:auto;" title="Позначити як тестовий (виключити зі звітів)" onclick="toggleRunTestFlag(${Number(r.id)}, true)">🧪</button>`;
+        }
+      }
       return `
-        <tr>
-          <td>#${Number(r.id)}</td>
+        <tr style="${isTest ? 'opacity: 0.72;' : ''}">
+          <td>${idCell}</td>
           <td>${formatDateTime(r.start_time)}</td>
           <td>${r.end_time ? formatDateTime(r.end_time) : '<i>в процесі...</i>'}</td>
           <td>${formatHoursCounter(r.start_hours)}</td>
           <td>${r.end_hours != null ? formatHoursCounter(r.end_hours) : '-'}</td>
-          <td><b style="color: #38bdf8; font-family: monospace;">${escapeHtml(durText)}</b></td>
+          <td><b style="color: ${isTest ? '#f59e0b' : '#38bdf8'}; font-family: monospace;">${escapeHtml(durText)}</b></td>
           <td>${escapeHtml(consText)}</td>
           <td>${startFuel} → ${endFuel}</td>
           <td>${escapeHtml(r.user_name || '-')}</td>
           <td>${escapeHtml(r.note || '-')}</td>
+          <td>${actionsHtml}</td>
         </tr>
       `;
-    }, 10, 'Записів не знайдено', 10);
+    }, 10, 'Записів не знайдено', 11);
   } catch (_) {}
 }
+
+async function toggleRunTestFlag(runId, makeTest) {
+  const msg = makeTest
+    ? `Позначити пуск #${runId} як ТЕСТОВИЙ?\nВін буде прихований з журналу та виключений з усіх звітів.`
+    : `Повернути пуск #${runId} у звичайні робочі пуски?`;
+  if (!confirm(msg)) return;
+  try {
+    await api(`/generator/runs/${Number(runId)}/toggle-test?is_test=${makeTest ? 'true' : 'false'}`, { method: 'POST' });
+    showToast(makeTest ? `🧪 Пуск #${runId} позначено як тестовий` : `↩️ Пуск #${runId} повернуто у робочі`, 'success');
+    await loadRunsData();
+    if (typeof loadRecentRuns === 'function') loadRecentRuns();
+  } catch (err) {
+    showToast(err.message || 'Помилка зміни статусу пуску', 'error');
+  }
+}
+window.toggleRunTestFlag = toggleRunTestFlag;
+
+async function deleteTestRunById(runId) {
+  if (!confirm(`Видалити тестовий пуск #${runId} назавжди з журналу?`)) return;
+  try {
+    await api(`/generator/runs/${Number(runId)}`, { method: 'DELETE' });
+    showToast(`🗑️ Тестовий пуск #${runId} видалено`, 'success');
+    await loadRunsData();
+    if (typeof loadRecentRuns === 'function') loadRecentRuns();
+  } catch (err) {
+    showToast(err.message || 'Помилка видалення тестового пуску', 'error');
+  }
+}
+window.deleteTestRunById = deleteTestRunById;
+
+async function cleanupShortRunsPrompt() {
+  const thr = Number(currentGenerator?.test_run_threshold_seconds ?? 120);
+  const thrLabel = thr >= 60 ? `${Math.round(thr / 60)} хв (${thr} с)` : `${thr} с`;
+  const confirmed = confirm(
+    `🧹 Очищення коротких тестових пусків (< ${thrLabel})\n\n` +
+    `Усі завершені пуски поточного генератора тривалістю менше ${thrLabel} будуть позначені як тестові (приховані в журналі та виключені зі звітів).\n\n` +
+    `Продовжити?`
+  );
+  if (!confirmed) return;
+  try {
+    const q = currentGeneratorId ? `?generator_id=${encodeURIComponent(currentGeneratorId)}&delete_runs=false` : '?delete_runs=false';
+    const res = await api('/generator/runs/cleanup-short' + q, { method: 'POST' });
+    const cnt = Number(res?.marked_count || 0);
+    if (cnt > 0) {
+      showToast(`🧹 Позначено як тестові: ${cnt} коротких пусків`, 'success');
+    } else {
+      showToast('Коротких робочих пусків не знайдено', 'info');
+    }
+    await loadRunsData();
+    if (typeof loadRecentRuns === 'function') loadRecentRuns();
+  } catch (err) {
+    showToast(err.message || 'Помилка очищення коротких пусків', 'error');
+  }
+}
+window.cleanupShortRunsPrompt = cleanupShortRunsPrompt;
 

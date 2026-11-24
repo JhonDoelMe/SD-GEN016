@@ -1010,10 +1010,15 @@ document.addEventListener('click', async (e) => {
     const stopNoteInput = document.getElementById('stopNote');
     if (stopNoteInput) stopNoteInput.value = '';
 
+    let elapsedSec = null;
     if (activeRun && activeRun.start_time) {
       const startDisp = document.getElementById('stopStartTimeDisplay');
       if (startDisp) startDisp.innerText = formatDateTime(activeRun.start_time);
       updateRunStopwatchDisplay();
+      const startDt = typeof parseUTCDate === 'function' ? parseUTCDate(activeRun.start_time) : new Date(activeRun.start_time);
+      if (startDt && !isNaN(startDt.getTime())) {
+        elapsedSec = Math.max(0, Math.floor((Date.now() - startDt.getTime()) / 1000));
+      }
     } else {
       const startDisp = document.getElementById('stopStartTimeDisplay');
       const durDisp = document.getElementById('stopDurationDisplay');
@@ -1022,6 +1027,26 @@ document.addEventListener('click', async (e) => {
       if (durDisp) durDisp.innerText = '00:00:00';
       if (fuelDisp) fuelDisp.innerText = '0.000 л';
     }
+
+    const thresholdSec = Number(currentGenerator?.test_run_threshold_seconds ?? 120);
+    const autoTest = (thresholdSec > 0 && elapsedSec !== null && elapsedSec < thresholdSec);
+    const stopIsTestEl = document.getElementById('stopIsTest');
+    const stopIsTestHintEl = document.getElementById('stopIsTestHint');
+    if (stopIsTestEl) {
+      stopIsTestEl.checked = autoTest;
+    }
+    if (stopIsTestHintEl) {
+      if (autoTest) {
+        const thrLabel = thresholdSec >= 60 ? `${Math.round(thresholdSec / 60)} хв` : `${thresholdSec} с`;
+        stopIsTestHintEl.textContent = `⏱️ Пуск тривав менше ${thrLabel} — автоматично позначено як тестовий. Зніміть галочку, якщо це був реальний запуск.`;
+        stopIsTestHintEl.style.display = 'block';
+      } else {
+        stopIsTestHintEl.textContent = '';
+        stopIsTestHintEl.style.display = 'none';
+      }
+    }
+    if (typeof syncStopTestRunUi === 'function') syncStopTestRunUi(autoTest);
+
     openModal('modalStopGen');
   } else {
     await executeGeneratorStart(btn, { isWarmup: false });
@@ -1258,15 +1283,16 @@ document.addEventListener('submit', async (e) => {
     const submitBtn = form.querySelector('button[type="submit"]');
     if (submitBtn && submitBtn.disabled) return;
 
+    const isTestRun = !!document.getElementById('stopIsTest')?.checked;
     const endHoursVal = document.getElementById('stopEndHours').value;
-    const endHours = endHoursVal !== '' && !isNaN(parseFloat(endHoursVal)) ? parseFloat(endHoursVal) : null;
+    const endHours = (!isTestRun && endHoursVal !== '' && !isNaN(parseFloat(endHoursVal))) ? parseFloat(endHoursVal) : null;
     const endFuelVal = document.getElementById('stopEndFuel').value;
-    const endFuel = endFuelVal !== '' && !isNaN(parseFloat(endFuelVal)) ? parseFloat(endFuelVal) : null;
+    const endFuel = (!isTestRun && endFuelVal !== '' && !isNaN(parseFloat(endFuelVal))) ? parseFloat(endFuelVal) : null;
     const note = document.getElementById('stopNote').value;
 
     let forceConfirm = false;
 
-    if (endHours !== null && currentGenerator) {
+    if (!isTestRun && endHours !== null && currentGenerator) {
       const startH = activeRun?.start_hours ?? currentGenerator.current_operating_hours;
       const deltaH = endHours - startH;
       let elapsedH = 0;
@@ -1291,7 +1317,7 @@ document.addEventListener('submit', async (e) => {
       }
     }
 
-    if (endFuel !== null && currentGenerator) {
+    if (!isTestRun && endFuel !== null && currentGenerator) {
       const startTank = Number(currentGenerator.fuel_tank_level_l ?? 0);
       const rate = Number(currentGenerator.nominal_consumption_l_per_h || 2.2);
       let elapsedH = 0;
@@ -1329,21 +1355,25 @@ document.addEventListener('submit', async (e) => {
           end_hours: endHours,
           end_fuel_level_l: endFuel,
           note: note,
-          force_confirm: forceConfirm
+          force_confirm: forceConfirm,
+          is_test: isTestRun
         }),
         offlineMeta: {
           action_type: 'gen_stop',
-          title: 'Зупинка генератора',
-          summary: `${currentGenerator?.name || 'Генератор'}${endHours != null ? ` (мотогод: ${endHours})` : ''}`,
+          title: isTestRun ? 'Тестова зупинка генератора' : 'Зупинка генератора',
+          summary: `${currentGenerator?.name || 'Генератор'}${isTestRun ? ' (ТЕСТ)' : (endHours != null ? ` (мотогод: ${endHours})` : '')}`,
           facility_id: currentFacilityId,
           generator_id: currentGeneratorId,
         }
       });
       form.reset();
+      syncStopTestRunUi(false);
       closeModal('modalStopGen');
       stopRunStopwatch();
       if (res && res._queuedOffline) {
         showToast('📥 Зупинку генератора збережено в офлайн-чергу', 'warning');
+      } else if (res && (res.is_test || res.status === 'TEST')) {
+        showToast('🧪 Тестовий пуск завершено (не враховано у звітах, мотогодинах і паливі)', 'info');
       } else {
         startCooldownTimer(60);
         const durText = res.duration_formatted || formatDuration(res.duration_seconds) || `${res.duration_hours} год`;
@@ -1361,4 +1391,23 @@ document.addEventListener('submit', async (e) => {
     }
   }
 });
+
+function syncStopTestRunUi(isTest) {
+  const endHoursEl = document.getElementById('stopEndHours');
+  const endFuelEl = document.getElementById('stopEndFuel');
+  const submitBtn = document.getElementById('btnConfirmStopGen');
+  const checked = !!isTest;
+  if (endHoursEl) {
+    endHoursEl.disabled = checked;
+    if (checked) endHoursEl.value = '';
+  }
+  if (endFuelEl) {
+    endFuelEl.disabled = checked;
+    if (checked) endFuelEl.value = '';
+  }
+  if (submitBtn && !submitBtn.disabled) {
+    submitBtn.innerText = checked ? '🧪 Завершити як тестовий пуск' : 'Підтвердити зупинку';
+  }
+}
+window.syncStopTestRunUi = syncStopTestRunUi;
 

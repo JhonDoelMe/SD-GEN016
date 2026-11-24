@@ -265,12 +265,14 @@ async def test_settings_gas_decoupled_from_a92(db_session: AsyncSession):
     assert info["fuels"]["А-92"]["configured_price"] == 85.00
     assert info["fuels"]["А-92"]["source"] == "settings"
 
-    # ГАЗ must NOT use 85.00! It must use internet price (52.50)
-    assert info["fuels"]["ГАЗ"]["effective_price"] == 52.50
+    from backend.app.services.settings_service import DEFAULT_INTERNET_PRICES, DEFAULT_OKKO_PRICES
+
+    # ГАЗ must NOT use 85.00! It must use internet price
+    assert info["fuels"]["ГАЗ"]["effective_price"] == DEFAULT_INTERNET_PRICES["ГАЗ"]
     assert info["fuels"]["ГАЗ"]["configured_price"] == 0.00
     assert info["fuels"]["ГАЗ"]["source"] == "internet"
 
-    assert info["okko_fuels"]["ГАЗ"]["effective_price"] == 59.90
+    assert info["okko_fuels"]["ГАЗ"]["effective_price"] == DEFAULT_OKKO_PRICES["ГАЗ"]
     assert info["okko_fuels"]["ГАЗ"]["configured_price"] == 0.00
     assert info["okko_fuels"]["ГАЗ"]["source"] == "internet"
 

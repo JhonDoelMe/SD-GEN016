@@ -306,6 +306,7 @@ function formatAuditDetailsUa(detailsRaw, action) {
       warmup_duration_minutes: 'Тривалість прогріву (хв)',
       warmup_cold_temp_c: 'Поріг температури для прогріву (°C)',
       warmup_trigger_mode: 'Умова показу прогріву',
+      test_run_threshold_seconds: 'Поріг тестового пуску (сек)',
       email_weekly_report_enabled: 'Щотижневий email-звіт',
       email_weekly_recipients: 'Отримувачі email-звіту',
       email_weekly_send_day: 'День відправлення email-звіту',

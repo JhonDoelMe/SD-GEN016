@@ -34,47 +34,49 @@ from backend.app.services.avatar_service import delete_avatar_file
 
 # Default WOG Ukraine retail fuel prices fallback (UAH per liter)
 DEFAULT_INTERNET_PRICES: Dict[str, float] = {
-    "А-95": 92.90,
-    "А-95 Mustang": 95.90,
-    "А-100 Mustang": 102.90,
-    "А-92": 92.90,
-    "ДП": 103.50,
-    "ДП Mustang+": 106.50,
-    "ГАЗ": 52.50,
-    "AdBlue": 61.90,
+    "А-95": 86.90,
+    "А-95 Mustang": 89.90,
+    "А-100 Mustang": 96.90,
+    "А-92": 86.90,
+    "ДП": 100.90,
+    "ДП Mustang+": 103.90,
+    "ГАЗ": 63.50,
+    "AdBlue": 62.90,
 }
 
 DEFAULT_WOG_LINEUP = [
-    {"type": "ДП", "brand": "Євро5", "label": "ДП Євро5", "price": 103.50},
-    {"type": "ДП", "brand": "Mustang+", "label": "ДП Mustang+", "price": 106.50},
-    {"type": "95", "brand": "Євро5-Е10", "label": "95 Євро5-Е10", "price": 92.90},
-    {"type": "95", "brand": "Mustang Євро5-Е10", "label": "95 Mustang Євро5-Е10", "price": 95.90},
-    {"type": "100", "brand": "Mustang Євро5-Е0", "label": "100 Mustang Євро5-Е0", "price": 102.90},
-    {"type": "ГАЗ", "brand": "", "label": "ГАЗ", "price": 52.50},
-    {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": 61.90},
+    {"type": "ДП", "brand": "Євро5", "label": "ДП Євро5", "price": 100.90},
+    {"type": "ДП", "brand": "Mustang+", "label": "ДП Mustang+", "price": 103.90},
+    {"type": "95", "brand": "Євро5-Е10", "label": "95 Євро5-Е10", "price": 86.90},
+    {"type": "95", "brand": "Mustang Євро5-Е10", "label": "95 Mustang Євро5-Е10", "price": 89.90},
+    {"type": "100", "brand": "Mustang Євро5-Е0", "label": "100 Mustang Євро5-Е0", "price": 96.90},
+    {"type": "ГАЗ", "brand": "", "label": "ГАЗ", "price": 63.50},
+    {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": 62.90},
 ]
 
 # Default OKKO Ukraine retail fuel prices fallback (UAH per liter)
 DEFAULT_OKKO_PRICES: Dict[str, float] = {
-    "А-95": 92.90,
-    "А-95 Pulls": 95.90,
-    "А-100 Pulls": 102.90,
-    "А-92": 92.90,
-    "ДП": 106.90,
-    "ДП Pulls": 109.90,
-    "ГАЗ": 59.90,
-    "AdBlue": 61.90,
+    "А-95": 84.90,
+    "А-95 Pulls": 87.90,
+    "А-100 Pulls": 94.90,
+    "А-92": 84.90,
+    "ДП": 99.90,
+    "ДП Pulls": 102.90,
+    "ГАЗ": 63.90,
+    "AdBlue": 62.90,
 }
 
 DEFAULT_OKKO_LINEUP = [
-    {"type": "ДП", "brand": "Євро", "label": "ДП Євро", "price": 106.90},
-    {"type": "ДП", "brand": "Pulls", "label": "Pulls Дизель", "price": 109.90},
-    {"type": "95", "brand": "Євро", "label": "А-95 Євро", "price": 92.90},
-    {"type": "95", "brand": "Pulls", "label": "Pulls 95", "price": 95.90},
-    {"type": "100", "brand": "Pulls", "label": "Pulls 100", "price": 102.90},
-    {"type": "ГАЗ", "brand": "СПБТ", "label": "ГАЗ (СПБТ)", "price": 59.90},
-    {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": 61.90},
+    {"type": "ДП", "brand": "Євро", "label": "ДП Євро", "price": 99.90},
+    {"type": "ДП", "brand": "Pulls", "label": "Pulls Дизель", "price": 102.90},
+    {"type": "95", "brand": "Євро", "label": "А-95 Євро", "price": 84.90},
+    {"type": "95", "brand": "Pulls", "label": "Pulls 95", "price": 87.90},
+    {"type": "100", "brand": "Pulls", "label": "Pulls 100", "price": 94.90},
+    {"type": "ГАЗ", "brand": "СПБТ", "label": "ГАЗ (СПБТ)", "price": 63.90},
+    {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": 62.90},
 ]
+
+FUEL_PRICES_TTL_SECONDS = 3 * 3600  # 3 hours auto-refresh TTL
 
 # Default dynamic system settings (stored in DB table `system_settings`)
 DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
@@ -154,6 +156,7 @@ DEFAULT_SYSTEM_SETTINGS: Dict[str, Any] = {
     "fuel_receipt_max_liters_warning": 1000.0,
     "fuel_receipt_min_price": 15.0,
     "fuel_receipt_max_price": 250.0,
+    "test_run_threshold_seconds": 120,
     # SMTP Email System & Failover Configuration
     "smtp_enabled": False,
     "smtp_primary_host": "smtp.gmail.com",
@@ -372,24 +375,79 @@ def get_runtime_timezone() -> str:
         return "Europe/Kyiv"
 
 
+def is_fuel_prices_stale(updated_at_str: Optional[str], ttl_seconds: int = FUEL_PRICES_TTL_SECONDS) -> bool:
+    """Return True if fuel prices timestamp is missing, unparseable, or older than ttl_seconds."""
+    raw = str(updated_at_str or "").strip()
+    if not raw:
+        return True
+    try:
+        tz = ZoneInfo(get_runtime_timezone())
+        dt = datetime.datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
+        now = datetime.datetime.now(tz)
+        age_sec = (now - dt).total_seconds()
+        return age_sec < 0 or age_sec >= ttl_seconds
+    except Exception:
+        return True
+
+
+def _collect_wog_fuel_blocks(obj: Any, out: list) -> None:
+    """Recursively collect WOG Next.js `block.fuels_fuel` items from __NEXT_DATA__."""
+    if isinstance(obj, dict):
+        if obj.get("i_am_page_element") == "block.fuels_fuel" and obj.get("price") is not None:
+            out.append(obj)
+            return
+        for v in obj.values():
+            _collect_wog_fuel_blocks(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _collect_wog_fuel_blocks(v, out)
+
+
 def _parse_wog_fuel_html(html: str) -> Tuple[Dict[str, float], list]:
     """Parse fuel prices and lineup from wog.ua/ua/fuels HTML."""
     prices = dict(DEFAULT_INTERNET_PRICES)
     lineup = []
 
-    # Method 1: Parse WOG Next.js SSR JSON blocks ("i_am_page_element":"block.fuels_fuel")
-    json_matches = re.finditer(
-        r'"price"\s*:\s*(\d+)\s*,\s*"cla"\s*:\s*"[^"]*"\s*,\s*"i_am_page_element"\s*:\s*"block\.fuels_fuel"\s*,\s*"type"\s*:\s*"([^"]*)"\s*,\s*"brand"\s*:\s*"([^"]*)"',
-        html
-    )
-    for m in json_matches:
-        val_uah = round(int(m.group(1)) / 100.0, 2)
-        if 10.0 <= val_uah <= 300.0:
-            f_type = m.group(2).strip()
-            f_brand = m.group(3).strip()
-            lineup.append({"type": f_type, "brand": f_brand, "label": f"{f_type} {f_brand}".strip(), "price": val_uah})
+    # Method 1: Parse real JSON inside <script id="__NEXT_DATA__"> (handles optional brand for ГАЗ / AdBlue)
+    next_m = re.search(r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+    if next_m:
+        try:
+            next_data = json.loads(next_m.group(1))
+            blocks: list = []
+            _collect_wog_fuel_blocks(next_data, blocks)
+            for blk in blocks:
+                try:
+                    raw_p = float(blk.get("price"))
+                    val_uah = round(raw_p / 100.0, 2) if raw_p >= 1000 else round(raw_p, 2)
+                except (TypeError, ValueError):
+                    continue
+                if 10.0 <= val_uah <= 300.0:
+                    f_type = str(blk.get("type") or "").strip()
+                    f_brand = str(blk.get("brand") or "").strip()
+                    if f_type:
+                        lineup.append({
+                            "type": f_type,
+                            "brand": f_brand,
+                            "label": f"{f_type} {f_brand}".strip(),
+                            "price": val_uah,
+                        })
+        except Exception as e:
+            logger.debug("WOG __NEXT_DATA__ JSON parse fallback: %s", e)
 
-    # Method 2: Fallback to HTML blocks on https://wog.ua/ua/fuels/ if JSON layout changes
+    # Method 2: Regex fallback for inline SSR JSON blocks (with optional "brand")
+    if not lineup:
+        json_matches = re.finditer(
+            r'"price"\s*:\s*(\d+)\s*,\s*"cla"\s*:\s*"[^"]*"\s*,\s*"i_am_page_element"\s*:\s*"block\.fuels_fuel"\s*,\s*"type"\s*:\s*"([^"]*)"(?:\s*,\s*"brand"\s*:\s*"([^"]*)")?',
+            html
+        )
+        for m in json_matches:
+            val_uah = round(int(m.group(1)) / 100.0, 2)
+            if 10.0 <= val_uah <= 300.0:
+                f_type = m.group(2).strip()
+                f_brand = (m.group(3) or "").strip()
+                lineup.append({"type": f_type, "brand": f_brand, "label": f"{f_type} {f_brand}".strip(), "price": val_uah})
+
+    # Method 3: Fallback to HTML blocks on https://wog.ua/ua/fuels/ if JSON layout changes
     if not lineup:
         html_matches = re.finditer(
             r'<div class="s_type__[^"]*">([^<]*)</div><div class="s_brand__[^"]*">([^<]*)</div></div><div class="s_price__[^"]*">([0-9]+(?:[.,][0-9]+)?)</div>',
@@ -406,7 +464,9 @@ def _parse_wog_fuel_html(html: str) -> Tuple[Dict[str, float], list]:
         ft = item["type"].upper()
         fb = item["brand"].upper()
         p = item["price"]
-        if ft == "95":
+        if ft == "100" or "100" in ft:
+            prices["А-100 Mustang"] = p
+        elif ft == "95":
             if "MUSTANG" in fb:
                 prices["А-95 Mustang"] = p
             else:
@@ -418,8 +478,10 @@ def _parse_wog_fuel_html(html: str) -> Tuple[Dict[str, float], list]:
                 prices["ДП Mustang+"] = p
             else:
                 prices["ДП"] = p
-        elif "ГАЗ" in ft:
+        elif "ГАЗ" in ft or "LPG" in ft:
             prices["ГАЗ"] = p
+        elif "ADBLUE" in ft or "ADBLUE" in fb:
+            prices["AdBlue"] = p
         elif ft == "92" or "92" in fb:
             prices["А-92"] = p
 
@@ -427,7 +489,7 @@ def _parse_wog_fuel_html(html: str) -> Tuple[Dict[str, float], list]:
 
 
 def _build_okko_payload(raw_floats: list[float]) -> Tuple[Dict[str, float], list]:
-    """Build normalized OKKO price dict and lineup list from parsed float prices."""
+    """Build normalized OKKO price dict and lineup list from positional float prices (fallback)."""
     prices = dict(DEFAULT_OKKO_PRICES)
     p_pulls100 = raw_floats[0]
     p_pulls_dp = raw_floats[1]
@@ -458,16 +520,110 @@ def _build_okko_payload(raw_floats: list[float]) -> Tuple[Dict[str, float], list
     return prices, lineup
 
 
+def _parse_okko_nuxt_semantic(html: str) -> Optional[Tuple[Dict[str, float], list]]:
+    """
+    Resolve window.__NUXT__ IIFE symbol table and map OKKO bullets.items
+    semantically by fuel_code / title / type (resilient to card reordering).
+    """
+    nuxt_m = re.search(r"window\.__NUXT__=\(function\(([^)]+)\)\{", html)
+    bm = re.search(r"bullets\s*:\s*\{items:\s*\[([^\]]*)\]", html)
+    if not nuxt_m or not bm:
+        return None
+    end_m = re.search(r"\}\)?\(([^<]+?)\)\)?;?</script>", html[nuxt_m.start():])
+    if not end_m:
+        return None
+    try:
+        params = [p.strip() for p in nuxt_m.group(1).split(",")]
+        raw_args = re.sub(r"\bvoid 0\b", "null", end_m.group(1))
+        args = json.loads("[" + raw_args + "]")
+        sym = dict(zip(params, args))
+    except Exception:
+        return None
+
+    prices = dict(DEFAULT_OKKO_PRICES)
+    matched_count = 0
+
+    for item_m in re.finditer(r"\{([^{}]+)\}", bm.group(1)):
+        body = item_m.group(1)
+        rec: Dict[str, Any] = {}
+        for k in ("title", "price", "type", "fuel_code"):
+            km = re.search(rf'\b{k}\s*:\s*("[^"]*"|\'[^\']*\'|[A-Za-z0-9_$]+)', body)
+            if km:
+                v = km.group(1)
+                if v[0] in ("'", '"'):
+                    rec[k] = v[1:-1]
+                elif v in sym:
+                    rec[k] = sym[v]
+                else:
+                    rec[k] = v
+        raw_p = rec.get("price")
+        if raw_p is None:
+            continue
+        try:
+            p = round(float(str(raw_p).replace(",", ".")), 2)
+        except (TypeError, ValueError):
+            continue
+        if not (10.0 <= p <= 300.0):
+            continue
+
+        code = str(rec.get("fuel_code") or "").strip().upper()
+        title = str(rec.get("title") or "").strip().upper()
+        ftype = str(rec.get("type") or "").strip().upper()
+        is_pulls = "PULLS" in code or "PULLS" in ftype
+
+        if "100" in code or title == "100":
+            prices["А-100 Pulls"] = p
+            matched_count += 1
+        elif code in ("DP", "PULLS DIESEL") or "DIESEL" in code or "ДП" in title:
+            if is_pulls:
+                prices["ДП Pulls"] = p
+            else:
+                prices["ДП"] = p
+            matched_count += 1
+        elif "95" in code or title == "95":
+            if is_pulls:
+                prices["А-95 Pulls"] = p
+            else:
+                prices["А-95"] = p
+                prices["А-92"] = p
+            matched_count += 1
+        elif code == "SPBT" or "ГАЗ" in title or "LPG" in code:
+            prices["ГАЗ"] = p
+            matched_count += 1
+        elif "ADBLUE" in code or "ADBLUE" in title:
+            prices["AdBlue"] = p
+            matched_count += 1
+
+    if matched_count < 4:
+        return None
+
+    lineup = [
+        {"type": "ДП", "brand": "Євро", "label": "ДП Євро", "price": prices["ДП"]},
+        {"type": "ДП", "brand": "Pulls", "label": "Pulls Дизель", "price": prices["ДП Pulls"]},
+        {"type": "95", "brand": "Євро", "label": "А-95 Євро", "price": prices["А-95"]},
+        {"type": "95", "brand": "Pulls", "label": "Pulls 95", "price": prices["А-95 Pulls"]},
+        {"type": "100", "brand": "Pulls", "label": "Pulls 100", "price": prices["А-100 Pulls"]},
+        {"type": "ГАЗ", "brand": "СПБТ", "label": "ГАЗ (СПБТ)", "price": prices["ГАЗ"]},
+        {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": prices["AdBlue"]},
+    ]
+    return prices, lineup
+
+
 def _parse_okko_fuel_html(html: str) -> Optional[Tuple[Dict[str, float], list]]:
     """Parse fuel prices and lineup from okko.ua/fuels HTML, or None if layout unavailable."""
-    # Method 1: Extract prices from bullets: { items: [...] } in window.__NUXT__
-    bm = re.search(r'bullets\s*:\s*\{items:\s*\[(.*?)\]\}', html)
+    # Method 1: Semantic Nuxt SSR symbol resolution (resilient to order changes)
+    semantic = _parse_okko_nuxt_semantic(html)
+    if semantic:
+        return semantic
+
+    # Method 2: Extract prices positionally from bullets: { items: [...] }
+    bm = re.search(r'bullets\s*:\s*\{items:\s*\[([^\]]*)\]', html)
     if bm:
         raw_items = re.findall(r'\{[^{}]*?price\s*:\s*["\']([0-9.]+)["\'][^{}]*?\}', bm.group(1))
         if len(raw_items) >= 5:
             return _build_okko_payload([float(x) for x in raw_items])
 
-    # Method 2: Fallback to rendered DOM elements if Nuxt SSR layout differs
+    # Method 3: Fallback to rendered DOM elements if Nuxt SSR layout differs
     dom_prices = re.findall(r'class="price"[^>]*>\s*(\d+)\s*<sup[^>]*>(\d+)</sup>\s*</span>', html)
     if len(dom_prices) >= 5:
         return _build_okko_payload([float(f"{a}.{b}") for a, b in dom_prices])
@@ -631,6 +787,7 @@ async def update_system_settings(
         "weather_cache_minutes": {"min": 1, "allow_zero": False, "is_int": True},
         "alerts_cache_seconds": {"min": 5, "allow_zero": False, "is_int": True},
         "ukraine_alarm_cache_seconds": {"min": 15, "allow_zero": False, "is_int": True},
+        "test_run_threshold_seconds": {"min": 0, "allow_zero": True, "is_int": True},
     }
     for num_key, constraint in numeric_constraints.items():
         if num_key in updates and updates[num_key] is not None:
@@ -936,9 +1093,11 @@ def get_fuel_prices_info() -> Dict[str, Any]:
     mapping_wog = [
         ("А-95", "fuel_price_a95", "internet_price_a95"),
         ("А-95 Mustang", "fuel_price_a95", "internet_price_a95_mustang"),
+        ("А-100 Mustang", None, "internet_price_a100_mustang"),
         ("ДП", "fuel_price_dp", "internet_price_dp"),
         ("ДП Mustang+", "fuel_price_dp", "internet_price_dp_mustang"),
         ("ГАЗ", None, "internet_price_gas"),
+        ("AdBlue", None, "internet_price_adblue"),
         ("А-92", "fuel_price_a92", "internet_price_a92"),
     ]
     fuels: Dict[str, Dict[str, Any]] = {}
@@ -970,6 +1129,7 @@ def get_fuel_prices_info() -> Dict[str, Any]:
         ("ДП Pulls", "fuel_price_dp", "okko_price_dp_pulls"),
         ("А-100 Pulls", None, "okko_price_a100_pulls"),
         ("ГАЗ", None, "okko_price_gas"),
+        ("AdBlue", None, "okko_price_adblue"),
         ("А-92", "fuel_price_a92", "okko_price_a92"),
     ]
     okko_fuels: Dict[str, Dict[str, Any]] = {}
@@ -1119,10 +1279,10 @@ async def resolve_fuel_price_per_liter(
         if conf_price > 0:
             return round(conf_price, 2), "system_settings"
 
-    # Auto-fetch if not updated
+    # Auto-fetch if never updated or older than TTL (3h)
     if RUNTIME_SETTINGS.get("auto_fetch_fuel_prices", True):
         upd_key = "okko_prices_updated_at" if is_okko else "internet_prices_updated_at"
-        if not RUNTIME_SETTINGS.get(upd_key):
+        if is_fuel_prices_stale(RUNTIME_SETTINGS.get(upd_key)):
             try:
                 await refresh_internet_fuel_prices(db, provider="okko" if is_okko else "wog")
             except Exception:
@@ -1436,4 +1596,35 @@ async def perform_system_reset(
 
     else:
         raise ValueError(f"Невідомий режим очищення: {mode}")
+
+
+async def run_fuel_prices_refresh_loop(interval_seconds: int = FUEL_PRICES_TTL_SECONDS) -> None:
+    """
+    Фоновий планувальник автоматичного оновлення цін на пальне з офіційних табло WOG та OKKO.
+    Запускається через 45с після старту сервера (якщо кеш застарілий) і далі кожні `interval_seconds`.
+    """
+    from backend.app.database import AsyncSessionLocal
+
+    initial_wait = True
+    while True:
+        try:
+            await asyncio.sleep(45 if initial_wait else interval_seconds)
+            initial_wait = False
+            async with AsyncSessionLocal() as session:
+                await load_system_settings(session)
+                if not get_runtime_setting("auto_fetch_fuel_prices", True):
+                    continue
+                wog_stale = is_fuel_prices_stale(get_runtime_setting("internet_prices_updated_at"))
+                okko_stale = is_fuel_prices_stale(get_runtime_setting("okko_prices_updated_at"))
+                if wog_stale and okko_stale:
+                    await refresh_internet_fuel_prices(session, provider="all")
+                elif wog_stale:
+                    await refresh_internet_fuel_prices(session, provider="wog")
+                elif okko_stale:
+                    await refresh_internet_fuel_prices(session, provider="okko")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning("Fuel prices background refresh error: %s", e)
+
 
