@@ -280,17 +280,18 @@ async def delete_facility(
     await db.execute(update(PushSubscription).where(PushSubscription.facility_id == facility_id).values(facility_id=None))
     await db.execute(update(NotificationLog).where(NotificationLog.facility_id == facility_id).values(facility_id=None))
 
-    # 3. Cascade delete associated generators if requested
-    if cascade:
+    # 3. Cascade delete associated generators if requested (batched to avoid N+1 DELETEs)
+    if cascade and facility.generators:
         from backend.app.models.generator import GeneratorRun
         from backend.app.models.maintenance import MaintenanceRecord
         from backend.app.models.fault import Fault
+        gen_ids = [gen.id for gen in facility.generators]
+        await db.execute(sql_delete(GeneratorRun).where(GeneratorRun.generator_id.in_(gen_ids)))
+        await db.execute(sql_delete(MaintenanceRecord).where(MaintenanceRecord.generator_id.in_(gen_ids)))
+        await db.execute(sql_delete(Fault).where(Fault.generator_id.in_(gen_ids)))
+        await db.execute(sql_delete(FuelTransfer).where(FuelTransfer.generator_id.in_(gen_ids)))
+        await db.execute(sql_delete(FuelMeasurement).where(FuelMeasurement.generator_id.in_(gen_ids)))
         for gen in list(facility.generators):
-            await db.execute(sql_delete(GeneratorRun).where(GeneratorRun.generator_id == gen.id))
-            await db.execute(sql_delete(MaintenanceRecord).where(MaintenanceRecord.generator_id == gen.id))
-            await db.execute(sql_delete(Fault).where(Fault.generator_id == gen.id))
-            await db.execute(sql_delete(FuelTransfer).where(FuelTransfer.generator_id == gen.id))
-            await db.execute(sql_delete(FuelMeasurement).where(FuelMeasurement.generator_id == gen.id))
             await db.delete(gen)
 
     # 4. Delete associated measurements, canister transactions/pools and fuel stocks
@@ -307,15 +308,22 @@ async def delete_facility(
     await db.delete(facility)
     await db.flush()
 
-    # Clear runtime settings if pointing to deleted facility
+    # Clear both persisted DB settings and runtime cache if pointing to deleted facility
     from backend.app.services.settings_service import get_runtime_setting, set_runtime_setting
+    from backend.app.models.settings import SystemSetting
+    keys_to_clear = []
     if get_runtime_setting("default_facility_id") == facility_id:
-        set_runtime_setting("default_facility_id", None)
-        set_runtime_setting("default_generator_id", None)
-        set_runtime_setting("default_fuel_stock_id", None)
+        keys_to_clear.extend(["default_facility_id", "default_generator_id", "default_fuel_stock_id"])
     if get_runtime_setting("email_weekly_facility_id") == facility_id:
-        set_runtime_setting("email_weekly_facility_id", None)
-        set_runtime_setting("email_weekly_generator_id", None)
+        keys_to_clear.extend(["email_weekly_facility_id", "email_weekly_generator_id"])
+    if keys_to_clear:
+        await db.execute(
+            update(SystemSetting)
+            .where(SystemSetting.key.in_(keys_to_clear))
+            .values(value_json="null")
+        )
+        for k in keys_to_clear:
+            set_runtime_setting(k, None)
     await db.flush()
 
     deleted_gen_names = [g.name for g in facility.generators] if cascade else []

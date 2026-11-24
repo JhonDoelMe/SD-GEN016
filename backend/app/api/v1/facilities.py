@@ -97,13 +97,10 @@ async def get_facilities_network_overview(
     live_tank_map = await compute_live_tank_levels_map(db, gens) if gens else {}
 
     sched_map = {}
-    if gen_ids:
-        sched_rows = (
-            await db.execute(
-                select(MaintenanceSchedule).where(MaintenanceSchedule.generator_id.in_(gen_ids))
-            )
-        ).scalars().all()
-        sched_map = {s.generator_id: s for s in sched_rows}
+    for g in gens:
+        schedules = getattr(g, "maintenance_schedules", None) or []
+        if schedules:
+            sched_map[g.id] = schedules[0]
 
     stock_rows = (
         await db.execute(
@@ -374,12 +371,10 @@ async def get_facility_indicators(
     verify_facility_access(current_user, facility_id)
     if response:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    # Warm facility in session identity map so concurrent tasks do not contend on AsyncSession
-    await db.get(Facility, facility_id)
-    weather, alert = await asyncio.gather(
-        get_facility_weather(db, facility_id, force=force),
-        get_facility_alert(db, facility_id, force=force)
-    )
+    # Sequential execution avoids concurrent writes/reads on the shared SQLAlchemy AsyncSession
+    # (both services use in-memory caches so cached requests resolve in <1 ms)
+    weather = await get_facility_weather(db, facility_id, force=force)
+    alert = await get_facility_alert(db, facility_id, force=force)
     return {
         "weather": weather,
         "alert": alert

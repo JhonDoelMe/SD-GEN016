@@ -593,7 +593,7 @@ def parse_meteoalarm_warnings(
     """
     if not raw_data or not isinstance(raw_data, dict):
         return []
-    now_ref = now_dt.astimezone(timezone.utc) if now_dt else now_utc().astimezone(timezone.utc)
+    now_ref = now_dt.astimezone(timezone.utc) if now_dt else now_utc(naive=False)
     parsed: List[Dict[str, Any]] = []
 
     for item in raw_data.get("warnings") or []:

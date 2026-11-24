@@ -5,6 +5,21 @@
 
 ---
 
+## [v5.9.4] — 2026-11-24
+### ⚡ Комплексна оптимізація швидкодії, виправлення багів і очищення мертвого коду
+- **Прискорення завантаження та зниження навантаження API (Frontend + Backend)**:
+  - Оптимізовано фоновий полінг ([`notifications.js`](frontend/js/notifications.js)): інтервал переведено з `10 с` на `30 с`, графік YASNO опитується раз на `5 хв` замість щодесять секунд, `visibilitychange` отримав дебаунс `15 с` без примусового обходу кешу (`force=false`).
+  - Прибрано дублювання `/notifications/feed` при старті/логіні ([`auth-nav.js`](frontend/js/auth-nav.js)) та подвійні виклики у `manualRunForm` ([`dashboard.js`](frontend/js/dashboard.js)) і `openAllNotificationsLog()` ([`notifications.js`](frontend/js/notifications.js)).
+  - На бекенді прибрано каскади `selectin` (`noload`) у `/notifications/feed`, `/notifications/logs`, `get_fuel_balances_summary()` та при старті в `sanitize_historical_audit_logs()`, прибрано зайвий запит `MaintenanceSchedule` у `/facilities/overview`, пакетовано `DELETE` у `delete_facility()` та винесено перевірку/хешування ZIP бекапів у `asyncio.to_thread()`.
+- **Виправлені реальні баги (Backend + Frontend)**:
+  - **Firebase Test (`ImportError`):** виправлено `_get_fcm_access_token` → `_get_access_token(sa)` у [`system.py`](backend/app/api/v1/system.py).
+  - **Тривалість тривог та час MeteoAlarm:** виправлено `now_utc()` → `now_utc(naive=False)` у [`alert_service.py`](backend/app/services/alert_service.py) та [`weather_service.py`](backend/app/services/weather_service.py).
+  - **Безпека `AsyncSession`:** усунено конкурентний `asyncio.gather` поверх однієї сесії в `GET /facilities/{id}/status-indicators` ([`facilities.py`](backend/app/api/v1/facilities.py)).
+  - **Windows ZipFile cleanup та видалення дефолтного об'єкта:** винесено `unlink()` поза блок `with zipfile.ZipFile(...)` ([`backups.py`](backend/app/api/v1/backups.py), [`backup_service.py`](backend/app/services/backup_service.py)) і збережено очищення `default_facility_id` у БД ([`facility_service.py`](backend/app/services/facility_service.py)).
+  - **Фронтенд-баги:** усунено race condition при перемиканні об'єкта/генератора (`_genDataSeq` / `_genListSeq`), ізольовано 60-секундний таймер охолодження за `generatorId`, виправлено парсинг UTC (`parseUTCDate`) у запобіжниках зупинки, кнопку «Оновити зараз» у модалках погоди/тривог ([`weather-alerts.js`](frontend/js/weather-alerts.js)), статуси `FAULTY`/`BLOCKED` і ключ `localStorage` у [`network.js`](frontend/js/network.js), колбеки `loadAllData`/`showToast`/`loadRunsData` ([`backups.js`](frontend/js/backups.js), [`core.js`](frontend/js/core.js), [`dashboard.js`](frontend/js/dashboard.js)), додано очищення форм (`#maintForm`, `#userCreateForm`, `#newStockForm`, `#adjustmentForm`) та стилі бейджів `.badge-success/.badge-warning/.badge-danger/.badge-blocked`.
+- **Очищення мертвого коду**:
+  - Видалено 9 невикористовуваних legacy-функцій in-memory rate-limit/revocation у [`security.py`](backend/app/core/security.py) (~145 рядків), невикористовувані імпорти, мертвий `updateKyivClock()` ([`theme-format.js`](frontend/js/theme-format.js)) та неіснуючу перевірку `modalWizard` ([`core.js`](frontend/js/core.js)).
+
 ## [v5.9.3] — 2026-11-24
 ### 🎨 Виправлення стилю `.btn-danger` у модалці несправностей та критичних діалогах
 - **CSS-система кнопок ([`base.css`](frontend/css/base.css))**:

@@ -167,10 +167,12 @@ window.refreshFacilityIndicators = async function(manual = true) {
   if (!currentFacilityId) return;
   if (manual) showToast("Оновлення погоди та статусу тривоги...", "info");
   await window.loadFacilityIndicators(currentFacilityId, true);
-  if (window._currentWeatherData && document.getElementById('modalWeatherDetails')?.classList.contains('active')) {
+  const wModal = document.getElementById('modalWeatherDetails');
+  if (window._currentWeatherData && wModal && wModal.style.display === 'flex') {
     window.populateWeatherModal(window._currentWeatherData);
   }
-  if (window._currentAlertData && document.getElementById('modalAlertDetails')?.classList.contains('active')) {
+  const aModal = document.getElementById('modalAlertDetails');
+  if (window._currentAlertData && aModal && aModal.style.display === 'flex') {
     window.populateAlertModal(window._currentAlertData);
   }
   if (manual) showToast("Дані успішно оновлено!", "success");

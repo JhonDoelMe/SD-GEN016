@@ -5,8 +5,9 @@
 (function () {
   function genStatusBadgeHtml(status) {
     if (status === 'RUNNING') return '<span class="badge badge-running">ПРАЦЮЄ</span>';
-    if (status === 'MAINTENANCE_REQUIRED') return '<span class="badge badge-faulty">ПОТРІБНЕ ТО</span>';
-    if (status === 'CRITICAL_FAULT' || status === 'FAULT') return '<span class="badge badge-faulty">НЕСПРАВНІСТЬ</span>';
+    if (status === 'MAINTENANCE_REQUIRED') return '<span class="badge badge-maintenance">ПОТРІБНЕ ТО</span>';
+    if (status === 'FAULTY' || status === 'CRITICAL_FAULT' || status === 'FAULT') return '<span class="badge badge-faulty">НЕСПРАВНІСТЬ</span>';
+    if (status === 'BLOCKED') return '<span class="badge badge-blocked">ЗАБЛОКОВАНО</span>';
     return '<span class="badge badge-stopped">ЗУПИНЕНО</span>';
   }
 
@@ -49,7 +50,8 @@
       const genSel = document.getElementById('generatorSelect');
       if (genSel) genSel.value = String(generatorId);
       currentGeneratorId = Number(generatorId);
-      localStorage.setItem(`sd_last_generator_${currentFacilityId}`, String(currentGeneratorId));
+      localStorage.setItem('sd_last_generator_id', String(currentGeneratorId));
+      localStorage.setItem(`sd_last_gen_facility_${currentFacilityId}`, String(currentGeneratorId));
     }
     if (typeof window.switchTab === 'function') {
       await window.switchTab('tab-dashboard');

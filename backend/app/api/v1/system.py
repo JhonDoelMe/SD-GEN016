@@ -906,7 +906,7 @@ async def test_server_integration(
             return {"status": "error", "message": f"Помилка з'єднання: {exc}"}
 
     if payload.provider == "firebase":
-        from backend.app.services.fcm_service import _load_service_account, _get_fcm_access_token
+        from backend.app.services.fcm_service import _load_service_account, _get_access_token
         if raw_val:
             try:
                 sa = json.loads(raw_val)
@@ -923,7 +923,14 @@ async def test_server_integration(
         sa = _load_service_account()
         if not sa:
             return {"status": "error", "message": "Firebase Service Account не налаштовано"}
-        access_tok, project_id = await _get_fcm_access_token()
+        try:
+            access_tok, project_id = await _get_access_token(sa)
+        except Exception as exc:
+            return {
+                "status": "error",
+                "message": f"Помилка авторизації Firebase OAuth2: {exc}",
+                "duration_ms": int(round((time.time() - start_t) * 1000)),
+            }
         ms = int(round((time.time() - start_t) * 1000))
         if access_tok and project_id:
             return {

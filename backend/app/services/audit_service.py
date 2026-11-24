@@ -1,7 +1,7 @@
 import json
-import datetime
 from typing import Optional, Any
 from sqlalchemy import select
+from sqlalchemy.orm import raiseload
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.database import utc_now
 from backend.app.models.audit import AuditLog, SystemAdjustment
@@ -136,7 +136,11 @@ async def sanitize_historical_audit_logs(db: AsyncSession) -> int:
     Scans existing AuditLog records for any unredacted sensitive keys in details_json,
     sanitizes them, and persists the sanitized JSON. Returns the count of sanitized records.
     """
-    res = await db.execute(select(AuditLog))
+    res = await db.execute(
+        select(AuditLog)
+        .options(raiseload(AuditLog.user))
+        .where(AuditLog.details_json.is_not(None))
+    )
     logs = res.scalars().all()
     count = 0
     for log in logs:

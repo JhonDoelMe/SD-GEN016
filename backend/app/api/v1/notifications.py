@@ -1,13 +1,12 @@
-import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from sqlalchemy import select, delete
+from sqlalchemy.orm import raiseload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.database import get_db
 from backend.app.api.deps import (
     get_current_user,
-    get_current_admin,
     require_permission,
     is_user_admin_or_super,
     verify_facility_access,
@@ -15,7 +14,7 @@ from backend.app.api.deps import (
     get_client_ip,
 )
 from backend.app.models.user import User
-from backend.app.models.notification import NotificationLog, PushSubscription
+from backend.app.models.notification import NotificationLog
 from backend.app.schemas.notification import (
     PushSubscriptionIn,
     PushSubscriptionOut,
@@ -204,7 +203,12 @@ async def get_notification_logs(
     current_user: User = Depends(require_permission("notifications:view"))
 ):
     """Get history of dispatched notifications."""
-    q = select(NotificationLog).order_by(NotificationLog.created_at.desc()).limit(limit)
+    q = (
+        select(NotificationLog)
+        .options(raiseload(NotificationLog.generator), raiseload(NotificationLog.facility))
+        .order_by(NotificationLog.created_at.desc())
+        .limit(limit)
+    )
     if not is_user_admin_or_super(current_user):
         if not current_user.facility_id:
             raise HTTPException(
@@ -288,6 +292,7 @@ async def get_notification_bell_feed(
 
     q = (
         select(NotificationLog)
+        .options(raiseload(NotificationLog.generator), raiseload(NotificationLog.facility))
         .where(NotificationLog.event_type.notin_(excluded_types))
         .order_by(NotificationLog.created_at.desc(), NotificationLog.id.desc())
         .limit(limit)

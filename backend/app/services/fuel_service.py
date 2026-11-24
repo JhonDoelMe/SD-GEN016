@@ -3,11 +3,11 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, List, Dict
 from fastapi import HTTPException, status
 from sqlalchemy import select, func, or_, update, delete
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, raiseload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer, utc_now
-from backend.app.models.canister import CanisterPool, CanisterTransaction
+from backend.app.models.canister import CanisterPool
 from backend.app.models.generator import Generator, GeneratorRun
 from backend.app.models.facility import Facility
 from backend.app.schemas.fuel import (
@@ -941,7 +941,9 @@ async def transfer_fuel_to_tank(
     # Отримуємо генератор із блокуванням
     if not transfer_data.generator_id:
         # Якщо генератор не вказано, шукаємо генератор цього об'єкта
-        gen_q = select(Generator).where(Generator.facility_id == stock.facility_id).order_by(Generator.id.asc()).with_for_update()
+        gen_q = select(Generator).options(
+            raiseload(Generator.schedules), raiseload(Generator.maintenance_schedules)
+        ).where(Generator.facility_id == stock.facility_id).order_by(Generator.id.asc()).with_for_update()
         res_gen = await db.execute(gen_q)
         generator = res_gen.scalars().first()
     else:
@@ -1213,7 +1215,11 @@ async def get_fuel_balances_summary(
         warehouse_balance = (await db.execute(stock_sum_q)).scalar_one()
 
         # 2. Залишки баків генераторів об'єкта (живий розрахунковий + обліковий)
-        gen_q = select(Generator).where(Generator.facility_id == facility_id)
+        gen_q = (
+            select(Generator)
+            .options(raiseload(Generator.schedules), raiseload(Generator.maintenance_schedules))
+            .where(Generator.facility_id == facility_id)
+        )
         if generator_id:
             gen_q = gen_q.where(Generator.id == generator_id)
         gens = list((await db.execute(gen_q)).scalars().all())
@@ -1257,7 +1263,9 @@ async def get_fuel_balances_summary(
         )
         warehouse_balance = (await db.execute(stock_sum_q)).scalar_one()
 
-        gen_q = select(Generator)
+        gen_q = select(Generator).options(
+            raiseload(Generator.schedules), raiseload(Generator.maintenance_schedules)
+        )
         if generator_id:
             gen_q = gen_q.where(Generator.id == generator_id)
         gens = list((await db.execute(gen_q)).scalars().all())

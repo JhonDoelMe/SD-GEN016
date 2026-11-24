@@ -903,7 +903,7 @@ async def evaluate_and_notify_facility_alert_transition(
                     dt_s = datetime.fromisoformat(str(prev_started).replace("Z", "+00:00"))
                     if dt_s.tzinfo is None:
                         dt_s = dt_s.replace(tzinfo=timezone.utc)
-                    diff_s = (now_utc() - dt_s).total_seconds()
+                    diff_s = (now_utc(naive=False) - dt_s).total_seconds()
                     if diff_s > 0:
                         final_dur = max(1, int(diff_s // 60))
                 except Exception:
@@ -1018,7 +1018,7 @@ async def get_facility_alert(db: AsyncSession, facility_id: int, force: bool = F
             dt_start = datetime.fromisoformat(str(started_at_val).replace("Z", "+00:00"))
             if dt_start.tzinfo is None:
                 dt_start = dt_start.replace(tzinfo=timezone.utc)
-            diff_sec = (now_utc() - dt_start).total_seconds()
+            diff_sec = (now_utc(naive=False) - dt_start).total_seconds()
             if diff_sec > 0:
                 duration_minutes = max(1, int(diff_sec // 60))
         except Exception:

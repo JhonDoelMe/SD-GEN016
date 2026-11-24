@@ -966,7 +966,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Periodic background refresh for active screen, secondary operational tabs & header indicators
   let _isBgRefreshRunning = false;
   let _lastBgRefreshAt = Date.now();
+  let _lastYasnoBgRefreshAt = 0;
+  let _lastYasnoBgFacId = null;
   let _lastNativeResumeAt = 0;
+
+  window._markBgRefreshed = () => {
+    _lastBgRefreshAt = Date.now();
+  };
 
   const isUserEditingFormOrModal = () => {
     const activeEl = document.activeElement;
@@ -976,10 +982,11 @@ document.addEventListener('DOMContentLoaded', () => {
     return !!(typeof window.getTopOpenModalId === 'function' && window.getTopOpenModalId());
   };
 
-  window.refreshActiveAppState = async (_reason = 'interval', force = false) => {
+  window.refreshActiveAppState = async (reason = 'interval', force = false) => {
     if (_isBgRefreshRunning || document.hidden || !token || !currentUser) return;
     _isBgRefreshRunning = true;
-    _lastBgRefreshAt = Date.now();
+    const nowTs = Date.now();
+    _lastBgRefreshAt = nowTs;
     try {
       const tasks = [
         typeof loadFacilityIndicators === 'function' ? loadFacilityIndicators(currentFacilityId, force) : Promise.resolve(),
@@ -990,7 +997,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const activeTab = window.activeTabId || 'tab-dashboard';
       if (activeTab === 'tab-dashboard') {
         if (typeof loadGeneratorData === 'function') tasks.push(loadGeneratorData());
-        if (typeof loadFacilityOutageSchedule === 'function') tasks.push(loadFacilityOutageSchedule(currentFacilityId));
+        const yasnoDue = force
+          || _lastYasnoBgFacId !== currentFacilityId
+          || (nowTs - _lastYasnoBgRefreshAt >= 300000);
+        if (yasnoDue && typeof loadFacilityOutageSchedule === 'function') {
+          _lastYasnoBgRefreshAt = nowTs;
+          _lastYasnoBgFacId = currentFacilityId;
+          tasks.push(loadFacilityOutageSchedule(currentFacilityId, force));
+        }
         if (!isViewerOnly() && hasPermission('fuel:view') && typeof loadFuelSummary === 'function') {
           tasks.push(loadFuelSummary());
         }
@@ -1021,22 +1035,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.__onNativeResume = (reason = 'resume') => {
     const now = Date.now();
-    if (now - _lastNativeResumeAt < 800) return;
+    if (now - _lastNativeResumeAt < 3000) return;
     _lastNativeResumeAt = now;
     if (!token || !currentUser) return;
     if (typeof refreshServerStatus === 'function') refreshServerStatus();
-    window.refreshActiveAppState(`native:${reason}`, true);
+    window.refreshActiveAppState(`native:${reason}`, false);
     if (typeof window.OfflineQueue === 'object' && navigator.onLine) {
       window.OfflineQueue.syncOfflineQueue?.({ silent: true }).catch(() => {});
     }
   };
 
-  setInterval(() => window.refreshActiveAppState('interval', false), 10000);
+  // 30s background sync balances live status freshness with mobile battery and server load
+  setInterval(() => window.refreshActiveAppState('interval', false), 30000);
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && token && currentUser && (Date.now() - _lastBgRefreshAt > 1000)) {
+    if (!document.hidden && token && currentUser && (Date.now() - _lastBgRefreshAt > 15000)) {
       if (typeof refreshServerStatus === 'function') refreshServerStatus();
-      window.refreshActiveAppState('visibility', true);
+      window.refreshActiveAppState('visibility', false);
     }
   });
 });
@@ -1205,6 +1220,9 @@ window.markAllNotificationsRead = async function() {
 
 window.openAllNotificationsLog = function() {
   window.closeNotificationsBell();
+  try {
+    sessionStorage.setItem('sd_admin_subtab', 'notifications');
+  } catch (_) {}
   if (typeof window.switchTab === 'function') {
     window.switchTab('tab-admin').then(() => {
       if (typeof window.switchAdminSubtab === 'function') {

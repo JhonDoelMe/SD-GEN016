@@ -362,20 +362,22 @@ async def upload_and_restore_backup(
             detail="Помилка збереження завантаженого файлу на сервері"
         )
 
-    # Validate zip integrity
+    # Validate zip integrity (close handle before unlinking so Windows doesn't raise WinError 32)
+    missing_export = False
     try:
         with zipfile.ZipFile(saved_path, "r") as zf:
-            if "database_export.json" not in zf.namelist():
-                saved_path.unlink(missing_ok=True)
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="В архіві відсутній обов'язковий файл 'database_export.json'"
-                )
+            missing_export = "database_export.json" not in zf.namelist()
     except zipfile.BadZipFile:
         saved_path.unlink(missing_ok=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Файл пошкоджений або не є коректним ZIP-архівом"
+        )
+    if missing_export:
+        saved_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="В архіві відсутній обов'язковий файл 'database_export.json'"
         )
 
     client_ip = get_client_ip(request)

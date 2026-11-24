@@ -400,16 +400,18 @@ async def create_backup(
         tmp_zip_path = zip_path.with_suffix(".tmp")
         await asyncio.to_thread(_create_zip_file_sync, staging_dir, tmp_zip_path)
 
-        # Verify created zip file integrity before publishing (BAK-06)
-        with zipfile.ZipFile(tmp_zip_path, "r") as test_zf:
-            corrupted = test_zf.testzip()
-            if corrupted:
-                tmp_zip_path.unlink(missing_ok=True)
-                raise ValueError(f"Помилка цілісності створеного ZIP архіву: {corrupted}")
+        # Verify created zip file integrity before publishing in worker thread (BAK-06)
+        def _verify_and_hash_zip(p: Path):
+            with zipfile.ZipFile(p, "r") as test_zf:
+                bad_entry = test_zf.testzip()
+            if bad_entry:
+                return bad_entry, 0, ""
+            return None, p.stat().st_size, compute_sha256(p)
 
-        # 7. Compute final file stats and publish atomically
-        size_bytes = tmp_zip_path.stat().st_size
-        sha256_hash = compute_sha256(tmp_zip_path)
+        corrupted, size_bytes, sha256_hash = await asyncio.to_thread(_verify_and_hash_zip, tmp_zip_path)
+        if corrupted:
+            tmp_zip_path.unlink(missing_ok=True)
+            raise ValueError(f"Помилка цілісності створеного ZIP архіву: {corrupted}")
 
         # Atomic rename to final path (BAK-04)
         if zip_path.exists():

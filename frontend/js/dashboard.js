@@ -174,6 +174,8 @@ window.loadRecentRuns = async function () {
 };
 
 // 1. Generator Data
+let _genDataSeq = 0;
+
 async function loadGeneratorData() {
   if (!currentGeneratorId) {
     currentGenerator = null;
@@ -215,12 +217,15 @@ async function loadGeneratorData() {
     if (warmupBadge) warmupBadge.style.display = 'none';
     return;
   }
+  const reqSeq = ++_genDataSeq;
+  const requestedGenId = currentGeneratorId;
   try {
-    const qGenParam = `?generator_id=${encodeURIComponent(currentGeneratorId)}`;
+    const qGenParam = `?generator_id=${encodeURIComponent(requestedGenId)}`;
     const [genData, activeRunData] = await Promise.all([
       api(`/generator${qGenParam}`),
       api(`/generator/active-run${qGenParam}`).catch(() => null)
     ]);
+    if (reqSeq !== _genDataSeq || currentGeneratorId !== requestedGenId) return;
     currentGenerator = genData;
     if (!currentGenerator) return;
     currentGeneratorId = currentGenerator.id;
@@ -344,9 +349,18 @@ async function loadGeneratorData() {
 
     if (currentGenerator.status !== 'RUNNING') {
       const serverRem = parseInt(currentGenerator.cooldown_remaining_seconds, 10) || 0;
+      const isSameCooldownGen = currentCooldownGenId === currentGenerator.id;
+      if (!isSameCooldownGen && currentCooldownSeconds > 0) {
+        if (cooldownTimerInterval) {
+          clearInterval(cooldownTimerInterval);
+          cooldownTimerInterval = null;
+        }
+        currentCooldownSeconds = 0;
+        currentCooldownGenId = null;
+      }
       if (serverRem > 0 && currentCooldownSeconds <= 0) {
-        startCooldownTimer(serverRem);
-      } else if (currentCooldownSeconds > 0) {
+        startCooldownTimer(serverRem, currentGenerator.id);
+      } else if (currentCooldownSeconds > 0 && currentCooldownGenId === currentGenerator.id) {
         btn.disabled = true;
         btn.className = 'btn-hero btn-cooldown';
         btn.innerHTML = `<span>⏳</span><span>ОХОЛОДЖЕННЯ: ${currentCooldownSeconds} с</span>`;
@@ -358,6 +372,7 @@ async function loadGeneratorData() {
         cooldownTimerInterval = null;
       }
       currentCooldownSeconds = 0;
+      currentCooldownGenId = null;
     }
 
     if (btnTransfer) {
@@ -492,24 +507,33 @@ window.updateWarmupAvailabilityUI = function () {
 let runTimerInterval = null;
 let cooldownTimerInterval = null;
 let currentCooldownSeconds = 0;
+let currentCooldownGenId = null;
 
-function startCooldownTimer(seconds) {
+function startCooldownTimer(seconds, generatorId = null) {
   if (cooldownTimerInterval) {
     clearInterval(cooldownTimerInterval);
     cooldownTimerInterval = null;
   }
   currentCooldownSeconds = Math.max(0, parseInt(seconds, 10) || 0);
-  if (currentCooldownSeconds <= 0) return;
+  currentCooldownGenId = generatorId ?? currentGeneratorId ?? null;
+  if (currentCooldownSeconds <= 0) {
+    currentCooldownGenId = null;
+    return;
+  }
 
   const updateCooldownButton = () => {
     const btn = document.getElementById('mainActionBtn');
     if (!btn) return;
-    if (currentGenerator && currentGenerator.status === 'RUNNING') {
+    if (
+      (currentGenerator && currentGenerator.status === 'RUNNING') ||
+      (currentGenerator && currentCooldownGenId && currentGenerator.id !== currentCooldownGenId)
+    ) {
       if (cooldownTimerInterval) {
         clearInterval(cooldownTimerInterval);
         cooldownTimerInterval = null;
       }
       currentCooldownSeconds = 0;
+      currentCooldownGenId = null;
       return;
     }
     const warmupBtn = document.getElementById('btnWarmupStart');
@@ -1033,7 +1057,7 @@ async function executeGeneratorStart(triggerBtn, { isWarmup = false } = {}) {
   triggerBtn.disabled = true;
   triggerBtn.dataset.busy = 'true';
   const oldHtml = triggerBtn.innerHTML;
-  triggerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Запуск...';
+  triggerBtn.innerHTML = '⏳ Запуск...';
 
   try {
     const startRes = await api('/generator/start', {
@@ -1221,10 +1245,8 @@ document.addEventListener('submit', async (e) => {
         const fuelText = res.calculated_consumption_l != null ? `${res.calculated_consumption_l.toFixed(1)} л` : '-';
         showToast(`Сеанс роботи успішно внесено в журнал! Час: ${durText}, витрата: ${fuelText}`, 'success');
       }
-      loadGeneratorData();
       loadAllData();
-      loadRecentRuns();
-      if (typeof loadRunsTable === 'function') loadRunsTable();
+      if (typeof loadRunsData === 'function') loadRunsData();
     } catch (err) {
       showToast(err.message || 'Помилка при збереженні сеансу роботи', 'error');
     }
@@ -1249,7 +1271,8 @@ document.addEventListener('submit', async (e) => {
       const deltaH = endHours - startH;
       let elapsedH = 0;
       if (activeRun?.start_time) {
-        elapsedH = Math.max(0, (Date.now() - new Date(activeRun.start_time).getTime()) / 3600000);
+        const startDt = typeof parseUTCDate === 'function' ? parseUTCDate(activeRun.start_time) : new Date(activeRun.start_time);
+        elapsedH = Math.max(0, (Date.now() - startDt.getTime()) / 3600000);
       }
 
       const isSuspicious = (deltaH > 14.0) || (elapsedH > 0.02 && Math.abs(deltaH - elapsedH) > 2.0);
@@ -1276,7 +1299,8 @@ document.addEventListener('submit', async (e) => {
         const startH = activeRun?.start_hours ?? currentGenerator.current_operating_hours ?? 0;
         elapsedH = Math.max(0, endHours - startH);
       } else if (activeRun?.start_time) {
-        elapsedH = Math.max(0, (Date.now() - new Date(activeRun.start_time).getTime()) / 3600000);
+        const startDt = typeof parseUTCDate === 'function' ? parseUTCDate(activeRun.start_time) : new Date(activeRun.start_time);
+        elapsedH = Math.max(0, (Date.now() - startDt.getTime()) / 3600000);
       }
       const expectedAfter = Math.max(0, startTank - (elapsedH * rate));
       if (Math.abs(endFuel - expectedAfter) > 10.0) {
@@ -1294,7 +1318,7 @@ document.addEventListener('submit', async (e) => {
 
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Зупинка...';
+      submitBtn.innerHTML = '⏳ Зупинка...';
     }
 
     try {

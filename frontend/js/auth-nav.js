@@ -414,8 +414,8 @@ async function checkAuth() {
     if (typeof window.pollRecentNotifications === 'function') {
       window.pollRecentNotifications(true);
     }
-    if (typeof window.loadBellFeed === 'function') {
-      window.loadBellFeed(false);
+    if (typeof window._markBgRefreshed === 'function') {
+      window._markBgRefreshed();
     }
     if (window.ViewLoader?.scheduleIdleWarmup) {
       window.ViewLoader.scheduleIdleWarmup();
@@ -518,8 +518,8 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
     if (typeof window.pollRecentNotifications === 'function') {
       window.pollRecentNotifications(true);
     }
-    if (typeof window.loadBellFeed === 'function') {
-      window.loadBellFeed(false);
+    if (typeof window._markBgRefreshed === 'function') {
+      window._markBgRefreshed();
     }
     if (window.ViewLoader?.scheduleIdleWarmup) {
       window.ViewLoader.scheduleIdleWarmup();
@@ -838,10 +838,14 @@ async function loadFacilitiesList(forceRefresh = false) {
   }
 }
 
+let _genListSeq = 0;
+
 async function loadGeneratorsList(facilityId) {
+  const reqSeq = ++_genListSeq;
   try {
     const url = `/generator/list${facilityId ? '?facility_id=' + encodeURIComponent(facilityId) : ''}`;
     const generators = await api(url);
+    if (reqSeq !== _genListSeq) return;
     window._cachedGeneratorsList = Array.isArray(generators) ? generators : [];
     const sel = document.getElementById('generatorSelect');
     if (!sel) return;

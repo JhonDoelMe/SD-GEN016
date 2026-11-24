@@ -172,8 +172,8 @@ window.saveServerSettings = async function() {
   if (!val) {
     localStorage.removeItem('sd_server_host');
     window.OfflineQueue?.syncNativeSession?.().catch(() => {});
-    if (typeof showNotification === 'function') {
-      showNotification('Налаштування сервера скинуто', 'info');
+    if (typeof showToast === 'function') {
+      showToast('Налаштування сервера скинуто', 'info');
     }
     closeModal('modalServerSettings');
     updateServerHostLabel();
@@ -199,8 +199,8 @@ window.saveServerSettings = async function() {
       updateServerHostLabel();
       setTimeout(() => {
         closeModal('modalServerSettings');
-        if (typeof showNotification === 'function') {
-          showNotification(`Сервер оновлено: ${val}`, 'success');
+        if (typeof showToast === 'function') {
+          showToast(`Сервер оновлено: ${val}`, 'success');
         }
       }, 800);
       return;
@@ -775,7 +775,7 @@ window.openModal = async function (id, options = {}) {
     showToast("Керування об'єктами доступне лише Адміністратору", 'warning');
     return;
   }
-  if ((id === 'modalCreateGenerator' || id === 'modalQuickEditGenerator' || id === 'modalDeleteGenerator' || id === 'modalWizard') && !hasPermission('generator:configure')) {
+  if ((id === 'modalCreateGenerator' || id === 'modalQuickEditGenerator' || id === 'modalDeleteGenerator') && !hasPermission('generator:configure')) {
     showToast('Керування генераторами доступне лише Адміністратору', 'warning');
     return;
   }
@@ -823,10 +823,26 @@ window.openModal = async function (id, options = {}) {
   }
   if (id === 'modalReceipt' && typeof setupReceiptModal === 'function') await setupReceiptModal();
   if (id === 'modalTransfer' && typeof setupTransferModal === 'function') await setupTransferModal();
-  if (id === 'modalNewStock' && typeof setupNewStockModal === 'function') await setupNewStockModal();
+  if (id === 'modalNewStock' && typeof setupNewStockModal === 'function') {
+    const f = document.getElementById('newStockForm');
+    if (f) f.reset();
+    await setupNewStockModal();
+  }
   if (id === 'modalFault') {
     const faultForm = document.getElementById('faultForm');
     if (faultForm) faultForm.reset();
+  }
+  if (id === 'modalMaintenance') {
+    const maintForm = document.getElementById('maintForm');
+    if (maintForm) maintForm.reset();
+  }
+  if (id === 'modalUserCreate') {
+    const userForm = document.getElementById('userCreateForm');
+    if (userForm) userForm.reset();
+  }
+  if (id === 'modalAdjustment') {
+    const adjForm = document.getElementById('adjustmentForm');
+    if (adjForm) adjForm.reset();
   }
   if (modal) {
     modal.style.display = 'flex';

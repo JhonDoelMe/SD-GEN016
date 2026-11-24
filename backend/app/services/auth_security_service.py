@@ -7,15 +7,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.config import settings
 from backend.app.core.security import (
     _LOGIN_ATTEMPTS,
     _RESET_ATTEMPTS,
     _REVOKED_TOKENS,
     extract_token_revocation_info,
     is_token_revoked as _is_token_revoked_mem,
-    record_failed_login as _record_failed_login_mem,
-    record_password_reset_attempt as _record_reset_mem,
     reset_login_attempts as _reset_login_mem,
 )
 from backend.app.models.security import AuthAttempt, RevokedToken

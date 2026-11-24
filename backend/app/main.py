@@ -343,7 +343,7 @@ def fastapi_docs_kwargs(is_production: bool) -> dict[str, str | None]:
 app = FastAPI(
     title="Service Desk Генератора (SD-GEN016)",
     description="Система оперативного диспетчерського обліку експлуатації мережі бензинових та дизельних генераторів (Multi-site, ПММ, ТО, інвентаризація, Push/Email)",
-    version="5.9.3",
+    version="5.9.4",
     **fastapi_docs_kwargs(settings.is_production),
     lifespan=lifespan,
 )

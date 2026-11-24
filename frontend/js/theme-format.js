@@ -178,28 +178,6 @@ const _fmtNum1 = new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 1, maxi
 const _fmtNum2 = new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const _fmtNumCache = { 1: _fmtNum1, 2: _fmtNum2 };
 
-function updateKyivClock() {
-  try {
-    const el = document.getElementById('clockKyiv');
-    if (!el) return;
-    const now = new Date();
-    const kyivTime = _fmtKyivTime.format(now);
-    const nextText = `${kyivTime} (Київ)`;
-    if (el.innerText !== nextText) el.innerText = nextText;
-
-    // Check auto theme day/night transition on minute boundary
-    if (now.getSeconds() === 0) {
-      checkAutoThemeTransition();
-    }
-  } catch (_) {
-    const el = document.getElementById('clockKyiv');
-    if (el) {
-      const d = new Date();
-      el.innerText = d.toTimeString().slice(0, 8) + ' (Київ)';
-    }
-  }
-}
-
 function startClock() {
   // Re-check auto day/night theme once per minute instead of waking every second
   checkAutoThemeTransition();

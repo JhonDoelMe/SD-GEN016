@@ -288,7 +288,7 @@ document.addEventListener('submit', async (e) => {
     showToast(res.message || 'Систему успішно відновлено!', 'success');
     await loadBackupsList();
 
-    if (typeof loadOverviewData === 'function') loadOverviewData();
+    if (typeof loadAllData === 'function') loadAllData();
   } catch (err) {
     showToast(err.message || 'Помилка відновлення системи', 'error');
   } finally {
@@ -379,7 +379,7 @@ document.addEventListener('submit', async (e) => {
     showToast(res.message || 'Архів завантажено та систему успішно відновлено!', 'success');
     await loadBackupsList();
 
-    if (typeof loadOverviewData === 'function') loadOverviewData();
+    if (typeof loadAllData === 'function') loadAllData();
   } catch (err) {
     showToast(err.message || 'Помилка завантаження або відновлення архіву', 'error');
   } finally {
