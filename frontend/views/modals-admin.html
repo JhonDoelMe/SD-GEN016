@@ -56,8 +56,8 @@
           </select>
         </div>
         <div class="modal-actions">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalEditStock')">Скасувати</button>
           <button type="submit" class="btn-primary">Зберегти зміни</button>
-          <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalEditStock')">Скасувати</button>
         </div>
       </form>
     </div>
@@ -203,8 +203,8 @@
           <button type="button" class="btn-action" style="flex: 1; padding: 0.4rem 0.5rem; font-size: 0.8rem; min-height: auto;" onclick="setAuditExportPeriod('all')">Весь час</button>
         </div>
         <div class="modal-actions">
-          <button type="button" class="btn-action" style="min-height: auto; padding: 0.75rem 1.25rem;" onclick="closeModal('modalExportAudit')">Скасувати</button>
-          <button type="submit" id="btnSubmitAuditExport" class="btn-primary" style="min-height: auto; padding: 0.75rem 1.5rem; background: #0284c7;">📥 Завантажити .xlsx</button>
+          <button type="button" class="btn-secondary" onclick="closeModal('modalExportAudit')">Скасувати</button>
+          <button type="submit" id="btnSubmitAuditExport" class="btn-primary">📥 Завантажити .xlsx</button>
         </div>
       </form>
     </div>
@@ -425,8 +425,8 @@
       </div>
       <input type="hidden" id="deleteUserId">
       <div class="modal-actions">
-        <button type="button" id="confirmDeleteUserBtn" class="btn-primary" style="background: #dc2626; flex: 1;">Видалити користувача</button>
-        <button type="button" class="btn-action" onclick="closeModal('modalUserDelete')">Скасувати</button>
+        <button type="button" class="btn-secondary" onclick="closeModal('modalUserDelete')">Скасувати</button>
+        <button type="button" id="confirmDeleteUserBtn" class="btn-danger">Видалити користувача</button>
       </div>
     </div>
   </div>
@@ -467,35 +467,29 @@
               <span>⚡ Графік відключень YASNO</span>
             </label>
             <label class="switch-label" style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
-              <input type="checkbox" id="newFacilityYasnoEnabled" onchange="document.getElementById('newFacilityYasnoFields').style.display = this.checked ? 'grid' : 'none';" style="cursor: pointer;">
+              <input type="checkbox" id="newFacilityYasnoEnabled" onchange="onFacilityYasnoToggle('newFacility', this.checked)" style="cursor: pointer;">
               <span>Увімкнути</span>
             </label>
           </div>
           <div id="newFacilityYasnoFields" class="grid-2" style="display: none;">
             <div class="form-group" style="margin-bottom: 0.5rem;">
               <label style="font-size: 0.8rem;">Оператор (ОСР)</label>
-              <select id="newFacilityYasnoDso" class="form-control" style="font-size: 0.82rem;">
-                <option value="301" selected>ДТЕК Дніпровські електромережі (ДнЕМ)</option>
-                <option value="303">ЦЕК (Центральна енергетична компанія)</option>
-                <option value="902">ПрАТ «ДТЕК Київські електромережі»</option>
+              <select id="newFacilityYasnoDso" class="form-control" style="font-size: 0.82rem;" onchange="loadYasnoOptionsForModal('newFacility', this.value)">
+                <option value="301" data-region="3" selected>ДТЕК Дніпровські електромережі (ДнЕМ)</option>
+                <option value="303" data-region="3">ЦЕК (Центральна енергетична компанія)</option>
+                <option value="902" data-region="25">ПрАТ «ДТЕК Київські електромережі»</option>
               </select>
             </div>
             <div class="form-group" style="margin-bottom: 0.5rem;">
-              <label style="font-size: 0.8rem;">Група / Черга (адреса)</label>
-              <select id="newFacilityYasnoGroup" class="form-control" style="font-size: 0.82rem;">
-                <option value="1.1">Група 1.1</option>
-                <option value="1.2">Група 1.2</option>
-                <option value="2.1">Група 2.1</option>
-                <option value="2.2">Група 2.2</option>
-                <option value="3.1">Група 3.1</option>
-                <option value="3.2" selected>Група 3.2</option>
-                <option value="4.1">Група 4.1</option>
-                <option value="4.2">Група 4.2</option>
-                <option value="5.1">Група 5.1</option>
-                <option value="5.2">Група 5.2</option>
-                <option value="6.1">Група 6.1</option>
-                <option value="6.2">Група 6.2</option>
+              <label style="font-size: 0.8rem; display: flex; align-items: center; justify-content: space-between; gap: 0.4rem;">
+                <span>Група / Черга</span>
+                <button type="button" class="btn-secondary" style="padding: 0.12rem 0.45rem; font-size: 0.72rem; min-height: auto; width: auto;" title="Оновити актуальні черги з API YASNO" onclick="loadYasnoOptionsForModal('newFacility', document.getElementById('newFacilityYasnoDso')?.value, null, true)">🔄 з YASNO</button>
+              </label>
+              <select id="newFacilityYasnoGroup" class="form-control" style="font-size: 0.82rem;" onchange="onFacilityYasnoGroupChange('newFacility')">
+                <option value="__manual__">✏️ Ввести вручну...</option>
               </select>
+              <input type="text" id="newFacilityYasnoGroupManual" class="form-control" maxlength="20" placeholder="напр. 14.1 або 3.2" style="display: none; margin-top: 0.4rem; font-size: 0.82rem;">
+              <small id="newFacilityYasnoStatus" style="display: block; margin-top: 0.25rem; font-size: 0.72rem; color: var(--text-muted);"></small>
             </div>
           </div>
         </div>
@@ -591,8 +585,8 @@
         </p>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn-action" onclick="closeModal('modalDeleteGenerator')">Скасувати</button>
-        <button type="button" class="btn-primary" id="confirmDeleteGenBtn" style="background: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentGenerator()">Підтвердити видалення</button>
+        <button type="button" class="btn-secondary" onclick="closeModal('modalDeleteGenerator')">Скасувати</button>
+        <button type="button" class="btn-danger" id="confirmDeleteGenBtn" onclick="confirmDeleteCurrentGenerator()">Підтвердити видалення</button>
       </div>
     </div>
   </div>
@@ -625,8 +619,8 @@
         </div>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn-action" onclick="closeModal('modalDeleteFacility')">Скасувати</button>
-        <button type="button" class="btn-primary" id="confirmDeleteFacilityBtn" style="background: #dc2626; border-color: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentFacility()">Підтвердити видалення</button>
+        <button type="button" class="btn-secondary" onclick="closeModal('modalDeleteFacility')">Скасувати</button>
+        <button type="button" class="btn-danger" id="confirmDeleteFacilityBtn" onclick="confirmDeleteCurrentFacility()">Підтвердити видалення</button>
       </div>
     </div>
   </div>
@@ -668,40 +662,34 @@
               <span>⚡ Графік відключень YASNO</span>
             </label>
             <label class="switch-label" style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer;">
-              <input type="checkbox" id="quickEditFacilityYasnoEnabled" onchange="document.getElementById('quickEditFacilityYasnoFields').style.display = this.checked ? 'grid' : 'none';" style="cursor: pointer;">
+              <input type="checkbox" id="quickEditFacilityYasnoEnabled" onchange="onFacilityYasnoToggle('quickEditFacility', this.checked)" style="cursor: pointer;">
               <span>Увімкнути</span>
             </label>
           </div>
           <div id="quickEditFacilityYasnoFields" class="grid-2" style="display: none;">
             <div class="form-group" style="margin-bottom: 0.5rem;">
               <label style="font-size: 0.8rem;">Оператор (ОСР)</label>
-              <select id="quickEditFacilityYasnoDso" class="form-control" style="font-size: 0.82rem;">
-                <option value="301" selected>ДТЕК Дніпровські електромережі (ДнЕМ)</option>
-                <option value="303">ЦЕК (Центральна енергетична компанія)</option>
-                <option value="902">ПрАТ «ДТЕК Київські електромережі»</option>
+              <select id="quickEditFacilityYasnoDso" class="form-control" style="font-size: 0.82rem;" onchange="loadYasnoOptionsForModal('quickEditFacility', this.value)">
+                <option value="301" data-region="3" selected>ДТЕК Дніпровські електромережі (ДнЕМ)</option>
+                <option value="303" data-region="3">ЦЕК (Центральна енергетична компанія)</option>
+                <option value="902" data-region="25">ПрАТ «ДТЕК Київські електромережі»</option>
               </select>
             </div>
             <div class="form-group" style="margin-bottom: 0.5rem;">
-              <label style="font-size: 0.8rem;">Група / Черга (адреса)</label>
-              <select id="quickEditFacilityYasnoGroup" class="form-control" style="font-size: 0.82rem;">
-                <option value="1.1">Група 1.1</option>
-                <option value="1.2">Група 1.2</option>
-                <option value="2.1">Група 2.1</option>
-                <option value="2.2">Група 2.2</option>
-                <option value="3.1">Група 3.1</option>
-                <option value="3.2" selected>Група 3.2</option>
-                <option value="4.1">Група 4.1</option>
-                <option value="4.2">Група 4.2</option>
-                <option value="5.1">Група 5.1</option>
-                <option value="5.2">Група 5.2</option>
-                <option value="6.1">Група 6.1</option>
-                <option value="6.2">Група 6.2</option>
+              <label style="font-size: 0.8rem; display: flex; align-items: center; justify-content: space-between; gap: 0.4rem;">
+                <span>Група / Черга</span>
+                <button type="button" class="btn-secondary" style="padding: 0.12rem 0.45rem; font-size: 0.72rem; min-height: auto; width: auto;" title="Оновити актуальні черги з API YASNO" onclick="loadYasnoOptionsForModal('quickEditFacility', document.getElementById('quickEditFacilityYasnoDso')?.value, null, true)">🔄 з YASNO</button>
+              </label>
+              <select id="quickEditFacilityYasnoGroup" class="form-control" style="font-size: 0.82rem;" onchange="onFacilityYasnoGroupChange('quickEditFacility')">
+                <option value="__manual__">✏️ Ввести вручну...</option>
               </select>
+              <input type="text" id="quickEditFacilityYasnoGroupManual" class="form-control" maxlength="20" placeholder="напр. 14.1 або 3.2" style="display: none; margin-top: 0.4rem; font-size: 0.82rem;">
+              <small id="quickEditFacilityYasnoStatus" style="display: block; margin-top: 0.25rem; font-size: 0.72rem; color: var(--text-muted);"></small>
             </div>
           </div>
         </div>
         <div class="modal-actions">
-          <button type="button" class="btn-action" onclick="closeModal('modalQuickEditFacility')">Скасувати</button>
+          <button type="button" class="btn-secondary" onclick="closeModal('modalQuickEditFacility')">Скасувати</button>
           <button type="submit" class="btn-primary">Зберегти зміни</button>
         </div>
       </form>
@@ -759,7 +747,7 @@
           <input type="number" step="10" min="10" id="quickEditGenMaintInterval" required placeholder="напр. 200 або 300">
         </div>
         <div class="modal-actions">
-          <button type="button" class="btn-action" onclick="closeModal('modalQuickEditGenerator')">Скасувати</button>
+          <button type="button" class="btn-secondary" onclick="closeModal('modalQuickEditGenerator')">Скасувати</button>
           <button type="submit" class="btn-primary">Зберегти налаштування</button>
         </div>
       </form>
@@ -850,7 +838,7 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-action" onclick="closeModal('modalCreateBackup')">Скасувати</button>
+          <button type="button" class="btn-secondary" onclick="closeModal('modalCreateBackup')">Скасувати</button>
           <button type="submit" id="btnSubmitCreateBackup" class="btn-primary">
             🚀 Запустити створення
           </button>
@@ -909,7 +897,7 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-action" onclick="closeModal('modalBackupSettings')">Скасувати</button>
+          <button type="button" class="btn-secondary" onclick="closeModal('modalBackupSettings')">Скасувати</button>
           <button type="submit" id="btnSubmitSaveBackupSettings" class="btn-primary">
             💾 Зберегти налаштування
           </button>
@@ -959,8 +947,8 @@
         <input type="hidden" id="restoreFilenameHidden">
 
         <div class="modal-actions">
-          <button type="button" class="btn-action" onclick="closeModal('modalConfirmRestore')">Скасувати</button>
-          <button type="submit" id="btnSubmitRestore" class="btn-primary" style="background: linear-gradient(135deg, #ea580c, #c2410c); border-color: #f97316; min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalConfirmRestore')">Скасувати</button>
+          <button type="submit" id="btnSubmitRestore" class="btn-primary" style="background: linear-gradient(135deg, #ea580c, #c2410c); border-color: #f97316;">
             🔄 Підтвердити та відновити
           </button>
         </div>
@@ -1008,8 +996,8 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-action" onclick="closeModal('modalUploadRestore')">Скасувати</button>
-          <button type="submit" id="btnSubmitUploadRestore" class="btn-primary" style="background: linear-gradient(135deg, #059669, #047857); border-color: #10b981; min-height: auto; width: auto; padding: 0.65rem 1.4rem;">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalUploadRestore')">Скасувати</button>
+          <button type="submit" id="btnSubmitUploadRestore" class="btn-primary" style="background: linear-gradient(135deg, #059669, #047857); border-color: #10b981;">
             🚀 Завантажити та відновити
           </button>
         </div>
@@ -1034,8 +1022,8 @@
       </div>
       <input type="hidden" id="deleteBackupFilenameHidden">
       <div class="modal-actions">
-        <button type="button" class="btn-action" onclick="closeModal('modalDeleteBackup')">Скасувати</button>
-        <button type="button" class="btn-primary" id="confirmDeleteBackupBtn" style="background: #dc2626; padding: 0.5rem 1rem; min-height: auto;" onclick="confirmDeleteCurrentBackup()">Підтвердити видалення</button>
+        <button type="button" class="btn-secondary" onclick="closeModal('modalDeleteBackup')">Скасувати</button>
+        <button type="button" class="btn-danger" id="confirmDeleteBackupBtn" onclick="confirmDeleteCurrentBackup()">Підтвердити видалення</button>
       </div>
     </div>
   </div>
@@ -1101,7 +1089,7 @@
         <div id="smtpTestResultCard" style="display: none;"></div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-action" onclick="closeModal('modalSmtpTest')">Закрити</button>
+          <button type="button" class="btn-secondary" onclick="closeModal('modalSmtpTest')">Закрити</button>
           <button type="button" id="btnRunSmtpTest" class="btn-primary" onclick="executeSmtpModalTest()">
             🚀 Надіслати тестовий лист
           </button>
@@ -1148,8 +1136,8 @@
         <div id="weeklyReportResultBox" style="display: none;"></div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-action" onclick="closeModal('modalSendWeeklyReport')">Закрити</button>
-          <button type="button" id="btnSubmitWeeklyReport" class="btn-primary" style="background: #a855f7; border-color: #a855f7; width: auto; padding: 0.65rem 1.4rem; min-height: auto;" onclick="executeSendWeeklyReport()">
+          <button type="button" class="btn-secondary" onclick="closeModal('modalSendWeeklyReport')">Закрити</button>
+          <button type="button" id="btnSubmitWeeklyReport" class="btn-primary" style="background: #a855f7; border-color: #a855f7;" onclick="executeSendWeeklyReport()">
             ✉️ Надіслати звіт зараз
           </button>
         </div>

@@ -34,45 +34,45 @@ from backend.app.services.avatar_service import delete_avatar_file
 
 # Default WOG Ukraine retail fuel prices fallback (UAH per liter)
 DEFAULT_INTERNET_PRICES: Dict[str, float] = {
-    "А-95": 86.90,
-    "А-95 Mustang": 89.90,
-    "А-100 Mustang": 96.90,
-    "А-92": 86.90,
-    "ДП": 100.90,
-    "ДП Mustang+": 103.90,
-    "ГАЗ": 63.50,
+    "А-95": 81.90,
+    "А-95 Mustang": 84.90,
+    "А-100 Mustang": 91.90,
+    "А-92": 81.90,
+    "ДП": 96.90,
+    "ДП Mustang+": 104.90,
+    "ГАЗ": 61.90,
     "AdBlue": 62.90,
 }
 
 DEFAULT_WOG_LINEUP = [
-    {"type": "ДП", "brand": "Євро5", "label": "ДП Євро5", "price": 100.90},
-    {"type": "ДП", "brand": "Mustang+", "label": "ДП Mustang+", "price": 103.90},
-    {"type": "95", "brand": "Євро5-Е10", "label": "95 Євро5-Е10", "price": 86.90},
-    {"type": "95", "brand": "Mustang Євро5-Е10", "label": "95 Mustang Євро5-Е10", "price": 89.90},
-    {"type": "100", "brand": "Mustang Євро5-Е0", "label": "100 Mustang Євро5-Е0", "price": 96.90},
-    {"type": "ГАЗ", "brand": "", "label": "ГАЗ", "price": 63.50},
+    {"type": "ДП", "brand": "Євро5", "label": "ДП Євро5", "price": 96.90},
+    {"type": "ДП", "brand": "Mustang+", "label": "ДП Mustang+", "price": 104.90},
+    {"type": "95", "brand": "Євро5-Е10", "label": "95 Євро5-Е10", "price": 81.90},
+    {"type": "95", "brand": "Mustang Євро5-Е10", "label": "95 Mustang Євро5-Е10", "price": 84.90},
+    {"type": "100", "brand": "Mustang Євро5-Е0", "label": "100 Mustang Євро5-Е0", "price": 91.90},
+    {"type": "ГАЗ", "brand": "", "label": "ГАЗ", "price": 61.90},
     {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": 62.90},
 ]
 
 # Default OKKO Ukraine retail fuel prices fallback (UAH per liter)
 DEFAULT_OKKO_PRICES: Dict[str, float] = {
-    "А-95": 84.90,
-    "А-95 Pulls": 87.90,
-    "А-100 Pulls": 94.90,
-    "А-92": 84.90,
-    "ДП": 99.90,
-    "ДП Pulls": 102.90,
-    "ГАЗ": 63.90,
+    "А-95": 81.90,
+    "А-95 Pulls": 84.90,
+    "А-100 Pulls": 91.90,
+    "А-92": 81.90,
+    "ДП": 96.90,
+    "ДП Pulls": 99.90,
+    "ГАЗ": 61.90,
     "AdBlue": 62.90,
 }
 
 DEFAULT_OKKO_LINEUP = [
-    {"type": "ДП", "brand": "Євро", "label": "ДП Євро", "price": 99.90},
-    {"type": "ДП", "brand": "Pulls", "label": "Pulls Дизель", "price": 102.90},
-    {"type": "95", "brand": "Євро", "label": "А-95 Євро", "price": 84.90},
-    {"type": "95", "brand": "Pulls", "label": "Pulls 95", "price": 87.90},
-    {"type": "100", "brand": "Pulls", "label": "Pulls 100", "price": 94.90},
-    {"type": "ГАЗ", "brand": "СПБТ", "label": "ГАЗ (СПБТ)", "price": 63.90},
+    {"type": "ДП", "brand": "Євро", "label": "ДП Євро", "price": 96.90},
+    {"type": "ДП", "brand": "Pulls", "label": "Pulls Дизель", "price": 99.90},
+    {"type": "95", "brand": "Євро", "label": "А-95 Євро", "price": 81.90},
+    {"type": "95", "brand": "Pulls", "label": "Pulls 95", "price": 84.90},
+    {"type": "100", "brand": "Pulls", "label": "Pulls 100", "price": 91.90},
+    {"type": "ГАЗ", "brand": "СПБТ", "label": "ГАЗ (СПБТ)", "price": 61.90},
     {"type": "AdBlue", "brand": "", "label": "AdBlue", "price": 62.90},
 ]
 
@@ -631,10 +631,86 @@ def _parse_okko_fuel_html(html: str) -> Optional[Tuple[Dict[str, float], list]]:
     return None
 
 
+def _parse_minfin_fuel_html(html: str, provider: str = "wog") -> Optional[Tuple[Dict[str, float], list]]:
+    """
+    Parse live retail fuel prices from index.minfin.com.ua/ua/markets/fuel/tm/{wog|okko}/.
+    Used as an automatic secondary live source when wog.ua / okko.ua blocks datacenter IPs (e.g. HTTP 204).
+    """
+    is_okko = provider.strip().lower() == "okko"
+    base_prices = dict(DEFAULT_OKKO_PRICES if is_okko else DEFAULT_INTERNET_PRICES)
+    found: Dict[str, float] = {}
+    lineup: list = []
+
+    for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        raw_cells = re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row_html, re.S)
+        if len(raw_cells) < 2:
+            continue
+        cells = []
+        for c in raw_cells:
+            clean = c.replace("&shy;", "").replace("\u00ad", "")
+            clean = re.sub(r"<[^>]+>", " ", clean)
+            cells.append(" ".join(clean.split()))
+        label = cells[0]
+        price_str = cells[1]
+        pm = re.match(r"^(\d{2,3})[.,](\d{2})$", price_str)
+        if not pm:
+            continue
+        val = round(float(f"{pm.group(1)}.{pm.group(2)}"), 2)
+        if not (10.0 <= val <= 300.0):
+            continue
+        lu = label.upper()
+        # Only take the top summary table rows (skip regional rows like "Київська", "Дніпропетровська")
+        if "А-100" in lu or "100" in lu and ("БЕНЗИН" in lu or "MUSTANG" in lu or "PULLS" in lu):
+            key = "А-100 Pulls" if is_okko else "А-100 Mustang"
+            if key not in found:
+                found[key] = val
+                lineup.append({"type": "100", "brand": "Pulls" if is_okko else "Mustang", "label": key, "price": val})
+        elif "А-95" in lu or "95" in lu:
+            if "MUSTANG" in lu or "PULLS" in lu or "+" in lu or "ПРЕМІУМ" in lu:
+                key = "А-95 Pulls" if is_okko else "А-95 Mustang"
+                if key not in found:
+                    found[key] = val
+                    lineup.append({"type": "95", "brand": "Pulls" if is_okko else "Mustang", "label": key, "price": val})
+            else:
+                if "А-95" not in found:
+                    found["А-95"] = val
+                    found["А-92"] = val
+                    lineup.append({"type": "95", "brand": "Євро5", "label": "А-95 Євро5", "price": val})
+        elif "ДИЗЕЛ" in lu or "ДП" in lu:
+            if "MUSTANG" in lu or "PULLS" in lu or "+" in lu:
+                key = "ДП Pulls" if is_okko else "ДП Mustang+"
+                if key not in found:
+                    found[key] = val
+                    lineup.append({"type": "ДП", "brand": "Pulls" if is_okko else "Mustang+", "label": key, "price": val})
+            else:
+                if "ДП" not in found:
+                    found["ДП"] = val
+                    lineup.append({"type": "ДП", "brand": "Євро5", "label": "ДП Євро5", "price": val})
+        elif "ГАЗ" in lu or "LPG" in lu or "СПБТ" in lu:
+            if "ГАЗ" not in found:
+                found["ГАЗ"] = val
+                lineup.append({"type": "ГАЗ", "brand": "СПБТ" if is_okko else "", "label": "ГАЗ", "price": val})
+        elif "ADBLUE" in lu:
+            if "AdBlue" not in found:
+                found["AdBlue"] = val
+                lineup.append({"type": "AdBlue", "brand": "", "label": "AdBlue", "price": val})
+
+    if "ДП" not in found and "А-95" not in found:
+        return None
+
+    base_prices.update(found)
+    # Sort lineup cleanly: ДП, ДП+, А-95, А-95+, А-100, ГАЗ, AdBlue
+    order = {"ДП": 0, "95": 1, "100": 2, "ГАЗ": 3, "AdBlue": 4}
+    lineup.sort(key=lambda it: (order.get(it["type"], 9), 1 if ("Mustang" in it["brand"] or "Pulls" in it["brand"]) else 0))
+    return base_prices, lineup
+
+
 async def fetch_wog_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, float], list, str, bool]:
     """
-    Парсить офіційні актуальні ціни на пальне з сайту АЗК WOG:
-    https://wog.ua/ua/fuels/
+    Парсить офіційні актуальні ціни на пальне АЗК WOG:
+    1) Основне джерело: https://wog.ua/ua/fuels/
+    2) Резервне живе джерело (якщо wog.ua блокує IP дата-центру HTTP 204/403):
+       https://index.minfin.com.ua/ua/markets/fuel/tm/wog/
     Повертає: (prices_dict, wog_lineup_list, source_label, is_live_from_internet)
     """
     headers = {
@@ -643,17 +719,29 @@ async def fetch_wog_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, 
         "Accept-Language": "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        # Primary: official wog.ua
+        try:
             resp = await client.get("https://wog.ua/ua/fuels/", headers=headers)
-            resp.raise_for_status()
-            html = resp.text
+            if resp.status_code == 200 and len(resp.text) > 500:
+                prices, lineup = _parse_wog_fuel_html(resp.text)
+                if lineup:
+                    return prices, lineup, "АЗК WOG (wog.ua/ua/fuels)", True
+            else:
+                logger.info("WOG primary wog.ua returned HTTP %s (len=%d), trying live Minfin fallback", resp.status_code, len(resp.text))
+        except Exception as e:
+            logger.warning("INF-41: Помилка отримання цін АЗК WOG (wog.ua): %s", e)
 
-        prices, lineup = _parse_wog_fuel_html(html)
-        if lineup:
-            return prices, lineup, "АЗК WOG (wog.ua/ua/fuels)", True
-    except Exception as e:
-        logger.warning("INF-41: Помилка отримання або парсингу цін АЗК WOG (wog.ua): %s", e)
+        # Secondary live source: index.minfin.com.ua (accessible from VPS datacenters)
+        try:
+            resp_mf = await client.get("https://index.minfin.com.ua/ua/markets/fuel/tm/wog/", headers=headers)
+            if resp_mf.status_code == 200 and len(resp_mf.text) > 1000:
+                parsed_mf = _parse_minfin_fuel_html(resp_mf.text, provider="wog")
+                if parsed_mf:
+                    prices_mf, lineup_mf = parsed_mf
+                    return prices_mf, lineup_mf, "АЗК WOG (index.minfin.com.ua)", True
+        except Exception as e:
+            logger.warning("INF-41: Помилка резервного парсингу WOG (index.minfin.com.ua): %s", e)
 
     logger.info("Використано резервний кеш цін для АЗК WOG")
     return dict(DEFAULT_INTERNET_PRICES), list(DEFAULT_WOG_LINEUP), "АЗК WOG (резервний кеш)", False
@@ -661,8 +749,9 @@ async def fetch_wog_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, 
 
 async def fetch_okko_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str, float], list, str, bool]:
     """
-    Парсить офіційні актуальні ціни на пальне з сайту АЗК OKKO:
-    https://www.okko.ua/fuels
+    Парсить офіційні актуальні ціни на пальне АЗК OKKO:
+    1) Основне джерело: https://www.okko.ua/fuels
+    2) Резервне живе джерело: https://index.minfin.com.ua/ua/markets/fuel/tm/okko/
     Повертає: (prices_dict, okko_lineup_list, source_label, is_live_from_internet)
     """
     headers = {
@@ -670,18 +759,30 @@ async def fetch_okko_fuel_prices_online(timeout: float = 6.0) -> Tuple[Dict[str,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7",
     }
-    try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        # Primary: official okko.ua
+        try:
             resp = await client.get("https://www.okko.ua/fuels", headers=headers)
-            resp.raise_for_status()
-            html = resp.text
+            if resp.status_code == 200 and len(resp.text) > 500:
+                parsed = _parse_okko_fuel_html(resp.text)
+                if parsed:
+                    prices, lineup = parsed
+                    return prices, lineup, "АЗК OKKO (okko.ua/fuels)", True
+            else:
+                logger.info("OKKO primary okko.ua returned HTTP %s (len=%d), trying live Minfin fallback", resp.status_code, len(resp.text))
+        except Exception as e:
+            logger.warning("INF-41: Помилка отримання цін АЗК OKKO (okko.ua): %s", e)
 
-        parsed = _parse_okko_fuel_html(html)
-        if parsed:
-            prices, lineup = parsed
-            return prices, lineup, "АЗК OKKO (okko.ua/fuels)", True
-    except Exception as e:
-        logger.warning("INF-41: Помилка отримання або парсингу цін АЗК OKKO (okko.ua): %s", e)
+        # Secondary live source: index.minfin.com.ua
+        try:
+            resp_mf = await client.get("https://index.minfin.com.ua/ua/markets/fuel/tm/okko/", headers=headers)
+            if resp_mf.status_code == 200 and len(resp_mf.text) > 1000:
+                parsed_mf = _parse_minfin_fuel_html(resp_mf.text, provider="okko")
+                if parsed_mf:
+                    prices_mf, lineup_mf = parsed_mf
+                    return prices_mf, lineup_mf, "АЗК OKKO (index.minfin.com.ua)", True
+        except Exception as e:
+            logger.warning("INF-41: Помилка резервного парсингу OKKO (index.minfin.com.ua): %s", e)
 
     logger.info("Використано резервний кеш цін для АЗК OKKO")
     return dict(DEFAULT_OKKO_PRICES), list(DEFAULT_OKKO_LINEUP), "АЗК OKKO (резервний кеш)", False

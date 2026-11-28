@@ -5,6 +5,19 @@
 
 ---
 
+## [Unreleased]
+### ⛽ WOG резервне живе джерело, ⚡ Динамічні черги YASNO та 🎨 Уніфікація кнопок модалок
+- **Парсери WOG та OKKO ([`settings_service.py`](backend/app/services/settings_service.py))**:
+  - Виявлено, що `wog.ua` блокує запити з IP-адреси VPS-сервера порожньою відповіддю `HTTP 204 No Content`.
+  - Додано автоматичне резервне живе джерело **`index.minfin.com.ua/ua/markets/fuel/tm/{wog|okko}/`**, яке коректно працює з дата-центрів (із парсингом актуальних роздрібних цін ДП, А-95, А-95 Mustang/Pulls, ГАЗ) при отриманні `204/403` або помилці основного сайту.
+- **Динамічні черги YASNO ([`yasno_service.py`](backend/app/services/yasno_service.py), [`facilities.py`](backend/app/api/v1/facilities.py), [`modals-admin.html`](frontend/views/modals-admin.html), [`admin.js`](frontend/js/admin.js))**:
+  - Додано ендпоінт `GET /api/v1/facilities/yasno/options` для автоматичного отримання актуальних регіонів, ОСР та живого списку черг безпосередньо з API YASNO (підтримує нові формати нумерації на кшталт `1.1..18.1` для ДнЕМ, `1.1..6.2` для ЦЕК, `1.1..60.1` для Києва).
+  - Виправлено прив'язку `yasno_region_id` до ОСР (`301`/`303` → `3`, `902` Київ → `25`).
+  - У модалках створення та редагування об'єкта прибрано жорстко зашитий список черг: черги завантажуються автоматично з API YASNO (із кнопкою `🔄 з YASNO`), а також доступний ручний ввід будь-якої черги (`✏️ Ввести чергу вручну...`).
+- **Уніфікація кнопок у всіх модальних вікнах ([`base.css`](frontend/css/base.css), [`modals-admin.html`](frontend/views/modals-admin.html), [`modals-ops.html`](frontend/views/modals-ops.html), [`modals-account.html`](frontend/views/modals-account.html), [`modals-utility.html`](frontend/views/modals-utility.html))**:
+  - Уніфіковано `.modal-actions > *` на десктопі та мобільних пристроях: однакова мінімальна висота, падінги, типографіка, `align-items: stretch` та збалансована ширина кнопок без перекосів.
+  - Замінено залишкові `.btn-action` (плиткові кнопки висотою 76px) та `.btn-oq-chip` у панелях дій модалок на стандартні `.btn-secondary` / `.btn-danger` / `.btn-primary` без конфліктних inline-стилів.
+
 ## [v5.9.6] — 2026-11-24
 ### ⛽ Актуальні парсери цін WOG та OKKO + 🧪 Режим тестових пусків генератора
 - **Парсери цін АЗК WOG та OKKO ([`settings_service.py`](backend/app/services/settings_service.py), [`system.py`](backend/app/api/v1/system.py), [`main.py`](backend/app/main.py))**:

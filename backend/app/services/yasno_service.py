@@ -21,9 +21,150 @@ DSO_MAP: Dict[int, str] = {
     902: "ПрАТ «ДТЕК Київські електромережі»"
 }
 
+# Mapping of DSO ID -> YASNO Region ID
+DSO_REGION_MAP: Dict[int, int] = {
+    301: 3,
+    303: 3,
+    902: 25,
+}
+
+DEFAULT_YASNO_REGIONS: List[Dict[str, Any]] = [
+    {
+        "id": 3,
+        "name": "Дніпро",
+        "dsos": [
+            {"id": 301, "name": "ДТЕК Дніпровські електромережі (ДнЕМ)", "region_id": 3},
+            {"id": 303, "name": "ЦЕК (Центральна енергетична компанія)", "region_id": 3},
+        ],
+    },
+    {
+        "id": 25,
+        "name": "Київ",
+        "dsos": [
+            {"id": 902, "name": "ПрАТ «ДТЕК Київські електромережі»", "region_id": 25},
+        ],
+    },
+]
+
 # In-memory cache: (region_id, dso_id) -> (timestamp, data_dict)
 _YASNO_SCHEDULE_CACHE: Dict[Tuple[int, int], Tuple[float, Dict[str, Any]]] = {}
+_YASNO_REGIONS_CACHE: Optional[Tuple[float, List[Dict[str, Any]]]] = None
 CACHE_TTL_SECONDS = 900  # 15 minutes cache to protect upstream API
+REGIONS_CACHE_TTL_SECONDS = 6 * 3600  # 6 hours cache for regions/DSOs metadata
+
+
+def resolve_yasno_region_id(dso_id: Optional[int], explicit_region_id: Optional[int] = None) -> int:
+    """Resolve correct YASNO region_id for a DSO (e.g. DSO 902 -> region 25 Kyiv, 301/303 -> region 3 Dnipro)."""
+    if dso_id is not None and int(dso_id) in DSO_REGION_MAP:
+        return DSO_REGION_MAP[int(dso_id)]
+    if explicit_region_id is not None and int(explicit_region_id) > 0:
+        return int(explicit_region_id)
+    return 3
+
+
+def _natural_group_sort_key(group_key: str) -> Tuple[int, int, str]:
+    """Sort queue keys naturally: '1.1', '1.2', '2.1', ..., '10.1', '18.1', '60.1'."""
+    parts = str(group_key).strip().split(".")
+    try:
+        major = int(parts[0])
+        minor = int(parts[1]) if len(parts) > 1 else 0
+        return (major, minor, str(group_key))
+    except (ValueError, TypeError):
+        return (9999, 9999, str(group_key))
+
+
+async def fetch_yasno_regions_and_dsos(force_refresh: bool = False, timeout_sec: float = 8.0) -> Tuple[List[Dict[str, Any]], bool]:
+    """Fetch available YASNO regions and DSOs dynamically from public API (with static fallback)."""
+    global _YASNO_REGIONS_CACHE
+    now_ts = time.time()
+    if not force_refresh and _YASNO_REGIONS_CACHE is not None:
+        ts, cached_regions = _YASNO_REGIONS_CACHE
+        if (now_ts - ts) < REGIONS_CACHE_TTL_SECONDS:
+            return cached_regions, True
+
+    url = "https://app.yasno.ua/api/blackout-service/public/shutdowns/addresses/v2/regions"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Accept-Language": "uk-UA,uk;q=0.9",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=timeout_sec, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                payload = resp.json()
+                if isinstance(payload, list) and payload:
+                    regions: List[Dict[str, Any]] = []
+                    for reg in payload:
+                        if not isinstance(reg, dict) or "id" not in reg:
+                            continue
+                        reg_id = int(reg["id"])
+                        reg_name = str(reg.get("value") or reg.get("name") or f"Регіон #{reg_id}").strip()
+                        dsos_out = []
+                        for dso in (reg.get("dsos") or []):
+                            if not isinstance(dso, dict) or "id" not in dso:
+                                continue
+                            dso_id = int(dso["id"])
+                            raw_name = str(dso.get("name") or DSO_MAP.get(dso_id) or f"ОСР #{dso_id}").strip()
+                            display_name = DSO_MAP.get(dso_id) or raw_name
+                            DSO_REGION_MAP[dso_id] = reg_id
+                            DSO_MAP[dso_id] = display_name
+                            dsos_out.append({"id": dso_id, "name": display_name, "raw_name": raw_name, "region_id": reg_id})
+                        if dsos_out:
+                            regions.append({"id": reg_id, "name": reg_name, "dsos": dsos_out})
+                    if regions:
+                        _YASNO_REGIONS_CACHE = (now_ts, regions)
+                        return regions, True
+    except Exception as exc:
+        logger.warning(f"Error fetching YASNO regions metadata: {exc}")
+
+    if _YASNO_REGIONS_CACHE is not None:
+        return _YASNO_REGIONS_CACHE[1], False
+    return list(DEFAULT_YASNO_REGIONS), False
+
+
+async def fetch_yasno_available_groups(
+    region_id: Optional[int] = None,
+    dso_id: int = 301,
+    force_refresh: bool = False,
+) -> Dict[str, Any]:
+    """
+    Fetch the live list of outage queue/group identifiers directly from YASNO planned-outages API.
+    Automatically adapts whenever YASNO changes queue numbering (e.g. 1.1..18.1 or 1.1..60.1).
+    """
+    regions, regions_live = await fetch_yasno_regions_and_dsos(force_refresh=force_refresh)
+    resolved_region = resolve_yasno_region_id(dso_id, region_id)
+    raw = await fetch_raw_yasno_schedule(region_id=resolved_region, dso_id=dso_id, force_refresh=force_refresh)
+
+    groups: List[str] = []
+    is_live = False
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            if isinstance(v, dict) and ("today" in v or "tomorrow" in v or "slots" in v):
+                groups.append(str(k).strip())
+        groups = sorted(set(groups), key=_natural_group_sort_key)
+        is_live = len(groups) > 0
+
+    all_dsos = []
+    for r in regions:
+        for d in r.get("dsos", []):
+            all_dsos.append({
+                "id": d["id"],
+                "name": d["name"],
+                "region_id": r["id"],
+                "region_name": r["name"],
+            })
+
+    return {
+        "region_id": resolved_region,
+        "dso_id": int(dso_id),
+        "dso_name": DSO_MAP.get(int(dso_id), f"ОСР #{dso_id}"),
+        "groups": groups,
+        "is_live": is_live,
+        "regions": regions,
+        "dsos": all_dsos,
+        "regions_is_live": regions_live,
+    }
 
 # Set of already successfully dispatched alert keys: (facility_id, date_iso, slot_start_minute)
 _SENT_YASNO_ALERTS: Set[Tuple[int, str, int]] = set()
@@ -189,8 +330,8 @@ def get_facility_outage_schedule(
     now_local = current_dt or datetime.datetime.now(facility_tz)
     cur_minute = now_local.hour * 60 + now_local.minute
 
-    region_id = facility.yasno_region_id or 3
     dso_id = facility.yasno_dso_id or 301
+    region_id = resolve_yasno_region_id(dso_id, facility.yasno_region_id)
     dso_name = DSO_MAP.get(dso_id, f"ОСР #{dso_id}")
     group_str = (facility.yasno_group or "").strip()
 
@@ -415,8 +556,8 @@ async def check_and_notify_yasno_outages(db: AsyncSession) -> List[Dict[str, Any
 
     for fac in facilities:
         try:
-            region_id = fac.yasno_region_id or 3
             dso_id = fac.yasno_dso_id or 301
+            region_id = resolve_yasno_region_id(dso_id, fac.yasno_region_id)
             raw = await fetch_raw_yasno_schedule(region_id, dso_id)
             if not raw:
                 continue

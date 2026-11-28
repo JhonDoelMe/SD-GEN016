@@ -99,6 +99,10 @@ async def create_facility(
         from backend.app.services.weather_service import clean_city_and_region
         clean_city_val, _ = clean_city_and_region(data.city, data.address, data.name)
 
+    from backend.app.services.yasno_service import resolve_yasno_region_id
+    eff_dso_id = data.yasno_dso_id if data.yasno_dso_id is not None else 301
+    eff_region_id = resolve_yasno_region_id(eff_dso_id, data.yasno_region_id)
+
     facility = Facility(
         name=data.name.strip(),
         address=data.address.strip() if data.address else None,
@@ -106,8 +110,8 @@ async def create_facility(
         description=data.description.strip() if data.description else None,
         timezone=data.timezone.strip() if data.timezone else "Europe/Kyiv",
         yasno_enabled=bool(data.yasno_enabled),
-        yasno_region_id=data.yasno_region_id if data.yasno_region_id is not None else 3,
-        yasno_dso_id=data.yasno_dso_id if data.yasno_dso_id is not None else 301,
+        yasno_region_id=eff_region_id,
+        yasno_dso_id=eff_dso_id,
         yasno_group=data.yasno_group.strip() if data.yasno_group else None,
         default_fuel_provider=(data.default_fuel_provider.strip().lower() if data.default_fuel_provider else "wog") or "wog",
         created_at=now,
@@ -185,10 +189,12 @@ async def update_facility(
         facility.timezone = data.timezone.strip()
     if data.yasno_enabled is not None:
         facility.yasno_enabled = bool(data.yasno_enabled)
-    if data.yasno_region_id is not None:
-        facility.yasno_region_id = data.yasno_region_id
     if data.yasno_dso_id is not None:
         facility.yasno_dso_id = data.yasno_dso_id
+        from backend.app.services.yasno_service import resolve_yasno_region_id
+        facility.yasno_region_id = resolve_yasno_region_id(data.yasno_dso_id, data.yasno_region_id)
+    elif data.yasno_region_id is not None:
+        facility.yasno_region_id = data.yasno_region_id
     if data.yasno_group is not None:
         facility.yasno_group = data.yasno_group.strip() if data.yasno_group else None
     if data.default_fuel_provider is not None:

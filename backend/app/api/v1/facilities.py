@@ -1,9 +1,14 @@
 import asyncio
-from typing import List
-from fastapi import APIRouter, Depends, Request, Response, status, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, Query, Request, Response, status, HTTPException
 from pydantic import BaseModel
 from backend.app.models.facility import Facility
-from backend.app.services.yasno_service import fetch_raw_yasno_schedule, get_facility_outage_schedule
+from backend.app.services.yasno_service import (
+    fetch_raw_yasno_schedule,
+    get_facility_outage_schedule,
+    fetch_yasno_available_groups,
+    resolve_yasno_region_id,
+)
 from backend.app.services.weather_service import get_facility_weather
 from backend.app.services.alert_service import get_facility_alert, set_demo_alert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,6 +53,21 @@ async def list_facilities(
             return []
         return [f for f in all_facs if f.id == current_user.facility_id]
     return all_facs
+
+
+@router.get("/yasno/options")
+async def get_yasno_options(
+    dso_id: int = Query(301, description="ID оператора системи розподілу (ОСР)"),
+    region_id: Optional[int] = Query(None, description="ID регіону YASNO (автоматично визначається за ОСР)"),
+    force_refresh: bool = Query(False, description="Примусово оновити список черг з API YASNO"),
+    current_user: User = Depends(get_current_user),
+):
+    """Повертає актуальні регіони, ОСР та динамічний список черг безпосередньо з API YASNO."""
+    return await fetch_yasno_available_groups(
+        region_id=region_id,
+        dso_id=dso_id,
+        force_refresh=force_refresh,
+    )
 
 
 @router.get("/overview")
@@ -321,9 +341,11 @@ async def get_facility_outage(
     if not fac.yasno_enabled or not fac.yasno_group:
         return get_facility_outage_schedule(fac)
 
+    eff_dso = fac.yasno_dso_id or 301
+    eff_reg = resolve_yasno_region_id(eff_dso, fac.yasno_region_id)
     raw_data = await fetch_raw_yasno_schedule(
-        region_id=fac.yasno_region_id or 3,
-        dso_id=fac.yasno_dso_id or 301,
+        region_id=eff_reg,
+        dso_id=eff_dso,
         force_refresh=force_refresh
     )
     return get_facility_outage_schedule(fac, raw_schedule=raw_data)

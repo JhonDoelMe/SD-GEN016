@@ -5,6 +5,8 @@ from backend.app.services.settings_service import (
     DEFAULT_OKKO_PRICES,
     _parse_wog_fuel_html,
     _parse_okko_fuel_html,
+    _parse_minfin_fuel_html,
+    fetch_wog_fuel_prices_online,
     fetch_okko_fuel_prices_online,
     get_fuel_prices_info,
     is_fuel_prices_stale,
@@ -222,3 +224,80 @@ def test_is_fuel_prices_stale():
     from zoneinfo import ZoneInfo
     now_str = datetime.now(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d %H:%M:%S")
     assert is_fuel_prices_stale(now_str) is False
+
+
+def test_parse_minfin_wog_secondary_live_source():
+    html = """
+    <table>
+      <tr><td>Бензин А-95 Mustang</td><td>87,90</td><td>0.00</td></tr>
+      <tr><td>Бензин А-95 Євро 5</td><td>84,90</td><td>0.00</td></tr>
+      <tr><td>Дизельне паливо Євро 5</td><td>99,99</td><td>0.00</td></tr>
+      <tr><td>Газ авто&shy;мобільний</td><td>62,90</td><td>0.00</td></tr>
+      <tr><td>Дніпро&shy;петровська</td><td>87,90</td><td>84,90</td></tr>
+    </table>
+    """
+    parsed = _parse_minfin_fuel_html(html, provider="wog")
+    assert parsed is not None
+    prices, lineup = parsed
+    assert prices["А-95 Mustang"] == 87.90
+    assert prices["А-95"] == 84.90
+    assert prices["ДП"] == 99.99
+    assert prices["ГАЗ"] == 62.90
+    assert len(lineup) == 4
+
+
+@pytest.mark.asyncio
+async def test_wog_falls_back_to_live_minfin_on_http_204():
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    resp_204 = MagicMock(status_code=204, text="")
+    resp_minfin = MagicMock(
+        status_code=200,
+        text="<html>" + (" " * 1000) + """
+        <table>
+          <tr><td>Бензин А-95 Mustang</td><td>87,90</td></tr>
+          <tr><td>Бензин А-95 Євро 5</td><td>84,90</td></tr>
+          <tr><td>Дизельне паливо Євро 5</td><td>99,99</td></tr>
+          <tr><td>Газ авто&shy;мобільний</td><td>62,90</td></tr>
+        </table></html>""",
+    )
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.get = AsyncMock(side_effect=[resp_204, resp_minfin])
+
+    with patch("backend.app.services.settings_service.httpx.AsyncClient", return_value=mock_client):
+        prices, lineup, source, is_live = await fetch_wog_fuel_prices_online(timeout=5.0)
+        assert is_live is True
+        assert "minfin" in source.lower()
+        assert prices["А-95"] == 84.90
+        assert prices["ДП"] == 99.99
+        assert prices["ГАЗ"] == 62.90
+        assert len(lineup) == 4
+
+
+@pytest.mark.asyncio
+async def test_yasno_dynamic_options_and_region_resolution(client, superadmin_auth):
+    from unittest.mock import AsyncMock, patch
+    from backend.app.services.yasno_service import resolve_yasno_region_id, _natural_group_sort_key
+
+    assert resolve_yasno_region_id(301) == 3
+    assert resolve_yasno_region_id(303) == 3
+    assert resolve_yasno_region_id(902) == 25
+    assert sorted(["10.1", "2.1", "1.1", "18.1"], key=_natural_group_sort_key) == ["1.1", "2.1", "10.1", "18.1"]
+
+    fake_schedule = {
+        "10.1": {"today": {"slots": []}},
+        "2.1": {"today": {"slots": []}},
+        "1.1": {"today": {"slots": []}},
+        "18.1": {"today": {"slots": []}},
+    }
+    with patch("backend.app.services.yasno_service.fetch_raw_yasno_schedule", new_callable=AsyncMock, return_value=fake_schedule):
+        res = await client.get("/api/v1/facilities/yasno/options?dso_id=301", headers=superadmin_auth)
+        assert res.status_code == 200
+        body = res.json()
+        assert body["region_id"] == 3
+        assert body["dso_id"] == 301
+        assert body["groups"] == ["1.1", "2.1", "10.1", "18.1"]
+        assert body["is_live"] is True
+        assert len(body["dsos"]) >= 3

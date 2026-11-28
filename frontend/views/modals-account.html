@@ -130,9 +130,9 @@
           <small id="nativeAppVersionLabel" style="color: var(--text-muted);"></small>
         </div>
       </div>
-      <div class="modal-actions" style="display: flex; gap: 8px; margin-top: 1rem;">
-        <button type="button" class="btn-secondary" onclick="resetServerSettings()" style="flex: 1;">Скинути</button>
-        <button type="button" class="btn-primary" onclick="saveServerSettings()" style="flex: 1;">Зберегти та перевірити</button>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" onclick="resetServerSettings()">Скинути</button>
+        <button type="button" class="btn-primary" onclick="saveServerSettings()">Зберегти та перевірити</button>
       </div>
     </div>
   </div>
@@ -155,9 +155,9 @@
         </div>
         <div id="otaStatusMessage" style="display: none; padding: 10px 12px; border-radius: 8px; font-size: 0.86rem; line-height: 1.45;"></div>
       </div>
-      <div class="modal-actions" style="display: flex; gap: 8px; margin-top: 1rem;">
-        <button type="button" id="otaLaterBtn" class="btn-secondary" onclick="dismissOtaUpdateModal()" style="flex: 1;">Пізніше</button>
-        <button type="button" id="otaInstallBtn" class="btn-primary" onclick="startOtaDownloadAndInstall()" style="flex: 1;">Оновити зараз</button>
+      <div class="modal-actions">
+        <button type="button" id="otaLaterBtn" class="btn-secondary" onclick="dismissOtaUpdateModal()">Пізніше</button>
+        <button type="button" id="otaInstallBtn" class="btn-primary" onclick="startOtaDownloadAndInstall()">Оновити зараз</button>
       </div>
     </div>
   </div>

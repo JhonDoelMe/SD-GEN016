@@ -638,6 +638,124 @@ window.openCreateGeneratorModal = async function() {
   await openModal('modalCreateGenerator');
 };
 
+// Dynamic YASNO regions/DSOs/queues loader (supports live API queues + manual input fallback)
+const YASNO_FALLBACK_DSO_REGION = { 301: 3, 303: 3, 902: 25 };
+
+window.onFacilityYasnoGroupChange = function(prefix) {
+  const sel = document.getElementById(`${prefix}YasnoGroup`);
+  const manualInput = document.getElementById(`${prefix}YasnoGroupManual`);
+  if (!sel || !manualInput) return;
+  const isManual = sel.value === '__manual__';
+  manualInput.style.display = isManual ? 'block' : 'none';
+  if (isManual) manualInput.focus();
+};
+
+window.onFacilityYasnoToggle = function(prefix, checked) {
+  const fields = document.getElementById(`${prefix}YasnoFields`);
+  if (fields) fields.style.display = checked ? 'grid' : 'none';
+  if (checked) {
+    const dsoSel = document.getElementById(`${prefix}YasnoDso`);
+    const curGroup = getFacilityYasnoGroupValue(prefix);
+    window.loadYasnoOptionsForModal(prefix, dsoSel?.value || 301, curGroup, false);
+  }
+};
+
+function getFacilityYasnoGroupValue(prefix) {
+  const sel = document.getElementById(`${prefix}YasnoGroup`);
+  const manualInput = document.getElementById(`${prefix}YasnoGroupManual`);
+  if (!sel) return null;
+  if (sel.value === '__manual__') {
+    const v = manualInput?.value?.trim() || '';
+    return v || null;
+  }
+  return sel.value ? sel.value.trim() : null;
+}
+
+function getFacilityYasnoPayload(prefix) {
+  const yasno_enabled = document.getElementById(`${prefix}YasnoEnabled`)?.checked ?? false;
+  const dsoSel = document.getElementById(`${prefix}YasnoDso`);
+  const yasno_dso_id = parseInt(dsoSel?.value || '301', 10) || 301;
+  const selectedOpt = dsoSel?.options?.[dsoSel.selectedIndex];
+  const optRegion = selectedOpt?.dataset?.region ? parseInt(selectedOpt.dataset.region, 10) : null;
+  const yasno_region_id = optRegion || YASNO_FALLBACK_DSO_REGION[yasno_dso_id] || 3;
+  const yasno_group = getFacilityYasnoGroupValue(prefix);
+  return { yasno_enabled, yasno_dso_id, yasno_region_id, yasno_group };
+}
+
+window.loadYasnoOptionsForModal = async function(prefix, dsoId = 301, preferredGroup = null, forceRefresh = false) {
+  const dsoSel = document.getElementById(`${prefix}YasnoDso`);
+  const grpSel = document.getElementById(`${prefix}YasnoGroup`);
+  const manualInput = document.getElementById(`${prefix}YasnoGroupManual`);
+  const statusEl = document.getElementById(`${prefix}YasnoStatus`);
+  if (!grpSel) return;
+
+  const targetDso = parseInt(dsoId || dsoSel?.value || '301', 10) || 301;
+  const curGroup = preferredGroup !== null && preferredGroup !== undefined
+    ? String(preferredGroup).trim()
+    : (getFacilityYasnoGroupValue(prefix) || '');
+
+  if (statusEl) statusEl.textContent = '⏳ Завантаження актуальних черг з API YASNO...';
+
+  try {
+    const data = await api(
+      `/facilities/yasno/options?dso_id=${encodeURIComponent(targetDso)}&force_refresh=${forceRefresh ? 'true' : 'false'}`
+    );
+
+    if (dsoSel && Array.isArray(data?.dsos) && data.dsos.length > 0) {
+      dsoSel.innerHTML = data.dsos.map((d) => {
+        const label = d.region_name ? `${d.name} (${d.region_name})` : d.name;
+        return `<option value="${Number(d.id)}" data-region="${Number(d.region_id)}" ${Number(d.id) === targetDso ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+      }).join('');
+      dsoSel.value = String(targetDso);
+    }
+
+    const groups = Array.isArray(data?.groups) ? data.groups : [];
+    const optionsHtml = groups.map((g) => `<option value="${escapeHtml(g)}">Черга ${escapeHtml(g)}</option>`).join('');
+    grpSel.innerHTML = optionsHtml + '<option value="__manual__">✏️ Ввести чергу вручну...</option>';
+
+    if (curGroup && groups.includes(curGroup)) {
+      grpSel.value = curGroup;
+      if (manualInput) {
+        manualInput.value = '';
+        manualInput.style.display = 'none';
+      }
+    } else if (curGroup) {
+      grpSel.value = '__manual__';
+      if (manualInput) {
+        manualInput.value = curGroup;
+        manualInput.style.display = 'block';
+      }
+    } else if (groups.length > 0) {
+      grpSel.value = groups[0];
+      if (manualInput) {
+        manualInput.value = '';
+        manualInput.style.display = 'none';
+      }
+    } else {
+      grpSel.value = '__manual__';
+      if (manualInput) manualInput.style.display = 'block';
+    }
+
+    if (statusEl) {
+      if (data?.is_live && groups.length > 0) {
+        statusEl.textContent = `✅ Завантажено ${groups.length} актуальних черг із YASNO (можна обрати або ввести вручну)`;
+      } else {
+        statusEl.textContent = '⚠️ API YASNO тимчасово недоступний — введіть номер черги вручну';
+      }
+    }
+  } catch (err) {
+    grpSel.innerHTML = '<option value="__manual__">✏️ Ввести чергу вручну...</option>';
+    grpSel.value = '__manual__';
+    if (manualInput) {
+      if (curGroup) manualInput.value = curGroup;
+      manualInput.style.display = 'block';
+    }
+    if (statusEl) {
+      statusEl.textContent = '⚠️ Не вдалося отримати черги з YASNO — введіть номер черги вручну';
+    }
+  }
+};
+
 // Facility Create Form Submit (delegated)
 document.addEventListener('submit', async (e) => {
   if (!e.target || e.target.id !== 'facilityCreateForm') return;
@@ -657,9 +775,7 @@ document.addEventListener('submit', async (e) => {
     return;
   }
 
-  const yasno_enabled = document.getElementById('newFacilityYasnoEnabled')?.checked ?? false;
-  const yasno_dso_id = parseInt(document.getElementById('newFacilityYasnoDso')?.value || '301');
-  const yasno_group = document.getElementById('newFacilityYasnoGroup')?.value || null;
+  const { yasno_enabled, yasno_dso_id, yasno_region_id, yasno_group } = getFacilityYasnoPayload('newFacility');
   const default_fuel_provider = (document.getElementById('newFacilityFuelProvider')?.value || 'wog').toLowerCase();
 
   try {
@@ -667,7 +783,7 @@ document.addEventListener('submit', async (e) => {
       method: 'POST',
       body: JSON.stringify({
         name, address, city, description, timezone: 'Europe/Kyiv',
-        yasno_enabled, yasno_dso_id, yasno_group, yasno_region_id: 3,
+        yasno_enabled, yasno_dso_id, yasno_group, yasno_region_id,
         default_fuel_provider
       })
     });
@@ -800,13 +916,18 @@ window.openQuickEditFacilityModal = async function(facId = null) {
       if (fFields) fFields.style.display = yasnoEn.checked ? 'grid' : 'none';
     }
     const dsoSel = document.getElementById('quickEditFacilityYasnoDso');
-    if (dsoSel) dsoSel.value = fac.yasno_dso_id || 301;
-    const grpSel = document.getElementById('quickEditFacilityYasnoGroup');
-    if (grpSel) grpSel.value = fac.yasno_group || '3.2';
+    const facDsoId = fac.yasno_dso_id || 301;
+    if (dsoSel) dsoSel.value = String(facDsoId);
     const provSel = document.getElementById('quickEditFacilityFuelProvider');
     if (provSel) provSel.value = (fac.default_fuel_provider || 'wog').toLowerCase();
 
     await openModal('modalQuickEditFacility');
+    if (fac.yasno_enabled) {
+      window.loadYasnoOptionsForModal('quickEditFacility', facDsoId, fac.yasno_group || '', false);
+    } else {
+      const manualEl = document.getElementById('quickEditFacilityYasnoGroupManual');
+      if (manualEl) manualEl.value = fac.yasno_group || '';
+    }
   } catch (err) {
     showToast(err.message || "Не вдалося завантажити дані об'єкта", 'error');
   }
@@ -826,9 +947,7 @@ document.addEventListener('submit', async (e) => {
   }
   const description = document.getElementById('quickEditFacilityDescription').value.trim();
 
-  const yasno_enabled = document.getElementById('quickEditFacilityYasnoEnabled')?.checked ?? false;
-  const yasno_dso_id = parseInt(document.getElementById('quickEditFacilityYasnoDso')?.value || '301');
-  const yasno_group = document.getElementById('quickEditFacilityYasnoGroup')?.value || null;
+  const { yasno_enabled, yasno_dso_id, yasno_region_id, yasno_group } = getFacilityYasnoPayload('quickEditFacility');
   const default_fuel_provider = (document.getElementById('quickEditFacilityFuelProvider')?.value || 'wog').toLowerCase();
 
   try {
@@ -836,7 +955,7 @@ document.addEventListener('submit', async (e) => {
       method: 'PUT',
       body: JSON.stringify({
         name, address, city, description,
-        yasno_enabled, yasno_dso_id, yasno_group, yasno_region_id: 3,
+        yasno_enabled, yasno_dso_id, yasno_group, yasno_region_id,
         default_fuel_provider
       })
     });

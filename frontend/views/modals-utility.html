@@ -37,8 +37,8 @@
           </div>
         </div>
       </div>
-      <div class="modal-actions" style="margin-top: 1rem;">
-        <button type="button" class="btn-action" onclick="closeModal('modalAppInstall')">Закрити</button>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" onclick="closeModal('modalAppInstall')">Закрити</button>
       </div>
     </div>
   </div>
@@ -77,7 +77,7 @@
         </div>
         <div id="forgotPasswordFeedback" class="feedback-box"></div>
         <div class="modal-actions">
-          <button type="button" class="btn-action" onclick="closeModal('modalForgotPassword')">Скасувати</button>
+          <button type="button" class="btn-secondary" onclick="closeModal('modalForgotPassword')">Скасувати</button>
           <button type="submit" id="btnSubmitForgotPassword" class="btn-primary">
             ✉️ Надіслати посилання
           </button>
@@ -112,7 +112,7 @@
         </div>
         <div id="resetPasswordFeedback" class="feedback-box"></div>
         <div class="modal-actions">
-          <button type="button" class="btn-action" onclick="closeModal('modalResetPassword')">Скасувати</button>
+          <button type="button" class="btn-secondary" onclick="closeModal('modalResetPassword')">Скасувати</button>
           <button type="submit" id="btnSubmitResetPassword" class="btn-primary">
             💾 Зберегти новий пароль
           </button>
@@ -243,8 +243,8 @@
       </div>
       <div id="measurementStatusModalBody"></div>
       <div class="modal-actions">
-        <button type="button" id="btnModalMeasGoAdmin" class="btn-oq-chip btn-oq-chip-info" style="display:none;" onclick="closeModal('modalMeasurementStatus'); switchTab('tab-measurement')">⚙️ Керувати вимірюванням</button>
         <button type="button" class="btn-secondary" onclick="closeModal('modalMeasurementStatus')">Закрити</button>
+        <button type="button" id="btnModalMeasGoAdmin" class="btn-primary" style="display:none;" onclick="closeModal('modalMeasurementStatus'); switchTab('tab-measurement')">⚙️ Керувати вимірюванням</button>
       </div>
     </div>
   </div>
