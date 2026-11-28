@@ -1,6 +1,8 @@
 import datetime
+import json
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
+from zoneinfo import ZoneInfo
 from fastapi import HTTPException, status
 from sqlalchemy import select, func, or_, update, delete
 from sqlalchemy.orm import selectinload, raiseload
@@ -10,10 +12,16 @@ from backend.app.models.fuel import FuelStock, FuelReceipt, FuelTransfer, utc_no
 from backend.app.models.canister import CanisterPool
 from backend.app.models.generator import Generator, GeneratorRun
 from backend.app.models.facility import Facility
+from backend.app.models.audit import AuditLog
 from backend.app.schemas.fuel import (
     FuelStockCreate, FuelStockUpdate, FuelReceiptCreate, FuelTransferCreate, FuelBalancesSummary
 )
 from backend.app.services.audit_service import log_audit
+
+_UA_MONTHS = (
+    "", "Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень",
+    "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"
+)
 
 
 def to_decimal(val, places: int = 2) -> Decimal:
@@ -1193,6 +1201,146 @@ async def compute_live_tank_levels_map(
     return live_map
 
 
+async def compute_monthly_fuel_analytics(
+    db: AsyncSession,
+    gens: List[Generator],
+    live_map: Dict[int, float],
+) -> Dict[str, Any]:
+    """
+    Обчислює за поточний календарний місяць (Europe/Kyiv):
+    1) monthly_deficit_l — накопичений обліковий дефіцит/надлишок з AuditLog (GENERATOR_FUEL_DEFICIT),
+       який автоматично скидається 1-го числа кожного місяця і не потрапляє в Excel/PDF звіти.
+    2) monthly_burned_fuel_l ("по живому") — реально спалене з бака паливо:
+       max(0, бак_на_початок_місяця + заправки_в_бак_за_місяць - поточний_бак).
+       Паливо на складі та залишок у баку НЕ входять до чисельника.
+    3) monthly_operating_hours — фактично відпрацьовані години за місяць (без тестових пусків).
+    4) monthly_avg_consumption_l_per_h — середня фактична витрата (л/год), коли відпрацьовано >= 1.0 год і спалено > 0 л.
+    """
+    from backend.app.services.settings_service import get_runtime_timezone
+
+    tz = ZoneInfo(get_runtime_timezone())
+    now_local = datetime.datetime.now(tz)
+    month_start_local = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start_naive_utc = month_start_local.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    now_naive_utc = utc_now()
+    month_label = f"{_UA_MONTHS[now_local.month]} {now_local.year}"
+
+    gen_ids = [int(g.id) for g in gens if g.id is not None]
+    if not gen_ids:
+        return {
+            "monthly_deficit_l": 0.0,
+            "monthly_burned_fuel_l": 0.0,
+            "monthly_operating_hours": 0.0,
+            "monthly_avg_consumption_l_per_h": None,
+            "monthly_period_label": month_label,
+        }
+
+    # 1. Monthly deficit from AuditLog (GENERATOR_FUEL_DEFICIT)
+    gen_id_strs = [str(gid) for gid in gen_ids]
+    deficit_rows = (
+        await db.execute(
+            select(AuditLog.details_json)
+            .where(
+                AuditLog.action == "GENERATOR_FUEL_DEFICIT",
+                AuditLog.entity_type == "Generator",
+                AuditLog.entity_id.in_(gen_id_strs),
+                AuditLog.created_at >= month_start_naive_utc,
+            )
+        )
+    ).scalars().all()
+    monthly_deficit = 0.0
+    for raw_json in deficit_rows:
+        if not raw_json:
+            continue
+        try:
+            det = json.loads(raw_json)
+            shortage = float(det.get("fuel_shortage_l") or 0.0)
+            if shortage > 0:
+                monthly_deficit += shortage
+        except Exception:
+            continue
+
+    # 2. Monthly runs (non-test) & transfers for target generators
+    runs_month = list(
+        (
+            await db.execute(
+                select(GeneratorRun)
+                .where(
+                    GeneratorRun.generator_id.in_(gen_ids),
+                    GeneratorRun.is_test == False,  # noqa: E712
+                    GeneratorRun.status != "TEST",
+                    GeneratorRun.start_time >= month_start_naive_utc,
+                )
+                .order_by(GeneratorRun.start_time.asc(), GeneratorRun.id.asc())
+            )
+        ).scalars().all()
+    )
+
+    transfers_month = list(
+        (
+            await db.execute(
+                select(FuelTransfer)
+                .where(
+                    FuelTransfer.generator_id.in_(gen_ids),
+                    FuelTransfer.created_at >= month_start_naive_utc,
+                )
+                .order_by(FuelTransfer.created_at.asc(), FuelTransfer.id.asc())
+            )
+        ).scalars().all()
+    )
+
+    runs_by_gen: Dict[int, List[GeneratorRun]] = {gid: [] for gid in gen_ids}
+    for r in runs_month:
+        runs_by_gen.setdefault(int(r.generator_id), []).append(r)
+
+    tr_by_gen: Dict[int, List[FuelTransfer]] = {gid: [] for gid in gen_ids}
+    for t in transfers_month:
+        if t.generator_id is not None:
+            tr_by_gen.setdefault(int(t.generator_id), []).append(t)
+
+    total_burned = 0.0
+    total_hours = 0.0
+
+    for g in gens:
+        gid = int(g.id)
+        g_runs = runs_by_gen.get(gid, [])
+        g_trs = tr_by_gen.get(gid, [])
+
+        for r in g_runs:
+            if r.status == "COMPLETED" and r.duration_hours is not None:
+                total_hours += max(0.0, float(r.duration_hours))
+            elif r.status == "RUNNING" and r.start_time:
+                elapsed_h = max(0.0, (now_naive_utc - r.start_time).total_seconds() / 3600.0)
+                total_hours += elapsed_h
+
+        cur_tank = max(0.0, float(live_map.get(gid, g.fuel_tank_level_l or 0.0)))
+        first_run = g_runs[0] if g_runs else None
+        first_tr = g_trs[0] if g_trs else None
+
+        if first_run is None and first_tr is None:
+            start_tank = cur_tank
+        elif first_run is not None and (first_tr is None or first_run.start_time <= first_tr.created_at):
+            start_tank = max(0.0, float(first_run.start_fuel_level_l if first_run.start_fuel_level_l is not None else cur_tank))
+        else:
+            start_tank = max(0.0, float(first_tr.tank_balance_before if first_tr.tank_balance_before is not None else cur_tank))
+
+        transferred_sum = sum(max(0.0, float(t.liters or 0.0)) for t in g_trs)
+        burned_g = max(0.0, start_tank + transferred_sum - cur_tank)
+        total_burned += burned_g
+
+    avg_rate: Optional[float] = None
+    if total_hours >= 1.0 and total_burned > 0.0:
+        avg_rate = round(total_burned / total_hours, 2)
+
+    return {
+        "monthly_deficit_l": round(monthly_deficit, 2),
+        "monthly_burned_fuel_l": round(total_burned, 2),
+        "monthly_operating_hours": round(total_hours, 2),
+        "monthly_avg_consumption_l_per_h": avg_rate,
+        "monthly_period_label": month_label,
+    }
+
+
 async def get_fuel_balances_summary(
     db: AsyncSession,
     facility_id: Optional[int] = None,
@@ -1306,6 +1454,8 @@ async def get_fuel_balances_summary(
         canister_q = canister_q.where(CanisterPool.facility_id == facility_id)
     c_total, c_full, c_empty, c_away, c_reserve = (await db.execute(canister_q)).first()
 
+    monthly_stats = await compute_monthly_fuel_analytics(db, gens, live_map)
+
     return FuelBalancesSummary(
         warehouse_balance_l=to_float(warehouse_balance, 3),
         tank_balance_l=to_float(tank_balance, 3),
@@ -1322,6 +1472,11 @@ async def get_fuel_balances_summary(
         canisters_empty=int(c_empty or 0),
         canisters_away=int(c_away or 0),
         canister_reserve_l=to_float(c_reserve, 3),
+        monthly_deficit_l=monthly_stats["monthly_deficit_l"],
+        monthly_burned_fuel_l=monthly_stats["monthly_burned_fuel_l"],
+        monthly_operating_hours=monthly_stats["monthly_operating_hours"],
+        monthly_avg_consumption_l_per_h=monthly_stats["monthly_avg_consumption_l_per_h"],
+        monthly_period_label=monthly_stats["monthly_period_label"],
     )
 
 
@@ -1389,15 +1544,16 @@ async def consume_generator_fuel(
     run_id: Optional[int] = None,
     actual_end_fuel_l: Optional[float] = None,
     discrepancy_reason: Optional[str] = None,
-    allow_system_clamp: bool = False
+    allow_system_clamp: bool = True,
+    suppress_deficit_audit: bool = False,
 ) -> dict:
     """
     GEN-04, GEN-14: Єдиний сервісний механізм списання пального з бака генератора
     в межах спільної транзакції (без внутрішнього commit).
-    - Забороняє від'ємне споживання (< 0).
-    - Забороняє перехід залишку бака в мінус (< 0) для користувацьких операцій.
-    - Забороняє встановлення залишку більше за місткість бака (> tank_capacity_l).
-    - Фіксує розбіжність (discrepancy) між розрахунковим та фактичним залишком.
+    - Забороняє від'ємне споживання (< 0) та перевищення місткості бака (> tank_capacity_l).
+    - Якщо розрахунковий залишок іде в мінус (напрацювання на надлишку / пуск із 0 л),
+      бак автоматично обнуляється (0.0 л), у звіт іде лише реально списане з бака (`tank_deducted_l`),
+      а різниця (`fuel_shortage_l`) фіксується виключно в AuditLog (`GENERATOR_FUEL_DEFICIT`) та у вікні дефіциту.
     """
     cons_dec = to_liters(consumed_l)
     if cons_dec < Decimal("0.000"):
@@ -1410,6 +1566,7 @@ async def consume_generator_fuel(
     cap_dec = to_liters(generator.tank_capacity_l)
     expected_after_dec = start_dec - cons_dec
     fuel_shortage_dec = Decimal("0.000")
+    tank_deducted_dec = cons_dec
 
     if actual_end_fuel_l is not None:
         actual_dec = to_liters(actual_end_fuel_l)
@@ -1425,6 +1582,7 @@ async def consume_generator_fuel(
             )
         if expected_after_dec < Decimal("0.000"):
             fuel_shortage_dec = abs(expected_after_dec)
+            tank_deducted_dec = max(Decimal("0.000"), start_dec - actual_dec)
         final_dec = actual_dec
         generator.fuel_tank_level_l = to_float(final_dec, 3)
 
@@ -1452,27 +1610,41 @@ async def consume_generator_fuel(
             )
     else:
         if expected_after_dec < Decimal("0.000"):
-            if allow_system_clamp:
-                fuel_shortage_dec = abs(expected_after_dec)
-                final_dec = Decimal("0.000")
-                generator.fuel_tank_level_l = 0.0
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        f"Недостатньо пального в баку генератора: наявно {to_float(start_dec, 3)} л, "
-                        f"розрахункова витрата становить {to_float(cons_dec, 3)} л. "
-                        f"Від'ємний залишок бака заборонено. Вкажіть фактичний кінцевий залишок або виконайте заправку."
-                    )
-                )
+            fuel_shortage_dec = abs(expected_after_dec)
+            final_dec = Decimal("0.000")
+            tank_deducted_dec = max(Decimal("0.000"), start_dec)
+            generator.fuel_tank_level_l = 0.0
         else:
             final_dec = expected_after_dec
             generator.fuel_tank_level_l = to_float(final_dec, 3)
+
+    if fuel_shortage_dec > Decimal("0.000") and not suppress_deficit_audit:
+        await log_audit(
+            db=db,
+            action="GENERATOR_FUEL_DEFICIT",
+            entity_type="Generator",
+            entity_id=str(generator.id),
+            user_id=user_id,
+            details={
+                "run_id": run_id,
+                "facility_id": generator.facility_id,
+                "fuel_type": generator.fuel_type,
+                "start_balance_l": to_float(start_dec, 3),
+                "end_balance_l": to_float(final_dec, 3),
+                "theoretical_consumption_l": to_float(cons_dec, 3),
+                "tank_deducted_l": to_float(tank_deducted_dec, 3),
+                "fuel_shortage_l": to_float(fuel_shortage_dec, 3),
+                "started_empty": start_dec <= Decimal("0.000"),
+                "reason": "Напрацювання на надлишку (авто-обнулення бака при зупинці)",
+            },
+            ip_address=ip_address,
+        )
 
     return {
         "start_fuel_l": to_float(start_dec, 3),
         "end_fuel_l": to_float(final_dec, 3),
         "consumed_l": to_float(cons_dec, 3),
+        "tank_deducted_l": to_float(tank_deducted_dec, 3),
         "expected_end_fuel_l": to_float(expected_after_dec, 3),
         "fuel_shortage_l": to_float(fuel_shortage_dec, 3),
     }

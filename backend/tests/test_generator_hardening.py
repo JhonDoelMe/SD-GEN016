@@ -310,22 +310,7 @@ async def test_t10_t11_t12_t23_fuel_bounds_rollback_and_tank_capacity(
     )
     assert start_ok.status_code == 200
 
-    # T-12: Stop with end_hours=53.0 (3h * 3.0 L/h = 9.0 L consumption > 5.0 L in tank) without actual end_fuel_level_l -> Rejected (400) & FULL ROLLBACK
-    stop_fail = await client.post(
-        "/api/v1/generator/stop",
-        headers=operator_auth,
-        json={"generator_id": gen_id, "end_hours": 53.0, "force_confirm": True}
-    )
-    assert stop_fail.status_code == 400
-    assert "Недостатньо пального в баку" in stop_fail.json()["detail"]
-
-    # Verify full rollback: generator is still RUNNING, operating hours still 50.0, fuel still 5.0 L
-    gen_check = (await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=operator_auth)).json()
-    assert gen_check["status"] == "RUNNING"
-    assert gen_check["current_operating_hours"] == 50.0
-    assert gen_check["fuel_tank_level_l"] == 5.0
-
-    # Stop with end_fuel_level_l > tank_capacity_l (28.0 > 25.0) -> Rejected (400)
+    # Stop with end_fuel_level_l > tank_capacity_l (28.0 > 25.0) -> Rejected (400) & FULL ROLLBACK
     stop_over = await client.post(
         "/api/v1/generator/stop",
         headers=operator_auth,
@@ -333,6 +318,12 @@ async def test_t10_t11_t12_t23_fuel_bounds_rollback_and_tank_capacity(
     )
     assert stop_over.status_code == 400
     assert "перевищує місткість бака" in stop_over.json()["detail"]
+
+    # Verify full rollback after rejected stop: generator is still RUNNING, operating hours still 50.0, fuel still 5.0 L
+    gen_check = (await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=operator_auth)).json()
+    assert gen_check["status"] == "RUNNING"
+    assert gen_check["current_operating_hours"] == 50.0
+    assert gen_check["fuel_tank_level_l"] == 5.0
 
     # Stop with valid actual end_fuel_level_l (e.g. operator measured 1.5 L remaining) -> Succeeds & audits reconciliation
     stop_reconciled = await client.post(
@@ -348,6 +339,22 @@ async def test_t10_t11_t12_t23_fuel_bounds_rollback_and_tank_capacity(
     )
     assert stop_reconciled.status_code == 200
     assert stop_reconciled.json()["end_fuel_level_l"] == 1.5
+
+    # T-12 (updated): Stop with consumption exceeding tank (1.5 L in tank, 3h * 3.0 L/h = 9.0 L) without actual end_fuel -> auto-zeroes tank to 0.0 & audits deficit
+    start_deficit = await client.post(
+        "/api/v1/generator/start",
+        headers=operator_auth,
+        json={"generator_id": gen_id, "skip_cooldown": True}
+    )
+    assert start_deficit.status_code == 200
+    stop_deficit = await client.post(
+        "/api/v1/generator/stop",
+        headers=operator_auth,
+        json={"generator_id": gen_id, "end_hours": 54.0, "force_confirm": True}
+    )
+    assert stop_deficit.status_code == 200
+    assert stop_deficit.json()["end_fuel_level_l"] == 0.0
+    assert stop_deficit.json()["calculated_consumption_l"] == 1.5
 
     import json
     stop_audit = (

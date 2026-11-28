@@ -211,7 +211,7 @@ async def test_generator_fuel_deficit_goes_negative(client, superadmin_auth, ope
         }
     )
 
-    # 2. Attempt manual run consuming 10.0 L (deficit: 5.0 - 10.0 = -5.0 L -> must be rejected per GEN-04)
+    # 2. Manual run consuming 10.0 L with only 5.0 L in tank -> auto-clamps tank to 0.0 L, caps run deduction to 5.0 L, logs 5.0 L deficit in audit
     import datetime
     now = datetime.datetime.now(datetime.timezone.utc)
     start_time = (now - datetime.timedelta(hours=6)).isoformat()
@@ -230,10 +230,12 @@ async def test_generator_fuel_deficit_goes_negative(client, superadmin_auth, ope
             "note": "Робота довше за залишок у баку"
         }
     )
-    assert manual_res.status_code == 400
-    assert "Недостатньо пального" in manual_res.json()["detail"]
+    assert manual_res.status_code == 201
+    run_body = manual_res.json()
+    assert run_body["end_fuel_level_l"] == 0.0
+    assert run_body["calculated_consumption_l"] == 5.0
 
-    # 3. Check generator state remains unchanged at 5.0 L (no negative balance)
+    # 3. Check generator tank is cleanly clamped to 0.0 L (never negative!)
     gen_after = await client.get(f"/api/v1/generator?generator_id={gen_id}", headers=operator_auth)
     assert gen_after.status_code == 200
-    assert gen_after.json()["fuel_tank_level_l"] == 5.0
+    assert gen_after.json()["fuel_tank_level_l"] == 0.0

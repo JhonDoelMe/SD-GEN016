@@ -1261,6 +1261,28 @@ async def generate_operational_report(
     avg_cons = round(total_cons / total_hours, 2) if total_hours > 0 else 0.0
     avg_run_dur = round(total_hours / total_runs, 2) if total_runs > 0 else 0.0
 
+    # Admin UI-only live monthly actual consumption (tank balance; never exported to Excel/PDF)
+    from backend.app.services.fuel_service import compute_live_tank_levels_map, compute_monthly_fuel_analytics
+    monthly_gens: list = []
+    if generator:
+        monthly_gens = [generator]
+    elif generator_id:
+        g_obj = await db.get(Generator, generator_id)
+        if g_obj:
+            monthly_gens = [g_obj]
+    elif facility_id:
+        monthly_gens = list((await db.execute(select(Generator).where(Generator.facility_id == facility_id))).scalars().all())
+    else:
+        monthly_gens = list((await db.execute(select(Generator))).scalars().all())
+
+    live_map_m = await compute_live_tank_levels_map(db, monthly_gens) if monthly_gens else {}
+    monthly_analytics = await compute_monthly_fuel_analytics(db, monthly_gens, live_map_m)
+    nominal_rate_val = (
+        round(float(monthly_gens[0].nominal_consumption_l_per_h), 2)
+        if len(monthly_gens) == 1 and monthly_gens[0].nominal_consumption_l_per_h is not None
+        else None
+    )
+
     return OperationalReportOut(
         start_date=to_facility_time(start_date).strftime("%Y-%m-%d"),
         end_date=to_facility_time(end_date).strftime("%Y-%m-%d"),
@@ -1295,6 +1317,11 @@ async def generate_operational_report(
         avg_consumption_l_per_hour=avg_cons,
         avg_run_duration_hours=avg_run_dur,
         avg_run_duration_human=fmt_hours_human(avg_run_dur),
+        monthly_actual_avg_consumption_l_per_h=monthly_analytics["monthly_avg_consumption_l_per_h"],
+        monthly_actual_burned_fuel_l=monthly_analytics["monthly_burned_fuel_l"],
+        monthly_actual_operating_hours=monthly_analytics["monthly_operating_hours"],
+        monthly_actual_period_label=monthly_analytics["monthly_period_label"],
+        nominal_consumption_l_per_h=nominal_rate_val,
         runs=runs_list,
         fuel_receipts=receipts_list,
         fuel_transfers=transfers_list,

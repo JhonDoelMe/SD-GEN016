@@ -146,6 +146,11 @@ class FuelBalancesSummary(BaseModel):
     canisters_empty: int = 0
     canisters_away: int = 0
     canister_reserve_l: float = 0.0
+    monthly_deficit_l: float = 0.0
+    monthly_burned_fuel_l: float = 0.0
+    monthly_operating_hours: float = 0.0
+    monthly_avg_consumption_l_per_h: Optional[float] = None
+    monthly_period_label: Optional[str] = None
 
 
 class CanisterPoolCreate(BaseModel):

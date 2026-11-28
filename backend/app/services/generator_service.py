@@ -1069,17 +1069,20 @@ async def stop_generator(
         run_id=run.id,
         actual_end_fuel_l=actual_end_fuel,
         discrepancy_reason=discrepancy_reason,
-        allow_system_clamp=allow_clamp
+        allow_system_clamp=True,
+        suppress_deficit_audit=in_measurement,
     )
     fuel_shortage_l = 0.0 if in_measurement else fuel_res["fuel_shortage_l"]
+    tank_deducted_l = float(fuel_res.get("tank_deducted_l", calculated_consumption))
 
     # Оновлюємо сеанс та генератор після успішного списання пального
+    # Якщо розрахункова витрата перевищила залишок бака (дефіцит/надлишок), у звіт іде лише реально списане з бака
     was_warmup = str(run.note or "").startswith(WARMUP_NOTE_PREFIX)
     run.end_time = end_time
     run.end_hours = end_hours
     run.duration_seconds = duration_seconds
     run.duration_hours = duration_hours
-    run.calculated_consumption_l = calculated_consumption
+    run.calculated_consumption_l = tank_deducted_l
     run.end_fuel_level_l = fuel_res["end_fuel_l"]
     run.status = "COMPLETED"
     user_note = stop_data.note.strip() if (stop_data and stop_data.note) else ""
@@ -1127,7 +1130,8 @@ async def stop_generator(
         "duration_seconds": duration_seconds,
         "duration_formatted": duration_formatted,
         "duration_hours": duration_hours,
-        "calculated_consumption_l": calculated_consumption,
+        "calculated_consumption_l": tank_deducted_l,
+        "theoretical_consumption_l": calculated_consumption,
         "end_fuel_level_l": generator.fuel_tank_level_l,
         "fuel_shortage_l": fuel_shortage_l,
         "fuel_discrepancy": (fuel_shortage_l > 0) or (
@@ -1165,7 +1169,7 @@ async def stop_generator(
                 generator=generator,
                 user_name=u_name,
                 duration_str=duration_formatted,
-                consumption_l=calculated_consumption,
+                consumption_l=tank_deducted_l,
                 end_fuel=generator.fuel_tank_level_l,
                 suppress_low_fuel=in_measurement,
             )
@@ -1975,8 +1979,10 @@ async def add_manual_run(
         consumed_l=calculated_consumption,
         user_id=user_id,
         ip_address=ip_address,
-        allow_system_clamp=in_measurement_manual
+        allow_system_clamp=True,
+        suppress_deficit_audit=in_measurement_manual,
     )
+    tank_deducted_manual = float(fuel_res.get("tank_deducted_l", calculated_consumption))
 
     # 7. Create manual run record without mutating other historical runs
     run = GeneratorRun(
@@ -1990,7 +1996,7 @@ async def add_manual_run(
         duration_hours=duration_hours,
         start_fuel_level_l=fuel_res["start_fuel_l"],
         end_fuel_level_l=fuel_res["end_fuel_l"],
-        calculated_consumption_l=calculated_consumption,
+        calculated_consumption_l=tank_deducted_manual,
         status="COMPLETED",
         note=data.note.strip() if data.note else "Внесено вручну (запис з паперового журналу)",
         idempotency_key=clean_idem_key

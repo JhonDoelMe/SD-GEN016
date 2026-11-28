@@ -25,6 +25,11 @@ const AUDIT_ACTION_MAP_UA = {
   'GENERATOR_FACILITY_TRANSFERRED': 'Переміщення генератора між об\'єктами',
   'GENERATOR_FORCE_START_MAINTENANCE': 'Примусовий запуск при простроченому ТО',
   'GENERATOR_FUEL_RECONCILED': 'Звірка залишку пального в баку',
+  'GENERATOR_FUEL_DEFICIT': 'Обліковий дефіцит пального (надлишок)',
+  'GENERATOR_TEST_RUN': 'Тестовий пуск генератора',
+  'GENERATOR_RUN_TEST_TOGGLED': 'Зміна статусу тестового пуску',
+  'GENERATOR_TEST_RUN_DELETED': 'Видалення тестового пуску',
+  'GENERATOR_SHORT_RUNS_CLEANUP': 'Масове очищення коротких пусків',
   'GENERATOR_SAFETY_STOP': 'Аварійна зупинка генератора (захист)',
   'GENERATOR_AUTO_STOP': 'Автоматична зупинка генератора (розклад)',
   'FUEL_STOCK_ARCHIVED': 'Архівація складу ПММ',
@@ -1150,6 +1155,32 @@ async function loadReport(isUserTriggered = false) {
     const totalOperatingHoursDisplay = r.total_operating_hours_human || formatHoursToHuman(r.total_operating_hours);
     const avgRunDurationDisplay = r.avg_run_duration_human || formatHoursToHuman(avgRunDur);
 
+    const isAdminForPlanning = !!(currentUser && (currentUser.is_superadmin || currentUser.role === 'admin' || (typeof hasPermission === 'function' && hasPermission('system:settings'))));
+    let adminMonthlyAvgCard = '';
+    if (isAdminForPlanning) {
+      const mAvg = r.monthly_actual_avg_consumption_l_per_h;
+      const mBurned = Number(r.monthly_actual_burned_fuel_l || 0);
+      const mHours = Number(r.monthly_actual_operating_hours || 0);
+      const mLabel = r.monthly_actual_period_label || 'поточний місяць';
+      const nomRate = r.nominal_consumption_l_per_h != null ? Number(r.nominal_consumption_l_per_h) : null;
+      const valHtml = mAvg != null
+        ? `${escapeHtml(Number(mAvg).toFixed(2).replace('.', ','))} <span style="font-size: 0.9rem; font-weight: 600;">л/год</span>`
+        : `<span style="font-size: 1rem; color: var(--text-muted);">Збір даних</span>`;
+      let nomNote = '';
+      if (mAvg != null && nomRate && nomRate > 0) {
+        const pct = Math.round(((mAvg - nomRate) / nomRate) * 100);
+        const sign = pct > 0 ? '+' : '';
+        nomNote = ` • Норма: ${nomRate.toFixed(2)} л/год (${sign}${pct}%)`;
+      }
+      const valColor = (mAvg != null && nomRate) ? (mAvg <= nomRate ? '#4ade80' : '#f59e0b') : '#fbbf24';
+      adminMonthlyAvgCard = `
+      <div class="metric-card" style="border-color: rgba(245, 158, 11, 0.45);">
+        <div class="metric-label">🔥 Фактична середня витрата (${escapeHtml(mLabel)})</div>
+        <div class="metric-value" style="color: ${valColor};">${valHtml}</div>
+        <div class="metric-sub">Спалено з бака: ${escapeHtml(formatLiters(mBurned))} за ${escapeHtml(formatHoursToHuman(mHours))}${escapeHtml(nomNote)} • лише для планування (не йде в Excel/PDF)</div>
+      </div>`;
+    }
+
     container.innerHTML = `
       <div class="metric-card">
         <div class="metric-label">Відпрацьовано мотогодин</div>
@@ -1160,7 +1191,7 @@ async function loadReport(isUserTriggered = false) {
         <div class="metric-label">Розрахункова витрата палива</div>
         <div class="metric-value">${escapeHtml(formatLiters(r.total_calculated_consumption_l))}</div>
         <div class="metric-sub">Сер. витрата: ${escapeHtml(formatLiters(avgCons))}/год</div>
-      </div>
+      </div>${adminMonthlyAvgCard}
       <div class="metric-card" style="border-color: rgba(34, 197, 94, 0.4);">
         <div class="metric-label">Загальні витрати за період</div>
         <div class="metric-value" style="color: #4ade80;">${escapeHtml(formatMoney(totalCosts))}</div>

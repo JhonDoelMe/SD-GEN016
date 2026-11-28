@@ -90,6 +90,20 @@ window.loadFuelSummary = async function () {
         fuelTankBalSub.innerText = '';
       }
     }
+    const monthlyDeficitL = Number(s.monthly_deficit_l || 0);
+    const deficitLabel = monthlyDeficitL > 0
+      ? `⚠️ Дефіцит обліку (${s.monthly_period_label || 'місяць'}): ${formatLiters(monthlyDeficitL)}`
+      : '';
+    const fuelTankDeficitSub = document.getElementById('fuelTankDeficitSub');
+    if (fuelTankDeficitSub) {
+      fuelTankDeficitSub.style.display = deficitLabel ? 'block' : 'none';
+      fuelTankDeficitSub.innerText = deficitLabel;
+    }
+    const cardTankDeficitWarn = document.getElementById('cardTankDeficitWarn');
+    if (cardTankDeficitWarn) {
+      cardTankDeficitWarn.style.display = deficitLabel ? 'block' : 'none';
+      cardTankDeficitWarn.innerText = deficitLabel;
+    }
     const fuelTotalBought = document.getElementById('fuelTotalBought');
     if (fuelTotalBought) fuelTotalBought.innerText = formatLiters(s.total_received_l);
     const fuelTotalSpent = document.getElementById('fuelTotalSpent');
@@ -788,9 +802,20 @@ window.updateFuelAssessmentBlock = function (liveTankOverride = null) {
   const totalFuelL = effTankL + stockL;
   const totalHours = nominal > 0 ? (totalFuelL / nominal) : 0;
 
+  const factRateRaw = summary && summary.monthly_avg_consumption_l_per_h != null
+    ? Number(summary.monthly_avg_consumption_l_per_h)
+    : null;
+  const factRate = (factRateRaw && isFinite(factRateRaw) && factRateRaw > 0) ? factRateRaw : null;
+
   const rateEl = document.getElementById('fuelAssessRateBadge');
   if (rateEl) {
-    rateEl.innerText = `${currentGenerator.fuel_type || 'А-95'} • витрата ${nominal.toFixed(1).replace('.', ',')} л/год`;
+    const nomStr = nominal.toFixed(2).replace('.', ',');
+    if (factRate) {
+      const factStr = factRate.toFixed(2).replace('.', ',');
+      rateEl.innerText = `${currentGenerator.fuel_type || 'А-95'} • норма ${nomStr} • факт ${factStr} л/год`;
+    } else {
+      rateEl.innerText = `${currentGenerator.fuel_type || 'А-95'} • норма ${nomStr} л/год`;
+    }
   }
 
   const inMeas = !!(window._measurementState && window._measurementState.is_measuring);
@@ -804,22 +829,38 @@ window.updateFuelAssessmentBlock = function (liveTankOverride = null) {
       tSubEl.innerHTML = `<span style="color:#bae6fd;">Попередження порожнього баку вимкнено під час вимірювання</span>`;
     } else if (fuelL < 0) {
       tHoursEl.innerHTML = `<span style="color:#ef4444;">⚠️ Дефіцит ${formatLiters(Math.abs(fuelL))}</span>`;
-      tSubEl.innerHTML = `<span style="color:#fecaca;">Бак за обліком порожній — потрібна дозаправка</span>`;
+      tSubEl.innerHTML = `<span style="color:#fecaca;">Бак за обліком порожній — при зупинці обнулиться автоматично</span>`;
     } else {
       tHoursEl.innerText = `~${formatHoursToHuman(tankHours)}`;
       tSubEl.innerText = `${effTankL.toFixed(1).replace('.', ',')} з ${cap.toFixed(1).replace('.', ',')} л у баку`;
     }
   }
 
-  // 2. Total facility fuel autonomy sub-card (Tank + Canisters/Reserve or Warehouse)
+  // 2. Total facility fuel autonomy sub-card (System norm + Monthly factual average)
   const totHoursEl = document.getElementById('assessTotalHours');
+  const totFactEl = document.getElementById('assessTotalFactRow');
   const totSubEl = document.getElementById('assessTotalSub');
   if (totHoursEl && totSubEl) {
     if (!canSeeFuel) {
       totHoursEl.innerText = `~${formatHoursToHuman(tankHours)}`;
+      if (totFactEl) totFactEl.style.display = 'none';
       totSubEl.innerText = 'Склад та каністри приховані для поточної ролі';
     } else {
-      totHoursEl.innerText = `~${formatHoursToHuman(totalHours)}`;
+      const nomStr = nominal.toFixed(2).replace('.', ',');
+      totHoursEl.innerHTML = `~${escapeHtml(formatHoursToHuman(totalHours))} <span style="font-size:0.75rem;font-weight:500;color:var(--text-muted);">(за нормою ${nomStr} л/год)</span>`;
+      if (totFactEl) {
+        totFactEl.style.display = 'block';
+        if (factRate) {
+          const factHours = totalFuelL / factRate;
+          const factStr = factRate.toFixed(2).replace('.', ',');
+          const factColor = factRate <= nominal ? '#4ade80' : '#f59e0b';
+          totFactEl.style.color = factColor;
+          totFactEl.innerHTML = `За фактом (${factStr} л/год): <b>~${escapeHtml(formatHoursToHuman(factHours))}</b>`;
+        } else {
+          totFactEl.style.color = 'var(--text-muted)';
+          totFactEl.innerHTML = `За фактом (${escapeHtml(summary.monthly_period_label || 'місяць')}): збір даних (мін. 1 год)`;
+        }
+      }
       if (Number(summary.canisters_total || 0) > 0) {
         const resL = Number(summary.canister_reserve_l || 0);
         const awayNote = Number(summary.canisters_away || 0) > 0 ? ` • ${Number(summary.canisters_away)} на АЗС` : '';

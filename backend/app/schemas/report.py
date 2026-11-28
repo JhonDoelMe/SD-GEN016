@@ -115,6 +115,13 @@ class OperationalReportOut(BaseModel):
     avg_run_duration_hours: float = 0.0
     avg_run_duration_human: str = "0 хв"
 
+    # Admin UI-only monthly actual fuel consumption (live tank balance; NOT exported to Excel/PDF)
+    monthly_actual_avg_consumption_l_per_h: Optional[float] = None
+    monthly_actual_burned_fuel_l: float = 0.0
+    monthly_actual_operating_hours: float = 0.0
+    monthly_actual_period_label: Optional[str] = None
+    nominal_consumption_l_per_h: Optional[float] = None
+
     # Detailed records for the selected period
     runs: List[ReportRunItem] = []
     fuel_receipts: List[ReportFuelReceiptItem] = []
